@@ -274,3 +274,21 @@ func TestRectTouchesOrOverlaps(t *testing.T) {
 		})
 	}
 }
+
+func TestNewRectFromCorners(t *testing.T) {
+	got := math2d.NewRectFromCorners(
+		math2d.Vec2{X: 10, Y: 20},
+		math2d.Vec2{X: 30, Y: 40},
+	)
+
+	got.Width()
+
+	want := math2d.Rect{
+		Min: math2d.Vec2{X: 10, Y: 20},
+		Max: math2d.Vec2{X: 30, Y: 40},
+	}
+
+	if got != want {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}

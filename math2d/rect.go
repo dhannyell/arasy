@@ -15,6 +15,14 @@ func NewRect(pos Vec2, size Vec2) Rect {
 	}
 }
 
+// NewRectFromCorners creates a rectangle from position of first corner and position of opposite corner
+func NewRectFromCorners(firstCorner, oppositeCorner Vec2) Rect {
+	return Rect{
+		Min: firstCorner,
+		Max: oppositeCorner,
+	}
+}
+
 // Width returns the rectangle width.
 func (r Rect) Width() float64 {
 	return r.Max.X - r.Min.X
