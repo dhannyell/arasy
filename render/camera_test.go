@@ -149,10 +149,100 @@ func TestCameraRoundTrip(t *testing.T) {
 	}
 }
 
+func TestWorldScalarToScreen(t *testing.T) {
+	camera := render.Camera{
+		World: math2d.NewRect(
+			math2d.Vec2{X: 1, Y: 10},
+			math2d.Vec2{X: 105, Y: 68},
+		),
+		Viewport: math2d.NewRect(
+			math2d.Vec2{X: 10, Y: 100},
+			math2d.Vec2{X: 1920, Y: 1080},
+		),
+	}
+
+	tests := []struct {
+		name               string
+		worldScalar        float64
+		wantViewportScalar float64
+	}{
+		{
+			name:               "center of the world",
+			worldScalar:        52.5,
+			wantViewportScalar: 833.823,
+		},
+		{
+			name:               "init of penalty area",
+			worldScalar:        88.5,
+			wantViewportScalar: 1405.588,
+		},
+		{
+			name:               "penalty spot",
+			worldScalar:        94,
+			wantViewportScalar: 1492.941,
+		},
+	}
+
+	for _, tt := range tests {
+		got := camera.WorldScalarToScreen(tt.worldScalar)
+
+		assertScalarNear(t, got, tt.wantViewportScalar)
+	}
+}
+
+func TestScreenScalarToWorld(t *testing.T) {
+	camera := render.Camera{
+		World: math2d.NewRect(
+			math2d.Vec2{X: 1, Y: 10},
+			math2d.Vec2{X: 105, Y: 68},
+		),
+		Viewport: math2d.NewRect(
+			math2d.Vec2{X: 10, Y: 100},
+			math2d.Vec2{X: 1920, Y: 1080},
+		),
+	}
+
+	tests := []struct {
+		name            string
+		screenScalar    float64
+		wantWorldScalar float64
+	}{
+		{
+			name:            "center of the world",
+			screenScalar:    833.82,
+			wantWorldScalar: 52.500,
+		},
+		{
+			name:            "init of penalty area",
+			screenScalar:    1405.588,
+			wantWorldScalar: 88.500,
+		},
+		{
+			name:            "penalty spot",
+			screenScalar:    1492.941,
+			wantWorldScalar: 94.000,
+		},
+	}
+
+	for _, tt := range tests {
+		got := camera.ScreenScalarToWorld(tt.screenScalar)
+
+		assertScalarNear(t, got, tt.wantWorldScalar)
+	}
+}
+
 func assertVec2Near(t *testing.T, got, want math2d.Vec2) {
 	t.Helper()
 
 	if !near(got.X, want.X) || !near(got.Y, want.Y) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func assertScalarNear(t *testing.T, got, want float64) {
+	t.Helper()
+
+	if !nearScalar(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }

@@ -9,17 +9,21 @@ type Command interface {
 
 // DrawRect describes a filled rectangle draw command.
 type DrawRect struct {
-	Rect  math2d.Rect
-	Fill  Color
-	Layer int
+	Rect        math2d.Rect
+	Fill        Color
+	Stroke      Color
+	StrokeWidth float64
+	Layer       int
 }
 
 // DrawCircle describes a filled circle draw command.
 type DrawCircle struct {
-	Center math2d.Vec2
-	Radius float64
-	Fill   Color
-	Layer  int
+	Center      math2d.Vec2
+	Radius      float64
+	Fill        Color
+	Stroke      Color
+	StrokeWidth float64
+	Layer       int
 }
 
 // DrawLine describes a line draw command.

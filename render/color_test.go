@@ -87,3 +87,8 @@ func near(a, b float64) bool {
 	const epsilon = 0.000001
 	return math.Abs(a-b) <= epsilon
 }
+
+func nearScalar(a, b float64) bool {
+	const epsilon = 0.001
+	return math.Abs(a-b) <= epsilon
+}

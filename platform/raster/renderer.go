@@ -52,7 +52,14 @@ func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 		int(screenMax.Y),
 	)
 
-	fillRect(img, rect, toRGBA(command.Fill))
+	if command.Fill.A > 0 {
+		fillRect(img, rect, toRGBA(command.Fill))
+	}
+
+	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
+		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
+		strokeRect(img, rect, int(strokeWidth), toRGBA(command.Stroke))
+	}
 }
 
 func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
@@ -62,7 +69,15 @@ func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	viewportSize := r.Camera.Viewport.Size()
 	radius := command.Radius * (viewportSize.X / worldSize.X)
 
-	fillCircle(img, center, radius, toRGBA(command.Fill))
+	if command.Fill.A > 0 {
+		fillCircle(img, center, radius, toRGBA(command.Fill))
+	}
+
+	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
+		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
+		strokeCircle(img, center, radius, strokeWidth, toRGBA(command.Stroke))
+	}
+
 }
 
 func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
@@ -147,6 +162,75 @@ func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGB
 			}
 		}
 	}
+}
+
+func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) {
+	if width <= 0 {
+		return
+	}
+
+	// top
+	fillRect(img, image.Rect(
+		rect.Min.X,
+		rect.Min.Y,
+		rect.Max.X,
+		rect.Min.Y+width), c)
+
+	// bottom
+	fillRect(img, image.Rect(
+		rect.Min.X,
+		rect.Max.Y-width,
+		rect.Max.X,
+		rect.Max.Y), c)
+
+	// left
+	fillRect(img, image.Rect(
+		rect.Min.X,
+		rect.Min.Y,
+		rect.Min.X+width,
+		rect.Max.Y), c)
+
+	// right
+	fillRect(img, image.Rect(
+		rect.Max.X-width,
+		rect.Min.Y,
+		rect.Max.X,
+		rect.Max.Y), c)
+}
+
+func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width float64, c color.RGBA) {
+	if radius <= 0 || width <= 0 {
+		return
+	}
+
+	outerRadius := radius
+	innerRadius := radius - width
+	if innerRadius < 0 {
+		innerRadius = 0
+	}
+
+	outerSq := outerRadius * outerRadius
+	innerSq := innerRadius * innerRadius
+
+	minX := int(center.X - outerRadius)
+	maxX := int(center.X + outerRadius)
+	minY := int(center.Y - outerRadius)
+	maxY := int(center.Y + outerRadius)
+
+	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			dx := float64(x) + 0.5 - center.X
+			dy := float64(y) + 0.5 - center.Y
+			distSq := dx*dx + dy*dy
+
+			if distSq >= innerSq && distSq <= outerSq {
+				img.SetRGBA(x, y, c)
+			}
+		}
+	}
+
 }
 
 func minFloat(a, b float64) float64 {
