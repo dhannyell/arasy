@@ -11,97 +11,129 @@ import (
 
 func main() {
 	renderer := raster.Renderer{
-		Width:  800,
-		Height: 600,
+		Width:  1920,
+		Height: 1080,
 		Camera: render.Camera{
 			World: math2d.NewRect(
 				math2d.Vec2{X: 0, Y: 0},
-				math2d.Vec2{X: 100, Y: 75},
+				math2d.Vec2{X: 115.5, Y: 74.8},
 			),
 			Viewport: math2d.NewRect(
 				math2d.Vec2{X: 0, Y: 0},
-				math2d.Vec2{X: 800, Y: 600},
+				math2d.Vec2{X: 1920, Y: 1080},
 			),
 		},
 		Clear: render.RGBA(0.05, 0.08, 0.10, 1),
 	}
 
 	img := renderer.Render([]render.Command{
+		// Background
 		render.DrawRect{
 			Rect: math2d.NewRect(
-				math2d.Vec2{X: 10, Y: 10},
-				math2d.Vec2{X: 80, Y: 55},
+				math2d.Vec2{X: 0, Y: 0},
+				math2d.Vec2{X: 115.5, Y: 74.8},
 			),
-			Fill: render.RGBA(0.1, 0.55, 0.2, 1),
+			Fill:  render.RGBA(0.22, 0.49, 0.17, 1),
+			Layer: 0,
 		},
+		// Group of small rectangles to simulate grass height difference effect
 		render.DrawRect{
 			Rect: math2d.NewRect(
-				math2d.Vec2{X: 49, Y: 10},
-				math2d.Vec2{X: 2, Y: 55},
+				math2d.Vec2{X: 0, Y: 3},
+				math2d.Vec2{X: 115.5, Y: 9.715},
 			),
-			Fill: render.RGBA(0.9, 0.9, 0.9, 1),
-		},
-		render.DrawLine{
-			From:  math2d.Vec2{X: 10, Y: 10},
-			To:    math2d.Vec2{X: 90, Y: 10},
-			Width: 0.35,
-			Color: render.RGBA(1, 1, 1, 1),
-		},
-		render.DrawLine{
-			From:  math2d.Vec2{X: 90, Y: 10},
-			To:    math2d.Vec2{X: 90, Y: 65},
-			Width: 0.35,
-			Color: render.RGBA(1, 1, 1, 1),
-		},
-		render.DrawLine{
-			From:  math2d.Vec2{X: 90, Y: 65},
-			To:    math2d.Vec2{X: 10, Y: 65},
-			Width: 0.35,
-			Color: render.RGBA(1, 1, 1, 1),
-		},
-		render.DrawLine{
-			From:  math2d.Vec2{X: 10, Y: 65},
-			To:    math2d.Vec2{X: 10, Y: 10},
-			Width: 0.35,
-			Color: render.RGBA(1, 1, 1, 1),
-		},
-		render.DrawLine{
-			From:  math2d.Vec2{X: 50, Y: 10},
-			To:    math2d.Vec2{X: 50, Y: 65},
-			Width: 0.25,
-			Color: render.RGBA(1, 1, 1, 1),
+			Fill:  render.RGBA(0.14, 0.33, 0.11, 1),
+			Layer: 1,
 		},
 		render.DrawRect{
 			Rect: math2d.NewRect(
-				math2d.Vec2{X: 45, Y: 30},
-				math2d.Vec2{X: 10, Y: 10},
+				math2d.Vec2{X: 0, Y: 22.43},
+				math2d.Vec2{X: 115.5, Y: 9.715},
 			),
-			Fill: render.RGBA(1, 1, 1, 1),
+			Fill:  render.RGBA(0.14, 0.33, 0.11, 1),
+			Layer: 1,
 		},
-		render.DrawCircle{
-			Center: math2d.Vec2{X: 30, Y: 35},
-			Radius: 2.5,
-			Fill:   render.RGBA(0.9, 0.1, 0.1, 1),
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 0, Y: 41.86},
+				math2d.Vec2{X: 115.5, Y: 9.715},
+			),
+			Fill:  render.RGBA(0.14, 0.33, 0.11, 1),
+			Layer: 1,
 		},
-		render.DrawCircle{
-			Center: math2d.Vec2{X: 35, Y: 28},
-			Radius: 2.5,
-			Fill:   render.RGBA(0.9, 0.1, 0.1, 1),
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 0, Y: 61.29},
+				math2d.Vec2{X: 115.5, Y: 9.715},
+			),
+			Fill:  render.RGBA(0.14, 0.33, 0.11, 1),
+			Layer: 1,
 		},
-		render.DrawCircle{
-			Center: math2d.Vec2{X: 70, Y: 35},
-			Radius: 2.5,
-			Fill:   render.RGBA(0.1, 0.25, 0.95, 1),
+		// Field with margin
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 5.25, Y: 3.4},
+				math2d.Vec2{X: 105, Y: 68},
+			),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
 		},
+		// Center Field Circle
 		render.DrawCircle{
-			Center: math2d.Vec2{X: 65, Y: 42},
-			Radius: 2.5,
-			Fill:   render.RGBA(0.1, 0.25, 0.95, 1),
+			Radius:      9.15,
+			Center:      math2d.Vec2{X: 57.75, Y: 37.2},
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
 		},
-		render.DrawCircle{
-			Center: math2d.Vec2{X: 52, Y: 36},
-			Radius: 1,
-			Fill:   render.RGBA(1, 1, 1, 1),
+		// Left Penalty area
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 5.25, Y: 16.24},
+				math2d.Vec2{X: 16.5, Y: 40.32},
+			),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
+		},
+		// Left Goal area
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 5.25, Y: 28.24},
+				math2d.Vec2{X: 5.5, Y: 18.32},
+			),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
+		},
+		// Right Penalty area
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 93.75, Y: 16.24},
+				math2d.Vec2{X: 16.5, Y: 40.32},
+			),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
+		},
+		// Right Goal area
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 104.75, Y: 28.24},
+				math2d.Vec2{X: 5.5, Y: 18.32},
+			),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 0.3,
+			Layer:       2,
+		},
+		// Center line
+		render.DrawLine{
+			From:  math2d.Vec2{X: 57.75, Y: 3.4},
+			To:    math2d.Vec2{X: 57.75, Y: 71.4},
+			Width: 0.3,
+			Color: render.RGBA(1, 1, 1, 1),
+			Layer: 3,
 		},
 	})
 

@@ -276,19 +276,39 @@ func TestRectTouchesOrOverlaps(t *testing.T) {
 }
 
 func TestNewRectFromCorners(t *testing.T) {
-	got := math2d.NewRectFromCorners(
-		math2d.Vec2{X: 10, Y: 20},
-		math2d.Vec2{X: 30, Y: 40},
-	)
-
-	got.Width()
-
-	want := math2d.Rect{
-		Min: math2d.Vec2{X: 10, Y: 20},
-		Max: math2d.Vec2{X: 30, Y: 40},
+	tests := []struct {
+		name           string
+		firstCorner    math2d.Vec2
+		oppositeCorner math2d.Vec2
+		want           math2d.Rect
+	}{
+		{
+			name:           "ordered corners",
+			firstCorner:    math2d.Vec2{X: 10, Y: 20},
+			oppositeCorner: math2d.Vec2{X: 30, Y: 40},
+			want: math2d.Rect{
+				Min: math2d.Vec2{X: 10, Y: 20},
+				Max: math2d.Vec2{X: 30, Y: 40},
+			},
+		},
+		{
+			name:           "reversed corners",
+			firstCorner:    math2d.Vec2{X: 30, Y: 40},
+			oppositeCorner: math2d.Vec2{X: 10, Y: 20},
+			want: math2d.Rect{
+				Min: math2d.Vec2{X: 10, Y: 20},
+				Max: math2d.Vec2{X: 30, Y: 40},
+			},
+		},
 	}
 
-	if got != want {
-		t.Fatalf("got %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := math2d.NewRectFromCorners(tt.firstCorner, tt.oppositeCorner)
+
+			if got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -15,11 +15,17 @@ func NewRect(pos Vec2, size Vec2) Rect {
 	}
 }
 
-// NewRectFromCorners creates a rectangle from position of first corner and position of opposite corner
+// NewRectFromCorners creates a rectangle from two opposite corners.
 func NewRectFromCorners(firstCorner, oppositeCorner Vec2) Rect {
 	return Rect{
-		Min: firstCorner,
-		Max: oppositeCorner,
+		Min: Vec2{
+			X: minFloat(firstCorner.X, oppositeCorner.X),
+			Y: minFloat(firstCorner.Y, oppositeCorner.Y),
+		},
+		Max: Vec2{
+			X: maxFloat(firstCorner.X, oppositeCorner.X),
+			Y: maxFloat(firstCorner.Y, oppositeCorner.Y),
+		},
 	}
 }
 
@@ -72,4 +78,20 @@ func (r Rect) TouchesOrOverlaps(other Rect) bool {
 		r.Max.X >= other.Min.X &&
 		r.Min.Y <= other.Max.Y &&
 		r.Max.Y >= other.Min.Y
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+
+	return b
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+
+	return b
 }

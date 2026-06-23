@@ -3,6 +3,7 @@ package raster
 import (
 	"image"
 	"image/color"
+	"math"
 	"sort"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -58,16 +59,14 @@ func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 
 	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
 		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
-		strokeRect(img, rect, int(strokeWidth), toRGBA(command.Stroke))
+		strokeRect(img, rect, int(math.Ceil(strokeWidth)), toRGBA(command.Stroke))
 	}
 }
 
 func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	center := r.Camera.WorldToScreen(command.Center)
 
-	worldSize := r.Camera.World.Size()
-	viewportSize := r.Camera.Viewport.Size()
-	radius := command.Radius * (viewportSize.X / worldSize.X)
+	radius := r.Camera.WorldScalarToScreen(command.Radius)
 
 	if command.Fill.A > 0 {
 		fillCircle(img, center, radius, toRGBA(command.Fill))
@@ -77,16 +76,13 @@ func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
 		strokeCircle(img, center, radius, strokeWidth, toRGBA(command.Stroke))
 	}
-
 }
 
 func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 	from := r.Camera.WorldToScreen(command.From)
 	to := r.Camera.WorldToScreen(command.To)
 
-	worldSize := r.Camera.World.Size()
-	viewportSize := r.Camera.Viewport.Size()
-	width := command.Width * (viewportSize.X / worldSize.X)
+	width := r.Camera.WorldScalarToScreen(command.Width)
 
 	drawLine(img, from, to, width, toRGBA(command.Color))
 }

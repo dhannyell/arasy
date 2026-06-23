@@ -8,9 +8,9 @@ import (
 
 // Camera maps world coordinates to viewport coordinates.
 type Camera struct {
-	// World first vector represents the initial position and the second the size
+	// World is the visible area in world coordinates.
 	World math2d.Rect
-	// Viewport first vector represents the initial position and the second the size
+	// Viewport is the target area in screen or image coordinates.
 	Viewport math2d.Rect
 }
 
@@ -42,8 +42,8 @@ func (c Camera) ScreenToWorld(point math2d.Vec2) math2d.Vec2 {
 
 // WorldScalarToScreen converts a scalar world measurement to viewport units.
 //
-// It uses the horizontal camera scale. This is suitable when the world and
-// viewport have matching aspect ratios.
+// It uses the smaller axis scale to avoid making scalar values too large
+// when world and viewport have different aspect ratios.
 func (c Camera) WorldScalarToScreen(value float64) float64 {
 	if c.World.Width() == 0 || c.World.Height() == 0 {
 		return 0
@@ -57,8 +57,12 @@ func (c Camera) WorldScalarToScreen(value float64) float64 {
 
 // ScreenScalarToWorld converts a scalar viewport measurement to world units.
 //
-// It uses the horizontal camera scale.
+// It uses the smaller axis scale to match WorldScalarToScreen.
 func (c Camera) ScreenScalarToWorld(value float64) float64 {
+	if c.World.Width() == 0 || c.World.Height() == 0 {
+		return 0
+	}
+
 	scaleX := c.Viewport.Width() / c.World.Width()
 	scaleY := c.Viewport.Height() / c.World.Height()
 
