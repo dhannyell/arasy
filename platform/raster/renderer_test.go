@@ -123,6 +123,45 @@ func TestRendererClipsCircleToImageBounds(t *testing.T) {
 	assertPixel(t, img.At(3, 3), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 }
 
+func TestRendererDrawsPoint(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawPoint{
+			Center: math2d.Vec2{X: 5, Y: 5},
+			Radius: 1,
+			Color:  render.RGBA(1, 1, 1, 1),
+		},
+	})
+
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(4, 4), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(3, 3), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
+func TestRendererDrawsPointLayerOnTop(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 4, Y: 4},
+				math2d.Vec2{X: 3, Y: 3},
+			),
+			Fill:  render.RGBA(1, 0, 0, 1),
+			Layer: 1,
+		},
+		render.DrawPoint{
+			Center: math2d.Vec2{X: 5, Y: 5},
+			Radius: 1,
+			Color:  render.RGBA(0, 0, 1, 1),
+			Layer:  2,
+		},
+	})
+
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 0, G: 0, B: 255, A: 255})
+}
+
 func TestRendererDrawsHorizontalLine(t *testing.T) {
 	renderer := newTestRenderer()
 

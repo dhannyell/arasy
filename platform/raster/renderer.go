@@ -34,6 +34,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawRect(img, command)
 		case render.DrawCircle:
 			r.drawCircle(img, command)
+		case render.DrawPoint:
+			r.drawPoint(img, command)
 		case render.DrawLine:
 			r.drawLine(img, command)
 		case render.DrawArc:
@@ -78,6 +80,13 @@ func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
 		strokeCircle(img, center, radius, strokeWidth, toRGBA(command.Stroke))
 	}
+}
+
+func (r Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
+	center := r.Camera.WorldToScreen(command.Center)
+	radius := r.Camera.WorldScalarToScreen(command.Radius)
+
+	fillCircle(img, center, radius, toRGBA(command.Color))
 }
 
 func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
@@ -350,6 +359,8 @@ func commandLayer(command render.Command) int {
 	case render.DrawRect:
 		return command.Layer
 	case render.DrawCircle:
+		return command.Layer
+	case render.DrawPoint:
 		return command.Layer
 	case render.DrawLine:
 		return command.Layer

@@ -23,6 +23,10 @@ func main() {
 		X: fieldLeft + penaltyMarkDistance,
 		Y: fieldTop + 34,
 	}
+	centerSpot := math2d.Vec2{
+		X: 57.75,
+		Y: fieldTop + 34,
+	}
 
 	rightPenaltySpot := math2d.Vec2{
 		X: fieldRight - penaltyMarkDistance,
@@ -41,7 +45,7 @@ func main() {
 				math2d.Vec2{X: 0, Y: 0},
 				math2d.Vec2{X: 1920, Y: 1080},
 			),
-			Aspect: render.AspectStretch,
+			Aspect: render.AspectExpand,
 		},
 		Clear: render.RGBA(0.05, 0.08, 0.10, 1),
 	}
@@ -102,10 +106,17 @@ func main() {
 		// Center Field Circle
 		render.DrawCircle{
 			Radius:      9.15,
-			Center:      math2d.Vec2{X: 57.75, Y: 37.2},
+			Center:      centerSpot,
 			Stroke:      render.RGBA(1, 1, 1, 1),
 			StrokeWidth: 0.3,
 			Layer:       2,
+		},
+		// Center mark
+		render.DrawPoint{
+			Center: centerSpot,
+			Radius: 0.35,
+			Color:  render.RGBA(1, 1, 1, 1),
+			Layer:  3,
 		},
 		// Left Penalty area
 		render.DrawRect{
@@ -137,6 +148,13 @@ func main() {
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
 		},
+		// Left penalty mark
+		render.DrawPoint{
+			Center: leftPenaltySpot,
+			Radius: 0.35,
+			Color:  render.RGBA(1, 1, 1, 1),
+			Layer:  3,
+		},
 		// Right Penalty area
 		render.DrawRect{
 			Rect: math2d.NewRect(
@@ -156,6 +174,13 @@ func main() {
 			Width:      0.3,
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
+		},
+		// Right penalty mark
+		render.DrawPoint{
+			Center: rightPenaltySpot,
+			Radius: 0.35,
+			Color:  render.RGBA(1, 1, 1, 1),
+			Layer:  3,
 		},
 		// Right Goal area
 		render.DrawRect{

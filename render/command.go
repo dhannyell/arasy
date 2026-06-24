@@ -26,6 +26,14 @@ type DrawCircle struct {
 	Layer       int
 }
 
+// DrawPoint describes a filled point marker draw command.
+type DrawPoint struct {
+	Center math2d.Vec2
+	Radius float64
+	Color  Color
+	Layer  int
+}
+
 // DrawLine describes a line draw command.
 type DrawLine struct {
 	From  math2d.Vec2
@@ -57,6 +65,7 @@ type DrawArc struct {
 
 func (DrawRect) isRenderCommand()   {}
 func (DrawCircle) isRenderCommand() {}
+func (DrawPoint) isRenderCommand()  {}
 func (DrawLine) isRenderCommand()   {}
 func (DrawText) isRenderCommand()   {}
 func (DrawArc) isRenderCommand()    {}
