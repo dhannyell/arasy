@@ -8,6 +8,7 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/raster"
 	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/scene"
 )
 
 const (
@@ -82,7 +83,23 @@ func main() {
 		Clear: clearColor,
 	}
 
-	img := renderer.Render(buildFieldCommands())
+	world := scene.NewWorld()
+
+	player := world.Spawn()
+	world.SetTransform(player, scene.Transform{
+		Position: math2d.Vec2{X: 57.75, Y: 37.4},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleSprite(player, scene.CircleSprite{
+		Radius: 1.2,
+		Color:  render.RGBA(0.1, 0.2, 1, 1),
+		Layer:  10,
+	})
+
+	commands := buildFieldCommands()
+	commands = append(commands, world.RenderCommands()...)
+
+	img := renderer.Render(commands)
 
 	if err := os.MkdirAll("output", 0755); err != nil {
 		panic(err)
