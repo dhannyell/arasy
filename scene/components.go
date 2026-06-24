@@ -22,3 +22,7 @@ type CircleSprite struct {
 type Velocity struct {
 	Linear math2d.Vec2
 }
+
+type CircleCollider struct {
+	Radius float64
+}

@@ -19,7 +19,7 @@ const (
 	imageHeight = 1080
 	gifWidth    = 640
 	gifHeight   = 360
-	frameCount  = 45
+	frameCount  = 200
 	frameDelay  = 6
 	frameDT     = 1.0 / 30.0
 
@@ -132,7 +132,12 @@ func savePNG(path string, img image.Image) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+
+		}
+	}(file)
 
 	return png.Encode(file, img)
 }
@@ -152,6 +157,10 @@ func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
 		animation.Delay = append(animation.Delay, frameDelay)
 
 		world.Integrate(frameDT)
+		world.BounceCirclesInside(math2d.Rect{
+			Min: fieldOrigin,
+			Max: fieldSize,
+		})
 	}
 
 	file, err := os.Create(path)
@@ -201,6 +210,7 @@ func buildDemoWorld() *scene.World {
 	world.SetVelocity(ball, scene.Velocity{
 		Linear: math2d.Vec2{X: 7.5, Y: -2.5},
 	})
+	world.SetCircleCollider(ball, scene.CircleCollider{Radius: 0.45})
 
 	homePositions := []math2d.Vec2{
 		{X: fieldLeft + 18, Y: fieldCenter.Y},
