@@ -18,6 +18,7 @@ func TestNewWorldInitializesComponentStores(t *testing.T) {
 	entity := world.Spawn()
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
+	world.SetVelocity(entity, scene.Velocity{})
 }
 
 func TestWorldSpawnReturnsUniqueEntityIDs(t *testing.T) {
@@ -79,15 +80,37 @@ func TestWorldStoresAndReadsCircleSprite(t *testing.T) {
 	}
 }
 
+func TestWorldStoresAndReadsVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	velocity := scene.Velocity{
+		Linear: math2d.Vec2{X: 3, Y: -2},
+	}
+
+	world.SetVelocity(entity, velocity)
+
+	got, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	if got != velocity {
+		t.Fatalf("got %+v, want %+v", got, velocity)
+	}
+}
+
 func TestWorldRemovesComponents(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()
 
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
+	world.SetVelocity(entity, scene.Velocity{})
 
 	world.RemoveTransform(entity)
 	world.RemoveCircleSprite(entity)
+	world.RemoveVelocity(entity)
 
 	if _, ok := world.Transform(entity); ok {
 		t.Fatal("expected transform to be removed")
@@ -95,6 +118,10 @@ func TestWorldRemovesComponents(t *testing.T) {
 
 	if _, ok := world.CircleSprite(entity); ok {
 		t.Fatal("expected circle sprite to be removed")
+	}
+
+	if _, ok := world.Velocity(entity); ok {
+		t.Fatal("expected velocity to be removed")
 	}
 }
 
@@ -104,6 +131,7 @@ func TestWorldDespawnRemovesAllEntityComponents(t *testing.T) {
 
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
+	world.SetVelocity(entity, scene.Velocity{})
 
 	world.Despawn(entity)
 
@@ -113,6 +141,60 @@ func TestWorldDespawnRemovesAllEntityComponents(t *testing.T) {
 
 	if _, ok := world.CircleSprite(entity); ok {
 		t.Fatal("expected circle sprite to be removed")
+	}
+
+	if _, ok := world.Velocity(entity); ok {
+		t.Fatal("expected velocity to be removed")
+	}
+}
+
+func TestWorldIntegrateMovesEntityWithTransformAndVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetTransform(entity, scene.Transform{
+		Position: math2d.Vec2{X: 10, Y: 20},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 4, Y: -2},
+	})
+
+	world.Integrate(0.5)
+
+	transform, ok := world.Transform(entity)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	want := math2d.Vec2{X: 12, Y: 19}
+	if transform.Position != want {
+		t.Fatalf("got position %+v, want %+v", transform.Position, want)
+	}
+}
+
+func TestWorldIntegrateSkipsEntityWithoutTransform(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 4, Y: -2},
+	})
+
+	world.Integrate(0.5)
+
+	if _, ok := world.Transform(entity); ok {
+		t.Fatal("expected transform to stay absent")
+	}
+
+	velocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to stay present")
+	}
+
+	want := scene.Velocity{Linear: math2d.Vec2{X: 4, Y: -2}}
+	if velocity != want {
+		t.Fatalf("got velocity %+v, want %+v", velocity, want)
 	}
 }
 

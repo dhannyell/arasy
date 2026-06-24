@@ -1,12 +1,15 @@
 package scene
 
-import "github.com/dhannyell/frameforge/render"
+import (
+	"github.com/dhannyell/frameforge/render"
+)
 
 type World struct {
 	nextID EntityID
 
 	Transforms    map[EntityID]Transform
 	CircleSprites map[EntityID]CircleSprite
+	Velocities    map[EntityID]Velocity
 }
 
 func NewWorld() *World {
@@ -14,6 +17,7 @@ func NewWorld() *World {
 		nextID:        1,
 		Transforms:    make(map[EntityID]Transform),
 		CircleSprites: make(map[EntityID]CircleSprite),
+		Velocities:    make(map[EntityID]Velocity),
 	}
 }
 
@@ -27,6 +31,7 @@ func (w *World) Spawn() EntityID {
 func (w *World) Despawn(id EntityID) {
 	delete(w.Transforms, id)
 	delete(w.CircleSprites, id)
+	delete(w.Velocities, id)
 }
 
 func (w *World) SetTransform(id EntityID, transform Transform) {
@@ -53,6 +58,31 @@ func (w *World) RemoveTransform(id EntityID) {
 
 func (w *World) RemoveCircleSprite(id EntityID) {
 	delete(w.CircleSprites, id)
+}
+
+func (w *World) SetVelocity(id EntityID, velocity Velocity) {
+	w.Velocities[id] = velocity
+}
+
+func (w *World) Velocity(id EntityID) (Velocity, bool) {
+	velocity, ok := w.Velocities[id]
+	return velocity, ok
+}
+
+func (w *World) RemoveVelocity(id EntityID) {
+	delete(w.Velocities, id)
+}
+
+func (w *World) Integrate(dt float64) {
+	for id, velocity := range w.Velocities {
+		transform, ok := w.Transforms[id]
+		if !ok {
+			continue
+		}
+
+		transform.Position = transform.Position.Add(velocity.Linear.Mul(dt))
+		w.Transforms[id] = transform
+	}
 }
 
 func (w *World) RenderCommands() []render.Command {

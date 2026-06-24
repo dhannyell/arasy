@@ -18,3 +18,7 @@ type CircleSprite struct {
 	Color  render.Color
 	Layer  int
 }
+
+type Velocity struct {
+	Linear math2d.Vec2
+}

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"image"
+	"image/color/palette"
+	"image/gif"
 	"image/png"
 	"math"
 	"os"
@@ -14,6 +17,11 @@ import (
 const (
 	imageWidth  = 1920
 	imageHeight = 1080
+	gifWidth    = 640
+	gifHeight   = 360
+	frameCount  = 45
+	frameDelay  = 6
+	frameDT     = 1.0 / 30.0
 
 	worldWidth  = 115.5
 	worldHeight = 74.8
@@ -40,12 +48,17 @@ const (
 	layerStripes  = 1
 	layerMarkings = 2
 	layerPoints   = 3
+	layerPlayers  = 10
+	layerBall     = 11
 )
 
 var (
 	grassColor      = render.RGBA(0.22, 0.49, 0.17, 1)
 	darkGrassColor  = render.RGBA(0.14, 0.33, 0.11, 1)
 	lineColor       = render.RGBA(1, 1, 1, 1)
+	homeTeamColor   = render.RGBA(0.08, 0.22, 0.95, 1)
+	awayTeamColor   = render.RGBA(0.95, 0.12, 0.12, 1)
+	ballColor       = render.RGBA(0.98, 0.98, 0.94, 1)
 	clearColor      = render.RGBA(0.05, 0.08, 0.10, 1)
 	worldOrigin     = math2d.Vec2{X: 0, Y: 0}
 	worldSize       = math2d.Vec2{X: worldWidth, Y: worldHeight}
@@ -83,18 +96,7 @@ func main() {
 		Clear: clearColor,
 	}
 
-	world := scene.NewWorld()
-
-	player := world.Spawn()
-	world.SetTransform(player, scene.Transform{
-		Position: math2d.Vec2{X: 57.75, Y: 37.4},
-		Scale:    math2d.Vec2{X: 1, Y: 1},
-	})
-	world.SetCircleSprite(player, scene.CircleSprite{
-		Radius: 1.2,
-		Color:  render.RGBA(0.1, 0.2, 1, 1),
-		Layer:  10,
-	})
+	world := buildDemoWorld()
 
 	commands := buildFieldCommands()
 	commands = append(commands, world.RenderCommands()...)
@@ -105,17 +107,77 @@ func main() {
 		panic(err)
 	}
 
-	file, err := os.Create("output/renderdemo.png")
-	if err != nil {
+	if err := savePNG("output/renderdemo.png", img); err != nil {
 		panic(err)
 	}
-	defer file.Close()
 
-	if err := png.Encode(file, img); err != nil {
+	gifRenderer := renderer
+	gifRenderer.Width = gifWidth
+	gifRenderer.Height = gifHeight
+	gifRenderer.Camera.Viewport = math2d.NewRect(
+		viewportOrigin,
+		math2d.Vec2{X: gifWidth, Y: gifHeight},
+	)
+
+	if err := saveGIF("output/renderdemo.gif", gifRenderer, buildDemoWorld()); err != nil {
 		panic(err)
 	}
 
 	println("wrote output/renderdemo.png")
+	println("wrote output/renderdemo.gif")
+}
+
+func savePNG(path string, img image.Image) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	return png.Encode(file, img)
+}
+
+func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
+	animation := &gif.GIF{
+		Image: make([]*image.Paletted, 0, frameCount),
+		Delay: make([]int, 0, frameCount),
+	}
+
+	for range frameCount {
+		commands := buildFieldCommands()
+		commands = append(commands, world.RenderCommands()...)
+
+		img := renderer.Render(commands)
+		animation.Image = append(animation.Image, palettedImage(img))
+		animation.Delay = append(animation.Delay, frameDelay)
+
+		world.Integrate(frameDT)
+	}
+
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+		}
+	}(file)
+
+	return gif.EncodeAll(file, animation)
+}
+
+func palettedImage(img image.Image) *image.Paletted {
+	bounds := img.Bounds()
+	paletted := image.NewPaletted(bounds, palette.Plan9)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			paletted.Set(x, y, img.At(x, y))
+		}
+	}
+
+	return paletted
 }
 
 func buildFieldCommands() []render.Command {
@@ -130,6 +192,66 @@ func buildFieldCommands() []render.Command {
 	commands = append(commands, cornerArcCommands()...)
 
 	return commands
+}
+
+func buildDemoWorld() *scene.World {
+	world := scene.NewWorld()
+
+	ball := spawnCircleEntity(world, fieldCenter, 0.45, ballColor, layerBall)
+	world.SetVelocity(ball, scene.Velocity{
+		Linear: math2d.Vec2{X: 7.5, Y: -2.5},
+	})
+
+	homePositions := []math2d.Vec2{
+		{X: fieldLeft + 18, Y: fieldCenter.Y},
+		{X: fieldLeft + 34, Y: fieldTop + 20},
+		{X: fieldLeft + 34, Y: fieldTop + 48},
+		{X: fieldLeft + 48, Y: fieldCenter.Y},
+	}
+
+	awayPositions := []math2d.Vec2{
+		{X: fieldLeft + fieldWidth - 18, Y: fieldCenter.Y},
+		{X: fieldLeft + fieldWidth - 34, Y: fieldTop + 20},
+		{X: fieldLeft + fieldWidth - 34, Y: fieldTop + 48},
+		{X: fieldLeft + fieldWidth - 48, Y: fieldCenter.Y},
+	}
+
+	for i, position := range homePositions {
+		player := spawnCircleEntity(world, position, 1.2, homeTeamColor, layerPlayers)
+		if i == 3 {
+			world.SetVelocity(player, scene.Velocity{
+				Linear: math2d.Vec2{X: 2, Y: 0},
+			})
+		}
+	}
+
+	for i, position := range awayPositions {
+		player := spawnCircleEntity(world, position, 1.2, awayTeamColor, layerPlayers)
+		if i == 3 {
+			world.SetVelocity(player, scene.Velocity{
+				Linear: math2d.Vec2{X: -2, Y: 0},
+			})
+		}
+	}
+
+	return world
+}
+
+func spawnCircleEntity(world *scene.World, position math2d.Vec2, radius float64, color render.Color, layer int) scene.EntityID {
+	entity := world.Spawn()
+
+	world.SetTransform(entity, scene.Transform{
+		Position: position,
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+
+	world.SetCircleSprite(entity, scene.CircleSprite{
+		Radius: radius,
+		Color:  color,
+		Layer:  layer,
+	})
+
+	return entity
 }
 
 func backgroundCommand() render.Command {
