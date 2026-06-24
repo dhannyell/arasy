@@ -293,8 +293,6 @@ func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, e
 }
 
 func angleBetween(angle float64, start, end float64) bool {
-	const tau = math.Pi * 2
-
 	angle = normalizeAngle(angle)
 	start = normalizeAngle(start)
 	end = normalizeAngle(end)

@@ -9,7 +9,7 @@
 // golden-image style tests and headless rendering. It is deliberately small and
 // dependency-free.
 //
-// It does not currently provide anti-aliasing, text rendering, GPU acceleration
+// It does not currently provide antialiasing, text rendering, GPU acceleration
 // or real-time presentation. Future platform backends can translate the same
 // render commands to Canvas, WebGPU, OpenGL or another rendering target.
 package raster

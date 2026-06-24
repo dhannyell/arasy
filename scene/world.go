@@ -1,10 +1,5 @@
 package scene
 
-import (
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
-)
-
 type World struct {
 	nextID EntityID
 
@@ -88,75 +83,4 @@ func (w *World) SetCircleCollider(id EntityID, collider CircleCollider) {
 
 func (w *World) RemoveCircleCollider(id EntityID) {
 	delete(w.CircleColliders, id)
-}
-
-func (w *World) Integrate(dt float64) {
-	for id, velocity := range w.Velocities {
-		transform, ok := w.Transforms[id]
-		if !ok {
-			continue
-		}
-
-		transform.Position = transform.Position.Add(velocity.Linear.Mul(dt))
-		w.Transforms[id] = transform
-	}
-}
-
-func (w *World) BounceCirclesInside(bounds math2d.Rect) {
-	for id, collider := range w.CircleColliders {
-		transform, ok := w.Transforms[id]
-		if !ok {
-			continue
-		}
-
-		velocity, ok := w.Velocities[id]
-		if !ok {
-			continue
-		}
-
-		radius := collider.Radius
-
-		if transform.Position.X-radius < bounds.Min.X {
-			transform.Position.X = bounds.Min.X + radius
-			velocity.Linear.X = -velocity.Linear.X
-		}
-
-		if transform.Position.X+radius > bounds.Max.X {
-			transform.Position.X = bounds.Max.X - radius
-			velocity.Linear.X = -velocity.Linear.X
-		}
-
-		if transform.Position.Y-radius < bounds.Min.Y {
-			transform.Position.Y = bounds.Min.Y + radius
-			velocity.Linear.Y = -velocity.Linear.Y
-		}
-
-		if transform.Position.Y+radius > bounds.Max.Y {
-			transform.Position.Y = bounds.Max.Y - radius
-			velocity.Linear.Y = -velocity.Linear.Y
-		}
-
-		w.Transforms[id] = transform
-		w.Velocities[id] = velocity
-	}
-}
-
-func (w *World) RenderCommands() []render.Command {
-	commands := make([]render.Command, 0, len(w.CircleSprites))
-
-	for id, sprite := range w.CircleSprites {
-		transform, ok := w.Transforms[id]
-		if !ok {
-			continue
-		}
-
-		commands = append(commands, render.DrawCircle{
-			Center: transform.Position,
-			Radius: sprite.Radius,
-			Fill:   sprite.Color,
-			Layer:  sprite.Layer,
-		})
-	}
-
-	return commands
 }
