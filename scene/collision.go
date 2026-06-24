@@ -1,6 +1,22 @@
 package scene
 
-import "github.com/dhannyell/frameforge/math2d"
+import (
+	"math"
+	"slices"
+
+	"github.com/dhannyell/frameforge/math2d"
+)
+
+type CircleContact struct {
+	A EntityID
+	B EntityID
+
+	// Normal points from A to B
+	Normal math2d.Vec2
+
+	// Depth is how much the two circles overlap.
+	Depth float64
+}
 
 func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 	for id, collider := range w.CircleColliders {
@@ -39,4 +55,73 @@ func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 		w.Transforms[id] = transform
 		w.Velocities[id] = velocity
 	}
+}
+
+func (w *World) DetectCircleOverlaps() []CircleContact {
+	entities := w.circleColliderEntities()
+	contacts := make([]CircleContact, 0)
+
+	for i := range entities {
+		a := entities[i]
+
+		transformA, ok := w.Transforms[a]
+		if !ok {
+			continue
+		}
+
+		colliderA := w.CircleColliders[a]
+
+		for j := i + 1; j < len(entities); j++ {
+			b := entities[j]
+
+			transformB, ok := w.Transforms[b]
+			if !ok {
+				continue
+			}
+
+			colliderB := w.CircleColliders[b]
+
+			delta := transformB.Position.Sub(transformA.Position)
+			distanceSq := delta.LenSq()
+			radiusSum := colliderA.Radius + colliderB.Radius
+			radiusSumSq := radiusSum * radiusSum
+
+			if distanceSq >= radiusSumSq {
+				continue
+			}
+
+			if distanceSq == 0 {
+				contacts = append(contacts, CircleContact{
+					A:      a,
+					B:      b,
+					Normal: math2d.Vec2{X: 1, Y: 0},
+					Depth:  radiusSum,
+				})
+				continue
+			}
+
+			distance := math.Sqrt(distanceSq)
+
+			contacts = append(contacts, CircleContact{
+				A:      a,
+				B:      b,
+				Normal: delta.Div(distance),
+				Depth:  radiusSum - distance,
+			})
+		}
+	}
+
+	return contacts
+}
+
+func (w *World) circleColliderEntities() []EntityID {
+	entities := make([]EntityID, 0, len(w.CircleColliders))
+
+	for id := range w.CircleColliders {
+		entities = append(entities, id)
+	}
+
+	slices.Sort(entities)
+
+	return entities
 }
