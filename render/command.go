@@ -44,7 +44,19 @@ type DrawText struct {
 	Layer    int
 }
 
+// DrawArc describes an arc stroke draw command.
+type DrawArc struct {
+	Center     math2d.Vec2
+	Radius     float64
+	StartAngle float64
+	EndAngle   float64
+	Width      float64
+	Color      Color
+	Layer      int
+}
+
 func (DrawRect) isRenderCommand()   {}
 func (DrawCircle) isRenderCommand() {}
 func (DrawLine) isRenderCommand()   {}
 func (DrawText) isRenderCommand()   {}
+func (DrawArc) isRenderCommand()    {}

@@ -36,6 +36,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawCircle(img, command)
 		case render.DrawLine:
 			r.drawLine(img, command)
+		case render.DrawArc:
+			r.drawArc(img, command)
 		}
 	}
 
@@ -87,16 +89,6 @@ func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 	drawLine(img, from, to, width, toRGBA(command.Color))
 }
 
-func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
-	bounds := rect.Intersect(img.Bounds())
-
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			img.SetRGBA(x, y, c)
-		}
-	}
-}
-
 func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA) {
 	if width <= 0 {
 		return
@@ -135,6 +127,26 @@ func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA
 			if point.DistanceSq(closest) <= radiusSq {
 				img.SetRGBA(x, y, c)
 			}
+		}
+	}
+}
+
+func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
+	center := r.Camera.WorldToScreen(command.Center)
+
+	radius := r.Camera.WorldScalarToScreen(command.Radius)
+
+	width := r.Camera.WorldScalarToScreen(command.Width)
+
+	strokeArc(img, center, radius, width, command.StartAngle, command.EndAngle, toRGBA(command.Color))
+}
+
+func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
+	bounds := rect.Intersect(img.Bounds())
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			img.SetRGBA(x, y, c)
 		}
 	}
 }
@@ -226,7 +238,74 @@ func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width flo
 			}
 		}
 	}
+}
 
+func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, endAngle float64, c color.RGBA) {
+	if radius <= 0 || width <= 0 {
+		return
+	}
+
+	outerRadius := radius
+	innerRadius := radius - width
+	if innerRadius < 0 {
+		innerRadius = 0
+	}
+
+	outerSq := outerRadius * outerRadius
+	innerSq := innerRadius * innerRadius
+
+	minX := int(center.X - outerRadius)
+	maxX := int(center.X + outerRadius)
+	minY := int(center.Y - outerRadius)
+	maxY := int(center.Y + outerRadius)
+
+	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			dx := float64(x) + 0.5 - center.X
+			dy := float64(y) + 0.5 - center.Y
+
+			distSq := dx*dx + dy*dy
+			if distSq < innerSq || distSq > outerSq {
+				continue
+			}
+
+			angle := math.Atan2(dy, dx)
+			if angle < 0 {
+				angle += math.Pi * 2
+			}
+
+			if angleBetween(angle, startAngle, endAngle) {
+				img.SetRGBA(x, y, c)
+			}
+		}
+	}
+}
+
+func angleBetween(angle float64, start, end float64) bool {
+	const tau = math.Pi * 2
+
+	angle = normalizeAngle(angle)
+	start = normalizeAngle(start)
+	end = normalizeAngle(end)
+
+	if start <= end {
+		return angle >= start && angle <= end
+	}
+
+	return angle >= start || angle <= end
+}
+
+func normalizeAngle(angle float64) float64 {
+	const tau = math.Pi * 2
+
+	angle = math.Mod(angle, tau)
+	if angle < 0 {
+		angle += tau
+	}
+
+	return angle
 }
 
 func minFloat(a, b float64) float64 {
@@ -275,6 +354,8 @@ func commandLayer(command render.Command) int {
 	case render.DrawLine:
 		return command.Layer
 	case render.DrawText:
+		return command.Layer
+	case render.DrawArc:
 		return command.Layer
 	default:
 		return 0

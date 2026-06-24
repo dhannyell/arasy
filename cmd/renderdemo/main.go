@@ -2,6 +2,7 @@ package main
 
 import (
 	"image/png"
+	"math"
 	"os"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -126,6 +127,47 @@ func main() {
 			Stroke:      render.RGBA(1, 1, 1, 1),
 			StrokeWidth: 0.3,
 			Layer:       2,
+		},
+		// top-left corner
+		render.DrawArc{
+			Center:     math2d.Vec2{X: 5.25, Y: 3.4},
+			Radius:     1,
+			StartAngle: 0,
+			EndAngle:   math.Pi / 2,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
+		},
+		// top-right corner
+		render.DrawArc{
+			Center:     math2d.Vec2{X: 110.25, Y: 3.4},
+			Radius:     1,
+			StartAngle: math.Pi / 2,
+			EndAngle:   math.Pi,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
+		},
+
+		// bottom-right corner
+		render.DrawArc{
+			Center:     math2d.Vec2{X: 110.25, Y: 71.4},
+			Radius:     1,
+			StartAngle: math.Pi,
+			EndAngle:   3 * math.Pi / 2,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
+		},
+		// bottom-left corner
+		render.DrawArc{
+			Center:     math2d.Vec2{X: 5.25, Y: 71.4},
+			Radius:     1,
+			StartAngle: 3 * math.Pi / 2,
+			EndAngle:   2 * math.Pi,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
 		},
 		// Center line
 		render.DrawLine{

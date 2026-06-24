@@ -286,6 +286,25 @@ func TestRendererDrawsCircleWithStroke(t *testing.T) {
 	assertPixel(t, img.At(9, 5), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 }
 
+func TestRendererDrawsArc(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawArc{
+			Center:     math2d.Vec2{X: 5, Y: 5},
+			Radius:     3,
+			StartAngle: 0,
+			EndAngle:   1.5707963267948966,
+			Width:      1,
+			Color:      render.RGBA(1, 1, 1, 1),
+		},
+	})
+
+	assertPixel(t, img.At(7, 5), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(5, 7), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(3, 5), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
 func assertPixel(t *testing.T, got color.Color, want color.RGBA) {
 	t.Helper()
 
