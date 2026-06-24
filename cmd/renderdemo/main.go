@@ -11,6 +11,24 @@ import (
 )
 
 func main() {
+	const cornerArcInset = 0.08
+
+	penaltyMarkDistance := 11.00
+	penaltyArcRadius := 9.15
+	fieldLeft := 5.25
+	fieldTop := 3.4
+	fieldRight := 110.25
+
+	leftPenaltySpot := math2d.Vec2{
+		X: fieldLeft + penaltyMarkDistance,
+		Y: fieldTop + 34,
+	}
+
+	rightPenaltySpot := math2d.Vec2{
+		X: fieldRight - penaltyMarkDistance,
+		Y: fieldTop + 34,
+	}
+
 	renderer := raster.Renderer{
 		Width:  1920,
 		Height: 1080,
@@ -23,6 +41,7 @@ func main() {
 				math2d.Vec2{X: 0, Y: 0},
 				math2d.Vec2{X: 1920, Y: 1080},
 			),
+			Aspect: render.AspectStretch,
 		},
 		Clear: render.RGBA(0.05, 0.08, 0.10, 1),
 	}
@@ -108,6 +127,16 @@ func main() {
 			StrokeWidth: 0.3,
 			Layer:       2,
 		},
+		// Lef penalty area Arc
+		render.DrawArc{
+			Center:     leftPenaltySpot,
+			Radius:     penaltyArcRadius,
+			StartAngle: -0.95,
+			EndAngle:   0.95,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
+		},
 		// Right Penalty area
 		render.DrawRect{
 			Rect: math2d.NewRect(
@@ -117,6 +146,16 @@ func main() {
 			Stroke:      render.RGBA(1, 1, 1, 1),
 			StrokeWidth: 0.3,
 			Layer:       2,
+		},
+		// Right Penalty Arc
+		render.DrawArc{
+			Center:     rightPenaltySpot,
+			Radius:     penaltyArcRadius,
+			StartAngle: math.Pi - 0.95,
+			EndAngle:   math.Pi + 0.95,
+			Width:      0.3,
+			Color:      render.RGBA(1, 1, 1, 1),
+			Layer:      2,
 		},
 		// Right Goal area
 		render.DrawRect{
@@ -131,48 +170,47 @@ func main() {
 		// top-left corner
 		render.DrawArc{
 			Center:     math2d.Vec2{X: 5.25, Y: 3.4},
-			Radius:     1,
-			StartAngle: 0,
-			EndAngle:   math.Pi / 2,
-			Width:      0.3,
+			Radius:     2.5,
+			StartAngle: 0 + cornerArcInset,
+			EndAngle:   math.Pi/2 - cornerArcInset,
+			Width:      0.35,
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
 		},
 		// top-right corner
 		render.DrawArc{
 			Center:     math2d.Vec2{X: 110.25, Y: 3.4},
-			Radius:     1,
-			StartAngle: math.Pi / 2,
-			EndAngle:   math.Pi,
-			Width:      0.3,
+			Radius:     2.5,
+			StartAngle: math.Pi/2 + cornerArcInset,
+			EndAngle:   math.Pi - cornerArcInset,
+			Width:      0.35,
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
 		},
-
 		// bottom-right corner
 		render.DrawArc{
 			Center:     math2d.Vec2{X: 110.25, Y: 71.4},
-			Radius:     1,
-			StartAngle: math.Pi,
-			EndAngle:   3 * math.Pi / 2,
-			Width:      0.3,
+			Radius:     2.5,
+			StartAngle: math.Pi + cornerArcInset,
+			EndAngle:   3*math.Pi/2 - cornerArcInset,
+			Width:      0.35,
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
 		},
 		// bottom-left corner
 		render.DrawArc{
 			Center:     math2d.Vec2{X: 5.25, Y: 71.4},
-			Radius:     1,
-			StartAngle: 3 * math.Pi / 2,
-			EndAngle:   2 * math.Pi,
-			Width:      0.3,
+			Radius:     2.5,
+			StartAngle: 3*math.Pi/2 + cornerArcInset,
+			EndAngle:   2*math.Pi - cornerArcInset,
+			Width:      0.35,
 			Color:      render.RGBA(1, 1, 1, 1),
 			Layer:      2,
 		},
 		// Center line
 		render.DrawLine{
 			From:  math2d.Vec2{X: 57.75, Y: 3.4},
-			To:    math2d.Vec2{X: 57.75, Y: 71.4},
+			To:    math2d.Vec2{X: 57.75, Y: 71},
 			Width: 0.3,
 			Color: render.RGBA(1, 1, 1, 1),
 			Layer: 3,
