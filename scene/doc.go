@@ -15,6 +15,9 @@
 //	Transform + Velocity + CircleCollider
 //		Allows BounceCirclesInside to keep moving circles inside a Rect.
 //
+// Step runs the current simulation pipeline in order: movement integration,
+// bounds collision, and circle overlap resolution.
+//
 // The scene package does not draw pixels and does not depend on a concrete
 // platform backend. Rendering is expressed as backend-agnostic commands from
 // the render package.

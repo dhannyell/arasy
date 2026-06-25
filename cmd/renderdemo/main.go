@@ -156,9 +156,9 @@ func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
 		animation.Image = append(animation.Image, palettedImage(img))
 		animation.Delay = append(animation.Delay, frameDelay)
 
-		world.Integrate(frameDT)
-		world.BounceCirclesInside(math2d.NewRect(fieldOrigin, fieldSize))
-		world.ResolveCircleOverlaps()
+		world.Step(frameDT, scene.StepConfig{
+			Bounds: math2d.NewRect(fieldOrigin, fieldSize),
+		})
 	}
 
 	file, err := os.Create(path)
