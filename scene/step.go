@@ -12,4 +12,5 @@ func (w *World) Step(dt float64, config StepConfig) {
 	w.Integrate(dt)
 	w.BounceCirclesInside(config.Bounds)
 	w.ResolveCircleOverlaps()
+	w.ApplyDamping(dt)
 }

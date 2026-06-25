@@ -19,6 +19,7 @@ func TestNewWorldInitializesComponentStores(t *testing.T) {
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
 	world.SetVelocity(entity, scene.Velocity{})
+	world.SetDamping(entity, scene.Damping{})
 	world.SetCircleCollider(entity, scene.CircleCollider{})
 }
 
@@ -101,6 +102,26 @@ func TestWorldStoresAndReadsVelocity(t *testing.T) {
 	}
 }
 
+func TestWorldStoresAndReadsDamping(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	damping := scene.Damping{
+		Linear: 0.5,
+	}
+
+	world.SetDamping(entity, damping)
+
+	got, ok := world.Damping(entity)
+	if !ok {
+		t.Fatal("expected damping to exist")
+	}
+
+	if got != damping {
+		t.Fatalf("got %+v, want %+v", got, damping)
+	}
+}
+
 func TestWorldRemovesComponents(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()
@@ -108,11 +129,13 @@ func TestWorldRemovesComponents(t *testing.T) {
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
 	world.SetVelocity(entity, scene.Velocity{})
+	world.SetDamping(entity, scene.Damping{})
 	world.SetCircleCollider(entity, scene.CircleCollider{})
 
 	world.RemoveTransform(entity)
 	world.RemoveCircleSprite(entity)
 	world.RemoveVelocity(entity)
+	world.RemoveDamping(entity)
 	world.RemoveCircleCollider(entity)
 
 	if _, ok := world.Transform(entity); ok {
@@ -127,6 +150,10 @@ func TestWorldRemovesComponents(t *testing.T) {
 		t.Fatal("expected velocity to be removed")
 	}
 
+	if _, ok := world.Damping(entity); ok {
+		t.Fatal("expected damping to be removed")
+	}
+
 	if _, ok := world.CircleCollider(entity); ok {
 		t.Fatal("expected circle collider to be removed")
 	}
@@ -139,6 +166,7 @@ func TestWorldDespawnRemovesAllEntityComponents(t *testing.T) {
 	world.SetTransform(entity, scene.Transform{})
 	world.SetCircleSprite(entity, scene.CircleSprite{})
 	world.SetVelocity(entity, scene.Velocity{})
+	world.SetDamping(entity, scene.Damping{})
 	world.SetCircleCollider(entity, scene.CircleCollider{})
 
 	world.Despawn(entity)
@@ -153,6 +181,10 @@ func TestWorldDespawnRemovesAllEntityComponents(t *testing.T) {
 
 	if _, ok := world.Velocity(entity); ok {
 		t.Fatal("expected velocity to be removed")
+	}
+
+	if _, ok := world.Damping(entity); ok {
+		t.Fatal("expected damping to be removed")
 	}
 
 	if _, ok := world.CircleCollider(entity); ok {

@@ -6,6 +6,7 @@ type World struct {
 	Transforms      map[EntityID]Transform
 	CircleSprites   map[EntityID]CircleSprite
 	Velocities      map[EntityID]Velocity
+	Dampings        map[EntityID]Damping
 	CircleColliders map[EntityID]CircleCollider
 }
 
@@ -15,6 +16,7 @@ func NewWorld() *World {
 		Transforms:      make(map[EntityID]Transform),
 		CircleSprites:   make(map[EntityID]CircleSprite),
 		Velocities:      make(map[EntityID]Velocity),
+		Dampings:        make(map[EntityID]Damping),
 		CircleColliders: make(map[EntityID]CircleCollider),
 	}
 }
@@ -30,6 +32,7 @@ func (w *World) Despawn(id EntityID) {
 	delete(w.Transforms, id)
 	delete(w.CircleSprites, id)
 	delete(w.Velocities, id)
+	delete(w.Dampings, id)
 	delete(w.CircleColliders, id)
 }
 
@@ -70,6 +73,19 @@ func (w *World) Velocity(id EntityID) (Velocity, bool) {
 
 func (w *World) RemoveVelocity(id EntityID) {
 	delete(w.Velocities, id)
+}
+
+func (w *World) SetDamping(id EntityID, damping Damping) {
+	w.Dampings[id] = damping
+}
+
+func (w *World) Damping(id EntityID) (Damping, bool) {
+	damping, ok := w.Dampings[id]
+	return damping, ok
+}
+
+func (w *World) RemoveDamping(id EntityID) {
+	delete(w.Dampings, id)
 }
 
 func (w *World) CircleCollider(id EntityID) (CircleCollider, bool) {

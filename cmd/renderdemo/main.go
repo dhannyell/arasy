@@ -204,9 +204,12 @@ func buildFieldCommands() []render.Command {
 func buildDemoWorld() *scene.World {
 	world := scene.NewWorld()
 
-	ball := spawnCircleEntity(world, fieldCenter, 0.45, ballColor, layerBall)
+	ball := spawnCircleEntity(world, fieldCenter, 0.45, 0.45, ballColor, layerBall)
 	world.SetVelocity(ball, scene.Velocity{
 		Linear: math2d.Vec2{X: 15.0, Y: -2.5},
+	})
+	world.SetDamping(ball, scene.Damping{
+		Linear: 0.15,
 	})
 
 	homePositions := []math2d.Vec2{
@@ -224,7 +227,7 @@ func buildDemoWorld() *scene.World {
 	}
 
 	for i, position := range homePositions {
-		player := spawnCircleEntity(world, position, 1.2, homeTeamColor, layerPlayers)
+		player := spawnCircleEntity(world, position, 1.2, 1.1, homeTeamColor, layerPlayers)
 		if i == 3 {
 			world.SetVelocity(player, scene.Velocity{
 				Linear: math2d.Vec2{X: 8, Y: 0},
@@ -233,7 +236,7 @@ func buildDemoWorld() *scene.World {
 	}
 
 	for i, position := range awayPositions {
-		player := spawnCircleEntity(world, position, 1.2, awayTeamColor, layerPlayers)
+		player := spawnCircleEntity(world, position, 1.2, 1.1, awayTeamColor, layerPlayers)
 		if i == 3 {
 			world.SetVelocity(player, scene.Velocity{
 				Linear: math2d.Vec2{X: -2, Y: 0},
@@ -244,7 +247,14 @@ func buildDemoWorld() *scene.World {
 	return world
 }
 
-func spawnCircleEntity(world *scene.World, position math2d.Vec2, radius float64, color render.Color, layer int) scene.EntityID {
+func spawnCircleEntity(
+	world *scene.World,
+	position math2d.Vec2,
+	visualRadius float64,
+	colliderRadius float64,
+	color render.Color,
+	layer int,
+) scene.EntityID {
 	entity := world.Spawn()
 
 	world.SetTransform(entity, scene.Transform{
@@ -253,13 +263,13 @@ func spawnCircleEntity(world *scene.World, position math2d.Vec2, radius float64,
 	})
 
 	world.SetCircleSprite(entity, scene.CircleSprite{
-		Radius: radius,
+		Radius: visualRadius,
 		Color:  color,
 		Layer:  layer,
 	})
 
 	world.SetCircleCollider(entity, scene.CircleCollider{
-		Radius: radius,
+		Radius: colliderRadius,
 	})
 
 	return entity

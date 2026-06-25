@@ -11,3 +11,20 @@ func (w *World) Integrate(dt float64) {
 		w.Transforms[id] = transform
 	}
 }
+
+func (w *World) ApplyDamping(dt float64) {
+	for id, damping := range w.Dampings {
+		velocity, ok := w.Velocities[id]
+		if !ok {
+			continue
+		}
+
+		factor := 1 - damping.Linear*dt
+		if factor < 0 {
+			factor = 0
+		}
+
+		velocity.Linear = velocity.Linear.Mul(factor)
+		w.Velocities[id] = velocity
+	}
+}
