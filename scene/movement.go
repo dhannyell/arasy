@@ -1,5 +1,17 @@
 package scene
 
+func (w *World) ApplyAcceleration(dt float64) {
+	for id, acceleration := range w.Accelerations {
+		velocity, ok := w.Velocities[id]
+		if !ok {
+			continue
+		}
+
+		velocity.Linear = velocity.Linear.Add(acceleration.Linear.Mul(dt))
+		w.Velocities[id] = velocity
+	}
+}
+
 func (w *World) Integrate(dt float64) {
 	for id, velocity := range w.Velocities {
 		transform, ok := w.Transforms[id]

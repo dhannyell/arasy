@@ -9,6 +9,7 @@ type StepConfig struct {
 
 // Step advances the world by one simulation tick.
 func (w *World) Step(dt float64, config StepConfig) {
+	w.ApplyAcceleration(dt)
 	w.Integrate(dt)
 	w.BounceCirclesInside(config.Bounds)
 	w.ResolveCircleOverlaps()

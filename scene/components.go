@@ -23,6 +23,10 @@ type Velocity struct {
 	Linear math2d.Vec2
 }
 
+type Acceleration struct {
+	Linear math2d.Vec2
+}
+
 type Damping struct {
 	Linear float64
 }

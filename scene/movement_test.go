@@ -57,6 +57,45 @@ func TestWorldIntegrateSkipsEntityWithoutTransform(t *testing.T) {
 	}
 }
 
+func TestWorldApplyAccelerationChangesVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: -5},
+	})
+	world.SetAcceleration(entity, scene.Acceleration{
+		Linear: math2d.Vec2{X: 2, Y: 4},
+	})
+
+	world.ApplyAcceleration(0.5)
+
+	velocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	want := math2d.Vec2{X: 11, Y: -3}
+	if velocity.Linear != want {
+		t.Fatalf("got velocity %+v, want %+v", velocity.Linear, want)
+	}
+}
+
+func TestWorldApplyAccelerationSkipsEntityWithoutVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetAcceleration(entity, scene.Acceleration{
+		Linear: math2d.Vec2{X: 2, Y: 4},
+	})
+
+	world.ApplyAcceleration(0.5)
+
+	if _, ok := world.Velocity(entity); ok {
+		t.Fatal("expected velocity to stay absent")
+	}
+}
+
 func TestWorldApplyDampingReducesVelocity(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()
