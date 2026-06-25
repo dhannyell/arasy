@@ -12,8 +12,20 @@
 //	Transform + Velocity
 //		Moves entities through Integrate.
 //
+//	Velocity + Acceleration
+//		Changes linear velocity through ApplyAcceleration.
+//
+//	Velocity + Damping
+//		Reduces linear velocity through ApplyDamping.
+//
 //	Transform + Velocity + CircleCollider
 //		Allows BounceCirclesInside to keep moving circles inside a Rect.
+//
+//	Body + CircleCollider
+//		Controls inverse mass and restitution during circle overlap resolution.
+//
+// Step runs the current simulation pipeline in order: acceleration, movement
+// integration, bounds collision, circle overlap resolution, and damping.
 //
 // The scene package does not draw pixels and does not depend on a concrete
 // platform backend. Rendering is expressed as backend-agnostic commands from

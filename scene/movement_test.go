@@ -56,3 +56,105 @@ func TestWorldIntegrateSkipsEntityWithoutTransform(t *testing.T) {
 		t.Fatalf("got velocity %+v, want %+v", velocity, want)
 	}
 }
+
+func TestWorldApplyAccelerationChangesVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: -5},
+	})
+	world.SetAcceleration(entity, scene.Acceleration{
+		Linear: math2d.Vec2{X: 2, Y: 4},
+	})
+
+	world.ApplyAcceleration(0.5)
+
+	velocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	want := math2d.Vec2{X: 11, Y: -3}
+	if velocity.Linear != want {
+		t.Fatalf("got velocity %+v, want %+v", velocity.Linear, want)
+	}
+}
+
+func TestWorldApplyAccelerationSkipsEntityWithoutVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetAcceleration(entity, scene.Acceleration{
+		Linear: math2d.Vec2{X: 2, Y: 4},
+	})
+
+	world.ApplyAcceleration(0.5)
+
+	if _, ok := world.Velocity(entity); ok {
+		t.Fatal("expected velocity to stay absent")
+	}
+}
+
+func TestWorldApplyDampingReducesVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: -5},
+	})
+	world.SetDamping(entity, scene.Damping{
+		Linear: 0.5,
+	})
+
+	world.ApplyDamping(1)
+
+	velocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	want := math2d.Vec2{X: 5, Y: -2.5}
+	if velocity.Linear != want {
+		t.Fatalf("got velocity %+v, want %+v", velocity.Linear, want)
+	}
+}
+
+func TestWorldApplyDampingClampsAtZero(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: -5},
+	})
+	world.SetDamping(entity, scene.Damping{
+		Linear: 2,
+	})
+
+	world.ApplyDamping(1)
+
+	velocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	want := math2d.Vec2{X: 0, Y: 0}
+	if velocity.Linear != want {
+		t.Fatalf("got velocity %+v, want %+v", velocity.Linear, want)
+	}
+}
+
+func TestWorldApplyDampingSkipsEntityWithoutVelocity(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetDamping(entity, scene.Damping{
+		Linear: 0.5,
+	})
+
+	world.ApplyDamping(1)
+
+	if _, ok := world.Velocity(entity); ok {
+		t.Fatal("expected velocity to stay absent")
+	}
+}
