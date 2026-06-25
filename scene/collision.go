@@ -114,7 +114,7 @@ func (w *World) DetectCircleOverlaps() []CircleContact {
 	return contacts
 }
 
-func (w *World) SeparateCircleOverlaps() {
+func (w *World) ResolveCircleOverlaps() {
 	contacts := w.DetectCircleOverlaps()
 
 	for _, contact := range contacts {
@@ -138,6 +138,34 @@ func (w *World) SeparateCircleOverlaps() {
 
 		w.Transforms[contact.A] = transformA
 		w.Transforms[contact.B] = transformB
+
+		velocityA, ok := w.Velocity(contact.A)
+		if !ok {
+			continue
+		}
+
+		velocityB, ok := w.Velocity(contact.B)
+		if !ok {
+			continue
+		}
+
+		vRel := velocityA.Linear.Sub(velocityB.Linear)
+		vRelNormal := (vRel.X * contact.Normal.X) + (vRel.Y * contact.Normal.Y)
+
+		// it means the objects are approaching each other.
+		// When the objects are already moving apart, there is no need to update the relative velocity.
+		if vRelNormal > 0 {
+			impulse := math2d.Vec2{
+				X: vRelNormal * contact.Normal.X,
+				Y: vRelNormal * contact.Normal.Y,
+			}
+
+			velocityA.Linear = velocityA.Linear.Sub(impulse)
+			velocityB.Linear = velocityB.Linear.Add(impulse)
+
+			w.Velocities[contact.A] = velocityA
+			w.Velocities[contact.B] = velocityB
+		}
 	}
 }
 

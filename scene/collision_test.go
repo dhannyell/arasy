@@ -269,7 +269,7 @@ func TestWorldDetectCircleOverlapsReturnsContactsInEntityOrder(t *testing.T) {
 	}
 }
 
-func TestWorldSeparateCircleOverlapsHandlesSamePosition(t *testing.T) {
+func TestWorldResolveCircleOverlapsHandlesSamePosition(t *testing.T) {
 	world := scene.NewWorld()
 
 	initialPosition := math2d.Vec2{X: 5, Y: 0}
@@ -277,7 +277,7 @@ func TestWorldSeparateCircleOverlapsHandlesSamePosition(t *testing.T) {
 	first := spawnCollidableCircle(world, initialPosition, 5)
 	second := spawnCollidableCircle(world, initialPosition, 5)
 
-	world.SeparateCircleOverlaps()
+	world.ResolveCircleOverlaps()
 
 	firstTransform, ok := world.Transform(first)
 	if !ok {
@@ -313,7 +313,7 @@ func TestWorldSeparateCircleOverlapsHandlesSamePosition(t *testing.T) {
 	}
 }
 
-func TestWorldSeparateCircleOverlapsHandlesNearPosition(t *testing.T) {
+func TestWorldResolveCircleOverlapsHandlesNearPosition(t *testing.T) {
 	world := scene.NewWorld()
 
 	firstInitialPosition := math2d.Vec2{X: 0, Y: 0}
@@ -322,7 +322,7 @@ func TestWorldSeparateCircleOverlapsHandlesNearPosition(t *testing.T) {
 	first := spawnCollidableCircle(world, firstInitialPosition, 2)
 	second := spawnCollidableCircle(world, secondInitialPosition, 2)
 
-	world.SeparateCircleOverlaps()
+	world.ResolveCircleOverlaps()
 
 	firstTransform, ok := world.Transform(first)
 	if !ok {
@@ -355,6 +355,42 @@ func TestWorldSeparateCircleOverlapsHandlesNearPosition(t *testing.T) {
 	contacts := world.DetectCircleOverlaps()
 	if len(contacts) != 0 {
 		t.Fatalf("got %d contacts after separation, want 0", len(contacts))
+	}
+}
+
+func TestWorldResolveCircleOverlapsUpdatesApproachingVelocities(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 2)
+
+	world.SetVelocity(first, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: 0},
+	})
+	world.SetVelocity(second, scene.Velocity{
+		Linear: math2d.Vec2{X: -10, Y: 0},
+	})
+
+	world.ResolveCircleOverlaps()
+
+	firstVelocity, ok := world.Velocity(first)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	secondVelocity, ok := world.Velocity(second)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	wantFirstVelocity := math2d.Vec2{X: -10, Y: 0}
+	if firstVelocity.Linear != wantFirstVelocity {
+		t.Fatalf("first velocity got %v, want %v", firstVelocity.Linear, wantFirstVelocity)
+	}
+
+	wantSecondVelocity := math2d.Vec2{X: 10, Y: 0}
+	if secondVelocity.Linear != wantSecondVelocity {
+		t.Fatalf("second velocity got %v, want %v", secondVelocity.Linear, wantSecondVelocity)
 	}
 }
 
