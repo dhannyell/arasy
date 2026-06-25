@@ -7,6 +7,7 @@ type World struct {
 	CircleSprites   map[EntityID]CircleSprite
 	Velocities      map[EntityID]Velocity
 	Dampings        map[EntityID]Damping
+	Bodies          map[EntityID]Body
 	CircleColliders map[EntityID]CircleCollider
 }
 
@@ -17,6 +18,7 @@ func NewWorld() *World {
 		CircleSprites:   make(map[EntityID]CircleSprite),
 		Velocities:      make(map[EntityID]Velocity),
 		Dampings:        make(map[EntityID]Damping),
+		Bodies:          make(map[EntityID]Body),
 		CircleColliders: make(map[EntityID]CircleCollider),
 	}
 }
@@ -33,6 +35,7 @@ func (w *World) Despawn(id EntityID) {
 	delete(w.CircleSprites, id)
 	delete(w.Velocities, id)
 	delete(w.Dampings, id)
+	delete(w.Bodies, id)
 	delete(w.CircleColliders, id)
 }
 
@@ -86,6 +89,19 @@ func (w *World) Damping(id EntityID) (Damping, bool) {
 
 func (w *World) RemoveDamping(id EntityID) {
 	delete(w.Dampings, id)
+}
+
+func (w *World) SetBody(id EntityID, body Body) {
+	w.Bodies[id] = body
+}
+
+func (w *World) Body(id EntityID) (Body, bool) {
+	body, ok := w.Bodies[id]
+	return body, ok
+}
+
+func (w *World) RemoveBody(id EntityID) {
+	delete(w.Bodies, id)
 }
 
 func (w *World) CircleCollider(id EntityID) (CircleCollider, bool) {

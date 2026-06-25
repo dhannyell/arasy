@@ -128,13 +128,20 @@ func (w *World) ResolveCircleOverlaps() {
 			continue
 		}
 
-		correctionX := contact.Normal.X * (contact.Depth / 2)
-		correctionY := contact.Normal.Y * (contact.Depth / 2)
+		bodyA := w.bodyOrDefault(contact.A)
+		bodyB := w.bodyOrDefault(contact.B)
+		totalInvMass := bodyA.InvMass + bodyB.InvMass
+		if totalInvMass == 0 {
+			continue
+		}
 
-		transformA.Position.X -= correctionX
-		transformA.Position.Y -= correctionY
-		transformB.Position.X += correctionX
-		transformB.Position.Y += correctionY
+		correctionA := contact.Depth * (bodyA.InvMass / totalInvMass)
+		correctionB := contact.Depth * (bodyB.InvMass / totalInvMass)
+
+		transformA.Position.X -= contact.Normal.X * correctionA
+		transformA.Position.Y -= contact.Normal.Y * correctionA
+		transformB.Position.X += contact.Normal.X * correctionB
+		transformB.Position.Y += contact.Normal.Y * correctionB
 
 		w.Transforms[contact.A] = transformA
 		w.Transforms[contact.B] = transformB
@@ -155,13 +162,15 @@ func (w *World) ResolveCircleOverlaps() {
 		// it means the objects are approaching each other.
 		// When the objects are already moving apart, there is no need to update the relative velocity.
 		if vRelNormal > 0 {
+			restitution := minFloat(bodyA.Restitution, bodyB.Restitution)
+			impulseMagnitude := (1 + restitution) * vRelNormal / totalInvMass
 			impulse := math2d.Vec2{
-				X: vRelNormal * contact.Normal.X,
-				Y: vRelNormal * contact.Normal.Y,
+				X: impulseMagnitude * contact.Normal.X,
+				Y: impulseMagnitude * contact.Normal.Y,
 			}
 
-			velocityA.Linear = velocityA.Linear.Sub(impulse)
-			velocityB.Linear = velocityB.Linear.Add(impulse)
+			velocityA.Linear = velocityA.Linear.Sub(impulse.Mul(bodyA.InvMass))
+			velocityB.Linear = velocityB.Linear.Add(impulse.Mul(bodyB.InvMass))
 
 			w.Velocities[contact.A] = velocityA
 			w.Velocities[contact.B] = velocityB
@@ -179,4 +188,36 @@ func (w *World) circleColliderEntities() []EntityID {
 	slices.Sort(entities)
 
 	return entities
+}
+
+func (w *World) bodyOrDefault(id EntityID) Body {
+	body, ok := w.Bodies[id]
+	if !ok {
+		return Body{
+			InvMass:     1,
+			Restitution: 1,
+		}
+	}
+
+	if body.InvMass < 0 {
+		body.InvMass = 0
+	}
+
+	if body.Restitution < 0 {
+		body.Restitution = 0
+	}
+
+	if body.Restitution > 1 {
+		body.Restitution = 1
+	}
+
+	return body
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+
+	return b
 }

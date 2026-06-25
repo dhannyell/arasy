@@ -18,6 +18,9 @@
 //	Transform + Velocity + CircleCollider
 //		Allows BounceCirclesInside to keep moving circles inside a Rect.
 //
+//	Body + CircleCollider
+//		Controls inverse mass and restitution during circle overlap resolution.
+//
 // Step runs the current simulation pipeline in order: movement integration,
 // bounds collision, circle overlap resolution, and damping.
 //

@@ -27,6 +27,13 @@ type Damping struct {
 	Linear float64
 }
 
+type Body struct {
+	// InvMass is the inverse mass. A value of 0 makes the body static.
+	InvMass float64
+	// Restitution controls bounciness. 0 absorbs normal velocity, 1 preserves it.
+	Restitution float64
+}
+
 type CircleCollider struct {
 	Radius float64
 }

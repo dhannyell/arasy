@@ -394,6 +394,135 @@ func TestWorldResolveCircleOverlapsUpdatesApproachingVelocities(t *testing.T) {
 	}
 }
 
+func TestWorldResolveCircleOverlapsKeepsStaticBodyInPlace(t *testing.T) {
+	world := scene.NewWorld()
+
+	static := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+	dynamic := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 2)
+
+	world.SetBody(static, scene.Body{
+		InvMass:     0,
+		Restitution: 1,
+	})
+	world.SetBody(dynamic, scene.Body{
+		InvMass:     1,
+		Restitution: 1,
+	})
+	world.SetVelocity(static, scene.Velocity{
+		Linear: math2d.Vec2{X: 0, Y: 0},
+	})
+	world.SetVelocity(dynamic, scene.Velocity{
+		Linear: math2d.Vec2{X: -10, Y: 0},
+	})
+
+	world.ResolveCircleOverlaps()
+
+	staticTransform, ok := world.Transform(static)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	dynamicTransform, ok := world.Transform(dynamic)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	if staticTransform.Position != (math2d.Vec2{X: 0, Y: 0}) {
+		t.Fatalf("static position got %v, want {0 0}", staticTransform.Position)
+	}
+
+	if dynamicTransform.Position != (math2d.Vec2{X: 4, Y: 0}) {
+		t.Fatalf("dynamic position got %v, want {4 0}", dynamicTransform.Position)
+	}
+
+	dynamicVelocity, ok := world.Velocity(dynamic)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	if dynamicVelocity.Linear != (math2d.Vec2{X: 10, Y: 0}) {
+		t.Fatalf("dynamic velocity got %v, want {10 0}", dynamicVelocity.Linear)
+	}
+}
+
+func TestWorldResolveCircleOverlapsUsesRestitution(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 2)
+
+	world.SetBody(first, scene.Body{
+		InvMass:     1,
+		Restitution: 0,
+	})
+	world.SetBody(second, scene.Body{
+		InvMass:     1,
+		Restitution: 0,
+	})
+	world.SetVelocity(first, scene.Velocity{
+		Linear: math2d.Vec2{X: 10, Y: 0},
+	})
+	world.SetVelocity(second, scene.Velocity{
+		Linear: math2d.Vec2{X: -10, Y: 0},
+	})
+
+	world.ResolveCircleOverlaps()
+
+	firstVelocity, ok := world.Velocity(first)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	secondVelocity, ok := world.Velocity(second)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+
+	if firstVelocity.Linear != (math2d.Vec2{X: 0, Y: 0}) {
+		t.Fatalf("first velocity got %v, want {0 0}", firstVelocity.Linear)
+	}
+
+	if secondVelocity.Linear != (math2d.Vec2{X: 0, Y: 0}) {
+		t.Fatalf("second velocity got %v, want {0 0}", secondVelocity.Linear)
+	}
+}
+
+func TestWorldResolveCircleOverlapsSkipsTwoStaticBodies(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 2)
+
+	world.SetBody(first, scene.Body{
+		InvMass:     0,
+		Restitution: 1,
+	})
+	world.SetBody(second, scene.Body{
+		InvMass:     0,
+		Restitution: 1,
+	})
+
+	world.ResolveCircleOverlaps()
+
+	firstTransform, ok := world.Transform(first)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	secondTransform, ok := world.Transform(second)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	if firstTransform.Position != (math2d.Vec2{X: 0, Y: 0}) {
+		t.Fatalf("first position got %v, want {0 0}", firstTransform.Position)
+	}
+
+	if secondTransform.Position != (math2d.Vec2{X: 3, Y: 0}) {
+		t.Fatalf("second position got %v, want {3 0}", secondTransform.Position)
+	}
+}
+
 func spawnCollidableCircle(world *scene.World, position math2d.Vec2, radius float64) scene.EntityID {
 	entity := world.Spawn()
 
