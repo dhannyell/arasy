@@ -17,8 +17,8 @@ import (
 const (
 	imageWidth  = 1920
 	imageHeight = 1080
-	gifWidth    = 640
-	gifHeight   = 360
+	gifWidth    = 1920
+	gifHeight   = 1080
 	frameCount  = 250
 	frameDelay  = 6
 	frameDT     = 1.0 / 30.0
@@ -64,6 +64,8 @@ var (
 	homeTeamColor   = render.RGBA(0.08, 0.22, 0.95, 1)
 	awayTeamColor   = render.RGBA(0.95, 0.12, 0.12, 1)
 	ballColor       = render.RGBA(0.98, 0.98, 0.94, 1)
+	colliderColor   = render.RGBA(1, 1, 0, 1)
+	contactColor    = render.RGBA(1, 0, 1, 1)
 	clearColor      = render.RGBA(0.05, 0.08, 0.10, 1)
 	worldOrigin     = math2d.Vec2{X: 0, Y: 0}
 	worldSize       = math2d.Vec2{X: worldWidth, Y: worldHeight}
@@ -82,12 +84,42 @@ var (
 	}
 )
 
+type DebugConfig struct {
+	ShowColliders bool
+	ShowContacts  bool
+
+	ColliderColor       render.Color
+	ColliderStrokeWidth float64
+	ColliderLayer       int
+
+	ContactColor        render.Color
+	ContactPointRadius  float64
+	ContactLineWidth    float64
+	ContactNormalLength float64
+	ContactLayer        int
+}
+
 type side int
 
 const (
 	leftSide side = iota
 	rightSide
 )
+
+var debugConfig = DebugConfig{
+	ShowColliders: true,
+	ShowContacts:  true,
+
+	ColliderColor:       colliderColor,
+	ColliderStrokeWidth: 0.08,
+	ColliderLayer:       100,
+
+	ContactColor:        contactColor,
+	ContactPointRadius:  0.18,
+	ContactLineWidth:    0.12,
+	ContactNormalLength: 1.25,
+	ContactLayer:        101,
+}
 
 func main() {
 	renderer := raster.Renderer{
@@ -105,6 +137,7 @@ func main() {
 
 	commands := buildFieldCommands()
 	commands = append(commands, world.RenderCommands()...)
+	appendDebugCommands(&commands, world, debugConfig)
 
 	img := renderer.Render(commands)
 
@@ -132,6 +165,34 @@ func main() {
 	println("wrote output/renderdemo.gif")
 }
 
+func appendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
+	if config.ShowColliders {
+		*commands = append(
+			*commands,
+			world.DebugColliderCommands(
+				config.ColliderColor,
+				config.ColliderStrokeWidth,
+				config.ColliderLayer,
+			)...,
+		)
+	}
+
+	if !config.ShowContacts {
+		return
+	}
+
+	*commands = append(
+		*commands,
+		world.DebugContactCommands(
+			config.ContactColor,
+			config.ContactPointRadius,
+			config.ContactLineWidth,
+			config.ContactNormalLength,
+			config.ContactLayer,
+		)...,
+	)
+}
+
 func savePNG(path string, img image.Image) error {
 	file, err := os.Create(path)
 	if err != nil {
@@ -156,6 +217,7 @@ func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
 	for range frameCount {
 		commands := buildFieldCommands()
 		commands = append(commands, world.RenderCommands()...)
+		appendDebugCommands(&commands, world, debugConfig)
 
 		img := renderer.Render(commands)
 		animation.Image = append(animation.Image, palettedImage(img))
