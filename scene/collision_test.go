@@ -269,6 +269,95 @@ func TestWorldDetectCircleOverlapsReturnsContactsInEntityOrder(t *testing.T) {
 	}
 }
 
+func TestWorldSeparateCircleOverlapsHandlesSamePosition(t *testing.T) {
+	world := scene.NewWorld()
+
+	initialPosition := math2d.Vec2{X: 5, Y: 0}
+
+	first := spawnCollidableCircle(world, initialPosition, 5)
+	second := spawnCollidableCircle(world, initialPosition, 5)
+
+	world.SeparateCircleOverlaps()
+
+	firstTransform, ok := world.Transform(first)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+	secondTransform, ok := world.Transform(second)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	wantFirstPosition := math2d.Vec2{X: 0, Y: 0}
+	wantSecondPosition := math2d.Vec2{X: 10, Y: 0}
+
+	if firstTransform.Position == initialPosition {
+		t.Fatal("first transform should have moved")
+	}
+
+	if secondTransform.Position == initialPosition {
+		t.Fatal("second transform should have moved")
+	}
+
+	if firstTransform.Position != wantFirstPosition {
+		t.Fatalf("first transform position got %v, want %v", firstTransform.Position, wantFirstPosition)
+	}
+
+	if secondTransform.Position != wantSecondPosition {
+		t.Fatalf("second transform position got %v, want %v", secondTransform.Position, wantSecondPosition)
+	}
+
+	contacts := world.DetectCircleOverlaps()
+	if len(contacts) != 0 {
+		t.Fatalf("got %d contacts after separation, want 0", len(contacts))
+	}
+}
+
+func TestWorldSeparateCircleOverlapsHandlesNearPosition(t *testing.T) {
+	world := scene.NewWorld()
+
+	firstInitialPosition := math2d.Vec2{X: 0, Y: 0}
+	secondInitialPosition := math2d.Vec2{X: 3, Y: 0}
+
+	first := spawnCollidableCircle(world, firstInitialPosition, 2)
+	second := spawnCollidableCircle(world, secondInitialPosition, 2)
+
+	world.SeparateCircleOverlaps()
+
+	firstTransform, ok := world.Transform(first)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+	secondTransform, ok := world.Transform(second)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+
+	wantFirstPosition := math2d.Vec2{X: -0.5, Y: 0}
+	wantSecondPosition := math2d.Vec2{X: 3.5, Y: 0}
+
+	if firstTransform.Position == firstInitialPosition {
+		t.Fatal("first transform should have moved")
+	}
+
+	if secondTransform.Position == secondInitialPosition {
+		t.Fatal("second transform should have moved")
+	}
+
+	if firstTransform.Position != wantFirstPosition {
+		t.Fatalf("first transform position got %v, want %v", firstTransform.Position, wantFirstPosition)
+	}
+
+	if secondTransform.Position != wantSecondPosition {
+		t.Fatalf("second transform position got %v, want %v", secondTransform.Position, wantSecondPosition)
+	}
+
+	contacts := world.DetectCircleOverlaps()
+	if len(contacts) != 0 {
+		t.Fatalf("got %d contacts after separation, want 0", len(contacts))
+	}
+}
+
 func spawnCollidableCircle(world *scene.World, position math2d.Vec2, radius float64) scene.EntityID {
 	entity := world.Spawn()
 

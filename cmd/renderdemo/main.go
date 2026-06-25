@@ -19,7 +19,7 @@ const (
 	imageHeight = 1080
 	gifWidth    = 640
 	gifHeight   = 360
-	frameCount  = 200
+	frameCount  = 250
 	frameDelay  = 6
 	frameDT     = 1.0 / 30.0
 
@@ -159,8 +159,9 @@ func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
 		world.Integrate(frameDT)
 		world.BounceCirclesInside(math2d.Rect{
 			Min: fieldOrigin,
-			Max: fieldSize,
+			Max: fieldOrigin.Add(fieldSize),
 		})
+		world.SeparateCircleOverlaps()
 	}
 
 	file, err := os.Create(path)
@@ -208,9 +209,8 @@ func buildDemoWorld() *scene.World {
 
 	ball := spawnCircleEntity(world, fieldCenter, 0.45, ballColor, layerBall)
 	world.SetVelocity(ball, scene.Velocity{
-		Linear: math2d.Vec2{X: 7.5, Y: -2.5},
+		Linear: math2d.Vec2{X: 15.0, Y: -2.5},
 	})
-	world.SetCircleCollider(ball, scene.CircleCollider{Radius: 0.45})
 
 	homePositions := []math2d.Vec2{
 		{X: fieldLeft + 18, Y: fieldCenter.Y},
@@ -230,7 +230,7 @@ func buildDemoWorld() *scene.World {
 		player := spawnCircleEntity(world, position, 1.2, homeTeamColor, layerPlayers)
 		if i == 3 {
 			world.SetVelocity(player, scene.Velocity{
-				Linear: math2d.Vec2{X: 2, Y: 0},
+				Linear: math2d.Vec2{X: 8, Y: 0},
 			})
 		}
 	}
@@ -259,6 +259,10 @@ func spawnCircleEntity(world *scene.World, position math2d.Vec2, radius float64,
 		Radius: radius,
 		Color:  color,
 		Layer:  layer,
+	})
+
+	world.SetCircleCollider(entity, scene.CircleCollider{
+		Radius: radius,
 	})
 
 	return entity

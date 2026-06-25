@@ -114,6 +114,33 @@ func (w *World) DetectCircleOverlaps() []CircleContact {
 	return contacts
 }
 
+func (w *World) SeparateCircleOverlaps() {
+	contacts := w.DetectCircleOverlaps()
+
+	for _, contact := range contacts {
+		transformA, ok := w.Transforms[contact.A]
+		if !ok {
+			continue
+		}
+
+		transformB, ok := w.Transforms[contact.B]
+		if !ok {
+			continue
+		}
+
+		correctionX := contact.Normal.X * (contact.Depth / 2)
+		correctionY := contact.Normal.Y * (contact.Depth / 2)
+
+		transformA.Position.X -= correctionX
+		transformA.Position.Y -= correctionY
+		transformB.Position.X += correctionX
+		transformB.Position.Y += correctionY
+
+		w.Transforms[contact.A] = transformA
+		w.Transforms[contact.B] = transformB
+	}
+}
+
 func (w *World) circleColliderEntities() []EntityID {
 	entities := make([]EntityID, 0, len(w.CircleColliders))
 
