@@ -40,6 +40,65 @@ func TestWorldSpawnReturnsUniqueEntityIDs(t *testing.T) {
 	}
 }
 
+func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	transform := scene.Transform{
+		Position: math2d.Vec2{X: 10, Y: 20},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	}
+	velocity := scene.Velocity{
+		Linear: math2d.Vec2{X: 3, Y: 4},
+	}
+
+	world.SetTransform(entity, transform)
+	world.SetVelocity(entity, velocity)
+	world.SetCircleSprite(entity, scene.CircleSprite{
+		Radius: 2,
+		Color:  render.RGBA(1, 0, 0, 1),
+		Layer:  5,
+	})
+	world.SetCircleCollider(entity, scene.CircleCollider{
+		Radius: 1.5,
+	})
+	world.SetBody(entity, scene.Body{
+		InvMass:     0.5,
+		Restitution: 0.25,
+	})
+
+	clone := world.Clone()
+
+	world.SetTransform(entity, scene.Transform{
+		Position: math2d.Vec2{X: 99, Y: 99},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.RemoveVelocity(entity)
+
+	gotTransform, ok := clone.Transform(entity)
+	if !ok {
+		t.Fatal("expected clone to keep transform")
+	}
+
+	if gotTransform != transform {
+		t.Fatalf("got transform %+v, want %+v", gotTransform, transform)
+	}
+
+	gotVelocity, ok := clone.Velocity(entity)
+	if !ok {
+		t.Fatal("expected clone to keep velocity")
+	}
+
+	if gotVelocity != velocity {
+		t.Fatalf("got velocity %+v, want %+v", gotVelocity, velocity)
+	}
+
+	next := clone.Spawn()
+	if next == entity {
+		t.Fatal("expected cloned world to preserve next entity id")
+	}
+}
+
 func TestWorldStoresAndReadsTransform(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()

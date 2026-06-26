@@ -29,7 +29,8 @@
 //
 // The scene package does not draw pixels and does not depend on a concrete
 // platform backend. Rendering is expressed as backend-agnostic commands from
-// the render package.
+// the render package. DebugColliderCommands and DebugContactCommands can be
+// used to inspect physics state without changing simulation state.
 //
 // World currently stores components in maps keyed by EntityID. This keeps the
 // first version easy to understand, but map iteration order is not deterministic
