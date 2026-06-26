@@ -47,8 +47,8 @@ func TestWorldRenderCommandsCreatesCircleForRenderableEntity(t *testing.T) {
 		t.Fatalf("got color %+v, want %+v", command.Fill, color)
 	}
 
-	if command.Layer != 5 {
-		t.Fatalf("got layer %d, want 5", command.Layer)
+	if command.Layer() != 5 {
+		t.Fatalf("got layer %d, want 5", command.Layer())
 	}
 }
 
@@ -113,8 +113,8 @@ func TestWorldDebugColliderCommandsCreatesCircleStrokeForCollider(t *testing.T) 
 		t.Fatalf("got stroke width %v, want 0.1", command.StrokeWidth)
 	}
 
-	if command.Layer != 100 {
-		t.Fatalf("got layer %d, want 100", command.Layer)
+	if command.Layer() != 100 {
+		t.Fatalf("got layer %d, want 100", command.Layer())
 	}
 }
 
@@ -177,8 +177,8 @@ func TestWorldDebugContactCommandsCreatesPointAndNormalLineForOverlap(t *testing
 		t.Fatalf("got point color %+v, want %+v", point.Color, color)
 	}
 
-	if point.Layer != 101 {
-		t.Fatalf("got point layer %d, want 101", point.Layer)
+	if point.Layer() != 101 {
+		t.Fatalf("got point layer %d, want 101", point.Layer())
 	}
 
 	line, ok := commands[1].(render.DrawLine)
@@ -203,8 +203,8 @@ func TestWorldDebugContactCommandsCreatesPointAndNormalLineForOverlap(t *testing
 		t.Fatalf("got line color %+v, want %+v", line.Color, color)
 	}
 
-	if line.Layer != 101 {
-		t.Fatalf("got line layer %d, want 101", line.Layer)
+	if line.Layer() != 101 {
+		t.Fatalf("got line layer %d, want 101", line.Layer())
 	}
 }
 
@@ -277,8 +277,8 @@ func TestWorldDebugGridCommandsCreatesDashedLinesForPopulatedCells(t *testing.T)
 		t.Fatalf("line color = %+v, want %+v", line.Color, color)
 	}
 
-	if line.Layer != 200 {
-		t.Fatalf("line layer = %v, want 200", line.Layer)
+	if line.Layer() != 200 {
+		t.Fatalf("line layer = %v, want 200", line.Layer())
 	}
 
 	if line.From.X < 0 || line.From.X > 4 || line.From.Y < 0 || line.From.Y > 4 {
@@ -332,8 +332,8 @@ func TestWorldDebugActiveGridCommandsCreatesFilledRectsForPopulatedCells(t *test
 		t.Fatalf("rect stroke width = %v, want 0.2", rect.StrokeWidth)
 	}
 
-	if rect.Layer != 201 {
-		t.Fatalf("rect layer = %v, want 201", rect.Layer)
+	if rect.Layer() != 201 {
+		t.Fatalf("rect layer = %v, want 201", rect.Layer())
 	}
 }
 
@@ -342,10 +342,34 @@ func TestWorldDebugCandidateGridCommandsCreatesFilledRectsOnlyForCandidateCells(
 	fill := render.RGBA(1, 1, 0, 0.35)
 	stroke := render.RGBA(1, 1, 0, 1)
 
-	world.DebugGridCells = []scene.DebugGridCell{
-		{X: 0, Y: 0, Size: 8, Candidate: false},
-		{X: 1, Y: 0, Size: 8, Candidate: true},
-	}
+	first := world.Spawn()
+	world.SetTransform(first, scene.Transform{
+		Position: math2d.Vec2{X: 10, Y: 2},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleCollider(first, scene.CircleCollider{
+		Radius: 0.5,
+	})
+
+	second := world.Spawn()
+	world.SetTransform(second, scene.Transform{
+		Position: math2d.Vec2{X: 11, Y: 2},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleCollider(second, scene.CircleCollider{
+		Radius: 0.5,
+	})
+
+	third := world.Spawn()
+	world.SetTransform(third, scene.Transform{
+		Position: math2d.Vec2{X: 2, Y: 2},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleCollider(third, scene.CircleCollider{
+		Radius: 0.5,
+	})
+
+	world.DetectCircleOverlapsGrid(8)
 
 	commands := world.DebugCandidateGridCommands(fill, stroke, 0.3, 202)
 	if len(commands) != 1 {
@@ -377,8 +401,8 @@ func TestWorldDebugCandidateGridCommandsCreatesFilledRectsOnlyForCandidateCells(
 		t.Fatalf("rect stroke width = %v, want 0.3", rect.StrokeWidth)
 	}
 
-	if rect.Layer != 202 {
-		t.Fatalf("rect layer = %v, want 202", rect.Layer)
+	if rect.Layer() != 202 {
+		t.Fatalf("rect layer = %v, want 202", rect.Layer())
 	}
 }
 
@@ -408,8 +432,8 @@ func TestDebugGridAreaCommandsCreatesClippedGridInsideBounds(t *testing.T) {
 			t.Fatalf("line color = %+v, want %+v", line.Color, color)
 		}
 
-		if line.Layer != 200 {
-			t.Fatalf("line layer = %v, want 200", line.Layer)
+		if line.Layer() != 200 {
+			t.Fatalf("line layer = %v, want 200", line.Layer())
 		}
 
 		assertPointInsideRect(t, line.From, bounds)

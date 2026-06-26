@@ -75,7 +75,7 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 		Scale:    math2d.Vec2{X: 1, Y: 1},
 	})
 	world.RemoveVelocity(entity)
-	world.DebugGridCells = nil
+	world.DetectCircleOverlapsGrid(0)
 
 	gotTransform, ok := clone.Transform(entity)
 	if !ok {
@@ -100,7 +100,7 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 		t.Fatal("expected cloned world to preserve next entity id")
 	}
 
-	if len(clone.DebugGridCells) == 0 {
+	if len(clone.DebugGridCells()) == 0 {
 		t.Fatal("expected clone to keep debug grid cells")
 	}
 }

@@ -35,6 +35,10 @@ func (v Vec2) Mul(scalar float64) Vec2 {
 
 // Div returns v divided by scalar
 func (v Vec2) Div(scalar float64) Vec2 {
+	if scalar == 0 {
+		return v
+	}
+
 	return Vec2{
 		X: v.X / scalar,
 		Y: v.Y / scalar,

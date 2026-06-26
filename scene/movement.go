@@ -1,32 +1,32 @@
 package scene
 
 func (w *World) ApplyAcceleration(dt float64) {
-	for id, acceleration := range w.Accelerations {
-		velocity, ok := w.Velocities[id]
+	for id, acceleration := range w.accelerations {
+		velocity, ok := w.velocities[id]
 		if !ok {
 			continue
 		}
 
 		velocity.Linear = velocity.Linear.Add(acceleration.Linear.Mul(dt))
-		w.Velocities[id] = velocity
+		w.velocities[id] = velocity
 	}
 }
 
 func (w *World) Integrate(dt float64) {
-	for id, velocity := range w.Velocities {
-		transform, ok := w.Transforms[id]
+	for id, velocity := range w.velocities {
+		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
 		transform.Position = transform.Position.Add(velocity.Linear.Mul(dt))
-		w.Transforms[id] = transform
+		w.transforms[id] = transform
 	}
 }
 
 func (w *World) ApplyDamping(dt float64) {
-	for id, damping := range w.Dampings {
-		velocity, ok := w.Velocities[id]
+	for id, damping := range w.dampings {
+		velocity, ok := w.velocities[id]
 		if !ok {
 			continue
 		}
@@ -37,6 +37,6 @@ func (w *World) ApplyDamping(dt float64) {
 		}
 
 		velocity.Linear = velocity.Linear.Mul(factor)
-		w.Velocities[id] = velocity
+		w.velocities[id] = velocity
 	}
 }

@@ -349,7 +349,7 @@ func TestWorldDetectCircleOverlapsGridMarksCandidateDebugCells(t *testing.T) {
 
 	var occupied int
 	var candidates int
-	for _, cell := range world.DebugGridCells {
+	for _, cell := range world.DebugGridCells() {
 		occupied++
 		if cell.Candidate {
 			candidates++
