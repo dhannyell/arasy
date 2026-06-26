@@ -43,7 +43,8 @@ h1 {
     gap: 10px;
 }
 
-#stats {
+#stats,
+#history {
     font-variant-numeric: tabular-nums;
     color: #cbd5e1;
     font-size: 13px;

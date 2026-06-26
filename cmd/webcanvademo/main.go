@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/dhannyell/frameforge/debug"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/web/canvas"
 	"github.com/dhannyell/frameforge/render"
@@ -115,7 +116,7 @@ var debugConfig = DebugConfig{
 
 func main() {
 	world := buildDemoWorld()
-	history := make([]*scene.World, 0, 600)
+	recorder := debug.NewRecorder(600)
 
 	server := canvas.Server{
 		Addr:         ":8080",
@@ -128,11 +129,7 @@ func main() {
 		},
 		Clear: clearColor,
 		Update: func(dt float64) {
-			history = append(history, world.Clone())
-			if len(history) > 600 {
-				history = history[1:]
-			}
-
+			recorder.Capture(world)
 			world.Step(dt, scene.StepConfig{
 				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
 			})
@@ -147,18 +144,20 @@ func main() {
 
 			return commands
 		},
+		HistoryLen: func() int {
+			return recorder.Len()
+		},
 		Reset: func() {
 			world = buildDemoWorld()
-			history = history[:0]
+			recorder.Clear()
 		},
 		Back: func() bool {
-			if len(history) == 0 {
+			snapshot, ok := recorder.Back()
+			if !ok {
 				return false
 			}
 
-			last := history[len(history)-1]
-			history = history[:len(history)-1]
-			world = last
+			world = snapshot
 
 			return true
 		},

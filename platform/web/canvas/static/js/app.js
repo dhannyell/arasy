@@ -3,6 +3,7 @@ import { createCanvasRenderer } from "./renderer.js";
 
 const canvas = document.getElementById("ff-canvas");
 const stats = document.getElementById("stats");
+const historyStats = document.getElementById("history");
 const playPauseButton = document.getElementById("play-pause");
 const backButton = document.getElementById("back");
 const stepButton = document.getElementById("step");
@@ -101,6 +102,24 @@ connection = connectFrameSocket({
 
     onFrame(frame) {
         renderer.render(frame);
+        syncControls(frame.state);
         stats.textContent = `tick ${frame.tick} | commands ${frame.commands.length}`;
     },
 });
+
+function syncControls(state) {
+    if (!state) {
+        return;
+    }
+
+    paused = state.paused;
+    playPauseButton.textContent = paused ? "Play" : "Pause";
+
+    if (Number(speedInput.value) !== state.speed) {
+        speedInput.value = String(state.speed);
+    }
+    speedValue.textContent = `${state.speed}x`;
+
+    debugInput.checked = state.debug;
+    historyStats.textContent = `history ${state.historyLen}`;
+}
