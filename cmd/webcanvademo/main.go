@@ -1,30 +1,22 @@
 package main
 
 import (
-	"image"
-	"image/color/palette"
-	"image/gif"
-	"image/png"
+	"fmt"
 	"math"
-	"os"
 
 	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/platform/raster"
+	"github.com/dhannyell/frameforge/platform/web/canvas"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
 )
 
 const (
-	imageWidth  = 1920
-	imageHeight = 1080
-	gifWidth    = 640
-	gifHeight   = 360
-	frameCount  = 250
-	frameDelay  = 6
-	frameDT     = 1.0 / 30.0
-
-	worldWidth  = 115.5
-	worldHeight = 74.8
+	imageWidth   = 1920
+	imageHeight  = 1080
+	renderFPS    = 60
+	simulationHz = 60
+	worldWidth   = 115.5
+	worldHeight  = 74.8
 
 	fieldWidth  = 105.0
 	fieldHeight = 68.0
@@ -64,6 +56,8 @@ var (
 	homeTeamColor   = render.RGBA(0.08, 0.22, 0.95, 1)
 	awayTeamColor   = render.RGBA(0.95, 0.12, 0.12, 1)
 	ballColor       = render.RGBA(0.98, 0.98, 0.94, 1)
+	colliderColor   = render.RGBA(1, 1, 0, 1)
+	contactColor    = render.RGBA(1, 0, 1, 1)
 	clearColor      = render.RGBA(0.05, 0.08, 0.10, 1)
 	worldOrigin     = math2d.Vec2{X: 0, Y: 0}
 	worldSize       = math2d.Vec2{X: worldWidth, Y: worldHeight}
@@ -82,6 +76,21 @@ var (
 	}
 )
 
+type DebugConfig struct {
+	ShowColliders bool
+	ShowContacts  bool
+
+	ColliderColor       render.Color
+	ColliderStrokeWidth float64
+	ColliderLayer       int
+
+	ContactColor        render.Color
+	ContactPointRadius  float64
+	ContactLineWidth    float64
+	ContactNormalLength float64
+	ContactLayer        int
+}
+
 type side int
 
 const (
@@ -89,107 +98,105 @@ const (
 	rightSide
 )
 
+var debugConfig = DebugConfig{
+	ShowColliders: true,
+	ShowContacts:  true,
+
+	ColliderColor:       colliderColor,
+	ColliderStrokeWidth: 0.08,
+	ColliderLayer:       100,
+
+	ContactColor:        contactColor,
+	ContactPointRadius:  0.18,
+	ContactLineWidth:    0.12,
+	ContactNormalLength: 1.25,
+	ContactLayer:        101,
+}
+
 func main() {
-	renderer := raster.Renderer{
-		Width:  imageWidth,
-		Height: imageHeight,
+	world := buildDemoWorld()
+	history := make([]*scene.World, 0, 600)
+
+	server := canvas.Server{
+		Addr:         ":8080",
+		FPS:          renderFPS,
+		SimulationHz: simulationHz,
 		Camera: render.Camera{
 			World:    math2d.NewRect(worldOrigin, worldSize),
 			Viewport: math2d.NewRect(viewportOrigin, viewportSize),
 			Aspect:   render.AspectExpand,
 		},
 		Clear: clearColor,
+		Update: func(dt float64) {
+			history = append(history, world.Clone())
+			if len(history) > 600 {
+				history = history[1:]
+			}
+
+			world.Step(dt, scene.StepConfig{
+				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
+			})
+		},
+		Commands: func(debug bool) []render.Command {
+			commands := buildFieldCommands()
+			commands = append(commands, world.RenderCommands()...)
+
+			if debug {
+				appendDebugCommands(&commands, world, debugConfig)
+			}
+
+			return commands
+		},
+		Reset: func() {
+			world = buildDemoWorld()
+			history = history[:0]
+		},
+		Back: func() bool {
+			if len(history) == 0 {
+				return false
+			}
+
+			last := history[len(history)-1]
+			history = history[:len(history)-1]
+			world = last
+
+			return true
+		},
 	}
 
-	world := buildDemoWorld()
+	fmt.Println("Starting canvas server on: localhost:8080")
 
-	commands := buildFieldCommands()
-	commands = append(commands, world.RenderCommands()...)
-
-	img := renderer.Render(commands)
-
-	if err := os.MkdirAll("output", 0755); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		panic(err)
 	}
+}
 
-	if err := savePNG("output/renderdemo.png", img); err != nil {
-		panic(err)
+func appendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
+	if config.ShowColliders {
+		*commands = append(
+			*commands,
+			world.DebugColliderCommands(
+				config.ColliderColor,
+				config.ColliderStrokeWidth,
+				config.ColliderLayer,
+			)...,
+		)
 	}
 
-	gifRenderer := renderer
-	gifRenderer.Width = gifWidth
-	gifRenderer.Height = gifHeight
-	gifRenderer.Camera.Viewport = math2d.NewRect(
-		viewportOrigin,
-		math2d.Vec2{X: gifWidth, Y: gifHeight},
+	if !config.ShowContacts {
+		return
+	}
+
+	*commands = append(
+		*commands,
+		world.DebugContactCommands(
+			config.ContactColor,
+			config.ContactPointRadius,
+			config.ContactLineWidth,
+			config.ContactNormalLength,
+			config.ContactLayer,
+		)...,
 	)
-
-	if err := saveGIF("output/renderdemo.gif", gifRenderer, buildDemoWorld()); err != nil {
-		panic(err)
-	}
-
-	println("wrote output/renderdemo.png")
-	println("wrote output/renderdemo.gif")
-}
-
-func savePNG(path string, img image.Image) error {
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-
-		}
-	}(file)
-
-	return png.Encode(file, img)
-}
-
-func saveGIF(path string, renderer raster.Renderer, world *scene.World) error {
-	animation := &gif.GIF{
-		Image: make([]*image.Paletted, 0, frameCount),
-		Delay: make([]int, 0, frameCount),
-	}
-
-	for range frameCount {
-		commands := buildFieldCommands()
-		commands = append(commands, world.RenderCommands()...)
-
-		img := renderer.Render(commands)
-		animation.Image = append(animation.Image, palettedImage(img))
-		animation.Delay = append(animation.Delay, frameDelay)
-
-		world.Step(frameDT, scene.StepConfig{
-			Bounds: math2d.NewRect(fieldOrigin, fieldSize),
-		})
-	}
-
-	file, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-		}
-	}(file)
-
-	return gif.EncodeAll(file, animation)
-}
-
-func palettedImage(img image.Image) *image.Paletted {
-	bounds := img.Bounds()
-	paletted := image.NewPaletted(bounds, palette.Plan9)
-
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			paletted.Set(x, y, img.At(x, y))
-		}
-	}
-
-	return paletted
 }
 
 func buildFieldCommands() []render.Command {

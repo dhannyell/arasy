@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FrameForge Canvas</title>
+    <link rel="stylesheet" href="/static/style/style.css">
+</head>
+<body>
+    <header>
+        <h1>FrameForge Canvas</h1>
+        <div class="toolbar">
+            <span id="stats">connecting...</span>
+            <button id="play-pause" type="button">Pause</button>
+            <button id="back" type="button">Back</button>
+            <button id="step" type="button">Step</button>
+            <button id="reset" type="button">Reset</button>
+            <label>
+                Speed
+                <input id="speed" type="range" min="1" max="8" value="1">
+                <span id="speed-value">1x</span>
+            </label>
+            <label>
+                <input id="debug" type="checkbox" checked>
+                Debug
+            </label>
+        </div>
+    </header>
+
+    <main>
+        <canvas id="ff-canvas"></canvas>
+    </main>
+
+    <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

@@ -21,6 +21,13 @@ const (
 	AspectExpand
 )
 
+type ResolvedCamera struct {
+	World    math2d.Rect
+	Viewport math2d.Rect
+	ScaleX   float64
+	ScaleY   float64
+}
+
 // Camera maps world coordinates to viewport coordinates.
 type Camera struct {
 	// World is the visible area in world coordinates.
@@ -182,4 +189,27 @@ func (c Camera) expandView() (math2d.Rect, math2d.Rect) {
 	}
 
 	return world, viewport
+}
+
+// Resolve returns the adjusted scale based on the current camera viewport and aspect ratio.
+func (c Camera) Resolve() ResolvedCamera {
+	world, viewport := c.resolveView()
+
+	scaleX := 0.0
+	scaleY := 0.0
+
+	if world.Width() != 0 {
+		scaleX = viewport.Width() / world.Width()
+	}
+
+	if world.Height() != 0 {
+		scaleY = viewport.Height() / world.Height()
+	}
+
+	return ResolvedCamera{
+		World:    world,
+		Viewport: viewport,
+		ScaleX:   scaleX,
+		ScaleY:   scaleY,
+	}
 }
