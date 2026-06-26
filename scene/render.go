@@ -8,10 +8,10 @@ import (
 )
 
 func (w *World) RenderCommands() []render.Command {
-	commands := make([]render.Command, 0, len(w.CircleSprites))
+	commands := make([]render.Command, 0, len(w.circleSprites))
 
-	for id, sprite := range w.CircleSprites {
-		transform, ok := w.Transforms[id]
+	for id, sprite := range w.circleSprites {
+		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
@@ -20,7 +20,9 @@ func (w *World) RenderCommands() []render.Command {
 			Center: transform.Position,
 			Radius: sprite.Radius,
 			Fill:   sprite.Color,
-			Layer:  sprite.Layer,
+			BaseCommand: render.BaseCommand{
+				LayerValue: sprite.Layer,
+			},
 		})
 	}
 
@@ -28,10 +30,10 @@ func (w *World) RenderCommands() []render.Command {
 }
 
 func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
-	commands := make([]render.Command, 0, len(w.CircleColliders))
+	commands := make([]render.Command, 0, len(w.circleColliders))
 
-	for id, collider := range w.CircleColliders {
-		transform, ok := w.Transforms[id]
+	for id, collider := range w.circleColliders {
+		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
@@ -41,7 +43,9 @@ func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, l
 			Radius:      collider.Radius,
 			Stroke:      color,
 			StrokeWidth: strokeWidth,
-			Layer:       layer,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layer,
+			},
 		})
 	}
 
@@ -53,12 +57,12 @@ func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth,
 	commands := make([]render.Command, 0, len(contacts)*2)
 
 	for _, contact := range contacts {
-		transformA, ok := w.Transforms[contact.A]
+		transformA, ok := w.transforms[contact.A]
 		if !ok {
 			continue
 		}
 
-		transformB, ok := w.Transforms[contact.B]
+		transformB, ok := w.transforms[contact.B]
 		if !ok {
 			continue
 		}
@@ -71,14 +75,18 @@ func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth,
 				Center: point,
 				Radius: pointRadius,
 				Color:  color,
-				Layer:  layer,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
 			},
 			render.DrawLine{
 				From:  point,
 				To:    normalEnd,
 				Width: lineWidth,
 				Color: color,
-				Layer: layer,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
 			},
 		)
 	}
@@ -87,16 +95,16 @@ func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth,
 }
 
 func (w *World) DebugGridCommands(color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
-	if len(w.DebugGridCells) == 0 {
+	if len(w.debugGridCells) == 0 {
 		return nil
 	}
 
-	commands := make([]render.Command, 0, len(w.DebugGridCells)*4)
+	commands := make([]render.Command, 0, len(w.debugGridCells)*4)
 
 	dashStep := dashLength
 	gap := dashLength * 0.5
 
-	for _, cell := range w.DebugGridCells {
+	for _, cell := range w.debugGridCells {
 		cellSize := cell.Size
 		if cellSize <= 0 {
 			cellSize = defaultCellSize
@@ -117,13 +125,13 @@ func (w *World) DebugGridCommands(color render.Color, strokeWidth, dashLength fl
 }
 
 func (w *World) DebugActiveGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
-	if len(w.DebugGridCells) == 0 {
+	if len(w.debugGridCells) == 0 {
 		return nil
 	}
 
-	commands := make([]render.Command, 0, len(w.DebugGridCells))
+	commands := make([]render.Command, 0, len(w.debugGridCells))
 
-	for _, cell := range w.DebugGridCells {
+	for _, cell := range w.debugGridCells {
 		cellSize := cell.Size
 		if cellSize <= 0 {
 			cellSize = defaultCellSize
@@ -143,7 +151,9 @@ func (w *World) DebugActiveGridCommands(fill, stroke render.Color, strokeWidth f
 			Fill:        fill,
 			Stroke:      stroke,
 			StrokeWidth: strokeWidth,
-			Layer:       layer,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layer,
+			},
 		})
 	}
 
@@ -151,13 +161,13 @@ func (w *World) DebugActiveGridCommands(fill, stroke render.Color, strokeWidth f
 }
 
 func (w *World) DebugCandidateGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
-	if len(w.DebugGridCells) == 0 {
+	if len(w.debugGridCells) == 0 {
 		return nil
 	}
 
-	commands := make([]render.Command, 0, len(w.DebugGridCells))
+	commands := make([]render.Command, 0, len(w.debugGridCells))
 
-	for _, cell := range w.DebugGridCells {
+	for _, cell := range w.debugGridCells {
 		if !cell.Candidate {
 			continue
 		}
@@ -181,7 +191,9 @@ func (w *World) DebugCandidateGridCommands(fill, stroke render.Color, strokeWidt
 			Fill:        fill,
 			Stroke:      stroke,
 			StrokeWidth: strokeWidth,
-			Layer:       layer,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layer,
+			},
 		})
 	}
 
@@ -242,7 +254,9 @@ func dashedLine(x1, y1, x2, y2, width, dashLen, gap float64, color render.Color,
 			To:    math2d.Vec2{X: x1 + ux*(t+segLen), Y: y1 + uy*(t+segLen)},
 			Width: width,
 			Color: color,
-			Layer: layer,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layer,
+			},
 		})
 		t += segLen + gap
 	}

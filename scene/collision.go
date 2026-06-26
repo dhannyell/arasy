@@ -45,13 +45,13 @@ func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 }
 
 func (w *World) BounceCirclesInside(bounds math2d.Rect) {
-	for id, collider := range w.CircleColliders {
-		transform, ok := w.Transforms[id]
+	for id, collider := range w.circleColliders {
+		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		velocity, ok := w.Velocities[id]
+		velocity, ok := w.velocities[id]
 		if !ok {
 			continue
 		}
@@ -78,8 +78,8 @@ func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 			velocity.Linear.Y = -velocity.Linear.Y
 		}
 
-		w.Transforms[id] = transform
-		w.Velocities[id] = velocity
+		w.transforms[id] = transform
+		w.velocities[id] = velocity
 	}
 }
 
@@ -98,13 +98,13 @@ func (w *World) DetectCircleOverlaps() []CircleContact {
 
 func (w *World) DetectCircleOverlapsGrid(cellSize float64) []CircleContact {
 	if cellSize <= 0 {
-		w.DebugGridCells = nil
+		w.debugGridCells = nil
 		return w.DetectCircleOverlaps()
 	}
 
 	grid := newSpatialHashGrid(cellSize)
 	grid.populate(w)
-	w.DebugGridCells = grid.debugCells()
+	w.debugGridCells = grid.debugCells()
 
 	return w.detectCircleOverlapsForPairs(grid.entityPairs())
 }
@@ -122,18 +122,18 @@ func (w *World) detectCircleOverlapsForPairs(pairs []entityPair) []CircleContact
 }
 
 func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
-	transformA, ok := w.Transforms[pair.A]
+	transformA, ok := w.transforms[pair.A]
 	if !ok {
 		return CircleContact{}, false
 	}
 
-	transformB, ok := w.Transforms[pair.B]
+	transformB, ok := w.transforms[pair.B]
 	if !ok {
 		return CircleContact{}, false
 	}
 
-	colliderA := w.CircleColliders[pair.A]
-	colliderB := w.CircleColliders[pair.B]
+	colliderA := w.circleColliders[pair.A]
+	colliderB := w.circleColliders[pair.B]
 
 	delta := transformB.Position.Sub(transformA.Position)
 	distanceSq := delta.LenSq()
@@ -174,12 +174,12 @@ func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
 
 func (w *World) resolveCircleContacts(contacts []CircleContact) {
 	for _, contact := range contacts {
-		transformA, ok := w.Transforms[contact.A]
+		transformA, ok := w.transforms[contact.A]
 		if !ok {
 			continue
 		}
 
-		transformB, ok := w.Transforms[contact.B]
+		transformB, ok := w.transforms[contact.B]
 		if !ok {
 			continue
 		}
@@ -199,8 +199,8 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 		transformB.Position.X += contact.Normal.X * correctionB
 		transformB.Position.Y += contact.Normal.Y * correctionB
 
-		w.Transforms[contact.A] = transformA
-		w.Transforms[contact.B] = transformB
+		w.transforms[contact.A] = transformA
+		w.transforms[contact.B] = transformB
 
 		velocityA, ok := w.Velocity(contact.A)
 		if !ok {
@@ -228,8 +228,8 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 			velocityA.Linear = velocityA.Linear.Sub(impulse.Mul(bodyA.InvMass))
 			velocityB.Linear = velocityB.Linear.Add(impulse.Mul(bodyB.InvMass))
 
-			w.Velocities[contact.A] = velocityA
-			w.Velocities[contact.B] = velocityB
+			w.velocities[contact.A] = velocityA
+			w.velocities[contact.B] = velocityB
 		}
 	}
 }
@@ -238,12 +238,12 @@ func (g *spatialHashGrid) populate(w *World) {
 	entities := w.circleColliderEntities()
 
 	for _, id := range entities {
-		transform, ok := w.Transforms[id]
+		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		collider := w.CircleColliders[id]
+		collider := w.circleColliders[id]
 
 		minCellX := cellCoord(transform.Position.X-collider.Radius, g.cellSize)
 		maxCellX := cellCoord(transform.Position.X+collider.Radius, g.cellSize)
@@ -350,9 +350,9 @@ func cellCoord(value, cellSize float64) int {
 }
 
 func (w *World) circleColliderEntities() []EntityID {
-	entities := make([]EntityID, 0, len(w.CircleColliders))
+	entities := make([]EntityID, 0, len(w.circleColliders))
 
-	for id := range w.CircleColliders {
+	for id := range w.circleColliders {
 		entities = append(entities, id)
 	}
 
@@ -362,7 +362,7 @@ func (w *World) circleColliderEntities() []EntityID {
 }
 
 func (w *World) bodyOrDefault(id EntityID) Body {
-	body, ok := w.Bodies[id]
+	body, ok := w.bodies[id]
 	if !ok {
 		return Body{
 			InvMass:     1,

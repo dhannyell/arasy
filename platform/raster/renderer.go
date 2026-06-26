@@ -25,7 +25,7 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 
 	orderedCommands := append([]render.Command(nil), commands...)
 	sort.SliceStable(orderedCommands, func(i, j int) bool {
-		return commandLayer(orderedCommands[i]) < commandLayer(orderedCommands[j])
+		return orderedCommands[i].Layer() < orderedCommands[j].Layer()
 	})
 
 	for _, command := range orderedCommands {
@@ -350,23 +350,4 @@ func toByte(v float64) uint8 {
 	}
 
 	return uint8(v*255 + 0.5)
-}
-
-func commandLayer(command render.Command) int {
-	switch command := command.(type) {
-	case render.DrawRect:
-		return command.Layer
-	case render.DrawCircle:
-		return command.Layer
-	case render.DrawPoint:
-		return command.Layer
-	case render.DrawLine:
-		return command.Layer
-	case render.DrawText:
-		return command.Layer
-	case render.DrawArc:
-		return command.Layer
-	default:
-		return 0
-	}
 }
