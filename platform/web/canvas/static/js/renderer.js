@@ -50,9 +50,7 @@ export function createCanvasRenderer(canvas, options = {}) {
 
         applyCamera(ctx, frame.camera);
 
-        const commands = [...frame.commands].sort((a, b) => a.layer - b.layer);
-
-        for (const command of commands) {
+        for (const command of frame.commands) {
             drawCommand(ctx, command);
         }
 
@@ -98,8 +96,18 @@ export function createCanvasRenderer(canvas, options = {}) {
     return {
         render,
         resize,
+        destroy,
         size,
     };
+
+    function destroy() {
+        resizeObserver.disconnect();
+        window.removeEventListener("resize", scheduleResize);
+        if (resizeFrame !== 0) {
+            cancelAnimationFrame(resizeFrame);
+            resizeFrame = 0;
+        }
+    }
 
     function size() {
         return {

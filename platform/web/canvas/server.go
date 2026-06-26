@@ -3,7 +3,7 @@ package canvas
 import (
 	"context"
 	"embed"
-	"fmt"
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -39,8 +39,15 @@ type clientMessage struct {
 	Debug  bool    `json:"debug"`
 }
 
+type client struct {
+	conn *websocket.Conn
+
+	mu     sync.RWMutex
+	camera render.Camera
+}
+
 type controlState struct {
-	mu sync.RWMutex
+	mu sync.Mutex
 
 	paused      bool
 	speed       int
@@ -51,27 +58,17 @@ type controlState struct {
 }
 
 type frameState struct {
-	steps int
+	speed int
 	debug bool
 	reset bool
+	steps int
 	backs int
 }
 
 //go:embed static
 var staticFiles embed.FS
 
-func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer func(conn *websocket.Conn) {
-		err := conn.CloseNow()
-		if err != nil {
-			return
-		}
-	}(conn)
-
+func (s *Server) ListenAndServe() error {
 	fps := s.FPS
 	if fps <= 0 {
 		fps = 60
@@ -82,95 +79,199 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		simulationHz = fps
 	}
 
-	camera := s.Camera
-	var cameraMu sync.RWMutex
-	controls := controlState{
-		speed: 1,
-		debug: true,
+	hub := newHub(s, fps, simulationHz)
+	go hub.run()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleIndex)
+	mux.HandleFunc("/ws", hub.handleWS)
+	mux.Handle("/static/", http.FileServerFS(staticFiles))
+
+	return http.ListenAndServe(s.Addr, mux)
+}
+
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
 	}
 
-	go readClientMessages(r.Context(), conn, &cameraMu, &camera, &controls)
+	http.ServeFileFS(w, r, staticFiles, "static/index.html")
+}
 
-	dt := 1.0 / float64(simulationHz)
-	ticker := time.NewTicker(time.Second / time.Duration(fps))
-	defer ticker.Stop()
+type hub struct {
+	server       *Server
+	fps          int
+	simulationHz int
 
-	var tick uint64
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			state := controls.consumeFrameState()
-			if state.reset {
-				if s.Reset != nil {
-					s.Reset()
-				}
-				tick = 0
-			}
+	controls controlState
 
-			for range state.backs {
-				if s.Back != nil && s.Back() && tick > 0 {
-					tick--
-				}
-			}
+	clientsMu sync.RWMutex
+	clients   map[*client]struct{}
+}
 
-			for range state.steps {
-				if s.Update != nil {
-					s.Update(dt)
-				}
-				tick++
-			}
-
-			var commands []render.Command
-			if s.Commands != nil {
-				commands = s.Commands(state.debug)
-			}
-
-			cameraMu.RLock()
-			frameCamera := camera
-			cameraMu.RUnlock()
-
-			frame := adapter.NewFrameDTO(tick, frameCamera, s.Clear, commands)
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-			err := wsjson.Write(ctx, conn, frame)
-			cancel()
-
-			if err != nil {
-				return
-			}
-		}
+func newHub(server *Server, fps int, simulationHz int) *hub {
+	return &hub{
+		server:       server,
+		fps:          fps,
+		simulationHz: simulationHz,
+		controls: controlState{
+			speed: 1,
+			debug: true,
+		},
+		clients: make(map[*client]struct{}),
 	}
 }
 
-func readClientMessages(
-	ctx context.Context,
-	conn *websocket.Conn,
-	cameraMu *sync.RWMutex,
-	camera *render.Camera,
-	controls *controlState,
-) {
+func (h *hub) handleWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+
+	c := &client{
+		conn:   conn,
+		camera: h.server.Camera,
+	}
+
+	h.addClient(c)
+	defer func() {
+		h.removeClient(c)
+		_ = conn.CloseNow()
+	}()
+
+	h.readClientMessages(r.Context(), c)
+}
+
+func (h *hub) addClient(c *client) {
+	h.clientsMu.Lock()
+	defer h.clientsMu.Unlock()
+
+	h.clients[c] = struct{}{}
+}
+
+func (h *hub) removeClient(c *client) {
+	h.clientsMu.Lock()
+	defer h.clientsMu.Unlock()
+
+	delete(h.clients, c)
+}
+
+func (h *hub) readClientMessages(ctx context.Context, c *client) {
 	for {
 		var message clientMessage
-		if err := wsjson.Read(ctx, conn, &message); err != nil {
+		if err := wsjson.Read(ctx, c.conn, &message); err != nil {
 			return
 		}
 
 		switch message.Type {
 		case "resize":
-			if message.Width <= 0 || message.Height <= 0 {
-				continue
-			}
-
-			cameraMu.Lock()
-			camera.Viewport = math2d.NewRect(
-				math2d.Vec2{X: 0, Y: 0},
-				math2d.Vec2{X: message.Width, Y: message.Height},
-			)
-			cameraMu.Unlock()
+			c.applyResize(message)
 		case "control":
-			controls.apply(message)
+			h.controls.apply(message)
+		}
+	}
+}
+
+func (c *client) applyResize(message clientMessage) {
+	if message.Width <= 0 || message.Height <= 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.camera.Viewport = math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: message.Width, Y: message.Height},
+	)
+}
+
+func (c *client) frameCamera() render.Camera {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.camera
+}
+
+func (h *hub) run() {
+	renderDT := 1.0 / float64(h.fps)
+	simulationDT := 1.0 / float64(h.simulationHz)
+	ticker := time.NewTicker(time.Second / time.Duration(h.fps))
+	defer ticker.Stop()
+
+	var tick uint64
+	var accumulator float64
+
+	for range ticker.C {
+		if h.clientCount() == 0 {
+			accumulator = 0
+			continue
+		}
+
+		state := h.controls.consumeFrameState()
+
+		if state.reset {
+			if h.server.Reset != nil {
+				h.server.Reset()
+			}
+			tick = 0
+			accumulator = 0
+		}
+
+		for range state.backs {
+			if h.server.Back != nil && h.server.Back() && tick > 0 {
+				tick--
+			}
+		}
+
+		steps := state.steps
+		if steps == 0 && state.speed > 0 {
+			accumulator += renderDT * float64(state.speed)
+			steps = int(math.Floor(accumulator / simulationDT))
+			accumulator -= float64(steps) * simulationDT
+		}
+
+		for range steps {
+			if h.server.Update != nil {
+				h.server.Update(simulationDT)
+			}
+			tick++
+		}
+
+		var commands []render.Command
+		if h.server.Commands != nil {
+			commands = h.server.Commands(state.debug)
+		}
+
+		h.broadcast(tick, commands)
+	}
+}
+
+func (h *hub) clientCount() int {
+	h.clientsMu.RLock()
+	defer h.clientsMu.RUnlock()
+
+	return len(h.clients)
+}
+
+func (h *hub) broadcast(tick uint64, commands []render.Command) {
+	h.clientsMu.RLock()
+	clients := make([]*client, 0, len(h.clients))
+	for c := range h.clients {
+		clients = append(clients, c)
+	}
+	h.clientsMu.RUnlock()
+
+	for _, c := range clients {
+		frame := adapter.NewFrameDTO(tick, c.frameCamera(), h.server.Clear, commands)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		err := wsjson.Write(ctx, c.conn, frame)
+		cancel()
+
+		if err != nil {
+			h.removeClient(c)
+			_ = c.conn.CloseNow()
 		}
 	}
 }
@@ -211,15 +312,13 @@ func (s *controlState) consumeFrameState() frameState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	steps := s.speed
+	speed := s.speed
 	if s.paused {
-		steps = 0
+		speed = 0
 	}
 
-	if s.stepPending > 0 {
-		steps = s.stepPending
-		s.stepPending = 0
-	}
+	steps := s.stepPending
+	s.stepPending = 0
 
 	backs := s.backPending
 	s.backPending = 0
@@ -228,33 +327,10 @@ func (s *controlState) consumeFrameState() frameState {
 	s.reset = false
 
 	return frameState{
-		steps: steps,
+		speed: speed,
 		debug: s.debug,
 		reset: reset,
+		steps: steps,
 		backs: backs,
 	}
-}
-
-func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
-	}
-
-	http.ServeFileFS(w, r, staticFiles, "static/index.html")
-}
-
-func (s *Server) ListenAndServe() error {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/ws", s.handleWS)
-
-	mux.Handle(
-		"/static/",
-		http.FileServerFS(staticFiles),
-	)
-
-	fmt.Println("Server is up and running")
-	return http.ListenAndServe(s.Addr, mux)
 }
