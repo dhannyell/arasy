@@ -3,6 +3,7 @@ package main
 import (
 	"image"
 	"image/color/palette"
+	"image/draw"
 	"image/gif"
 	"image/png"
 	"os"
@@ -129,7 +130,7 @@ func savePNG(path string, img image.Image) error {
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-
+			println("warning: failed to close file:", err.Error())
 		}
 	}(file)
 
@@ -173,11 +174,7 @@ func palettedImage(img image.Image) *image.Paletted {
 	bounds := img.Bounds()
 	paletted := image.NewPaletted(bounds, palette.Plan9)
 
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			paletted.Set(x, y, img.At(x, y))
-		}
-	}
+	draw.FloydSteinberg.Draw(paletted, bounds, img, image.Point{})
 
 	return paletted
 }

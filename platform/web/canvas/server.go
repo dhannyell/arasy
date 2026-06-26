@@ -15,6 +15,8 @@ import (
 	adapter "github.com/dhannyell/frameforge/render/adapter/web"
 )
 
+const maxStepsPerFrame = 5
+
 type Server struct {
 	Addr         string
 	FPS          int
@@ -81,15 +83,26 @@ func (s *Server) ListenAndServe() error {
 		simulationHz = fps
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	hub := newHub(s, fps, simulationHz)
-	go hub.run()
+	go hub.run(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/ws", hub.handleWS)
 	mux.Handle("/static/", http.FileServerFS(staticFiles))
 
-	return http.ListenAndServe(s.Addr, mux)
+	srv := &http.Server{
+		Addr:              s.Addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
+	return srv.ListenAndServe()
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -126,7 +139,9 @@ func newHub(server *Server, fps int, simulationHz int) *hub {
 }
 
 func (h *hub) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{h.server.Addr, h.server.Addr},
+	})
 	if err != nil {
 		return
 	}
@@ -196,7 +211,7 @@ func (c *client) frameCamera() render.Camera {
 	return c.camera
 }
 
-func (h *hub) run() {
+func (h *hub) run(ctx context.Context) {
 	renderDT := 1.0 / float64(h.fps)
 	simulationDT := 1.0 / float64(h.simulationHz)
 	ticker := time.NewTicker(time.Second / time.Duration(h.fps))
@@ -205,43 +220,48 @@ func (h *hub) run() {
 	var tick uint64
 	var accumulator float64
 
-	for range ticker.C {
-		if h.clientCount() == 0 {
-			accumulator = 0
-			continue
-		}
-
-		state := h.controls.consumeFrameState()
-
-		if state.reset {
-			if h.server.Reset != nil {
-				h.server.Reset()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if h.clientCount() == 0 {
+				accumulator = 0
+				continue
 			}
-			tick = 0
-			accumulator = 0
-		}
 
-		for range state.backs {
-			if h.server.Back != nil && h.server.Back() && tick > 0 {
-				tick--
+			state := h.controls.consumeFrameState()
+
+			if state.reset {
+				if h.server.Reset != nil {
+					h.server.Reset()
+				}
+				tick = 0
+				accumulator = 0
 			}
-		}
 
-		steps := nextSimulationSteps(state.steps, state.speed, renderDT, simulationDT, &accumulator)
-
-		for range steps {
-			if h.server.Update != nil {
-				h.server.Update(simulationDT)
+			for range state.backs {
+				if h.server.Back != nil && h.server.Back() && tick > 0 {
+					tick--
+				}
 			}
-			tick++
-		}
 
-		var commands []render.Command
-		if h.server.Commands != nil {
-			commands = h.server.Commands(state.debug)
-		}
+			steps := nextSimulationSteps(state.steps, state.speed, renderDT, simulationDT, &accumulator)
 
-		h.broadcast(tick, commands, state)
+			for range steps {
+				if h.server.Update != nil {
+					h.server.Update(simulationDT)
+				}
+				tick++
+			}
+
+			var commands []render.Command
+			if h.server.Commands != nil {
+				commands = h.server.Commands(state.debug)
+			}
+
+			h.broadcast(tick, commands, state)
+		}
 	}
 }
 
@@ -262,6 +282,12 @@ func nextSimulationSteps(
 
 	*accumulator += renderDT * float64(speed)
 	steps := int(math.Floor(*accumulator / simulationDT))
+
+	if steps > maxStepsPerFrame {
+		steps = maxStepsPerFrame
+		*accumulator = 0
+	}
+
 	*accumulator -= float64(steps) * simulationDT
 
 	return steps
@@ -300,10 +326,46 @@ func (h *hub) broadcast(tick uint64, commands []render.Command, state frameState
 		cancel()
 
 		if err != nil {
+			h.sendDisconnectFrame(c)
 			h.removeClient(c)
 			_ = c.conn.CloseNow()
 		}
 	}
+}
+
+func (h *hub) sendDisconnectFrame(c *client) {
+	camera := c.frameCamera()
+	viewport := camera.Viewport
+
+	identityCamera := render.Camera{
+		World:    viewport,
+		Viewport: viewport,
+		Aspect:   render.AspectStretch,
+	}
+
+	center := viewport.Center()
+
+	commands := []render.Command{
+		render.DrawText{
+			BaseCommand: render.BaseCommand{LayerValue: 999},
+			Position:    center,
+			Text:        "disconnected, retrying...",
+			Color:       render.RGBA(1, 1, 1, 1),
+			Size:        24,
+		},
+	}
+
+	frame := adapter.NewFrameDTOWithState(
+		0,
+		identityCamera,
+		h.server.Clear,
+		adapter.StateDTO{},
+		commands,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	_ = wsjson.Write(ctx, c.conn, frame)
+	cancel()
 }
 
 func (h *hub) historyLen() int {
