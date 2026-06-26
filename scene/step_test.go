@@ -26,6 +26,43 @@ func TestWorldStepIsDeterministic(t *testing.T) {
 	assertWorldState(t, first, second)
 }
 
+func TestWorldStepUsesConfiguredGridCellSize(t *testing.T) {
+	world := scene.NewWorld()
+
+	spawnStepTestCircle(
+		world,
+		math2d.Vec2{X: 8, Y: 8},
+		math2d.Vec2{},
+		1,
+	)
+
+	config := scene.StepConfig{
+		Bounds: math2d.NewRect(
+			math2d.Vec2{X: 0, Y: 0},
+			math2d.Vec2{X: 100, Y: 100},
+		),
+		Physics: scene.PhysicsConfig{
+			CellSize: 4,
+		},
+	}
+
+	world.Step(1.0/60.0, config)
+
+	if len(world.DebugGridCells) == 0 {
+		t.Fatal("expected step to populate debug grid cells")
+	}
+
+	for _, cell := range world.DebugGridCells {
+		if cell.Size != 4 {
+			t.Fatalf("debug cell size = %v, want 4", cell.Size)
+		}
+
+		if cell.X < 1 || cell.X > 2 || cell.Y < 1 || cell.Y > 2 {
+			t.Fatalf("debug cell %+v does not match configured cell size", cell)
+		}
+	}
+}
+
 func newStepTestWorld() *scene.World {
 	world := scene.NewWorld()
 
