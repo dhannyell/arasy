@@ -9,7 +9,22 @@
 <body>
     <header>
         <h1>FrameForge Canvas</h1>
-        <span id="stats">connecting...</span>
+        <div class="toolbar">
+            <span id="stats">connecting...</span>
+            <button id="play-pause" type="button">Pause</button>
+            <button id="back" type="button">Back</button>
+            <button id="step" type="button">Step</button>
+            <button id="reset" type="button">Reset</button>
+            <label>
+                Speed
+                <input id="speed" type="range" min="1" max="8" value="1">
+                <span id="speed-value">1x</span>
+            </label>
+            <label>
+                <input id="debug" type="checkbox" checked>
+                Debug
+            </label>
+        </div>
     </header>
 
     <main>

@@ -1,5 +1,7 @@
 package scene
 
+import "maps"
+
 type World struct {
 	nextID EntityID
 
@@ -22,6 +24,19 @@ func NewWorld() *World {
 		Dampings:        make(map[EntityID]Damping),
 		Bodies:          make(map[EntityID]Body),
 		CircleColliders: make(map[EntityID]CircleCollider),
+	}
+}
+
+func (w *World) Clone() *World {
+	return &World{
+		nextID:          w.nextID,
+		Transforms:      cloneMap(w.Transforms),
+		CircleSprites:   cloneMap(w.CircleSprites),
+		Velocities:      cloneMap(w.Velocities),
+		Accelerations:   cloneMap(w.Accelerations),
+		Dampings:        cloneMap(w.Dampings),
+		Bodies:          cloneMap(w.Bodies),
+		CircleColliders: cloneMap(w.CircleColliders),
 	}
 }
 
@@ -131,4 +146,11 @@ func (w *World) SetCircleCollider(id EntityID, collider CircleCollider) {
 
 func (w *World) RemoveCircleCollider(id EntityID) {
 	delete(w.CircleColliders, id)
+}
+
+func cloneMap[K comparable, V any](src map[K]V) map[K]V {
+	dst := make(map[K]V, len(src))
+	maps.Copy(dst, src)
+
+	return dst
 }

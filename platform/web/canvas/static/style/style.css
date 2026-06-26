@@ -35,10 +35,44 @@ h1 {
     font-weight: 700;
 }
 
+.toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 #stats {
     font-variant-numeric: tabular-nums;
     color: #cbd5e1;
     font-size: 13px;
+}
+
+button,
+label {
+    min-height: 32px;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    background: #172033;
+    color: #edf2f7;
+    font: inherit;
+}
+
+button {
+    padding: 0 12px;
+    cursor: pointer;
+}
+
+label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 10px;
+}
+
+input[type="range"] {
+    width: 96px;
 }
 
 main {

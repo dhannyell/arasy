@@ -11,16 +11,12 @@ import (
 )
 
 const (
-	imageWidth  = 1920
-	imageHeight = 1080
-	gifWidth    = 1920
-	gifHeight   = 1080
-	frameCount  = 250
-	frameDelay  = 6
-	frameDT     = 1.0 / 30.0
-
-	worldWidth  = 115.5
-	worldHeight = 74.8
+	imageWidth   = 1920
+	imageHeight  = 1080
+	renderFPS    = 60
+	simulationHz = 60
+	worldWidth   = 115.5
+	worldHeight  = 74.8
 
 	fieldWidth  = 105.0
 	fieldHeight = 68.0
@@ -119,26 +115,52 @@ var debugConfig = DebugConfig{
 
 func main() {
 	world := buildDemoWorld()
+	history := make([]*scene.World, 0, 600)
 
 	server := canvas.Server{
-		Addr: ":8080",
-		FPS:  60,
+		Addr:         ":8080",
+		FPS:          renderFPS,
+		SimulationHz: simulationHz,
 		Camera: render.Camera{
 			World:    math2d.NewRect(worldOrigin, worldSize),
 			Viewport: math2d.NewRect(viewportOrigin, viewportSize),
 			Aspect:   render.AspectExpand,
 		},
 		Clear: clearColor,
-		Frame: func(tick uint64, dt float64) []render.Command {
+		Update: func(dt float64) {
+			history = append(history, world.Clone())
+			if len(history) > 600 {
+				history = history[1:]
+			}
+
 			world.Step(dt, scene.StepConfig{
 				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
 			})
-
+		},
+		Commands: func(debug bool) []render.Command {
 			commands := buildFieldCommands()
 			commands = append(commands, world.RenderCommands()...)
-			appendDebugCommands(&commands, world, debugConfig)
+
+			if debug {
+				appendDebugCommands(&commands, world, debugConfig)
+			}
 
 			return commands
+		},
+		Reset: func() {
+			world = buildDemoWorld()
+			history = history[:0]
+		},
+		Back: func() bool {
+			if len(history) == 0 {
+				return false
+			}
+
+			last := history[len(history)-1]
+			history = history[:len(history)-1]
+			world = last
+
+			return true
 		},
 	}
 
@@ -147,8 +169,6 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		panic(err)
 	}
-
-	fmt.Println("Server Started")
 }
 
 func appendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
