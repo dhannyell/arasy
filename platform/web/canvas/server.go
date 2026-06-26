@@ -225,12 +225,7 @@ func (h *hub) run() {
 			}
 		}
 
-		steps := state.steps
-		if steps == 0 && state.speed > 0 {
-			accumulator += renderDT * float64(state.speed)
-			steps = int(math.Floor(accumulator / simulationDT))
-			accumulator -= float64(steps) * simulationDT
-		}
+		steps := nextSimulationSteps(state.steps, state.speed, renderDT, simulationDT, &accumulator)
 
 		for range steps {
 			if h.server.Update != nil {
@@ -246,6 +241,28 @@ func (h *hub) run() {
 
 		h.broadcast(tick, commands)
 	}
+}
+
+func nextSimulationSteps(
+	manualSteps int,
+	speed int,
+	renderDT float64,
+	simulationDT float64,
+	accumulator *float64,
+) int {
+	if manualSteps > 0 {
+		return manualSteps
+	}
+
+	if speed <= 0 || simulationDT <= 0 || renderDT <= 0 {
+		return 0
+	}
+
+	*accumulator += renderDT * float64(speed)
+	steps := int(math.Floor(*accumulator / simulationDT))
+	*accumulator -= float64(steps) * simulationDT
+
+	return steps
 }
 
 func (h *hub) clientCount() int {
