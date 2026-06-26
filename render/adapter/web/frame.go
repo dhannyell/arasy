@@ -9,7 +9,15 @@ type FrameDTO struct {
 	Tick     uint64       `json:"tick"`
 	Camera   CameraDTO    `json:"camera"`
 	Clear    ColorDTO     `json:"clear"`
+	State    StateDTO     `json:"state"`
 	Commands []CommandDTO `json:"commands"`
+}
+
+type StateDTO struct {
+	Paused     bool `json:"paused"`
+	Speed      int  `json:"speed"`
+	Debug      bool `json:"debug"`
+	HistoryLen int  `json:"historyLen"`
 }
 
 func NewFrameDTO(
@@ -18,11 +26,22 @@ func NewFrameDTO(
 	clear render.Color,
 	commands []render.Command,
 ) FrameDTO {
+	return NewFrameDTOWithState(tick, camera, clear, StateDTO{}, commands)
+}
+
+func NewFrameDTOWithState(
+	tick uint64,
+	camera render.Camera,
+	clear render.Color,
+	state StateDTO,
+	commands []render.Command,
+) FrameDTO {
 	return FrameDTO{
 		Type:     "frame",
 		Tick:     tick,
 		Camera:   NewCameraDTO(camera),
 		Clear:    NewColorDTO(clear),
+		State:    state,
 		Commands: NewCommandDTOs(commands),
 	}
 }
