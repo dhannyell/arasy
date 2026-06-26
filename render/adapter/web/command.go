@@ -33,7 +33,7 @@ type CommandDTO struct {
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
 	commands = append([]render.Command(nil), commands...)
 	sort.SliceStable(commands, func(i, j int) bool {
-		return commandLayer(commands[i]) < commandLayer(commands[j])
+		return commands[i].Layer() < commands[j].Layer()
 	})
 
 	commandDTOs := make([]CommandDTO, 0, len(commands))
@@ -50,7 +50,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Fill:        new(NewColorDTO(command.Fill)),
 				Stroke:      new(NewColorDTO(command.Stroke)),
 				StrokeWidth: command.StrokeWidth,
-				Layer:       command.Layer,
+				Layer:       command.Layer(),
 			}
 		case render.DrawLine:
 			commandDTO = CommandDTO{
@@ -60,7 +60,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				To:    new(NewVec2DTO(command.To)),
 				Width: command.Width,
 				Color: new(NewColorDTO(command.Color)),
-				Layer: command.Layer,
+				Layer: command.Layer(),
 			}
 		case render.DrawCircle:
 			commandDTO = CommandDTO{
@@ -71,7 +71,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Fill:        new(NewColorDTO(command.Fill)),
 				Stroke:      new(NewColorDTO(command.Stroke)),
 				StrokeWidth: command.StrokeWidth,
-				Layer:       command.Layer,
+				Layer:       command.Layer(),
 			}
 		case render.DrawPoint:
 			commandDTO = CommandDTO{
@@ -79,7 +79,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Center: new(NewVec2DTO(command.Center)),
 				Radius: command.Radius,
 				Color:  new(NewColorDTO(command.Color)),
-				Layer:  command.Layer,
+				Layer:  command.Layer(),
 			}
 		case render.DrawArc:
 			commandDTO = CommandDTO{
@@ -90,7 +90,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				EndAngle:   command.EndAngle,
 				Width:      command.Width,
 				Color:      new(NewColorDTO(command.Color)),
-				Layer:      command.Layer,
+				Layer:      command.Layer(),
 			}
 		case render.DrawText:
 			commandDTO = CommandDTO{
@@ -99,7 +99,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Text:     command.Text,
 				Color:    new(NewColorDTO(command.Color)),
 				Size:     command.Size,
-				Layer:    command.Layer,
+				Layer:    command.Layer(),
 			}
 		default:
 			continue
@@ -109,23 +109,4 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 	}
 
 	return commandDTOs
-}
-
-func commandLayer(command render.Command) int {
-	switch command := command.(type) {
-	case render.DrawRect:
-		return command.Layer
-	case render.DrawCircle:
-		return command.Layer
-	case render.DrawPoint:
-		return command.Layer
-	case render.DrawLine:
-		return command.Layer
-	case render.DrawText:
-		return command.Layer
-	case render.DrawArc:
-		return command.Layer
-	default:
-		return 0
-	}
 }

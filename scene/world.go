@@ -18,40 +18,40 @@ type DebugGridCell struct {
 type World struct {
 	nextID EntityID
 
-	Transforms      map[EntityID]Transform
-	CircleSprites   map[EntityID]CircleSprite
-	Velocities      map[EntityID]Velocity
-	Accelerations   map[EntityID]Acceleration
-	Dampings        map[EntityID]Damping
-	Bodies          map[EntityID]Body
-	CircleColliders map[EntityID]CircleCollider
-	DebugGridCells  []DebugGridCell
+	transforms      map[EntityID]Transform
+	circleSprites   map[EntityID]CircleSprite
+	velocities      map[EntityID]Velocity
+	accelerations   map[EntityID]Acceleration
+	dampings        map[EntityID]Damping
+	bodies          map[EntityID]Body
+	circleColliders map[EntityID]CircleCollider
+	debugGridCells  []DebugGridCell
 }
 
 func NewWorld() *World {
 	return &World{
 		nextID:          1,
-		Transforms:      make(map[EntityID]Transform),
-		CircleSprites:   make(map[EntityID]CircleSprite),
-		Velocities:      make(map[EntityID]Velocity),
-		Accelerations:   make(map[EntityID]Acceleration),
-		Dampings:        make(map[EntityID]Damping),
-		Bodies:          make(map[EntityID]Body),
-		CircleColliders: make(map[EntityID]CircleCollider),
+		transforms:      make(map[EntityID]Transform),
+		circleSprites:   make(map[EntityID]CircleSprite),
+		velocities:      make(map[EntityID]Velocity),
+		accelerations:   make(map[EntityID]Acceleration),
+		dampings:        make(map[EntityID]Damping),
+		bodies:          make(map[EntityID]Body),
+		circleColliders: make(map[EntityID]CircleCollider),
 	}
 }
 
 func (w *World) Clone() *World {
 	return &World{
 		nextID:          w.nextID,
-		Transforms:      cloneMap(w.Transforms),
-		CircleSprites:   cloneMap(w.CircleSprites),
-		Velocities:      cloneMap(w.Velocities),
-		Accelerations:   cloneMap(w.Accelerations),
-		Dampings:        cloneMap(w.Dampings),
-		Bodies:          cloneMap(w.Bodies),
-		CircleColliders: cloneMap(w.CircleColliders),
-		DebugGridCells:  append([]DebugGridCell(nil), w.DebugGridCells...),
+		transforms:      cloneMap(w.transforms),
+		circleSprites:   cloneMap(w.circleSprites),
+		velocities:      cloneMap(w.velocities),
+		accelerations:   cloneMap(w.accelerations),
+		dampings:        cloneMap(w.dampings),
+		bodies:          cloneMap(w.bodies),
+		circleColliders: cloneMap(w.circleColliders),
+		debugGridCells:  append([]DebugGridCell(nil), w.debugGridCells...),
 	}
 }
 
@@ -63,104 +63,108 @@ func (w *World) Spawn() EntityID {
 }
 
 func (w *World) Despawn(id EntityID) {
-	delete(w.Transforms, id)
-	delete(w.CircleSprites, id)
-	delete(w.Velocities, id)
-	delete(w.Accelerations, id)
-	delete(w.Dampings, id)
-	delete(w.Bodies, id)
-	delete(w.CircleColliders, id)
+	delete(w.transforms, id)
+	delete(w.circleSprites, id)
+	delete(w.velocities, id)
+	delete(w.accelerations, id)
+	delete(w.dampings, id)
+	delete(w.bodies, id)
+	delete(w.circleColliders, id)
 }
 
 func (w *World) SetTransform(id EntityID, transform Transform) {
-	w.Transforms[id] = transform
+	w.transforms[id] = transform
 }
 
 func (w *World) SetCircleSprite(id EntityID, sprite CircleSprite) {
-	w.CircleSprites[id] = sprite
+	w.circleSprites[id] = sprite
 }
 
 func (w *World) Transform(id EntityID) (Transform, bool) {
-	transform, ok := w.Transforms[id]
+	transform, ok := w.transforms[id]
 	return transform, ok
 }
 
 func (w *World) CircleSprite(id EntityID) (CircleSprite, bool) {
-	sprite, ok := w.CircleSprites[id]
+	sprite, ok := w.circleSprites[id]
 	return sprite, ok
 }
 
 func (w *World) RemoveTransform(id EntityID) {
-	delete(w.Transforms, id)
+	delete(w.transforms, id)
 }
 
 func (w *World) RemoveCircleSprite(id EntityID) {
-	delete(w.CircleSprites, id)
+	delete(w.circleSprites, id)
 }
 
 func (w *World) SetVelocity(id EntityID, velocity Velocity) {
-	w.Velocities[id] = velocity
+	w.velocities[id] = velocity
 }
 
 func (w *World) Velocity(id EntityID) (Velocity, bool) {
-	velocity, ok := w.Velocities[id]
+	velocity, ok := w.velocities[id]
 	return velocity, ok
 }
 
 func (w *World) RemoveVelocity(id EntityID) {
-	delete(w.Velocities, id)
+	delete(w.velocities, id)
 }
 
 func (w *World) SetAcceleration(id EntityID, acceleration Acceleration) {
-	w.Accelerations[id] = acceleration
+	w.accelerations[id] = acceleration
 }
 
 func (w *World) Acceleration(id EntityID) (Acceleration, bool) {
-	acceleration, ok := w.Accelerations[id]
+	acceleration, ok := w.accelerations[id]
 	return acceleration, ok
 }
 
 func (w *World) RemoveAcceleration(id EntityID) {
-	delete(w.Accelerations, id)
+	delete(w.accelerations, id)
 }
 
 func (w *World) SetDamping(id EntityID, damping Damping) {
-	w.Dampings[id] = damping
+	w.dampings[id] = damping
 }
 
 func (w *World) Damping(id EntityID) (Damping, bool) {
-	damping, ok := w.Dampings[id]
+	damping, ok := w.dampings[id]
 	return damping, ok
 }
 
 func (w *World) RemoveDamping(id EntityID) {
-	delete(w.Dampings, id)
+	delete(w.dampings, id)
 }
 
 func (w *World) SetBody(id EntityID, body Body) {
-	w.Bodies[id] = body
+	w.bodies[id] = body
 }
 
 func (w *World) Body(id EntityID) (Body, bool) {
-	body, ok := w.Bodies[id]
+	body, ok := w.bodies[id]
 	return body, ok
 }
 
 func (w *World) RemoveBody(id EntityID) {
-	delete(w.Bodies, id)
+	delete(w.bodies, id)
 }
 
 func (w *World) CircleCollider(id EntityID) (CircleCollider, bool) {
-	collider, ok := w.CircleColliders[id]
+	collider, ok := w.circleColliders[id]
 	return collider, ok
 }
 
 func (w *World) SetCircleCollider(id EntityID, collider CircleCollider) {
-	w.CircleColliders[id] = collider
+	w.circleColliders[id] = collider
 }
 
 func (w *World) RemoveCircleCollider(id EntityID) {
-	delete(w.CircleColliders, id)
+	delete(w.circleColliders, id)
+}
+
+func (w *World) DebugGridCells() []DebugGridCell {
+	return w.debugGridCells
 }
 
 func cloneMap[K comparable, V any](src map[K]V) map[K]V {
