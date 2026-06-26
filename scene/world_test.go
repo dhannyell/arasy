@@ -62,6 +62,7 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 	world.SetCircleCollider(entity, scene.CircleCollider{
 		Radius: 1.5,
 	})
+	world.DetectCircleOverlapsGrid(4)
 	world.SetBody(entity, scene.Body{
 		InvMass:     0.5,
 		Restitution: 0.25,
@@ -74,6 +75,7 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 		Scale:    math2d.Vec2{X: 1, Y: 1},
 	})
 	world.RemoveVelocity(entity)
+	world.DebugGridCells = nil
 
 	gotTransform, ok := clone.Transform(entity)
 	if !ok {
@@ -96,6 +98,10 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 	next := clone.Spawn()
 	if next == entity {
 		t.Fatal("expected cloned world to preserve next entity id")
+	}
+
+	if len(clone.DebugGridCells) == 0 {
+		t.Fatal("expected clone to keep debug grid cells")
 	}
 }
 
@@ -314,4 +320,6 @@ func TestWorldDespawnRemovesAllEntityComponents(t *testing.T) {
 	if _, ok := world.CircleCollider(entity); ok {
 		t.Fatal("expected circle collider to be removed")
 	}
+
+	world.DetectCircleOverlapsGrid(4)
 }

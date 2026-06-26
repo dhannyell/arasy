@@ -269,6 +269,102 @@ func TestWorldDetectCircleOverlapsReturnsContactsInEntityOrder(t *testing.T) {
 	}
 }
 
+func TestWorldDetectCircleOverlapsGridMatchesNarrowPhase(t *testing.T) {
+	world := scene.NewWorld()
+
+	spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 5)
+	spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 5)
+	spawnCollidableCircle(world, math2d.Vec2{X: 25, Y: 0}, 2)
+	spawnCollidableCircle(world, math2d.Vec2{X: 26, Y: 0}, 2)
+
+	narrowContacts := world.DetectCircleOverlaps()
+	gridContacts := world.DetectCircleOverlapsGrid(16)
+
+	assertContactPairs(t, gridContacts, contactPairs(narrowContacts))
+}
+
+func TestWorldDetectCircleOverlapsGridDoesNotDuplicateLargeColliderContacts(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 8, Y: 8}, 10)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 12, Y: 8}, 10)
+
+	contacts := world.DetectCircleOverlapsGrid(4)
+
+	assertContactPairs(t, contacts, [][2]scene.EntityID{
+		{first, second},
+	})
+}
+
+func TestWorldDetectCircleOverlapsGridHandlesNegativeCoordinates(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: -3, Y: -3}, 3)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: -1, Y: -3}, 3)
+
+	contacts := world.DetectCircleOverlapsGrid(4)
+
+	assertContactPairs(t, contacts, [][2]scene.EntityID{
+		{first, second},
+	})
+}
+
+func TestWorldDetectCircleOverlapsGridReturnsContactsInEntityOrder(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 5)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 5)
+	third := spawnCollidableCircle(world, math2d.Vec2{X: 6, Y: 0}, 5)
+
+	contacts := world.DetectCircleOverlapsGrid(4)
+
+	assertContactPairs(t, contacts, [][2]scene.EntityID{
+		{first, second},
+		{first, third},
+		{second, third},
+	})
+}
+
+func TestWorldDetectCircleOverlapsGridFallsBackWithInvalidCellSize(t *testing.T) {
+	world := scene.NewWorld()
+
+	first := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 5)
+	second := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 5)
+
+	contacts := world.DetectCircleOverlapsGrid(0)
+
+	assertContactPairs(t, contacts, [][2]scene.EntityID{
+		{first, second},
+	})
+}
+
+func TestWorldDetectCircleOverlapsGridMarksCandidateDebugCells(t *testing.T) {
+	world := scene.NewWorld()
+
+	spawnCollidableCircle(world, math2d.Vec2{X: 2, Y: 2}, 0.5)
+	spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 2}, 0.5)
+	spawnCollidableCircle(world, math2d.Vec2{X: 18, Y: 18}, 0.5)
+
+	world.DetectCircleOverlapsGrid(8)
+
+	var occupied int
+	var candidates int
+	for _, cell := range world.DebugGridCells {
+		occupied++
+		if cell.Candidate {
+			candidates++
+		}
+	}
+
+	if occupied != 2 {
+		t.Fatalf("occupied debug cells = %d, want 2", occupied)
+	}
+
+	if candidates != 1 {
+		t.Fatalf("candidate debug cells = %d, want 1", candidates)
+	}
+}
+
 func TestWorldResolveCircleOverlapsHandlesSamePosition(t *testing.T) {
 	world := scene.NewWorld()
 
@@ -521,6 +617,36 @@ func TestWorldResolveCircleOverlapsSkipsTwoStaticBodies(t *testing.T) {
 	if secondTransform.Position != (math2d.Vec2{X: 3, Y: 0}) {
 		t.Fatalf("second position got %v, want {3 0}", secondTransform.Position)
 	}
+}
+
+func assertContactPairs(t *testing.T, contacts []scene.CircleContact, want [][2]scene.EntityID) {
+	t.Helper()
+
+	if len(contacts) != len(want) {
+		t.Fatalf("got %d contacts, want %d", len(contacts), len(want))
+	}
+
+	for i := range want {
+		if contacts[i].A != want[i][0] || contacts[i].B != want[i][1] {
+			t.Fatalf(
+				"contact %d got pair (%d, %d), want (%d, %d)",
+				i,
+				contacts[i].A,
+				contacts[i].B,
+				want[i][0],
+				want[i][1],
+			)
+		}
+	}
+}
+
+func contactPairs(contacts []scene.CircleContact) [][2]scene.EntityID {
+	pairs := make([][2]scene.EntityID, 0, len(contacts))
+	for _, contact := range contacts {
+		pairs = append(pairs, [2]scene.EntityID{contact.A, contact.B})
+	}
+
+	return pairs
 }
 
 func spawnCollidableCircle(world *scene.World, position math2d.Vec2, radius float64) scene.EntityID {

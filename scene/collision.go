@@ -7,6 +7,21 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 )
 
+type gridCell struct {
+	X int
+	Y int
+}
+
+type entityPair struct {
+	A EntityID
+	B EntityID
+}
+
+type spatialHashGrid struct {
+	cellSize float64
+	cells    map[gridCell][]EntityID
+}
+
 type CircleContact struct {
 	A EntityID
 	B EntityID
@@ -16,6 +31,17 @@ type CircleContact struct {
 
 	// Depth is how much the two circles overlap.
 	Depth float64
+}
+
+func newSpatialHashGrid(cellSize float64) spatialHashGrid {
+	if cellSize <= 0 {
+		cellSize = defaultCellSize
+	}
+
+	return spatialHashGrid{
+		cellSize: cellSize,
+		cells:    make(map[gridCell][]EntityID),
+	}
 }
 
 func (w *World) BounceCirclesInside(bounds math2d.Rect) {
@@ -59,64 +85,94 @@ func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 
 func (w *World) DetectCircleOverlaps() []CircleContact {
 	entities := w.circleColliderEntities()
-	contacts := make([]CircleContact, 0)
+	pairs := make([]entityPair, 0, len(entities))
 
 	for i := range entities {
-		a := entities[i]
-
-		transformA, ok := w.Transforms[a]
-		if !ok {
-			continue
-		}
-
-		colliderA := w.CircleColliders[a]
-
 		for j := i + 1; j < len(entities); j++ {
-			b := entities[j]
+			pairs = append(pairs, makeEntityPair(entities[i], entities[j]))
+		}
+	}
 
-			transformB, ok := w.Transforms[b]
-			if !ok {
-				continue
-			}
+	return w.detectCircleOverlapsForPairs(pairs)
+}
 
-			colliderB := w.CircleColliders[b]
+func (w *World) DetectCircleOverlapsGrid(cellSize float64) []CircleContact {
+	if cellSize <= 0 {
+		w.DebugGridCells = nil
+		return w.DetectCircleOverlaps()
+	}
 
-			delta := transformB.Position.Sub(transformA.Position)
-			distanceSq := delta.LenSq()
-			radiusSum := colliderA.Radius + colliderB.Radius
-			radiusSumSq := radiusSum * radiusSum
+	grid := newSpatialHashGrid(cellSize)
+	grid.populate(w)
+	w.DebugGridCells = grid.debugCells()
 
-			if distanceSq >= radiusSumSq {
-				continue
-			}
+	return w.detectCircleOverlapsForPairs(grid.entityPairs())
+}
 
-			if distanceSq == 0 {
-				contacts = append(contacts, CircleContact{
-					A:      a,
-					B:      b,
-					Normal: math2d.Vec2{X: 1, Y: 0},
-					Depth:  radiusSum,
-				})
-				continue
-			}
+func (w *World) detectCircleOverlapsForPairs(pairs []entityPair) []CircleContact {
+	contacts := make([]CircleContact, 0)
 
-			distance := math.Sqrt(distanceSq)
-
-			contacts = append(contacts, CircleContact{
-				A:      a,
-				B:      b,
-				Normal: delta.Div(distance),
-				Depth:  radiusSum - distance,
-			})
+	for _, pair := range pairs {
+		if contact, ok := w.detectCircleOverlapPair(pair); ok {
+			contacts = append(contacts, contact)
 		}
 	}
 
 	return contacts
 }
 
+func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
+	transformA, ok := w.Transforms[pair.A]
+	if !ok {
+		return CircleContact{}, false
+	}
+
+	transformB, ok := w.Transforms[pair.B]
+	if !ok {
+		return CircleContact{}, false
+	}
+
+	colliderA := w.CircleColliders[pair.A]
+	colliderB := w.CircleColliders[pair.B]
+
+	delta := transformB.Position.Sub(transformA.Position)
+	distanceSq := delta.LenSq()
+	radiusSum := colliderA.Radius + colliderB.Radius
+	radiusSumSq := radiusSum * radiusSum
+
+	if distanceSq >= radiusSumSq {
+		return CircleContact{}, false
+	}
+
+	if distanceSq == 0 {
+		return CircleContact{
+			A:      pair.A,
+			B:      pair.B,
+			Normal: math2d.Vec2{X: 1, Y: 0},
+			Depth:  radiusSum,
+		}, true
+	}
+
+	distance := math.Sqrt(distanceSq)
+	return CircleContact{
+		A:      pair.A,
+		B:      pair.B,
+		Normal: delta.Div(distance),
+		Depth:  radiusSum - distance,
+	}, true
+}
+
 func (w *World) ResolveCircleOverlaps() {
 	contacts := w.DetectCircleOverlaps()
+	w.resolveCircleContacts(contacts)
+}
 
+func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
+	contacts := w.DetectCircleOverlapsGrid(cellSize)
+	w.resolveCircleContacts(contacts)
+}
+
+func (w *World) resolveCircleContacts(contacts []CircleContact) {
 	for _, contact := range contacts {
 		transformA, ok := w.Transforms[contact.A]
 		if !ok {
@@ -176,6 +232,121 @@ func (w *World) ResolveCircleOverlaps() {
 			w.Velocities[contact.B] = velocityB
 		}
 	}
+}
+
+func (g *spatialHashGrid) populate(w *World) {
+	entities := w.circleColliderEntities()
+
+	for _, id := range entities {
+		transform, ok := w.Transforms[id]
+		if !ok {
+			continue
+		}
+
+		collider := w.CircleColliders[id]
+
+		minCellX := cellCoord(transform.Position.X-collider.Radius, g.cellSize)
+		maxCellX := cellCoord(transform.Position.X+collider.Radius, g.cellSize)
+		minCellY := cellCoord(transform.Position.Y-collider.Radius, g.cellSize)
+		maxCellY := cellCoord(transform.Position.Y+collider.Radius, g.cellSize)
+
+		for cellX := minCellX; cellX <= maxCellX; cellX++ {
+			for cellY := minCellY; cellY <= maxCellY; cellY++ {
+				cell := gridCell{X: cellX, Y: cellY}
+				g.cells[cell] = append(g.cells[cell], id)
+			}
+		}
+	}
+}
+
+func (g *spatialHashGrid) entityPairs() []entityPair {
+	pairSet := make(map[entityPair]struct{})
+	cells := g.sortedCells()
+
+	for _, cell := range cells {
+		entities := append([]EntityID(nil), g.cells[cell]...)
+		slices.Sort(entities)
+
+		for i := range entities {
+			for j := i + 1; j < len(entities); j++ {
+				pairSet[makeEntityPair(entities[i], entities[j])] = struct{}{}
+			}
+		}
+	}
+
+	pairs := make([]entityPair, 0, len(pairSet))
+	for pair := range pairSet {
+		pairs = append(pairs, pair)
+	}
+
+	slices.SortFunc(pairs, func(a, b entityPair) int {
+		if a.A < b.A {
+			return -1
+		}
+
+		if a.A > b.A {
+			return 1
+		}
+
+		if a.B < b.B {
+			return -1
+		}
+
+		if a.B > b.B {
+			return 1
+		}
+
+		return 0
+	})
+
+	return pairs
+}
+
+func (g *spatialHashGrid) debugCells() []DebugGridCell {
+	cells := g.sortedCells()
+	debugCells := make([]DebugGridCell, 0, len(cells))
+
+	for _, cell := range cells {
+		debugCells = append(debugCells, DebugGridCell{
+			X:         cell.X,
+			Y:         cell.Y,
+			Size:      g.cellSize,
+			Candidate: len(g.cells[cell]) > 1,
+		})
+	}
+
+	return debugCells
+}
+
+func (g *spatialHashGrid) sortedCells() []gridCell {
+	cells := make([]gridCell, 0, len(g.cells))
+	for cell, entities := range g.cells {
+		if len(entities) > 0 {
+			cells = append(cells, cell)
+		}
+	}
+
+	slices.SortFunc(cells, func(a, b gridCell) int {
+		if a.X != b.X {
+			return a.X - b.X
+		}
+
+		return a.Y - b.Y
+	})
+
+	return cells
+}
+
+func makeEntityPair(a, b EntityID) entityPair {
+	if a > b {
+		a, b = b, a
+	}
+
+	return entityPair{A: a, B: b}
+}
+
+func cellCoord(value, cellSize float64) int {
+	return int(math.Floor(value / cellSize))
 }
 
 func (w *World) circleColliderEntities() []EntityID {

@@ -48,6 +48,7 @@ const (
 	playerInvMass     = 0.2
 	ballRestitution   = 0.8
 	playerRestitution = 0.35
+	physicsCellSize   = 8.0
 )
 
 var (
@@ -90,6 +91,24 @@ type DebugConfig struct {
 	ContactLineWidth    float64
 	ContactNormalLength float64
 	ContactLayer        int
+
+	ShowGrid        bool
+	GridColor       render.Color
+	GridDashLength  float64
+	GridStrokeWidth float64
+	GridLayer       int
+
+	ShowActiveGrid        bool
+	ActiveGridFill        render.Color
+	ActiveGridStroke      render.Color
+	ActiveGridStrokeWidth float64
+	ActiveGridLayer       int
+
+	ShowCandidateGrid        bool
+	CandidateGridFill        render.Color
+	CandidateGridStroke      render.Color
+	CandidateGridStrokeWidth float64
+	CandidateGridLayer       int
 }
 
 type side int
@@ -112,6 +131,24 @@ var debugConfig = DebugConfig{
 	ContactLineWidth:    0.12,
 	ContactNormalLength: 1.25,
 	ContactLayer:        101,
+
+	ShowGrid:        true,
+	GridColor:       render.RGBA(0.5, 0.5, 0.5, 0.4), // cinza semi-transparente
+	GridDashLength:  1.5,
+	GridStrokeWidth: 0.2,
+	GridLayer:       200,
+
+	ShowActiveGrid:        true,
+	ActiveGridFill:        render.RGBA(1, 0.55, 0.05, 0.22),
+	ActiveGridStroke:      render.RGBA(1, 0.75, 0.05, 0.9),
+	ActiveGridStrokeWidth: 0.12,
+	ActiveGridLayer:       201,
+
+	ShowCandidateGrid:        true,
+	CandidateGridFill:        render.RGBA(1, 0.95, 0.05, 0.35),
+	CandidateGridStroke:      render.RGBA(1, 1, 0.15, 1),
+	CandidateGridStrokeWidth: 0.18,
+	CandidateGridLayer:       202,
 }
 
 func main() {
@@ -132,6 +169,9 @@ func main() {
 			recorder.Capture(world)
 			world.Step(dt, scene.StepConfig{
 				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
+				Physics: scene.PhysicsConfig{
+					CellSize: physicsCellSize,
+				},
 			})
 		},
 		Commands: func(debug bool) []render.Command {
@@ -171,6 +211,35 @@ func main() {
 }
 
 func appendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
+	if config.ShowGrid {
+		*commands = append(*commands, scene.DebugGridAreaCommands(
+			math2d.NewRect(fieldOrigin, fieldSize),
+			physicsCellSize,
+			config.GridColor,
+			config.GridStrokeWidth,
+			config.GridDashLength,
+			config.GridLayer,
+		)...)
+	}
+
+	if config.ShowActiveGrid {
+		*commands = append(*commands, world.DebugActiveGridCommands(
+			config.ActiveGridFill,
+			config.ActiveGridStroke,
+			config.ActiveGridStrokeWidth,
+			config.ActiveGridLayer,
+		)...)
+	}
+
+	if config.ShowCandidateGrid {
+		*commands = append(*commands, world.DebugCandidateGridCommands(
+			config.CandidateGridFill,
+			config.CandidateGridStroke,
+			config.CandidateGridStrokeWidth,
+			config.CandidateGridLayer,
+		)...)
+	}
+
 	if config.ShowColliders {
 		*commands = append(
 			*commands,
