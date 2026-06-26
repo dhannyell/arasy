@@ -144,6 +144,9 @@ func main() {
 
 			return commands
 		},
+		HistoryLen: func() int {
+			return recorder.Len()
+		},
 		Reset: func() {
 			world = buildDemoWorld()
 			recorder.Clear()

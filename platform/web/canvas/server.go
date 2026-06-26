@@ -23,10 +23,11 @@ type Server struct {
 	Camera render.Camera
 	Clear  render.Color
 
-	Update   func(dt float64)
-	Commands func(debug bool) []render.Command
-	Reset    func()
-	Back     func() bool
+	Update     func(dt float64)
+	Commands   func(debug bool) []render.Command
+	HistoryLen func() int
+	Reset      func()
+	Back       func() bool
 }
 
 type clientMessage struct {
@@ -58,11 +59,12 @@ type controlState struct {
 }
 
 type frameState struct {
-	speed int
-	debug bool
-	reset bool
-	steps int
-	backs int
+	paused bool
+	speed  int
+	debug  bool
+	reset  bool
+	steps  int
+	backs  int
 }
 
 //go:embed static
@@ -239,7 +241,7 @@ func (h *hub) run() {
 			commands = h.server.Commands(state.debug)
 		}
 
-		h.broadcast(tick, commands)
+		h.broadcast(tick, commands, state)
 	}
 }
 
@@ -272,7 +274,7 @@ func (h *hub) clientCount() int {
 	return len(h.clients)
 }
 
-func (h *hub) broadcast(tick uint64, commands []render.Command) {
+func (h *hub) broadcast(tick uint64, commands []render.Command, state frameState) {
 	h.clientsMu.RLock()
 	clients := make([]*client, 0, len(h.clients))
 	for c := range h.clients {
@@ -281,7 +283,18 @@ func (h *hub) broadcast(tick uint64, commands []render.Command) {
 	h.clientsMu.RUnlock()
 
 	for _, c := range clients {
-		frame := adapter.NewFrameDTO(tick, c.frameCamera(), h.server.Clear, commands)
+		frame := adapter.NewFrameDTOWithState(
+			tick,
+			c.frameCamera(),
+			h.server.Clear,
+			adapter.StateDTO{
+				Paused:     state.paused,
+				Speed:      h.controls.currentSpeed(),
+				Debug:      state.debug,
+				HistoryLen: h.historyLen(),
+			},
+			commands,
+		)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		err := wsjson.Write(ctx, c.conn, frame)
 		cancel()
@@ -291,6 +304,14 @@ func (h *hub) broadcast(tick uint64, commands []render.Command) {
 			_ = c.conn.CloseNow()
 		}
 	}
+}
+
+func (h *hub) historyLen() int {
+	if h.server.HistoryLen == nil {
+		return 0
+	}
+
+	return h.server.HistoryLen()
 }
 
 func (s *controlState) apply(message clientMessage) {
@@ -344,10 +365,18 @@ func (s *controlState) consumeFrameState() frameState {
 	s.reset = false
 
 	return frameState{
-		speed: speed,
-		debug: s.debug,
-		reset: reset,
-		steps: steps,
-		backs: backs,
+		paused: s.paused,
+		speed:  speed,
+		debug:  s.debug,
+		reset:  reset,
+		steps:  steps,
+		backs:  backs,
 	}
+}
+
+func (s *controlState) currentSpeed() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.speed
 }
