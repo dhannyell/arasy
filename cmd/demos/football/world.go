@@ -1,23 +1,16 @@
-package main
+package football
 
 import (
-	"fmt"
 	"math"
 
-	"github.com/dhannyell/frameforge/debug"
 	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/platform/web/canvas"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
 )
 
 const (
-	imageWidth   = 1920
-	imageHeight  = 1080
-	renderFPS    = 60
-	simulationHz = 60
-	worldWidth   = 115.5
-	worldHeight  = 74.8
+	worldWidth  = 115.5
+	worldHeight = 74.8
 
 	fieldWidth  = 105.0
 	fieldHeight = 68.0
@@ -52,19 +45,14 @@ const (
 )
 
 var (
+	worldOrigin     = math2d.Vec2{X: 0, Y: 0}
+	worldSize       = math2d.Vec2{X: worldWidth, Y: worldHeight}
 	grassColor      = render.RGBA(0.22, 0.49, 0.17, 1)
 	darkGrassColor  = render.RGBA(0.14, 0.33, 0.11, 1)
 	lineColor       = render.RGBA(1, 1, 1, 1)
 	homeTeamColor   = render.RGBA(0.08, 0.22, 0.95, 1)
 	awayTeamColor   = render.RGBA(0.95, 0.12, 0.12, 1)
 	ballColor       = render.RGBA(0.98, 0.98, 0.94, 1)
-	colliderColor   = render.RGBA(1, 1, 0, 1)
-	contactColor    = render.RGBA(1, 0, 1, 1)
-	clearColor      = render.RGBA(0.05, 0.08, 0.10, 1)
-	worldOrigin     = math2d.Vec2{X: 0, Y: 0}
-	worldSize       = math2d.Vec2{X: worldWidth, Y: worldHeight}
-	viewportOrigin  = math2d.Vec2{X: 0, Y: 0}
-	viewportSize    = math2d.Vec2{X: imageWidth, Y: imageHeight}
 	fieldOrigin     = math2d.Vec2{X: fieldLeft, Y: fieldTop}
 	fieldSize       = math2d.Vec2{X: fieldWidth, Y: fieldHeight}
 	fieldCenter     = math2d.Vec2{X: fieldLeft + fieldWidth/2, Y: fieldTop + fieldHeight/2}
@@ -118,170 +106,7 @@ const (
 	rightSide
 )
 
-var debugConfig = DebugConfig{
-	ShowColliders: true,
-	ShowContacts:  true,
-
-	ColliderColor:       colliderColor,
-	ColliderStrokeWidth: 0.08,
-	ColliderLayer:       100,
-
-	ContactColor:        contactColor,
-	ContactPointRadius:  0.18,
-	ContactLineWidth:    0.12,
-	ContactNormalLength: 1.25,
-	ContactLayer:        101,
-
-	ShowGrid:        true,
-	GridColor:       render.RGBA(0.5, 0.5, 0.5, 0.4), // cinza semi-transparente
-	GridDashLength:  1.5,
-	GridStrokeWidth: 0.2,
-	GridLayer:       200,
-
-	ShowActiveGrid:        true,
-	ActiveGridFill:        render.RGBA(1, 0.55, 0.05, 0.22),
-	ActiveGridStroke:      render.RGBA(1, 0.75, 0.05, 0.9),
-	ActiveGridStrokeWidth: 0.12,
-	ActiveGridLayer:       201,
-
-	ShowCandidateGrid:        true,
-	CandidateGridFill:        render.RGBA(1, 0.95, 0.05, 0.35),
-	CandidateGridStroke:      render.RGBA(1, 1, 0.15, 1),
-	CandidateGridStrokeWidth: 0.18,
-	CandidateGridLayer:       202,
-}
-
-func main() {
-	world := buildDemoWorld()
-	recorder := debug.NewRecorder(600)
-
-	server := canvas.Server{
-		Addr:         ":8080",
-		FPS:          renderFPS,
-		SimulationHz: simulationHz,
-		Camera: render.Camera{
-			World:    math2d.NewRect(worldOrigin, worldSize),
-			Viewport: math2d.NewRect(viewportOrigin, viewportSize),
-			Aspect:   render.AspectExpand,
-		},
-		Clear: clearColor,
-		Update: func(dt float64) {
-			recorder.Capture(world)
-			world.Step(dt, scene.StepConfig{
-				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
-				Physics: scene.PhysicsConfig{
-					CellSize: physicsCellSize,
-				},
-			})
-		},
-		Commands: func(debug bool) []render.Command {
-			commands := buildFieldCommands()
-			commands = append(commands, world.RenderCommands()...)
-
-			if debug {
-				appendDebugCommands(&commands, world, debugConfig)
-			}
-
-			return commands
-		},
-		HistoryLen: func() int {
-			return recorder.Len()
-		},
-		Reset: func() {
-			world = buildDemoWorld()
-			recorder.Clear()
-		},
-		Back: func() bool {
-			snapshot, ok := recorder.Back()
-			if !ok {
-				return false
-			}
-
-			world = snapshot
-
-			return true
-		},
-	}
-
-	fmt.Println("Starting canvas server on: localhost:8080")
-
-	if err := server.ListenAndServe(); err != nil {
-		panic(err)
-	}
-}
-
-func appendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
-	if config.ShowGrid {
-		*commands = append(*commands, scene.DebugGridAreaCommands(
-			math2d.NewRect(fieldOrigin, fieldSize),
-			physicsCellSize,
-			config.GridColor,
-			config.GridStrokeWidth,
-			config.GridDashLength,
-			config.GridLayer,
-		)...)
-	}
-
-	if config.ShowActiveGrid {
-		*commands = append(*commands, world.DebugActiveGridCommands(
-			config.ActiveGridFill,
-			config.ActiveGridStroke,
-			config.ActiveGridStrokeWidth,
-			config.ActiveGridLayer,
-		)...)
-	}
-
-	if config.ShowCandidateGrid {
-		*commands = append(*commands, world.DebugCandidateGridCommands(
-			config.CandidateGridFill,
-			config.CandidateGridStroke,
-			config.CandidateGridStrokeWidth,
-			config.CandidateGridLayer,
-		)...)
-	}
-
-	if config.ShowColliders {
-		*commands = append(
-			*commands,
-			world.DebugColliderCommands(
-				config.ColliderColor,
-				config.ColliderStrokeWidth,
-				config.ColliderLayer,
-			)...,
-		)
-	}
-
-	if !config.ShowContacts {
-		return
-	}
-
-	*commands = append(
-		*commands,
-		world.DebugContactCommands(
-			config.ContactColor,
-			config.ContactPointRadius,
-			config.ContactLineWidth,
-			config.ContactNormalLength,
-			config.ContactLayer,
-		)...,
-	)
-}
-
-func buildFieldCommands() []render.Command {
-	commands := make([]render.Command, 0, 24)
-
-	commands = append(commands, backgroundCommand())
-	commands = append(commands, grassStripeCommands()...)
-	commands = append(commands, fieldBoundaryCommand())
-	commands = append(commands, centerMarkingCommands()...)
-	commands = append(commands, penaltyAreaCommands(leftSide)...)
-	commands = append(commands, penaltyAreaCommands(rightSide)...)
-	commands = append(commands, cornerArcCommands()...)
-
-	return commands
-}
-
-func buildDemoWorld() *scene.World {
+func BuildDemoWorld() *scene.World {
 	world := scene.NewWorld()
 
 	ball := spawnCircleEntity(
@@ -351,6 +176,77 @@ func buildDemoWorld() *scene.World {
 	return world
 }
 
+func AppendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
+	if config.ShowGrid {
+		*commands = append(*commands, scene.DebugGridAreaCommands(
+			math2d.NewRect(fieldOrigin, fieldSize),
+			physicsCellSize,
+			config.GridColor,
+			config.GridStrokeWidth,
+			config.GridDashLength,
+			config.GridLayer,
+		)...)
+	}
+
+	if config.ShowActiveGrid {
+		*commands = append(*commands, world.DebugActiveGridCommands(
+			config.ActiveGridFill,
+			config.ActiveGridStroke,
+			config.ActiveGridStrokeWidth,
+			config.ActiveGridLayer,
+		)...)
+	}
+
+	if config.ShowCandidateGrid {
+		*commands = append(*commands, world.DebugCandidateGridCommands(
+			config.CandidateGridFill,
+			config.CandidateGridStroke,
+			config.CandidateGridStrokeWidth,
+			config.CandidateGridLayer,
+		)...)
+	}
+
+	if config.ShowColliders {
+		*commands = append(
+			*commands,
+			world.DebugColliderCommands(
+				config.ColliderColor,
+				config.ColliderStrokeWidth,
+				config.ColliderLayer,
+			)...,
+		)
+	}
+
+	if !config.ShowContacts {
+		return
+	}
+
+	*commands = append(
+		*commands,
+		world.DebugContactCommands(
+			config.ContactColor,
+			config.ContactPointRadius,
+			config.ContactLineWidth,
+			config.ContactNormalLength,
+			config.ContactLayer,
+		)...,
+	)
+}
+
+func BuildFieldCommands() []render.Command {
+	commands := make([]render.Command, 0, 24)
+
+	commands = append(commands, backgroundCommand())
+	commands = append(commands, grassStripeCommands()...)
+	commands = append(commands, fieldBoundaryCommand())
+	commands = append(commands, centerMarkingCommands()...)
+	commands = append(commands, penaltyAreaCommands(leftSide)...)
+	commands = append(commands, penaltyAreaCommands(rightSide)...)
+	commands = append(commands, cornerArcCommands()...)
+
+	return commands
+}
+
 func spawnCircleEntity(
 	world *scene.World,
 	position math2d.Vec2,
@@ -384,9 +280,11 @@ func spawnCircleEntity(
 
 func backgroundCommand() render.Command {
 	return render.DrawRect{
-		Rect:  math2d.NewRect(worldOrigin, worldSize),
-		Fill:  grassColor,
-		Layer: layerGrass,
+		Rect: math2d.NewRect(worldOrigin, worldSize),
+		Fill: grassColor,
+		BaseCommand: render.BaseCommand{
+			LayerValue: layerGrass,
+		},
 	}
 }
 
@@ -402,8 +300,10 @@ func grassStripeCommands() []render.Command {
 				math2d.Vec2{X: 0, Y: y},
 				math2d.Vec2{X: worldWidth, Y: stripeHeight},
 			),
-			Fill:  darkGrassColor,
-			Layer: layerStripes,
+			Fill: darkGrassColor,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerStripes,
+			},
 		})
 	}
 
@@ -415,7 +315,9 @@ func fieldBoundaryCommand() render.Command {
 		Rect:        math2d.NewRect(fieldOrigin, fieldSize),
 		Stroke:      lineColor,
 		StrokeWidth: lineWidth,
-		Layer:       layerMarkings,
+		BaseCommand: render.BaseCommand{
+			LayerValue: layerMarkings,
+		},
 	}
 }
 
@@ -426,20 +328,26 @@ func centerMarkingCommands() []render.Command {
 			Radius:      centerCircleRadius,
 			Stroke:      lineColor,
 			StrokeWidth: lineWidth,
-			Layer:       layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawPoint{
 			Center: fieldCenter,
 			Radius: pointRadius,
 			Color:  lineColor,
-			Layer:  layerPoints,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerPoints,
+			},
 		},
 		render.DrawLine{
 			From:  math2d.Vec2{X: fieldCenter.X, Y: fieldTop},
 			To:    math2d.Vec2{X: fieldCenter.X, Y: fieldTop + fieldHeight},
 			Width: lineWidth,
 			Color: lineColor,
-			Layer: layerPoints,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerPoints,
+			},
 		},
 	}
 }
@@ -470,7 +378,9 @@ func penaltyAreaCommands(s side) []render.Command {
 			),
 			Stroke:      lineColor,
 			StrokeWidth: lineWidth,
-			Layer:       layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawRect{
 			Rect: math2d.NewRect(
@@ -479,7 +389,9 @@ func penaltyAreaCommands(s side) []render.Command {
 			),
 			Stroke:      lineColor,
 			StrokeWidth: lineWidth,
-			Layer:       layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawArc{
 			Center:     spot,
@@ -488,13 +400,17 @@ func penaltyAreaCommands(s side) []render.Command {
 			EndAngle:   arcEnd,
 			Width:      lineWidth,
 			Color:      lineColor,
-			Layer:      layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawPoint{
 			Center: spot,
 			Radius: pointRadius,
 			Color:  lineColor,
-			Layer:  layerPoints,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerPoints,
+			},
 		},
 	}
 }
@@ -511,7 +427,9 @@ func cornerArcCommands() []render.Command {
 			EndAngle:   math.Pi/2 - cornerArcInset,
 			Width:      cornerArcWidth,
 			Color:      lineColor,
-			Layer:      layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawArc{
 			Center:     math2d.Vec2{X: fieldRight, Y: fieldTop},
@@ -520,7 +438,9 @@ func cornerArcCommands() []render.Command {
 			EndAngle:   math.Pi - cornerArcInset,
 			Width:      cornerArcWidth,
 			Color:      lineColor,
-			Layer:      layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawArc{
 			Center:     math2d.Vec2{X: fieldRight, Y: fieldBottom},
@@ -529,7 +449,9 @@ func cornerArcCommands() []render.Command {
 			EndAngle:   3*math.Pi/2 - cornerArcInset,
 			Width:      cornerArcWidth,
 			Color:      lineColor,
-			Layer:      layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 		render.DrawArc{
 			Center:     math2d.Vec2{X: fieldLeft, Y: fieldBottom},
@@ -538,7 +460,9 @@ func cornerArcCommands() []render.Command {
 			EndAngle:   2*math.Pi - cornerArcInset,
 			Width:      cornerArcWidth,
 			Color:      lineColor,
-			Layer:      layerMarkings,
+			BaseCommand: render.BaseCommand{
+				LayerValue: layerMarkings,
+			},
 		},
 	}
 }

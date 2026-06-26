@@ -148,14 +148,18 @@ func TestRendererDrawsPointLayerOnTop(t *testing.T) {
 				math2d.Vec2{X: 4, Y: 4},
 				math2d.Vec2{X: 3, Y: 3},
 			),
-			Fill:  render.RGBA(1, 0, 0, 1),
-			Layer: 1,
+			Fill: render.RGBA(1, 0, 0, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
 		},
 		render.DrawPoint{
 			Center: math2d.Vec2{X: 5, Y: 5},
 			Radius: 1,
 			Color:  render.RGBA(0, 0, 1, 1),
-			Layer:  2,
+			BaseCommand: render.BaseCommand{
+				LayerValue: 2,
+			},
 		},
 	})
 
@@ -245,16 +249,20 @@ func TestRendererPreservesOrderWithinSameLayer(t *testing.T) {
 				math2d.Vec2{X: 2, Y: 2},
 				math2d.Vec2{X: 5, Y: 5},
 			),
-			Fill:  render.RGBA(1, 0, 0, 1),
-			Layer: 1,
+			Fill: render.RGBA(1, 0, 0, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
 		},
 		render.DrawRect{
 			Rect: math2d.NewRect(
 				math2d.Vec2{X: 3, Y: 3},
 				math2d.Vec2{X: 5, Y: 5},
 			),
-			Fill:  render.RGBA(0, 0, 1, 1),
-			Layer: 1,
+			Fill: render.RGBA(0, 0, 1, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
 		},
 	})
 
@@ -270,16 +278,20 @@ func TestRendererDrawsHigherLayerOnTop(t *testing.T) {
 				math2d.Vec2{X: 2, Y: 2},
 				math2d.Vec2{X: 5, Y: 5},
 			),
-			Fill:  render.RGBA(1, 0, 0, 1),
-			Layer: 10,
+			Fill: render.RGBA(1, 0, 0, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 10,
+			},
 		},
 		render.DrawRect{
 			Rect: math2d.NewRect(
 				math2d.Vec2{X: 3, Y: 3},
 				math2d.Vec2{X: 5, Y: 5},
 			),
-			Fill:  render.RGBA(0, 0, 1, 1),
-			Layer: 1,
+			Fill: render.RGBA(0, 0, 1, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
 		},
 	})
 
@@ -401,7 +413,9 @@ func TestRendererDrawsArcLayerOnTop(t *testing.T) {
 			EndAngle:   math.Pi / 2,
 			Width:      1,
 			Color:      render.RGBA(1, 0, 0, 1),
-			Layer:      1,
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
 		},
 		render.DrawArc{
 			Center:     math2d.Vec2{X: 5, Y: 5},
@@ -410,7 +424,9 @@ func TestRendererDrawsArcLayerOnTop(t *testing.T) {
 			EndAngle:   math.Pi / 2,
 			Width:      1,
 			Color:      render.RGBA(0, 0, 1, 1),
-			Layer:      2,
+			BaseCommand: render.BaseCommand{
+				LayerValue: 2,
+			},
 		},
 	})
 

@@ -11,9 +11,9 @@ import (
 
 func TestNewCommandDTOsOrdersByLayer(t *testing.T) {
 	commands := []render.Command{
-		render.DrawPoint{Layer: 20},
-		render.DrawPoint{Layer: 5},
-		render.DrawPoint{Layer: 10},
+		render.DrawPoint{BaseCommand: render.BaseCommand{LayerValue: 20}},
+		render.DrawPoint{BaseCommand: render.BaseCommand{LayerValue: 5}},
+		render.DrawPoint{BaseCommand: render.BaseCommand{LayerValue: 10}},
 	}
 
 	dtos := NewCommandDTOs(commands)
@@ -60,11 +60,11 @@ func TestCommandDTOOmitsUnusedFields(t *testing.T) {
 func TestNewCommandDTOsSerializesDrawText(t *testing.T) {
 	dtos := NewCommandDTOs([]render.Command{
 		render.DrawText{
-			Position: math2d.Vec2{X: 12, Y: 34},
-			Text:     "hello",
-			Color:    render.RGBA(1, 1, 1, 1),
-			Size:     2.5,
-			Layer:    7,
+			Position:    math2d.Vec2{X: 12, Y: 34},
+			Text:        "hello",
+			Color:       render.RGBA(1, 1, 1, 1),
+			Size:        2.5,
+			BaseCommand: render.BaseCommand{LayerValue: 7},
 		},
 	})
 

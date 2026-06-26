@@ -8,8 +8,8 @@ import (
 )
 
 func TestWorldStepIsDeterministic(t *testing.T) {
-	first := newStepTestWorld()
-	second := newStepTestWorld()
+	first, firstEntities := newStepTestWorld()
+	second, secondEntities := newStepTestWorld()
 
 	config := scene.StepConfig{
 		Bounds: math2d.NewRect(
@@ -23,7 +23,7 @@ func TestWorldStepIsDeterministic(t *testing.T) {
 		second.Step(1.0/60.0, config)
 	}
 
-	assertWorldState(t, first, second)
+	assertWorldState(t, first, firstEntities, second, secondEntities)
 }
 
 func TestWorldStepUsesConfiguredGridCellSize(t *testing.T) {
@@ -48,11 +48,11 @@ func TestWorldStepUsesConfiguredGridCellSize(t *testing.T) {
 
 	world.Step(1.0/60.0, config)
 
-	if len(world.DebugGridCells) == 0 {
+	if len(world.DebugGridCells()) == 0 {
 		t.Fatal("expected step to populate debug grid cells")
 	}
 
-	for _, cell := range world.DebugGridCells {
+	for _, cell := range world.DebugGridCells() {
 		if cell.Size != 4 {
 			t.Fatalf("debug cell size = %v, want 4", cell.Size)
 		}
@@ -63,29 +63,29 @@ func TestWorldStepUsesConfiguredGridCellSize(t *testing.T) {
 	}
 }
 
-func newStepTestWorld() *scene.World {
+func newStepTestWorld() (*scene.World, []scene.EntityID) {
 	world := scene.NewWorld()
 
-	spawnStepTestCircle(
+	first := spawnStepTestCircle(
 		world,
 		math2d.Vec2{X: 20, Y: 50},
 		math2d.Vec2{X: 18, Y: 0},
 		3,
 	)
-	spawnStepTestCircle(
+	second := spawnStepTestCircle(
 		world,
 		math2d.Vec2{X: 80, Y: 50},
 		math2d.Vec2{X: -18, Y: 0},
 		3,
 	)
-	spawnStepTestCircle(
+	third := spawnStepTestCircle(
 		world,
 		math2d.Vec2{X: 50, Y: 15},
 		math2d.Vec2{X: 0, Y: 14},
 		2,
 	)
 
-	return world
+	return world, []scene.EntityID{first, second, third}
 }
 
 func spawnStepTestCircle(world *scene.World, position, velocity math2d.Vec2, radius float64) scene.EntityID {
@@ -105,36 +105,43 @@ func spawnStepTestCircle(world *scene.World, position, velocity math2d.Vec2, rad
 	return entity
 }
 
-func assertWorldState(t *testing.T, got, want *scene.World) {
+func assertWorldState(t *testing.T, got *scene.World, gotEntities []scene.EntityID, want *scene.World, wantEntities []scene.EntityID) {
 	t.Helper()
 
-	if len(got.Transforms) != len(want.Transforms) {
-		t.Fatalf("got %d transforms, want %d", len(got.Transforms), len(want.Transforms))
+	if len(gotEntities) != len(wantEntities) {
+		t.Fatalf("got %d entities, want %d", len(gotEntities), len(wantEntities))
 	}
 
-	for id, wantTransform := range want.Transforms {
-		gotTransform, ok := got.Transforms[id]
+	for i, gotID := range gotEntities {
+		wantID := wantEntities[i]
+
+		wantTransform, ok := want.Transform(wantID)
 		if !ok {
-			t.Fatalf("missing transform for entity %d", id)
+			t.Fatalf("missing want transform for entity %d", wantID)
+		}
+
+		gotTransform, ok := got.Transform(gotID)
+		if !ok {
+			t.Fatalf("missing got transform for entity %d", gotID)
 		}
 
 		if gotTransform != wantTransform {
-			t.Fatalf("entity %d transform got %+v, want %+v", id, gotTransform, wantTransform)
+			t.Fatalf("entity %d transform got %+v, want %+v", gotID, gotTransform, wantTransform)
 		}
-	}
 
-	if len(got.Velocities) != len(want.Velocities) {
-		t.Fatalf("got %d velocities, want %d", len(got.Velocities), len(want.Velocities))
-	}
+		wantVelocity, wantOK := want.Velocity(wantID)
+		gotVelocity, gotOK := got.Velocity(gotID)
 
-	for id, wantVelocity := range want.Velocities {
-		gotVelocity, ok := got.Velocities[id]
-		if !ok {
-			t.Fatalf("missing velocity for entity %d", id)
+		if gotOK != wantOK {
+			t.Fatalf("entity %d velocity presence got %v, want %v", gotID, gotOK, wantOK)
+		}
+
+		if !wantOK {
+			continue
 		}
 
 		if gotVelocity != wantVelocity {
-			t.Fatalf("entity %d velocity got %+v, want %+v", id, gotVelocity, wantVelocity)
+			t.Fatalf("entity %d velocity got %+v, want %+v", gotID, gotVelocity, wantVelocity)
 		}
 	}
 }

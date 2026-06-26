@@ -14,6 +14,7 @@ const debugInput = document.getElementById("debug");
 
 let connection = null;
 let paused = false;
+let lastFrame = null;
 
 const renderer = createCanvasRenderer(canvas, {
     onResize(size) {
@@ -85,6 +86,7 @@ connection = connectFrameSocket({
     url: "/ws",
 
     onOpen() {
+        lastFrame = null;
         stats.textContent = "connected";
         connection?.send({
             type: "resize",
@@ -93,6 +95,7 @@ connection = connectFrameSocket({
     },
 
     onClose() {
+        renderer.render(lastFrame)
         stats.textContent = "disconnected, retrying...";
     },
 
@@ -101,6 +104,7 @@ connection = connectFrameSocket({
     },
 
     onFrame(frame) {
+        lastFrame = frame;
         renderer.render(frame);
         syncControls(frame.state);
         stats.textContent = `tick ${frame.tick} | commands ${frame.commands.length}`;
