@@ -43,8 +43,14 @@ platform/raster/
 scene/
   Minimal entity/component world and simple simulation systems.
 
-cmd/renderdemo/
+cmd/rasterdemo/
   Small offline render demo that generates PNG and GIF output.
+
+cmd/webcanvademo/
+  Browser-based canvas demo with live simulation and debug visualization.
+
+cmd/benchsave/
+  Cross-platform helper that runs Go benchmarks and saves a Markdown report.
 
 docs/
   Additional notes and visual explanations.
@@ -63,7 +69,7 @@ go test ./...
 ## Running The Demo
 
 ```powershell
-go run .\cmd\renderdemo
+go run ./cmd/rasterdemo
 ```
 
 The demo writes files to:
@@ -74,6 +80,32 @@ output/renderdemo.gif
 ```
 
 The PNG is a static high-resolution render. The GIF is a smaller animated preview used to validate movement and rendering.
+
+## Running Benchmarks
+
+Run benchmarks directly:
+
+```powershell
+go test ./scene -run="^$" -bench="." -benchmem
+```
+
+Save a structured Markdown report:
+
+```powershell
+go run ./cmd/benchsave
+```
+
+By default, reports are written to:
+
+```text
+benchmarks/
+```
+
+Useful options:
+
+```powershell
+go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-collision
+```
 
 ## Design Goals
 
