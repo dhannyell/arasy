@@ -2,6 +2,19 @@ package scene
 
 import "maps"
 
+const defaultCellSize = 64
+
+type PhysicsConfig struct {
+	CellSize float64
+}
+
+type DebugGridCell struct {
+	X         int
+	Y         int
+	Size      float64
+	Candidate bool
+}
+
 type World struct {
 	nextID EntityID
 
@@ -12,6 +25,7 @@ type World struct {
 	Dampings        map[EntityID]Damping
 	Bodies          map[EntityID]Body
 	CircleColliders map[EntityID]CircleCollider
+	DebugGridCells  []DebugGridCell
 }
 
 func NewWorld() *World {
@@ -37,6 +51,7 @@ func (w *World) Clone() *World {
 		Dampings:        cloneMap(w.Dampings),
 		Bodies:          cloneMap(w.Bodies),
 		CircleColliders: cloneMap(w.CircleColliders),
+		DebugGridCells:  append([]DebugGridCell(nil), w.DebugGridCells...),
 	}
 }
 
