@@ -2,15 +2,23 @@ package scene
 
 import (
 	"math"
+	"slices"
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
 
 func (w *World) RenderCommands() []render.Command {
-	commands := make([]render.Command, 0, len(w.circleSprites))
+	ids := make([]EntityID, 0, len(w.circleSprites))
+	for id := range w.circleSprites {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
 
-	for id, sprite := range w.circleSprites {
+	commands := make([]render.Command, 0, len(ids))
+
+	for _, id := range ids {
+		sprite := w.circleSprites[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue

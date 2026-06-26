@@ -3,6 +3,7 @@ package raster
 import (
 	"image"
 	"image/color"
+	"image/draw"
 	"math"
 	"sort"
 
@@ -151,13 +152,7 @@ func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 }
 
 func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
-	bounds := rect.Intersect(img.Bounds())
-
-	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			img.SetRGBA(x, y, c)
-		}
-	}
+	draw.Draw(img, rect, &image.Uniform{c}, image.Point{}, draw.Src)
 }
 
 func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGBA) {

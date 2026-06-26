@@ -31,9 +31,9 @@ export function connectFrameSocket(options) {
             }
         });
 
-        socket.addEventListener('close', () => {
+        socket.addEventListener('close', (event) => {
             socket = null;
-            onClose();
+            onClose(event);
 
             if (!closedByUser) {
                 setTimeout(connect, reconnectDelayMs);
