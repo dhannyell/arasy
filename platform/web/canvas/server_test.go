@@ -14,6 +14,10 @@ func TestControlStateDefaultsToRunningWithSpeedAndDebug(t *testing.T) {
 		t.Fatalf("speed = %v, want 1", state.speed)
 	}
 
+	if state.paused {
+		t.Fatal("paused = true, want false")
+	}
+
 	if !state.debug {
 		t.Fatal("debug = false, want true")
 	}
@@ -59,6 +63,10 @@ func TestControlStateStepPausesAndConsumesPendingStep(t *testing.T) {
 		t.Fatalf("speed after step = %v, want 0", state.speed)
 	}
 
+	if !state.paused {
+		t.Fatal("paused after step = false, want true")
+	}
+
 	if state.steps != 1 {
 		t.Fatalf("steps after step = %v, want 1", state.steps)
 	}
@@ -81,6 +89,10 @@ func TestControlStateBackPausesAndConsumesPendingBack(t *testing.T) {
 	state := controls.consumeFrameState()
 	if state.speed != 0 {
 		t.Fatalf("speed after back = %v, want 0", state.speed)
+	}
+
+	if !state.paused {
+		t.Fatal("paused after back = false, want true")
 	}
 
 	if state.backs != 1 {
@@ -242,5 +254,25 @@ func TestNextSimulationStepsReturnsZeroWhenPaused(t *testing.T) {
 
 	if steps != 0 {
 		t.Fatalf("steps = %v, want 0", steps)
+	}
+}
+
+func TestHubHistoryLenDefaultsToZero(t *testing.T) {
+	h := newHub(&Server{}, 60, 60)
+
+	if h.historyLen() != 0 {
+		t.Fatalf("historyLen() = %v, want 0", h.historyLen())
+	}
+}
+
+func TestHubHistoryLenUsesServerCallback(t *testing.T) {
+	h := newHub(&Server{
+		HistoryLen: func() int {
+			return 12
+		},
+	}, 60, 60)
+
+	if h.historyLen() != 12 {
+		t.Fatalf("historyLen() = %v, want 12", h.historyLen())
 	}
 }
