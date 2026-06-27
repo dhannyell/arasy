@@ -365,8 +365,8 @@ func (w *World) bodyOrDefault(id EntityID) Body {
 	body, ok := w.bodies[id]
 	if !ok {
 		return Body{
-			InvMass:     0,
-			Restitution: 0.3,
+			InvMass:     1,
+			Restitution: 1,
 		}
 	}
 
