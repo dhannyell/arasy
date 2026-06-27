@@ -60,22 +60,30 @@ func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 
 		if transform.Position.X-radius < bounds.Min.X {
 			transform.Position.X = bounds.Min.X + radius
-			velocity.Linear.X = -velocity.Linear.X
+			if velocity.Linear.X < 0 {
+				velocity.Linear.X = -velocity.Linear.X
+			}
 		}
 
 		if transform.Position.X+radius > bounds.Max.X {
 			transform.Position.X = bounds.Max.X - radius
-			velocity.Linear.X = -velocity.Linear.X
+			if velocity.Linear.X > 0 {
+				velocity.Linear.X = -velocity.Linear.X
+			}
 		}
 
 		if transform.Position.Y-radius < bounds.Min.Y {
 			transform.Position.Y = bounds.Min.Y + radius
-			velocity.Linear.Y = -velocity.Linear.Y
+			if velocity.Linear.Y < 0 {
+				velocity.Linear.Y = -velocity.Linear.Y
+			}
 		}
 
 		if transform.Position.Y+radius > bounds.Max.Y {
 			transform.Position.Y = bounds.Max.Y - radius
-			velocity.Linear.Y = -velocity.Linear.Y
+			if velocity.Linear.Y > 0 {
+				velocity.Linear.Y = -velocity.Linear.Y
+			}
 		}
 
 		w.transforms[id] = transform
@@ -365,8 +373,8 @@ func (w *World) bodyOrDefault(id EntityID) Body {
 	body, ok := w.bodies[id]
 	if !ok {
 		return Body{
-			InvMass:     1,
-			Restitution: 1,
+			InvMass:     0,
+			Restitution: 0,
 		}
 	}
 

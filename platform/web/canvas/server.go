@@ -10,6 +10,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	adapter "github.com/dhannyell/frameforge/render/adapter/web"
@@ -27,19 +28,26 @@ type Server struct {
 
 	Update     func(dt float64)
 	Commands   func(debug bool) []render.Command
+	Input      func(state input.State)
 	HistoryLen func() int
 	Reset      func()
 	Back       func() bool
+
+	InputBindings []input.Binding
 }
 
 type clientMessage struct {
 	Type   string `json:"type"`
 	Action string `json:"action"`
+	Device string `json:"device"`
+	Code   string `json:"code"`
+	Kind   string `json:"kind"`
 
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
 	Speed  int     `json:"speed"`
 	Debug  bool    `json:"debug"`
+	Value  float64 `json:"value"`
 }
 
 type client struct {
@@ -58,15 +66,17 @@ type controlState struct {
 	stepPending int
 	reset       bool
 	backPending int
+	inputEvents []input.Event
 }
 
 type frameState struct {
-	paused bool
-	speed  int
-	debug  bool
-	reset  bool
-	steps  int
-	backs  int
+	paused      bool
+	speed       int
+	debug       bool
+	reset       bool
+	steps       int
+	backs       int
+	inputEvents []input.Event
 }
 
 //go:embed static
@@ -121,8 +131,22 @@ type hub struct {
 
 	controls controlState
 
+	inputMapper *input.Mapper
+	inputBuffer *input.Buffer
+
 	clientsMu sync.RWMutex
 	clients   map[*client]struct{}
+
+	// Shared state between simulation and render loops
+	stateMu  sync.RWMutex
+	worldMu  sync.RWMutex // Protects World access (Update/Commands)
+	lastTick uint64
+}
+
+type renderFrame struct {
+	tick     uint64
+	commands []render.Command
+	state    frameState
 }
 
 func newHub(server *Server, fps int, simulationHz int) *hub {
@@ -134,14 +158,14 @@ func newHub(server *Server, fps int, simulationHz int) *hub {
 			speed: 1,
 			debug: true,
 		},
-		clients: make(map[*client]struct{}),
+		inputMapper: input.NewMapper(server.InputBindings),
+		inputBuffer: input.NewBuffer(),
+		clients:     make(map[*client]struct{}),
 	}
 }
 
 func (h *hub) handleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{h.server.Addr, h.server.Addr},
-	})
+	conn, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
@@ -186,6 +210,8 @@ func (h *hub) readClientMessages(ctx context.Context, c *client) {
 			c.applyResize(message)
 		case "control":
 			h.controls.apply(message)
+		case "input":
+			h.controls.applyInput(message)
 		}
 	}
 }
@@ -212,32 +238,46 @@ func (c *client) frameCamera() render.Camera {
 }
 
 func (h *hub) run(ctx context.Context) {
-	renderDT := 1.0 / float64(h.fps)
 	simulationDT := 1.0 / float64(h.simulationHz)
-	ticker := time.NewTicker(time.Second / time.Duration(h.fps))
-	defer ticker.Stop()
 
+	simTicker := time.NewTicker(time.Second / time.Duration(h.simulationHz))
+	defer simTicker.Stop()
+
+	renderTicker := time.NewTicker(time.Second / time.Duration(h.fps))
+	defer renderTicker.Stop()
+
+	frameChan := make(chan renderFrame, 1)
+	defer close(frameChan)
+
+	// Run simulation loop in separate goroutine
+	go h.simulationLoop(ctx, simTicker.C, simulationDT, frameChan)
+
+	// Run render loop in main goroutine
+	h.renderLoop(ctx, renderTicker.C, frameChan)
+}
+
+func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time, simulationDT float64, frameChan chan<- renderFrame) {
 	var tick uint64
-	var accumulator float64
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-simTick:
 			if h.clientCount() == 0 {
-				accumulator = 0
 				continue
 			}
 
 			state := h.controls.consumeFrameState()
+			h.applyInputEvents(tick, state.inputEvents)
+
+			h.worldMu.Lock()
 
 			if state.reset {
 				if h.server.Reset != nil {
 					h.server.Reset()
 				}
 				tick = 0
-				accumulator = 0
 			}
 
 			for range state.backs {
@@ -246,21 +286,66 @@ func (h *hub) run(ctx context.Context) {
 				}
 			}
 
-			steps := nextSimulationSteps(state.steps, state.speed, renderDT, simulationDT, &accumulator)
-
-			for range steps {
-				if h.server.Update != nil {
-					h.server.Update(simulationDT)
+			if !(state.paused && state.steps == 0) {
+				stepsToRun := state.steps
+				if stepsToRun == 0 && !state.paused {
+					stepsToRun = 1
 				}
-				tick++
+
+				for range stepsToRun {
+					if h.server.Input != nil {
+						h.server.Input(h.inputMapper.State())
+					}
+					if h.server.Update != nil {
+						h.server.Update(simulationDT)
+					}
+					tick++
+					h.inputMapper.EndFrame()
+					h.inputBuffer.ClearBefore(retainedInputTick(tick, 120))
+				}
 			}
+
+			h.worldMu.Unlock()
+
+			h.stateMu.Lock()
+			h.lastTick = tick
+			h.stateMu.Unlock()
+
+			// Send frame for rendering (non-blocking, drop if render is slow)
+			select {
+			case frameChan <- renderFrame{tick: tick, state: state}:
+			default:
+			}
+		}
+	}
+}
+
+func (h *hub) renderLoop(ctx context.Context, renderTick <-chan time.Time, frameChan <-chan renderFrame) {
+	var lastFrameState frameState
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case frame := <-frameChan:
+			lastFrameState = frame.state
+		case <-renderTick:
+			if h.clientCount() == 0 {
+				continue
+			}
+
+			h.stateMu.RLock()
+			tick := h.lastTick
+			h.stateMu.RUnlock()
 
 			var commands []render.Command
+			h.worldMu.RLock()
 			if h.server.Commands != nil {
-				commands = h.server.Commands(state.debug)
+				commands = h.server.Commands(lastFrameState.debug)
 			}
+			h.worldMu.RUnlock()
 
-			h.broadcast(tick, commands, state)
+			h.broadcast(tick, commands, lastFrameState)
 		}
 	}
 }
@@ -286,11 +371,27 @@ func nextSimulationSteps(
 	if steps > maxStepsPerFrame {
 		steps = maxStepsPerFrame
 		*accumulator = 0
+	} else {
+		*accumulator -= float64(steps) * simulationDT
 	}
 
-	*accumulator -= float64(steps) * simulationDT
-
 	return steps
+}
+
+func (h *hub) applyInputEvents(tick uint64, events []input.Event) {
+	for _, event := range events {
+		event.Tick = tick
+		h.inputBuffer.Push(event)
+		h.inputMapper.Apply(event)
+	}
+}
+
+func retainedInputTick(tick uint64, retainedTicks uint64) uint64 {
+	if tick <= retainedTicks {
+		return 0
+	}
+
+	return tick - retainedTicks
 }
 
 func (h *hub) clientCount() int {
@@ -408,6 +509,56 @@ func (s *controlState) apply(message clientMessage) {
 	}
 }
 
+func (s *controlState) applyInput(message clientMessage) {
+	event, ok := inputEventFromClientMessage(message)
+	if !ok {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.inputEvents = append(s.inputEvents, event)
+}
+
+func inputEventFromClientMessage(message clientMessage) (input.Event, bool) {
+	if message.Device != "keyboard" {
+		return input.Event{}, false
+	}
+
+	code, ok := BrowserKeyboardCode(message.Code)
+	if !ok {
+		return input.Event{}, false
+	}
+
+	kind, ok := browserInputKind(message.Kind)
+	if !ok {
+		return input.Event{}, false
+	}
+
+	event := input.Event{
+		Source: input.Source{
+			Device: input.DeviceKeyboard,
+			Code:   code,
+		},
+		Kind:  kind,
+		Value: message.Value,
+	}
+
+	return event, event.Valid()
+}
+
+func browserInputKind(kind string) (input.EventKind, bool) {
+	switch kind {
+	case "down":
+		return input.EventButtonDown, true
+	case "up":
+		return input.EventButtonUp, true
+	default:
+		return input.EventButtonDown, false
+	}
+}
+
 func (s *controlState) consumeFrameState() frameState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -426,13 +577,17 @@ func (s *controlState) consumeFrameState() frameState {
 	reset := s.reset
 	s.reset = false
 
+	inputEvents := append([]input.Event(nil), s.inputEvents...)
+	s.inputEvents = s.inputEvents[:0]
+
 	return frameState{
-		paused: s.paused,
-		speed:  speed,
-		debug:  s.debug,
-		reset:  reset,
-		steps:  steps,
-		backs:  backs,
+		paused:      s.paused,
+		speed:       speed,
+		debug:       s.debug,
+		reset:       reset,
+		steps:       steps,
+		backs:       backs,
+		inputEvents: inputEvents,
 	}
 }
 

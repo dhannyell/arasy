@@ -106,8 +106,18 @@ const (
 	rightSide
 )
 
+type DemoWorld struct {
+	World            *scene.World
+	ControlledPlayer scene.EntityID
+}
+
 func BuildDemoWorld() *scene.World {
+	return BuildPlayableDemoWorld().World
+}
+
+func BuildPlayableDemoWorld() DemoWorld {
 	world := scene.NewWorld()
+	var controlledPlayer scene.EntityID
 
 	ball := spawnCircleEntity(
 		world,
@@ -149,6 +159,9 @@ func BuildDemoWorld() *scene.World {
 			homeTeamColor,
 			layerPlayers,
 		)
+		if i == 0 {
+			controlledPlayer = player
+		}
 		if i == 3 {
 			world.SetVelocity(player, scene.Velocity{
 				Linear: math2d.Vec2{X: 8, Y: 0},
@@ -173,7 +186,10 @@ func BuildDemoWorld() *scene.World {
 		}
 	}
 
-	return world
+	return DemoWorld{
+		World:            world,
+		ControlledPlayer: controlledPlayer,
+	}
 }
 
 func AppendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
