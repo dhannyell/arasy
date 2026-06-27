@@ -5,6 +5,7 @@ import (
 
 	"github.com/dhannyell/frameforge/cmd/demos/football"
 	"github.com/dhannyell/frameforge/debug"
+	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/web/canvas"
 	"github.com/dhannyell/frameforge/render"
@@ -23,6 +24,7 @@ const (
 	fieldLeft       = 5.25
 	fieldTop        = 3.4
 	physicsCellSize = 8.0
+	playerSpeed     = 18.0
 )
 
 var (
@@ -72,7 +74,9 @@ var debugConfig = football.DebugConfig{
 }
 
 func main() {
-	world := football.BuildDemoWorld()
+	demo := football.BuildPlayableDemoWorld()
+	world := demo.World
+	controlledPlayer := demo.ControlledPlayer
 	recorder := debug.NewRecorder(600)
 
 	server := canvas.Server{
@@ -84,7 +88,11 @@ func main() {
 			Viewport: math2d.NewRect(viewportOrigin, viewportSize),
 			Aspect:   render.AspectExpand,
 		},
-		Clear: clearColor,
+		Clear:         clearColor,
+		InputBindings: movementBindings(),
+		Input: func(state input.State) {
+			applyPlayerInput(world, controlledPlayer, state)
+		},
 		Update: func(dt float64) {
 			recorder.Capture(world)
 			world.Step(dt, scene.StepConfig{
@@ -108,7 +116,9 @@ func main() {
 			return recorder.Len()
 		},
 		Reset: func() {
-			world = football.BuildDemoWorld()
+			demo = football.BuildPlayableDemoWorld()
+			world = demo.World
+			controlledPlayer = demo.ControlledPlayer
 			recorder.Clear()
 		},
 		Back: func() bool {
@@ -128,4 +138,38 @@ func main() {
 	if err := server.ListenAndServe(); err != nil {
 		panic(err)
 	}
+}
+
+func movementBindings() []input.Binding {
+	return []input.Binding{
+		{Source: keyboard(input.KeyA), Action: input.ActionMoveX, Scale: -1},
+		{Source: keyboard(input.KeyD), Action: input.ActionMoveX, Scale: 1},
+		{Source: keyboard(input.KeyArrowLeft), Action: input.ActionMoveX, Scale: -1},
+		{Source: keyboard(input.KeyArrowRight), Action: input.ActionMoveX, Scale: 1},
+		{Source: keyboard(input.KeyW), Action: input.ActionMoveY, Scale: -1},
+		{Source: keyboard(input.KeyS), Action: input.ActionMoveY, Scale: 1},
+		{Source: keyboard(input.KeyArrowUp), Action: input.ActionMoveY, Scale: -1},
+		{Source: keyboard(input.KeyArrowDown), Action: input.ActionMoveY, Scale: 1},
+	}
+}
+
+func keyboard(code input.SourceCode) input.Source {
+	return input.Source{
+		Device: input.DeviceKeyboard,
+		Code:   code,
+	}
+}
+
+func applyPlayerInput(world *scene.World, player scene.EntityID, state input.State) {
+	direction := math2d.Vec2{
+		X: state.Value(input.ActionMoveX),
+		Y: state.Value(input.ActionMoveY),
+	}
+	if direction.LenSq() > 1 {
+		direction = direction.Normalize()
+	}
+
+	world.SetVelocity(player, scene.Velocity{
+		Linear: direction.Mul(playerSpeed),
+	})
 }
