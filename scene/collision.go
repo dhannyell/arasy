@@ -226,7 +226,7 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 		// it means the objects are approaching each other.
 		// When the objects are already moving apart, there is no need to update the relative velocity.
 		if vRelNormal > 0 {
-			restitution := minFloat(bodyA.Restitution, bodyB.Restitution)
+			restitution := min(bodyA.Restitution, bodyB.Restitution)
 			impulseMagnitude := (1 + restitution) * vRelNormal / totalInvMass
 			impulse := math2d.Vec2{
 				X: impulseMagnitude * contact.Normal.X,
@@ -391,12 +391,4 @@ func (w *World) bodyOrDefault(id EntityID) Body {
 	}
 
 	return body
-}
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-
-	return b
 }

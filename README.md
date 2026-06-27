@@ -40,13 +40,19 @@ render/
 platform/raster/
   Software renderer that draws render commands into image.RGBA.
 
+platform/web/canvas/
+  WebSocket server that streams render commands to a browser canvas.
+
 scene/
   Minimal entity/component world and simple simulation systems.
 
-cmd/rasterdemo/
-  Small offline render demo that generates PNG and GIF output.
+input/
+  Typed input mapping system (device codes → semantic actions).
 
-cmd/webcanvademo/
+cmd/demos/football/raster/
+  Offline render demo that generates PNG and GIF output.
+
+cmd/demos/football/webCanvas/
   Browser-based canvas demo with live simulation and debug visualization.
 
 cmd/benchsave/
@@ -66,13 +72,15 @@ docs/
 go test ./...
 ```
 
-## Running The Demo
+## Running The Offline Demo
+
+Generate PNG and GIF output:
 
 ```powershell
-go run ./cmd/rasterdemo
+go run ./cmd/demos/football/raster
 ```
 
-The demo writes files to:
+Output files:
 
 ```text
 output/renderdemo.png
@@ -80,6 +88,16 @@ output/renderdemo.gif
 ```
 
 The PNG is a static high-resolution render. The GIF is a smaller animated preview used to validate movement and rendering.
+
+## Running The Browser Demo
+
+Start the WebSocket server:
+
+```powershell
+go run ./cmd/demos/football/webCanvas
+```
+
+Then open `http://localhost:8080` in your browser. Use WASD or arrow keys to move the controlled player.
 
 ## Running Benchmarks
 
@@ -121,6 +139,7 @@ go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-coll
 
 - [Math visual guide](docs/math2d-visual-guide.md)
 - [Camera, world, and viewport](docs/camera-world-viewport.md)
+- [Architectural review (2026-06-26)](docs/revisao-arquitetural-2026-06-26.md)
 - [Internal development notes](DEVELOPMENT.md)
 
 ## License
