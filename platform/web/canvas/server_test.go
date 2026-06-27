@@ -1,6 +1,10 @@
 package canvas
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/dhannyell/frameforge/input"
+)
 
 func TestControlStateDefaultsToRunningWithSpeedAndDebug(t *testing.T) {
 	controls := controlState{
@@ -173,6 +177,37 @@ func TestControlStateTogglesDebug(t *testing.T) {
 	}
 }
 
+func TestControlStateConsumesInputEvents(t *testing.T) {
+	controls := controlState{
+		speed: 1,
+	}
+
+	controls.applyInput(clientMessage{
+		Device: "keyboard",
+		Code:   "KeyW",
+		Kind:   "down",
+	})
+
+	state := controls.consumeFrameState()
+	if got := len(state.inputEvents); got != 1 {
+		t.Fatalf("input events after consume = %d, want 1", got)
+	}
+
+	event := state.inputEvents[0]
+	if event.Source.Device != input.DeviceKeyboard || event.Source.Code != input.KeyW {
+		t.Fatalf("input source = %#v, want keyboard KeyW", event.Source)
+	}
+
+	if event.Kind != input.EventButtonDown {
+		t.Fatalf("input kind = %v, want EventButtonDown", event.Kind)
+	}
+
+	state = controls.consumeFrameState()
+	if got := len(state.inputEvents); got != 0 {
+		t.Fatalf("input events after second consume = %d, want 0", got)
+	}
+}
+
 func TestNextSimulationStepsRunsMultipleTicksWhenSimulationIsFasterThanRender(t *testing.T) {
 	var accumulator float64
 
@@ -254,6 +289,16 @@ func TestNextSimulationStepsReturnsZeroWhenPaused(t *testing.T) {
 
 	if steps != 0 {
 		t.Fatalf("steps = %v, want 0", steps)
+	}
+}
+
+func TestRetainedInputTickDoesNotUnderflow(t *testing.T) {
+	if got := retainedInputTick(60, 120); got != 0 {
+		t.Fatalf("retainedInputTick(60, 120) = %v, want 0", got)
+	}
+
+	if got := retainedInputTick(121, 120); got != 1 {
+		t.Fatalf("retainedInputTick(121, 120) = %v, want 1", got)
 	}
 }
 

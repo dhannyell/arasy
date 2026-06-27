@@ -659,6 +659,10 @@ func spawnCollidableCircle(world *scene.World, position math2d.Vec2, radius floa
 	world.SetCircleCollider(entity, scene.CircleCollider{
 		Radius: radius,
 	})
+	world.SetBody(entity, scene.Body{
+		InvMass:     1,
+		Restitution: 1,
+	})
 
 	return entity
 }

@@ -15,6 +15,17 @@ const debugInput = document.getElementById("debug");
 let connection = null;
 let paused = false;
 let lastFrame = null;
+const inputCodes = new Set([
+    "KeyW",
+    "KeyA",
+    "KeyS",
+    "KeyD",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+]);
+const pressedCodes = new Set();
 
 const renderer = createCanvasRenderer(canvas, {
     onResize(size) {
@@ -82,6 +93,33 @@ debugInput.addEventListener("change", () => {
     });
 });
 
+window.addEventListener("keydown", (event) => {
+    if (!inputCodes.has(event.code) || event.repeat) {
+        return;
+    }
+
+    event.preventDefault();
+    pressedCodes.add(event.code);
+    sendKeyboardInput(event.code, "down");
+});
+
+window.addEventListener("keyup", (event) => {
+    if (!inputCodes.has(event.code)) {
+        return;
+    }
+
+    event.preventDefault();
+    pressedCodes.delete(event.code);
+    sendKeyboardInput(event.code, "up");
+});
+
+window.addEventListener("blur", () => {
+    for (const code of pressedCodes) {
+        sendKeyboardInput(code, "up");
+    }
+    pressedCodes.clear();
+});
+
 connection = connectFrameSocket({
     url: "/ws",
 
@@ -110,6 +148,15 @@ connection = connectFrameSocket({
         stats.textContent = `tick ${frame.tick} | commands ${frame.commands.length}`;
     },
 });
+
+function sendKeyboardInput(code, kind) {
+    connection?.send({
+        type: "input",
+        device: "keyboard",
+        code,
+        kind,
+    });
+}
 
 function syncControls(state) {
     if (!state) {
