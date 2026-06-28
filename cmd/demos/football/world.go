@@ -66,10 +66,7 @@ var (
 	}
 )
 
-type DebugConfig struct {
-	ShowColliders bool
-	ShowContacts  bool
-
+type DebugStyle struct {
 	ColliderColor       render.Color
 	ColliderStrokeWidth float64
 	ColliderLayer       int
@@ -80,23 +77,49 @@ type DebugConfig struct {
 	ContactNormalLength float64
 	ContactLayer        int
 
-	ShowGrid        bool
 	GridColor       render.Color
 	GridDashLength  float64
 	GridStrokeWidth float64
 	GridLayer       int
 
-	ShowActiveGrid        bool
 	ActiveGridFill        render.Color
 	ActiveGridStroke      render.Color
 	ActiveGridStrokeWidth float64
 	ActiveGridLayer       int
 
-	ShowCandidateGrid        bool
 	CandidateGridFill        render.Color
 	CandidateGridStroke      render.Color
 	CandidateGridStrokeWidth float64
 	CandidateGridLayer       int
+}
+
+func DefaultDebugStyle() DebugStyle {
+	return DebugStyle{
+		ColliderColor:       render.RGBA(1, 1, 0, 1),
+		ColliderStrokeWidth: 0.08,
+		ColliderLayer:       100,
+
+		ContactColor:        render.RGBA(1, 0, 1, 1),
+		ContactPointRadius:  0.18,
+		ContactLineWidth:    0.12,
+		ContactNormalLength: 1.25,
+		ContactLayer:        101,
+
+		GridColor:       render.RGBA(0.5, 0.5, 0.5, 0.4),
+		GridDashLength:  1.5,
+		GridStrokeWidth: 0.2,
+		GridLayer:       200,
+
+		ActiveGridFill:        render.RGBA(1, 0.55, 0.05, 0.22),
+		ActiveGridStroke:      render.RGBA(1, 0.75, 0.05, 0.9),
+		ActiveGridStrokeWidth: 0.12,
+		ActiveGridLayer:       201,
+
+		CandidateGridFill:        render.RGBA(1, 0.95, 0.05, 0.35),
+		CandidateGridStroke:      render.RGBA(1, 1, 0.15, 1),
+		CandidateGridStrokeWidth: 0.18,
+		CandidateGridLayer:       202,
+	}
 }
 
 type side int
@@ -118,6 +141,10 @@ func BuildDemoWorld() *scene.World {
 
 func BuildPlayableDemoWorld() DemoWorld {
 	world := scene.NewWorld()
+	return BuildPlayableDemoWorldIn(world)
+}
+
+func BuildPlayableDemoWorldIn(world *scene.World) DemoWorld {
 	var controlledPlayer scene.EntityID
 
 	ball := spawnCircleEntity(
@@ -194,59 +221,59 @@ func BuildPlayableDemoWorld() DemoWorld {
 	}
 }
 
-func AppendDebugCommands(commands *[]render.Command, world *scene.World, config DebugConfig) {
-	if config.ShowGrid {
+func AppendDebugCommands(commands *[]render.Command, world *scene.World, layers scene.DebugLayers, style DebugStyle) {
+	if layers.Has(scene.DebugGrid) {
 		*commands = append(*commands, scene.DebugGridAreaCommands(
 			math2d.NewRect(fieldOrigin, fieldSize),
 			physicsCellSize,
-			config.GridColor,
-			config.GridStrokeWidth,
-			config.GridDashLength,
-			config.GridLayer,
+			style.GridColor,
+			style.GridStrokeWidth,
+			style.GridDashLength,
+			style.GridLayer,
 		)...)
 	}
 
-	if config.ShowActiveGrid {
+	if layers.Has(scene.DebugActiveGrid) {
 		*commands = append(*commands, world.DebugActiveGridCommands(
-			config.ActiveGridFill,
-			config.ActiveGridStroke,
-			config.ActiveGridStrokeWidth,
-			config.ActiveGridLayer,
+			style.ActiveGridFill,
+			style.ActiveGridStroke,
+			style.ActiveGridStrokeWidth,
+			style.ActiveGridLayer,
 		)...)
 	}
 
-	if config.ShowCandidateGrid {
+	if layers.Has(scene.DebugCandidateGrid) {
 		*commands = append(*commands, world.DebugCandidateGridCommands(
-			config.CandidateGridFill,
-			config.CandidateGridStroke,
-			config.CandidateGridStrokeWidth,
-			config.CandidateGridLayer,
+			style.CandidateGridFill,
+			style.CandidateGridStroke,
+			style.CandidateGridStrokeWidth,
+			style.CandidateGridLayer,
 		)...)
 	}
 
-	if config.ShowColliders {
+	if layers.Has(scene.DebugColliders) {
 		*commands = append(
 			*commands,
 			world.DebugColliderCommands(
-				config.ColliderColor,
-				config.ColliderStrokeWidth,
-				config.ColliderLayer,
+				style.ColliderColor,
+				style.ColliderStrokeWidth,
+				style.ColliderLayer,
 			)...,
 		)
 	}
 
-	if !config.ShowContacts {
+	if !layers.Has(scene.DebugContacts) {
 		return
 	}
 
 	*commands = append(
 		*commands,
 		world.DebugContactCommands(
-			config.ContactColor,
-			config.ContactPointRadius,
-			config.ContactLineWidth,
-			config.ContactNormalLength,
-			config.ContactLayer,
+			style.ContactColor,
+			style.ContactPointRadius,
+			style.ContactLineWidth,
+			style.ContactNormalLength,
+			style.ContactLayer,
 		)...,
 	)
 }
@@ -274,26 +301,21 @@ func spawnCircleEntity(
 	color render.Color,
 	layer int,
 ) scene.EntityID {
-	entity := world.Spawn()
-
-	world.SetTransform(entity, scene.Transform{
-		Position: position,
-		Scale:    math2d.Vec2{X: 1, Y: 1},
+	return world.SpawnBundle(scene.Bundle{
+		Transform: &scene.Transform{
+			Position: position,
+			Scale:    math2d.Vec2{X: 1, Y: 1},
+		},
+		CircleSprite: &scene.CircleSprite{
+			Radius: visualRadius,
+			Color:  color,
+			Layer:  layer,
+		},
+		CircleCollider: &scene.CircleCollider{
+			Radius: colliderRadius,
+		},
+		Body: &body,
 	})
-
-	world.SetCircleSprite(entity, scene.CircleSprite{
-		Radius: visualRadius,
-		Color:  color,
-		Layer:  layer,
-	})
-
-	world.SetCircleCollider(entity, scene.CircleCollider{
-		Radius: colliderRadius,
-	})
-
-	world.SetBody(entity, body)
-
-	return entity
 }
 
 func backgroundCommand() render.Command {

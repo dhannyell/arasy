@@ -14,10 +14,10 @@ type FrameDTO struct {
 }
 
 type StateDTO struct {
-	Paused     bool `json:"paused"`
-	Speed      int  `json:"speed"`
-	Debug      bool `json:"debug"`
-	HistoryLen int  `json:"historyLen"`
+	Paused     bool   `json:"paused"`
+	Speed      int    `json:"speed"`
+	Debug      uint32 `json:"debug"`
+	HistoryLen int    `json:"historyLen"`
 
 	RenderFPS    int `json:"renderFPS"`
 	SimulationHz int `json:"simulationHz"`
