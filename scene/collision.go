@@ -33,6 +33,12 @@ type CircleContact struct {
 	Depth float64
 }
 
+type collisionStats struct {
+	contacts        []CircleContact
+	broadPhasePairs int
+	gridCells       int
+}
+
 func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 	if cellSize <= 0 {
 		cellSize = defaultCellSize
@@ -117,6 +123,39 @@ func (w *World) DetectCircleOverlapsGrid(cellSize float64) []CircleContact {
 	return w.detectCircleOverlapsForPairs(grid.entityPairs())
 }
 
+func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
+	if cellSize <= 0 {
+		entities := w.circleColliderEntities()
+		pairs := make([]entityPair, 0, len(entities))
+
+		for i := range entities {
+			for j := i + 1; j < len(entities); j++ {
+				pairs = append(pairs, makeEntityPair(entities[i], entities[j]))
+			}
+		}
+
+		w.debugGridCells = nil
+
+		return collisionStats{
+			contacts:        w.detectCircleOverlapsForPairs(pairs),
+			broadPhasePairs: len(pairs),
+			gridCells:       0,
+		}
+	}
+
+	grid := newSpatialHashGrid(cellSize)
+	grid.populate(w)
+
+	w.debugGridCells = grid.debugCells()
+	pairs := grid.entityPairs()
+
+	return collisionStats{
+		contacts:        w.detectCircleOverlapsForPairs(pairs),
+		broadPhasePairs: len(pairs),
+		gridCells:       len(w.debugGridCells),
+	}
+}
+
 func (w *World) detectCircleOverlapsForPairs(pairs []entityPair) []CircleContact {
 	contacts := make([]CircleContact, 0)
 
@@ -181,6 +220,8 @@ func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
 }
 
 func (w *World) resolveCircleContacts(contacts []CircleContact) {
+	w.contacts = contacts
+
 	for _, contact := range contacts {
 		transformA, ok := w.transforms[contact.A]
 		if !ok {
@@ -210,15 +251,8 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 		w.transforms[contact.A] = transformA
 		w.transforms[contact.B] = transformB
 
-		velocityA, ok := w.Velocity(contact.A)
-		if !ok {
-			continue
-		}
-
-		velocityB, ok := w.Velocity(contact.B)
-		if !ok {
-			continue
-		}
+		velocityA, hasVelocityA := w.Velocity(contact.A)
+		velocityB, hasVelocityB := w.Velocity(contact.B)
 
 		vRel := velocityA.Linear.Sub(velocityB.Linear)
 		vRelNormal := (vRel.X * contact.Normal.X) + (vRel.Y * contact.Normal.Y)
@@ -226,7 +260,7 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 		// it means the objects are approaching each other.
 		// When the objects are already moving apart, there is no need to update the relative velocity.
 		if vRelNormal > 0 {
-			restitution := minFloat(bodyA.Restitution, bodyB.Restitution)
+			restitution := min(bodyA.Restitution, bodyB.Restitution)
 			impulseMagnitude := (1 + restitution) * vRelNormal / totalInvMass
 			impulse := math2d.Vec2{
 				X: impulseMagnitude * contact.Normal.X,
@@ -236,8 +270,12 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 			velocityA.Linear = velocityA.Linear.Sub(impulse.Mul(bodyA.InvMass))
 			velocityB.Linear = velocityB.Linear.Add(impulse.Mul(bodyB.InvMass))
 
-			w.velocities[contact.A] = velocityA
-			w.velocities[contact.B] = velocityB
+			if hasVelocityA {
+				w.velocities[contact.A] = velocityA
+			}
+			if hasVelocityB {
+				w.velocities[contact.B] = velocityB
+			}
 		}
 	}
 }
@@ -391,12 +429,4 @@ func (w *World) bodyOrDefault(id EntityID) Body {
 	}
 
 	return body
-}
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-
-	return b
 }

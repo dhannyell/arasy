@@ -32,6 +32,10 @@ func (s *State) JustReleased(action Action) bool {
 	return s.justReleased[action]
 }
 
+func (s State) Clone() State {
+	return s.clone()
+}
+
 func (s State) clone() State {
 	clone := NewState()
 
