@@ -10,11 +10,24 @@ const stepButton = document.getElementById("step");
 const resetButton = document.getElementById("reset");
 const speedInput = document.getElementById("speed");
 const speedValue = document.getElementById("speed-value");
-const debugInput = document.getElementById("debug");
+const debugInputs = [...document.querySelectorAll("[data-debug-layer]")];
+
+const DebugLayers = {
+    colliders: 1 << 0,
+    contacts: 1 << 1,
+    grid: 1 << 2,
+    activeGrid: 1 << 3,
+    candidateGrid: 1 << 4,
+};
 
 let connection = null;
 let paused = false;
 let lastFrame = null;
+
+let fpsFrames = 0;
+let fpsLastTime = performance.now();
+let measuredFPS = 0;
+
 const inputCodes = new Set([
     "KeyW",
     "KeyA",
@@ -85,14 +98,6 @@ speedInput.addEventListener("input", () => {
     });
 });
 
-debugInput.addEventListener("change", () => {
-    connection?.send({
-        type: "control",
-        action: "setDebug",
-        debug: debugInput.checked,
-    });
-});
-
 window.addEventListener("keydown", (event) => {
     if (!inputCodes.has(event.code) || event.repeat) {
         return;
@@ -133,7 +138,9 @@ connection = connectFrameSocket({
     },
 
     onClose() {
-        renderer.render(lastFrame)
+        if (lastFrame) {
+            renderer.render(lastFrame);
+        }
         stats.textContent = "disconnected, retrying...";
     },
 
@@ -142,12 +149,54 @@ connection = connectFrameSocket({
     },
 
     onFrame(frame) {
+        fpsFrames++;
+
+        const now = performance.now();
+        const elapsed = now - fpsLastTime;
+
+        if (elapsed >= 1000) {
+            measuredFPS = Math.round((fpsFrames * 1000) / elapsed);
+            fpsFrames = 0;
+            fpsLastTime = now;
+        }
+
         lastFrame = frame;
         renderer.render(frame);
         syncControls(frame.state);
-        stats.textContent = `tick ${frame.tick} | commands ${frame.commands.length}`;
+        stats.textContent =
+            `tick ${frame.tick} | commands ${frame.commands.length} | ` +
+            `sim ${frame.state.simulationHz * frame.state.speed}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
     },
 });
+
+function debugMaskFromInputs() {
+    let mask = 0;
+
+    for (const input of debugInputs) {
+        if (input.checked) {
+            mask |= DebugLayers[input.dataset.debugLayer];
+        }
+    }
+
+    return mask >>> 0;
+}
+
+for (const input of debugInputs) {
+    input.addEventListener("change", () => {
+        connection?.send({
+            type: "control",
+            action: "setDebug",
+            debug: debugMaskFromInputs(),
+        });
+    });
+}
+
+function syncDebugInputs(mask) {
+    for (const input of debugInputs) {
+        const bit = DebugLayers[input.dataset.debugLayer];
+        input.checked = (mask & bit) !== 0;
+    }
+}
 
 function sendKeyboardInput(code, kind) {
     connection?.send({
@@ -171,6 +220,6 @@ function syncControls(state) {
     }
     speedValue.textContent = `${state.speed}x`;
 
-    debugInput.checked = state.debug;
+    syncDebugInputs(Number(state.debug ?? 0));
     historyStats.textContent = `history ${state.historyLen}`;
 }

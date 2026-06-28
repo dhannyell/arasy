@@ -1,6 +1,8 @@
 package loop
 
-import "time"
+import (
+	"time"
+)
 
 // FixedStep accumulates elapsed time and reports how many fixed updates should run.
 type FixedStep struct {

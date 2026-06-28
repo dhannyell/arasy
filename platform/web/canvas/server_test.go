@@ -4,320 +4,114 @@ import (
 	"testing"
 
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/frameforge/scene"
 )
 
-func TestControlStateDefaultsToRunningWithSpeedAndDebug(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-		debug: true,
-	}
-
-	state := controls.consumeFrameState()
-
-	if state.speed != 1 {
-		t.Fatalf("speed = %v, want 1", state.speed)
-	}
-
-	if state.paused {
-		t.Fatal("paused = true, want false")
-	}
-
-	if !state.debug {
-		t.Fatal("debug = false, want true")
-	}
-
-	if state.steps != 0 {
-		t.Fatalf("steps = %v, want 0", state.steps)
-	}
-}
-
-func TestControlStatePauseAndPlay(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.apply(clientMessage{
-		Action: "pause",
-	})
-
-	if state := controls.consumeFrameState(); state.speed != 0 {
-		t.Fatalf("paused speed = %v, want 0", state.speed)
-	}
-
-	controls.apply(clientMessage{
-		Action: "play",
-	})
-
-	if state := controls.consumeFrameState(); state.speed != 1 {
-		t.Fatalf("playing speed = %v, want 1", state.speed)
-	}
-}
-
-func TestControlStateStepPausesAndConsumesPendingStep(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.apply(clientMessage{
-		Action: "step",
-	})
-
-	state := controls.consumeFrameState()
-	if state.speed != 0 {
-		t.Fatalf("speed after step = %v, want 0", state.speed)
-	}
-
-	if !state.paused {
-		t.Fatal("paused after step = false, want true")
-	}
-
-	if state.steps != 1 {
-		t.Fatalf("steps after step = %v, want 1", state.steps)
-	}
-
-	state = controls.consumeFrameState()
-	if state.steps != 0 {
-		t.Fatalf("steps after consume = %v, want 0", state.steps)
-	}
-}
-
-func TestControlStateBackPausesAndConsumesPendingBack(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.apply(clientMessage{
-		Action: "back",
-	})
-
-	state := controls.consumeFrameState()
-	if state.speed != 0 {
-		t.Fatalf("speed after back = %v, want 0", state.speed)
-	}
-
-	if !state.paused {
-		t.Fatal("paused after back = false, want true")
-	}
-
-	if state.backs != 1 {
-		t.Fatalf("backs after back = %v, want 1", state.backs)
-	}
-
-	state = controls.consumeFrameState()
-	if state.backs != 0 {
-		t.Fatalf("backs after consume = %v, want 0", state.backs)
-	}
-}
-
-func TestControlStateResetConsumesResetAndPendingNavigation(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.apply(clientMessage{Action: "step"})
-	controls.apply(clientMessage{Action: "back"})
-	controls.apply(clientMessage{Action: "reset"})
-
-	state := controls.consumeFrameState()
-	if !state.reset {
-		t.Fatal("reset = false, want true")
-	}
-
-	if state.steps != 0 {
-		t.Fatalf("steps after reset = %v, want 0", state.steps)
-	}
-
-	if state.backs != 0 {
-		t.Fatalf("backs after reset = %v, want 0", state.backs)
-	}
-
-	state = controls.consumeFrameState()
-	if state.reset {
-		t.Fatal("reset after consume = true, want false")
-	}
-}
-
-func TestControlStateClampsSpeed(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.apply(clientMessage{
-		Action: "setSpeed",
-		Speed:  -10,
-	})
-
-	if state := controls.consumeFrameState(); state.speed != 1 {
-		t.Fatalf("low clamped speed = %v, want 1", state.speed)
-	}
-
-	controls.apply(clientMessage{
-		Action: "setSpeed",
-		Speed:  99,
-	})
-
-	if state := controls.consumeFrameState(); state.speed != 8 {
-		t.Fatalf("high clamped speed = %v, want 8", state.speed)
-	}
-}
-
-func TestControlStateTogglesDebug(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-		debug: true,
-	}
-
-	controls.apply(clientMessage{
-		Action: "setDebug",
-		Debug:  false,
-	})
-
-	if state := controls.consumeFrameState(); state.debug {
-		t.Fatal("debug = true, want false")
-	}
-}
-
-func TestControlStateConsumesInputEvents(t *testing.T) {
-	controls := controlState{
-		speed: 1,
-	}
-
-	controls.applyInput(clientMessage{
+func TestInputEventFromClientMessageMapsKeyboardEvents(t *testing.T) {
+	event, ok := inputEventFromClientMessage(clientMessage{
 		Device: "keyboard",
 		Code:   "KeyW",
 		Kind:   "down",
 	})
-
-	state := controls.consumeFrameState()
-	if got := len(state.inputEvents); got != 1 {
-		t.Fatalf("input events after consume = %d, want 1", got)
+	if !ok {
+		t.Fatal("inputEventFromClientMessage ok = false, want true")
 	}
 
-	event := state.inputEvents[0]
 	if event.Source.Device != input.DeviceKeyboard || event.Source.Code != input.KeyW {
-		t.Fatalf("input source = %#v, want keyboard KeyW", event.Source)
+		t.Fatalf("source = %#v, want keyboard KeyW", event.Source)
 	}
-
 	if event.Kind != input.EventButtonDown {
-		t.Fatalf("input kind = %v, want EventButtonDown", event.Kind)
-	}
-
-	state = controls.consumeFrameState()
-	if got := len(state.inputEvents); got != 0 {
-		t.Fatalf("input events after second consume = %d, want 0", got)
+		t.Fatalf("kind = %v, want EventButtonDown", event.Kind)
 	}
 }
 
-func TestNextSimulationStepsRunsMultipleTicksWhenSimulationIsFasterThanRender(t *testing.T) {
-	var accumulator float64
-
-	steps := nextSimulationSteps(
-		0,
-		1,
-		1.0/60.0,
-		1.0/120.0,
-		&accumulator,
-	)
-
-	if steps != 2 {
-		t.Fatalf("steps = %v, want 2", steps)
+func TestInputEventFromClientMessageRejectsUnknownInput(t *testing.T) {
+	if _, ok := inputEventFromClientMessage(clientMessage{
+		Device: "mouse",
+		Code:   "ButtonLeft",
+		Kind:   "down",
+	}); ok {
+		t.Fatal("mouse input ok = true, want false")
 	}
 
-	if accumulator != 0 {
-		t.Fatalf("accumulator = %v, want 0", accumulator)
+	if _, ok := inputEventFromClientMessage(clientMessage{
+		Device: "keyboard",
+		Code:   "Nope",
+		Kind:   "down",
+	}); ok {
+		t.Fatal("unknown keyboard code ok = true, want false")
 	}
 }
 
-func TestNextSimulationStepsAccumulatesFractionalTicks(t *testing.T) {
-	var accumulator float64
-
-	steps := nextSimulationSteps(
-		0,
-		1,
-		1.0/60.0,
-		1.0/30.0,
-		&accumulator,
-	)
-
-	if steps != 0 {
-		t.Fatalf("first steps = %v, want 0", steps)
+func TestControlCommandFromMessageMapsDebugLayers(t *testing.T) {
+	mask := uint32(scene.DebugColliders | scene.DebugContacts)
+	cmd, ok := controlCommandFromMessage(clientMessage{
+		Action: "setDebug",
+		Debug:  mask,
+	})
+	if !ok {
+		t.Fatal("controlCommandFromMessage ok = false, want true")
 	}
 
-	steps = nextSimulationSteps(
-		0,
-		1,
-		1.0/60.0,
-		1.0/30.0,
-		&accumulator,
-	)
-
-	if steps != 1 {
-		t.Fatalf("second steps = %v, want 1", steps)
+	if cmd.Kind != runtime.ControlSetDebugLayers {
+		t.Fatalf("kind = %v, want ControlSetDebugLayers", cmd.Kind)
+	}
+	if cmd.DebugLayers != scene.DebugLayers(mask) {
+		t.Fatalf("debug layers = %v, want %v", cmd.DebugLayers, mask)
 	}
 }
 
-func TestNextSimulationStepsUsesManualStepsWithoutAccumulator(t *testing.T) {
-	accumulator := 0.5
-
-	steps := nextSimulationSteps(
-		3,
-		0,
-		1.0/60.0,
-		1.0/60.0,
-		&accumulator,
-	)
-
-	if steps != 3 {
-		t.Fatalf("manual steps = %v, want 3", steps)
+func TestControlCommandFromMessageMapsSpeed(t *testing.T) {
+	cmd, ok := controlCommandFromMessage(clientMessage{
+		Action: "setSpeed",
+		Speed:  4,
+	})
+	if !ok {
+		t.Fatal("controlCommandFromMessage ok = false, want true")
 	}
 
-	if accumulator != 0.5 {
-		t.Fatalf("accumulator = %v, want 0.5", accumulator)
+	if cmd.Kind != runtime.ControlSetSpeed {
+		t.Fatalf("kind = %v, want ControlSetSpeed", cmd.Kind)
+	}
+	if cmd.Speed != 4 {
+		t.Fatalf("speed = %v, want 4", cmd.Speed)
 	}
 }
 
-func TestNextSimulationStepsReturnsZeroWhenPaused(t *testing.T) {
-	var accumulator float64
-
-	steps := nextSimulationSteps(
-		0,
-		0,
-		1.0/60.0,
-		1.0/60.0,
-		&accumulator,
-	)
-
-	if steps != 0 {
-		t.Fatalf("steps = %v, want 0", steps)
-	}
-}
-
-func TestRetainedInputTickDoesNotUnderflow(t *testing.T) {
-	if got := retainedInputTick(60, 120); got != 0 {
-		t.Fatalf("retainedInputTick(60, 120) = %v, want 0", got)
-	}
-
-	if got := retainedInputTick(121, 120); got != 1 {
-		t.Fatalf("retainedInputTick(121, 120) = %v, want 1", got)
-	}
-}
-
-func TestHubHistoryLenDefaultsToZero(t *testing.T) {
-	h := newHub(&Server{}, 60, 60)
-
-	if h.historyLen() != 0 {
-		t.Fatalf("historyLen() = %v, want 0", h.historyLen())
-	}
-}
-
-func TestHubHistoryLenUsesServerCallback(t *testing.T) {
-	h := newHub(&Server{
-		HistoryLen: func() int {
-			return 12
+func TestClientCameraPreservesFrameCameraAndUsesClientViewport(t *testing.T) {
+	h := &hub{}
+	c := &client{
+		camera: render.Camera{
+			Viewport: math2d.NewRect(
+				math2d.Vec2{},
+				math2d.Vec2{X: 1280, Y: 720},
+			),
 		},
-	}, 60, 60)
+	}
+	base := render.Camera{
+		World: math2d.NewRect(
+			math2d.Vec2{X: 5, Y: 7},
+			math2d.Vec2{X: 100, Y: 80},
+		),
+		Viewport: math2d.NewRect(
+			math2d.Vec2{},
+			math2d.Vec2{X: 1, Y: 1},
+		),
+		Aspect: render.AspectExpand,
+	}
 
-	if h.historyLen() != 12 {
-		t.Fatalf("historyLen() = %v, want 12", h.historyLen())
+	got := h.clientCamera(base, c)
+
+	if got.World != base.World {
+		t.Fatalf("world = %+v, want %+v", got.World, base.World)
+	}
+	if got.Aspect != base.Aspect {
+		t.Fatalf("aspect = %v, want %v", got.Aspect, base.Aspect)
+	}
+	if got.Viewport.Width() != 1280 || got.Viewport.Height() != 720 {
+		t.Fatalf("viewport = %+v, want 1280x720", got.Viewport)
 	}
 }

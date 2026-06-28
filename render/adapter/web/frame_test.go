@@ -10,7 +10,7 @@ func TestNewFrameDTOWithStateIncludesServerState(t *testing.T) {
 	state := StateDTO{
 		Paused:     true,
 		Speed:      3,
-		Debug:      false,
+		Debug:      1,
 		HistoryLen: 42,
 	}
 

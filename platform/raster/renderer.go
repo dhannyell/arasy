@@ -112,10 +112,10 @@ func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA
 	}
 
 	radius := width * 0.5
-	minX := int(minFloat(from.X, to.X) - radius)
-	maxX := int(maxFloat(from.X, to.X) + radius)
-	minY := int(minFloat(from.Y, to.Y) - radius)
-	maxY := int(maxFloat(from.Y, to.Y) + radius)
+	minX := int(min(from.X, to.X) - radius)
+	maxX := int(max(from.X, to.X) + radius)
+	minY := int(min(from.Y, to.Y) - radius)
+	maxY := int(max(from.Y, to.Y) + radius)
 
 	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
 	lengthSq := line.LenSq()
@@ -308,22 +308,6 @@ func normalizeAngle(angle float64) float64 {
 	}
 
 	return angle
-}
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-
-	return b
-}
-
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-
-	return b
 }
 
 func toRGBA(c render.Color) color.RGBA {

@@ -21,10 +21,32 @@
                 <input id="speed" type="range" min="1" max="8" value="1">
                 <span id="speed-value">1x</span>
             </label>
-            <label>
-                <input id="debug" type="checkbox" checked>
-                Debug
-            </label>
+            <details class="debug-menu">
+                <summary>Debug</summary>
+
+                <div class="debug-options">
+                    <label>
+                        <input type="checkbox" data-debug-layer="colliders">
+                        Colliders
+                    </label>
+                    <label>
+                        <input type="checkbox" data-debug-layer="contacts">
+                        Contacts
+                    </label>
+                    <label>
+                        <input type="checkbox" data-debug-layer="grid">
+                        Grid
+                    </label>
+                    <label>
+                        <input type="checkbox" data-debug-layer="activeGrid">
+                        Active grid
+                    </label>
+                    <label>
+                        <input type="checkbox" data-debug-layer="candidateGrid">
+                        Candidate grid
+                    </label>
+                </div>
+            </details>
         </div>
     </header>
 
