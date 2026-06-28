@@ -109,6 +109,7 @@ const (
 type DemoWorld struct {
 	World            *scene.World
 	ControlledPlayer scene.EntityID
+	Ball             scene.EntityID
 }
 
 func BuildDemoWorld() *scene.World {
@@ -189,6 +190,7 @@ func BuildPlayableDemoWorld() DemoWorld {
 	return DemoWorld{
 		World:            world,
 		ControlledPlayer: controlledPlayer,
+		Ball:             ball,
 	}
 }
 

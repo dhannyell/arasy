@@ -181,6 +181,8 @@ func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
 }
 
 func (w *World) resolveCircleContacts(contacts []CircleContact) {
+	w.contacts = contacts
+
 	for _, contact := range contacts {
 		transformA, ok := w.transforms[contact.A]
 		if !ok {

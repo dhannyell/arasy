@@ -18,6 +18,9 @@ type StateDTO struct {
 	Speed      int  `json:"speed"`
 	Debug      bool `json:"debug"`
 	HistoryLen int  `json:"historyLen"`
+
+	RenderFPS    int `json:"renderFPS"`
+	SimulationHz int `json:"simulationHz"`
 }
 
 func NewFrameDTO(

@@ -2,6 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
+	"math"
+	"math/rand"
+	"os"
 
 	"github.com/dhannyell/frameforge/cmd/demos/football"
 	"github.com/dhannyell/frameforge/debug"
@@ -11,6 +15,42 @@ import (
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
 )
+
+type CameraShake struct {
+	Time      float64
+	Duration  float64
+	Amplitude float64
+	Seed      uint64
+}
+
+func (c *CameraShake) Start(duration, amplitude float64) {
+	if c.Time > 0 {
+		return
+	}
+
+	c.Time = duration
+	c.Duration = duration
+	c.Amplitude = amplitude
+}
+
+func (s *CameraShake) Step(dt float64) math2d.Vec2 {
+	if s.Time <= 0 {
+		return math2d.Vec2{}
+	}
+
+	t := s.Time / s.Duration
+	offset := math2d.Vec2{
+		X: math.Sin(float64(s.Seed)*12.9898+s.Time*90) * s.Amplitude * t,
+		Y: math.Cos(float64(s.Seed)*78.233+s.Time*110) * s.Amplitude * t,
+	}
+
+	s.Time -= dt
+	if s.Time < 0 {
+		s.Time = 0
+	}
+
+	return offset
+}
 
 const (
 	imageWidth      = 1920
@@ -25,6 +65,8 @@ const (
 	fieldTop        = 3.4
 	physicsCellSize = 8.0
 	playerSpeed     = 18.0
+	goalWidth       = 7.32
+	goalDepth       = 1.0
 )
 
 var (
@@ -74,19 +116,47 @@ var debugConfig = football.DebugConfig{
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})))
+
 	demo := football.BuildPlayableDemoWorld()
 	world := demo.World
 	controlledPlayer := demo.ControlledPlayer
+	ball := demo.Ball
 	recorder := debug.NewRecorder(600)
+	playerSprite, _ := world.CircleSprite(controlledPlayer)
+	baseCamera := render.Camera{
+		World:    math2d.NewRect(worldOrigin, worldSize),
+		Viewport: math2d.NewRect(viewportOrigin, viewportSize),
+		Aspect:   render.AspectExpand,
+	}
+	shake := CameraShake{}
+	goalTop := fieldTop + fieldHeight/2 - goalWidth/2
+	goalBottom := goalTop + goalWidth
+	leftGoal := math2d.NewRect(
+		math2d.Vec2{X: fieldLeft, Y: goalTop},
+		math2d.Vec2{X: goalDepth, Y: goalWidth},
+	)
+	rightGoal := math2d.NewRect(
+		math2d.Vec2{X: fieldLeft + fieldWidth - goalDepth, Y: goalTop},
+		math2d.Vec2{X: goalDepth, Y: goalWidth},
+	)
 
 	server := canvas.Server{
 		Addr:         ":8080",
 		FPS:          renderFPS,
 		SimulationHz: simulationHz,
-		Camera: render.Camera{
-			World:    math2d.NewRect(worldOrigin, worldSize),
-			Viewport: math2d.NewRect(viewportOrigin, viewportSize),
-			Aspect:   render.AspectExpand,
+		Camera:       baseCamera,
+		CameraForFrame: func() render.Camera {
+			camera := baseCamera
+			offset := shake.Step(1.0 / float64(simulationHz))
+			camera.World = math2d.NewRect(
+				worldOrigin.Add(offset),
+				worldSize,
+			)
+
+			return camera
 		},
 		Clear:         clearColor,
 		InputBindings: movementBindings(),
@@ -94,6 +164,7 @@ func main() {
 			applyPlayerInput(world, controlledPlayer, state)
 		},
 		Update: func(dt float64) {
+			previousBallTransform, _ := world.Transform(ball)
 			recorder.Capture(world)
 			world.Step(dt, scene.StepConfig{
 				Bounds: math2d.NewRect(fieldOrigin, fieldSize),
@@ -101,6 +172,41 @@ func main() {
 					CellSize: physicsCellSize,
 				},
 			})
+
+			for _, contact := range world.Contacts() {
+
+				slog.Debug("contact",
+					"a", contact.A,
+					"b", contact.B,
+					"player", controlledPlayer,
+					"ball", ball,
+				)
+				if contact.A == ball && contact.B == controlledPlayer {
+					slog.Debug("Player Touched Ball")
+
+					playerSprite.Color = render.RGBA(rand.Float64(), rand.Float64(), rand.Float64(), 1)
+					world.SetCircleSprite(controlledPlayer, playerSprite)
+				}
+			}
+
+			ballTransform, _ := world.Transform(ball)
+			ballCollider, _ := world.CircleCollider(ball)
+
+			leftGoalScored := ballIntersectsGoal(ballTransform.Position, ballCollider.Radius, leftGoal) ||
+				ballCrossedGoalLine(previousBallTransform.Position, ballTransform.Position, ballCollider.Radius, fieldLeft, goalTop, goalBottom, true)
+			rightGoalScored := ballIntersectsGoal(ballTransform.Position, ballCollider.Radius, rightGoal) ||
+				ballCrossedGoalLine(previousBallTransform.Position, ballTransform.Position, ballCollider.Radius, fieldLeft+fieldWidth, goalTop, goalBottom, false)
+
+			switch {
+			case leftGoalScored:
+				slog.Debug("Goal", "side", "left")
+				shake.Start(0.3, 0.45)
+				resetBall(world, ball)
+			case rightGoalScored:
+				slog.Debug("Goal", "side", "right")
+				shake.Start(0.3, 0.45)
+				resetBall(world, ball)
+			}
 		},
 		Commands: func(debug bool) []render.Command {
 			commands := football.BuildFieldCommands()
@@ -119,6 +225,7 @@ func main() {
 			demo = football.BuildPlayableDemoWorld()
 			world = demo.World
 			controlledPlayer = demo.ControlledPlayer
+			ball = demo.Ball
 			recorder.Clear()
 		},
 		Back: func() bool {
@@ -172,4 +279,21 @@ func applyPlayerInput(world *scene.World, player scene.EntityID, state input.Sta
 	world.SetVelocity(player, scene.Velocity{
 		Linear: direction.Mul(playerSpeed),
 	})
+}
+
+func resetBall(world *scene.World, ball scene.EntityID) {
+	ballTransform, ok := world.Transform(ball)
+	if ok {
+		ballTransform.Position = math2d.Vec2{
+			X: fieldLeft + fieldWidth/2,
+			Y: fieldTop + fieldHeight/2,
+		}
+		world.SetTransform(ball, ballTransform)
+	}
+
+	ballVelocity, ok := world.Velocity(ball)
+	if ok {
+		ballVelocity.Linear = math2d.Vec2{}
+		world.SetVelocity(ball, ballVelocity)
+	}
 }
