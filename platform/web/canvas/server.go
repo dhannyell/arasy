@@ -23,8 +23,9 @@ type Server struct {
 	FPS          int
 	SimulationHz int
 
-	Camera render.Camera
-	Clear  render.Color
+	Camera         render.Camera
+	CameraForFrame func() render.Camera
+	Clear          render.Color
 
 	Update     func(dt float64)
 	Commands   func(debug bool) []render.Command
@@ -237,6 +238,19 @@ func (c *client) frameCamera() render.Camera {
 	return c.camera
 }
 
+func (h *hub) frameCamera(c *client) render.Camera {
+	clientCamera := c.frameCamera()
+
+	if h.server.CameraForFrame == nil {
+		return clientCamera
+	}
+
+	camera := h.server.CameraForFrame()
+	camera.Viewport = clientCamera.Viewport
+
+	return camera
+}
+
 func (h *hub) run(ctx context.Context) {
 	simulationDT := 1.0 / float64(h.simulationHz)
 
@@ -412,13 +426,15 @@ func (h *hub) broadcast(tick uint64, commands []render.Command, state frameState
 	for _, c := range clients {
 		frame := adapter.NewFrameDTOWithState(
 			tick,
-			c.frameCamera(),
+			h.frameCamera(c),
 			h.server.Clear,
 			adapter.StateDTO{
-				Paused:     state.paused,
-				Speed:      h.controls.currentSpeed(),
-				Debug:      state.debug,
-				HistoryLen: h.historyLen(),
+				Paused:       state.paused,
+				Speed:        h.controls.currentSpeed(),
+				Debug:        state.debug,
+				HistoryLen:   h.historyLen(),
+				RenderFPS:    h.fps,
+				SimulationHz: h.simulationHz,
 			},
 			commands,
 		)

@@ -15,6 +15,8 @@ func (w *World) Step(dt float64, config StepConfig) {
 		cellSize = defaultCellSize
 	}
 
+	w.contacts = w.contacts[:0]
+
 	w.ApplyAcceleration(dt)
 	w.Integrate(dt)
 	w.BounceCirclesInside(config.Bounds)

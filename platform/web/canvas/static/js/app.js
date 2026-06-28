@@ -15,6 +15,11 @@ const debugInput = document.getElementById("debug");
 let connection = null;
 let paused = false;
 let lastFrame = null;
+
+let fpsFrames = 0;
+let fpsLastTime = performance.now();
+let measuredFPS = 0;
+
 const inputCodes = new Set([
     "KeyW",
     "KeyA",
@@ -142,10 +147,23 @@ connection = connectFrameSocket({
     },
 
     onFrame(frame) {
+        fpsFrames++;
+
+        const now = performance.now();
+        const elapsed = now - fpsLastTime;
+
+        if (elapsed >= 1000) {
+            measuredFPS = Math.round((fpsFrames * 1000) / elapsed);
+            fpsFrames = 0;
+            fpsLastTime = now;
+        }
+
         lastFrame = frame;
         renderer.render(frame);
         syncControls(frame.state);
-        stats.textContent = `tick ${frame.tick} | commands ${frame.commands.length}`;
+        stats.textContent =
+            `tick ${frame.tick} | commands ${frame.commands.length} | ` +
+            `sim ${frame.state.simulationHz * frame.state.speed}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
     },
 });
 

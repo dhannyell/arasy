@@ -26,6 +26,7 @@ type World struct {
 	bodies          map[EntityID]Body
 	circleColliders map[EntityID]CircleCollider
 	debugGridCells  []DebugGridCell
+	contacts        []CircleContact
 }
 
 func NewWorld() *World {
@@ -52,6 +53,7 @@ func (w *World) Clone() *World {
 		bodies:          cloneMap(w.bodies),
 		circleColliders: cloneMap(w.circleColliders),
 		debugGridCells:  append([]DebugGridCell(nil), w.debugGridCells...),
+		// contacts are transient per-tick — not cloned
 	}
 }
 
@@ -165,6 +167,11 @@ func (w *World) RemoveCircleCollider(id EntityID) {
 
 func (w *World) DebugGridCells() []DebugGridCell {
 	return w.debugGridCells
+}
+
+// Contacts returns the circle contacts resolved during the last Step.
+func (w *World) Contacts() []CircleContact {
+	return w.contacts
 }
 
 func cloneMap[K comparable, V any](src map[K]V) map[K]V {
