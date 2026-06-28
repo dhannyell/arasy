@@ -10,7 +10,15 @@ const stepButton = document.getElementById("step");
 const resetButton = document.getElementById("reset");
 const speedInput = document.getElementById("speed");
 const speedValue = document.getElementById("speed-value");
-const debugInput = document.getElementById("debug");
+const debugInputs = [...document.querySelectorAll("[data-debug-layer]")];
+
+const DebugLayers = {
+    colliders: 1 << 0,
+    contacts: 1 << 1,
+    grid: 1 << 2,
+    activeGrid: 1 << 3,
+    candidateGrid: 1 << 4,
+};
 
 let connection = null;
 let paused = false;
@@ -90,14 +98,6 @@ speedInput.addEventListener("input", () => {
     });
 });
 
-debugInput.addEventListener("change", () => {
-    connection?.send({
-        type: "control",
-        action: "setDebug",
-        debug: debugInput.checked,
-    });
-});
-
 window.addEventListener("keydown", (event) => {
     if (!inputCodes.has(event.code) || event.repeat) {
         return;
@@ -138,7 +138,9 @@ connection = connectFrameSocket({
     },
 
     onClose() {
-        renderer.render(lastFrame)
+        if (lastFrame) {
+            renderer.render(lastFrame);
+        }
         stats.textContent = "disconnected, retrying...";
     },
 
@@ -167,6 +169,35 @@ connection = connectFrameSocket({
     },
 });
 
+function debugMaskFromInputs() {
+    let mask = 0;
+
+    for (const input of debugInputs) {
+        if (input.checked) {
+            mask |= DebugLayers[input.dataset.debugLayer];
+        }
+    }
+
+    return mask >>> 0;
+}
+
+for (const input of debugInputs) {
+    input.addEventListener("change", () => {
+        connection?.send({
+            type: "control",
+            action: "setDebug",
+            debug: debugMaskFromInputs(),
+        });
+    });
+}
+
+function syncDebugInputs(mask) {
+    for (const input of debugInputs) {
+        const bit = DebugLayers[input.dataset.debugLayer];
+        input.checked = (mask & bit) !== 0;
+    }
+}
+
 function sendKeyboardInput(code, kind) {
     connection?.send({
         type: "input",
@@ -189,6 +220,6 @@ function syncControls(state) {
     }
     speedValue.textContent = `${state.speed}x`;
 
-    debugInput.checked = state.debug;
+    syncDebugInputs(Number(state.debug ?? 0));
     historyStats.textContent = `history ${state.historyLen}`;
 }
