@@ -1,6 +1,10 @@
 package scene
 
-import "maps"
+import (
+	"maps"
+
+	"github.com/dhannyell/frameforge/math2d"
+)
 
 const defaultCellSize = 64
 
@@ -17,6 +21,8 @@ type DebugGridCell struct {
 
 type World struct {
 	nextID EntityID
+
+	stepTick uint64
 
 	transforms      map[EntityID]Transform
 	circleSprites   map[EntityID]CircleSprite
@@ -45,6 +51,7 @@ func NewWorld() *World {
 func (w *World) Clone() *World {
 	return &World{
 		nextID:          w.nextID,
+		stepTick:        w.stepTick,
 		transforms:      cloneMap(w.transforms),
 		circleSprites:   cloneMap(w.circleSprites),
 		velocities:      cloneMap(w.velocities),
@@ -172,6 +179,65 @@ func (w *World) DebugGridCells() []DebugGridCell {
 // Contacts returns the circle contacts resolved during the last Step.
 func (w *World) Contacts() []CircleContact {
 	return w.contacts
+}
+
+func (w *World) SpawnBundle(b Bundle) EntityID {
+	id := w.Spawn()
+	if b.Transform != nil {
+		t := *b.Transform
+		if t.Scale == (math2d.Vec2{}) {
+			t.Scale = math2d.Vec2{X: 1, Y: 1}
+		}
+		w.SetTransform(id, t)
+	}
+	if b.CircleSprite != nil {
+		w.SetCircleSprite(id, *b.CircleSprite)
+	}
+	if b.Velocity != nil {
+		w.SetVelocity(id, *b.Velocity)
+	}
+	if b.Acceleration != nil {
+		w.SetAcceleration(id, *b.Acceleration)
+	}
+	if b.Damping != nil {
+		w.SetDamping(id, *b.Damping)
+	}
+	if b.Body != nil {
+		w.SetBody(id, *b.Body)
+	}
+	if b.CircleCollider != nil {
+		w.SetCircleCollider(id, *b.CircleCollider)
+	}
+	return id
+
+}
+
+func (w *World) entityCount() int {
+	ids := make(map[EntityID]struct{})
+
+	for id := range w.transforms {
+		ids[id] = struct{}{}
+	}
+	for id := range w.circleSprites {
+		ids[id] = struct{}{}
+	}
+	for id := range w.velocities {
+		ids[id] = struct{}{}
+	}
+	for id := range w.accelerations {
+		ids[id] = struct{}{}
+	}
+	for id := range w.dampings {
+		ids[id] = struct{}{}
+	}
+	for id := range w.bodies {
+		ids[id] = struct{}{}
+	}
+	for id := range w.circleColliders {
+		ids[id] = struct{}{}
+	}
+
+	return len(ids)
 }
 
 func cloneMap[K comparable, V any](src map[K]V) map[K]V {

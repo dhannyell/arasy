@@ -90,6 +90,27 @@ func (m *Mapper) EndFrame() {
 	m.current = NewState()
 }
 
+func (m *Mapper) Reset() {
+	m.sourceValues = make(map[Source]float64)
+	m.previous = NewState()
+	m.current = NewState()
+}
+
+func (m *Mapper) Clone() *Mapper {
+	clone := &Mapper{
+		bindings:     append([]Binding(nil), m.bindings...),
+		sourceValues: make(map[Source]float64, len(m.sourceValues)),
+		previous:     m.previous.clone(),
+		current:      m.current.clone(),
+	}
+
+	for source, value := range m.sourceValues {
+		clone.sourceValues[source] = value
+	}
+
+	return clone
+}
+
 func (m *Mapper) Bindings() []Binding {
 	return append([]Binding(nil), m.bindings...)
 }

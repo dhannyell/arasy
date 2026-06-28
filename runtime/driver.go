@@ -3,7 +3,6 @@ package runtime
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/debug"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
@@ -21,7 +20,7 @@ type Driver struct {
 	game     Game
 	cfg      Config
 	world    *scene.World
-	recorder *debug.Recorder
+	recorder *recorder
 	mapper   *input.Mapper
 	buffer   *input.Buffer
 	controls devControls
@@ -58,7 +57,7 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 		controls: devControls{speed: 1},
 	}
 	if cfg.HistoryLen > 0 {
-		d.recorder = debug.NewRecorder(cfg.HistoryLen)
+		d.recorder = newRecorder(cfg.HistoryLen)
 	}
 	d.doReset()
 	return d
@@ -104,16 +103,21 @@ func (d *Driver) Advance(dt float64) {
 
 	stepsToRun := frame.steps
 	if stepsToRun == 0 {
-		stepsToRun = 1
+		stepsToRun = frame.speed
+	}
+
+	if stepsToRun <= 0 {
+		return
 	}
 
 	for range stepsToRun {
 		if d.recorder != nil {
-			d.recorder.Capture(d.world)
+			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.tick)
 		}
 
 		d.lastInput = d.mapper.State()
-		d.game.Update(new(d.makeContext()), dt)
+		ctx := d.makeContext()
+		d.game.Update(&ctx, dt)
 
 		d.tick++
 		d.mapper.EndFrame()
@@ -124,7 +128,8 @@ func (d *Driver) Advance(dt float64) {
 }
 
 func (d *Driver) Commands() []render.Command {
-	return d.game.Render(new(d.context()))
+	ctx := d.makeContext()
+	return d.game.Render(&ctx)
 }
 
 func (d *Driver) State() DriveState {
@@ -149,7 +154,7 @@ func (d *Driver) CurrentSpeed() int { return d.controls.speed }
 
 func (d *Driver) Frame() Frame {
 	ctx := d.makeContext()
-	cmds := d.game.Render(new(ctx))
+	cmds := d.game.Render(&ctx)
 	return Frame{
 		Camera:   ctx.Camera,
 		Commands: cmds,
@@ -163,6 +168,7 @@ func (d *Driver) makeContext() Context {
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
 		Debug:      d.controls.debugLayers,
+		Camera:     d.cfg.Camera,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
 	}
 }
@@ -184,10 +190,13 @@ func (d *Driver) context() Context {
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
+	d.lastInput = input.NewState()
+	d.mapper.Reset()
 	if d.recorder != nil {
 		d.recorder.Clear()
 	}
-	d.game.Init(new(d.makeContext()))
+	ctx := d.makeContext()
+	d.game.Init(&ctx)
 	d.log.Info("reset")
 }
 
@@ -200,10 +209,12 @@ func (d *Driver) doBack() {
 	if !ok {
 		return
 	}
-	d.world = snap
-	if d.tick > 0 {
-		d.tick--
-	}
+	d.world = snap.world
+	d.mapper = snap.mapper
+	d.lastInput = snap.lastInput
+	d.tick = snap.tick
+
+	d.log.Debug("back", "tick", d.tick)
 }
 
 func inputRetainFrom(tick, retainedTicks uint64) uint64 {
