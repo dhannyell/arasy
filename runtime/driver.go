@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"log/slog"
+	"math"
 
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/render"
@@ -27,16 +28,19 @@ type Driver struct {
 	tick     uint64
 	log      *slog.Logger
 
-	lastInput    input.State
-	pendingReset bool
+	lastInput        input.State
+	speedAccumulator float64
+	pendingReset     bool
 }
 
 type DriveState struct {
-	Tick        uint64
-	Paused      bool
-	Speed       int
-	DebugLayers scene.DebugLayers
-	HistoryLen  int
+	Tick             uint64
+	Paused           bool
+	Speed            float64
+	DebugLayers      scene.DebugLayers
+	HistoryLen       int
+	HistoryStartTick uint64
+	HistoryEndTick   uint64
 }
 
 func NewDriver(game Game, log *slog.Logger) *Driver {
@@ -96,14 +100,22 @@ func (d *Driver) Advance(dt float64) {
 	for range frame.backs {
 		d.doBack()
 	}
+	for _, tick := range frame.backTicks {
+		d.doBackToTick(tick)
+	}
+	for _, seconds := range frame.backSeconds {
+		d.doBackSeconds(seconds)
+	}
 
 	if frame.paused && frame.steps == 0 {
 		return
 	}
 
 	stepsToRun := frame.steps
-	if stepsToRun == 0 {
-		stepsToRun = frame.speed
+	if stepsToRun == 0 && frame.speed > 0 {
+		d.speedAccumulator += frame.speed
+		stepsToRun = int(math.Floor(d.speedAccumulator))
+		d.speedAccumulator -= float64(stepsToRun)
 	}
 
 	if stepsToRun <= 0 {
@@ -133,13 +145,21 @@ func (d *Driver) Commands() []render.Command {
 }
 
 func (d *Driver) State() DriveState {
-	return DriveState{
+	state := DriveState{
 		Tick:        d.tick,
 		Paused:      d.controls.paused,
 		Speed:       d.controls.speed,
 		DebugLayers: d.controls.debugLayers,
 		HistoryLen:  d.HistoryLen(),
 	}
+	if d.recorder != nil {
+		start, end, ok := d.recorder.Range()
+		if ok {
+			state.HistoryStartTick = start
+			state.HistoryEndTick = end
+		}
+	}
+	return state
 }
 
 func (d *Driver) Config() Config { return d.cfg }
@@ -150,7 +170,7 @@ func (d *Driver) HistoryLen() int {
 	}
 	return d.recorder.Len()
 }
-func (d *Driver) CurrentSpeed() int { return d.controls.speed }
+func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 
 func (d *Driver) Frame() Frame {
 	ctx := d.makeContext()
@@ -191,6 +211,7 @@ func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
 	d.lastInput = input.NewState()
+	d.speedAccumulator = 0
 	d.mapper.Reset()
 	if d.recorder != nil {
 		d.recorder.Clear()
@@ -214,7 +235,44 @@ func (d *Driver) doBack() {
 	d.lastInput = snap.lastInput
 	d.tick = snap.tick
 
-	d.log.Debug("back", "tick", d.tick)
+	d.log.Debug("back", "tick", d.tick, "checksum", d.world.Checksum())
+}
+
+func (d *Driver) doBackToTick(target uint64) {
+	if d.recorder == nil {
+		return
+	}
+	snap, ok := d.recorder.BackToTick(target)
+	if !ok {
+		return
+	}
+	d.restoreSnapshot(snap)
+
+	d.log.Debug("backToTick", "tick", d.tick, "target", target)
+}
+
+func (d *Driver) doBackSeconds(seconds float64) {
+	if seconds <= 0 {
+		return
+	}
+
+	ticksBack := uint64(math.Ceil(seconds * float64(d.cfg.SimulationHz)))
+	if ticksBack == 0 {
+		return
+	}
+
+	target := uint64(0)
+	if ticksBack < d.tick {
+		target = d.tick - ticksBack
+	}
+	d.doBackToTick(target)
+}
+
+func (d *Driver) restoreSnapshot(snap driverSnapshot) {
+	d.world = snap.world
+	d.mapper = snap.mapper
+	d.lastInput = snap.lastInput
+	d.tick = snap.tick
 }
 
 func inputRetainFrom(tick, retainedTicks uint64) uint64 {

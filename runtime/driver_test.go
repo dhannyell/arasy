@@ -125,4 +125,149 @@ func TestDriverBackRestoresInputSnapshotBeforeManualStep(t *testing.T) {
 	}
 }
 
+func TestDriverBackToTickRestoresTargetSnapshot(t *testing.T) {
+	game := &inputBackGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.ApplyInput([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		},
+	})
+	for range 5 {
+		driver.Advance(1)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
+	driver.Advance(1)
+
+	if driver.Tick() != 2 {
+		t.Fatalf("tick after back to tick = %v, want 2", driver.Tick())
+	}
+
+	transform, ok := driver.world.Transform(game.player)
+	if !ok {
+		t.Fatal("expected player transform after back to tick")
+	}
+	if transform.Position.X != 20 {
+		t.Fatalf("position after back to tick = %v, want 20", transform.Position.X)
+	}
+
+	state := driver.State()
+	if state.HistoryLen != 1 || state.HistoryStartTick != 1 || state.HistoryEndTick != 1 {
+		t.Fatalf("history after back to tick = len %v range %v-%v, want len 1 range 1-1",
+			state.HistoryLen,
+			state.HistoryStartTick,
+			state.HistoryEndTick,
+		)
+	}
+}
+
+func TestDriverBackSecondsRestoresRelativeSnapshot(t *testing.T) {
+	game := &inputBackGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.ApplyInput([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		},
+	})
+	for range 5 {
+		driver.Advance(1)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBackSeconds, Seconds: 2.0 / 60.0})
+	driver.Advance(1)
+
+	if driver.Tick() != 3 {
+		t.Fatalf("tick after back seconds = %v, want 3", driver.Tick())
+	}
+
+	transform, ok := driver.world.Transform(game.player)
+	if !ok {
+		t.Fatal("expected player transform after back seconds")
+	}
+	if transform.Position.X != 30 {
+		t.Fatalf("position after back seconds = %v, want 30", transform.Position.X)
+	}
+}
+
+func TestDriverPlayAfterBackToTickContinuesFromRestoredTick(t *testing.T) {
+	game := &inputBackGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.ApplyInput([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		},
+	})
+	for range 5 {
+		driver.Advance(1)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
+	driver.Advance(1)
+	driver.Control(ControlCommand{Kind: ControlPlay})
+	driver.Advance(1)
+
+	if driver.Tick() != 3 {
+		t.Fatalf("tick after play following back to tick = %v, want 3", driver.Tick())
+	}
+
+	transform, ok := driver.world.Transform(game.player)
+	if !ok {
+		t.Fatal("expected player transform after play following back to tick")
+	}
+	if transform.Position.X != 30 {
+		t.Fatalf("position after play following back to tick = %v, want 30", transform.Position.X)
+	}
+}
+
+func TestDriverSlowMotionSpeedAccumulatesFractionalTicks(t *testing.T) {
+	driver := NewDriver(&inputBackGame{}, slog.Default())
+
+	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.5})
+	driver.Advance(1)
+	if driver.Tick() != 0 {
+		t.Fatalf("tick after first half-speed advance = %v, want 0", driver.Tick())
+	}
+
+	driver.Advance(1)
+	if driver.Tick() != 1 {
+		t.Fatalf("tick after second half-speed advance = %v, want 1", driver.Tick())
+	}
+
+	driver.Advance(1)
+	if driver.Tick() != 1 {
+		t.Fatalf("tick after third half-speed advance = %v, want 1", driver.Tick())
+	}
+
+	driver.Advance(1)
+	if driver.Tick() != 2 {
+		t.Fatalf("tick after fourth half-speed advance = %v, want 2", driver.Tick())
+	}
+}
+
+func TestDriverSetSpeedClampsFractionalRange(t *testing.T) {
+	driver := NewDriver(&inputBackGame{}, slog.Default())
+
+	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.5})
+	if driver.CurrentSpeed() != 0.5 {
+		t.Fatalf("speed = %v, want 0.5", driver.CurrentSpeed())
+	}
+
+	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.01})
+	if driver.CurrentSpeed() != 0.25 {
+		t.Fatalf("low clamped speed = %v, want 0.25", driver.CurrentSpeed())
+	}
+
+	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 99})
+	if driver.CurrentSpeed() != 8 {
+		t.Fatalf("high clamped speed = %v, want 8", driver.CurrentSpeed())
+	}
+}
+
 var _ Game = (*inputBackGame)(nil)

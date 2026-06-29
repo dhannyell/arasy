@@ -40,7 +40,7 @@ func hashF64(h hash.Hash64, buf []byte, v float64) {
 	binary.LittleEndian.PutUint64(buf, math.Float64bits(v))
 	_, err := h.Write(buf)
 	if err != nil {
-		slog.Error("Failed to Write hash", err)
+		slog.Error("failed to write hash", "err", err)
 		return
 	} //nolint:errcheck
 }
