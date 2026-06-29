@@ -52,10 +52,39 @@ func (r *recorder) Back() (driverSnapshot, bool) {
 	return snapshot, true
 }
 
+func (r *recorder) BackToTick(target uint64) (driverSnapshot, bool) {
+	if len(r.snapshots) == 0 {
+		return driverSnapshot{}, false
+	}
+
+	index := -1
+	for i := len(r.snapshots) - 1; i >= 0; i-- {
+		if r.snapshots[i].tick <= target {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		index = 0
+	}
+
+	snapshot := r.snapshots[index]
+	r.snapshots = r.snapshots[:index]
+	return snapshot, true
+}
+
 func (r *recorder) Clear() {
 	r.snapshots = r.snapshots[:0]
 }
 
 func (r *recorder) Len() int {
 	return len(r.snapshots)
+}
+
+func (r *recorder) Range() (start uint64, end uint64, ok bool) {
+	if len(r.snapshots) == 0 {
+		return 0, 0, false
+	}
+
+	return r.snapshots[0].tick, r.snapshots[len(r.snapshots)-1].tick, true
 }

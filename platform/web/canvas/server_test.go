@@ -67,7 +67,7 @@ func TestControlCommandFromMessageMapsDebugLayers(t *testing.T) {
 func TestControlCommandFromMessageMapsSpeed(t *testing.T) {
 	cmd, ok := controlCommandFromMessage(clientMessage{
 		Action: "setSpeed",
-		Speed:  4,
+		Speed:  0.5,
 	})
 	if !ok {
 		t.Fatal("controlCommandFromMessage ok = false, want true")
@@ -76,8 +76,42 @@ func TestControlCommandFromMessageMapsSpeed(t *testing.T) {
 	if cmd.Kind != runtime.ControlSetSpeed {
 		t.Fatalf("kind = %v, want ControlSetSpeed", cmd.Kind)
 	}
-	if cmd.Speed != 4 {
-		t.Fatalf("speed = %v, want 4", cmd.Speed)
+	if cmd.Speed != 0.5 {
+		t.Fatalf("speed = %v, want 0.5", cmd.Speed)
+	}
+}
+
+func TestControlCommandFromMessageMapsBackToTick(t *testing.T) {
+	cmd, ok := controlCommandFromMessage(clientMessage{
+		Action: "backToTick",
+		Tick:   42,
+	})
+	if !ok {
+		t.Fatal("controlCommandFromMessage ok = false, want true")
+	}
+
+	if cmd.Kind != runtime.ControlBackToTick {
+		t.Fatalf("kind = %v, want ControlBackToTick", cmd.Kind)
+	}
+	if cmd.Tick != 42 {
+		t.Fatalf("tick = %v, want 42", cmd.Tick)
+	}
+}
+
+func TestControlCommandFromMessageMapsBackSeconds(t *testing.T) {
+	cmd, ok := controlCommandFromMessage(clientMessage{
+		Action:  "backSeconds",
+		Seconds: 1.5,
+	})
+	if !ok {
+		t.Fatal("controlCommandFromMessage ok = false, want true")
+	}
+
+	if cmd.Kind != runtime.ControlBackSeconds {
+		t.Fatalf("kind = %v, want ControlBackSeconds", cmd.Kind)
+	}
+	if cmd.Seconds != 1.5 {
+		t.Fatalf("seconds = %v, want 1.5", cmd.Seconds)
 	}
 }
 

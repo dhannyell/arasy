@@ -6,6 +6,10 @@ const stats = document.getElementById("stats");
 const historyStats = document.getElementById("history");
 const playPauseButton = document.getElementById("play-pause");
 const backButton = document.getElementById("back");
+const backSecondsButton = document.getElementById("back-seconds");
+const backSecondsInput = document.getElementById("back-seconds-value");
+const backTickButton = document.getElementById("back-tick");
+const backTickInput = document.getElementById("back-tick-value");
 const stepButton = document.getElementById("step");
 const resetButton = document.getElementById("reset");
 const speedInput = document.getElementById("speed");
@@ -23,6 +27,7 @@ const DebugLayers = {
 let connection = null;
 let paused = false;
 let lastFrame = null;
+let pendingRewindFromTick = null;
 
 let fpsFrames = 0;
 let fpsLastTime = performance.now();
@@ -73,10 +78,53 @@ stepButton.addEventListener("click", () => {
 backButton.addEventListener("click", () => {
     paused = true;
     playPauseButton.textContent = "Play";
+    markPendingRewind(frameSafeTick(lastFrame?.tick) - 1);
 
     connection?.send({
         type: "control",
         action: "back",
+    });
+});
+
+backSecondsButton.addEventListener("click", () => {
+    const seconds = Number(backSecondsInput.value);
+    if (!Number.isFinite(seconds) || seconds <= 0) {
+        return;
+    }
+    const clampedSeconds = clampBackSeconds(seconds);
+    if (clampedSeconds <= 0) {
+        return;
+    }
+    const targetTick = backSecondsTargetTick(clampedSeconds);
+    backSecondsInput.value = String(clampedSeconds);
+
+    paused = true;
+    playPauseButton.textContent = "Play";
+    markPendingRewind(targetTick);
+
+    connection?.send({
+        type: "control",
+        action: "backSeconds",
+        seconds: clampedSeconds,
+    });
+});
+
+backTickButton.addEventListener("click", () => {
+    const requestedTick = Number(backTickInput.value);
+    if (!Number.isInteger(requestedTick) || requestedTick < 0) {
+        return;
+    }
+    const tick = clampHistoryTick(requestedTick);
+    backTickInput.value = String(tick);
+
+    paused = true;
+    playPauseButton.textContent = "Play";
+    markPendingRewind(tick);
+
+    connection?.send({
+        type: "control",
+        action: "backToTick",
+        tick,
     });
 });
 
@@ -89,7 +137,7 @@ resetButton.addEventListener("click", () => {
 
 speedInput.addEventListener("input", () => {
     const speed = Number(speedInput.value);
-    speedValue.textContent = `${speed}x`;
+    speedValue.textContent = `${formatSpeed(speed)}x`;
 
     connection?.send({
         type: "control",
@@ -99,6 +147,10 @@ speedInput.addEventListener("input", () => {
 });
 
 window.addEventListener("keydown", (event) => {
+    if (isEditableTarget(event.target)) {
+        return;
+    }
+
     if (!inputCodes.has(event.code) || event.repeat) {
         return;
     }
@@ -109,6 +161,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keyup", (event) => {
+    if (isEditableTarget(event.target)) {
+        return;
+    }
+
     if (!inputCodes.has(event.code)) {
         return;
     }
@@ -138,6 +194,7 @@ connection = connectFrameSocket({
     },
 
     onClose() {
+        pendingRewindFromTick = null;
         if (lastFrame) {
             renderer.render(lastFrame);
         }
@@ -149,6 +206,10 @@ connection = connectFrameSocket({
     },
 
     onFrame(frame) {
+        if (isStaleWhileRewinding(frame)) {
+            return;
+        }
+
         fpsFrames++;
 
         const now = performance.now();
@@ -162,12 +223,61 @@ connection = connectFrameSocket({
 
         lastFrame = frame;
         renderer.render(frame);
-        syncControls(frame.state);
+        syncControls(frame);
         stats.textContent =
             `tick ${frame.tick} | commands ${frame.commands.length} | ` +
-            `sim ${frame.state.simulationHz * frame.state.speed}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
+            `sim ${formatSpeed(frame.state.simulationHz * frame.state.speed)}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
     },
 });
+
+function markPendingRewind(targetTick) {
+    const currentTick = frameSafeTick(lastFrame?.tick);
+    const historyLen = Number(lastFrame?.state?.historyLen ?? 0);
+    if (historyLen > 0 && targetTick < currentTick) {
+        pendingRewindFromTick = currentTick;
+    }
+}
+
+function backSecondsTargetTick(seconds) {
+    const currentTick = frameSafeTick(lastFrame?.tick);
+    const simulationHz = Number(lastFrame?.state?.simulationHz ?? 60);
+    const historyStart = Number(lastFrame?.state?.historyStartTick ?? 0);
+    const ticksBack = Math.ceil(seconds * simulationHz);
+    return Math.max(historyStart, currentTick - ticksBack);
+}
+
+function clampBackSeconds(seconds) {
+    const currentTick = frameSafeTick(lastFrame?.tick);
+    const historyStart = Number(lastFrame?.state?.historyStartTick ?? currentTick);
+    const simulationHz = Number(lastFrame?.state?.simulationHz ?? 60);
+    const maxSeconds = Math.max(0, (currentTick - historyStart) / simulationHz);
+    const clamped = Math.min(seconds, maxSeconds);
+
+    return Number(clamped.toFixed(3));
+}
+
+function clampHistoryTick(tick) {
+    const currentTick = frameSafeTick(lastFrame?.tick);
+    const historyStart = Number(lastFrame?.state?.historyStartTick ?? 0);
+    const historyLen = Number(lastFrame?.state?.historyLen ?? 0);
+    const minTick = historyLen > 0 ? historyStart : currentTick;
+
+    return Math.min(Math.max(tick, minTick), currentTick);
+}
+
+function isStaleWhileRewinding(frame) {
+    if (pendingRewindFromTick === null) {
+        return false;
+    }
+
+    const frameTick = frameSafeTick(frame?.tick);
+    if (frameTick < pendingRewindFromTick) {
+        pendingRewindFromTick = null;
+        return false;
+    }
+
+    return true;
+}
 
 function debugMaskFromInputs() {
     let mask = 0;
@@ -198,6 +308,13 @@ function syncDebugInputs(mask) {
     }
 }
 
+function isEditableTarget(target) {
+    return target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable;
+}
+
 function sendKeyboardInput(code, kind) {
     connection?.send({
         type: "input",
@@ -207,7 +324,8 @@ function sendKeyboardInput(code, kind) {
     });
 }
 
-function syncControls(state) {
+function syncControls(frame) {
+    const state = frame?.state;
     if (!state) {
         return;
     }
@@ -215,11 +333,36 @@ function syncControls(state) {
     paused = state.paused;
     playPauseButton.textContent = paused ? "Play" : "Pause";
 
-    if (Number(speedInput.value) !== state.speed) {
-        speedInput.value = String(state.speed);
+    const speed = Number(state.speed ?? 1);
+    if (Number(speedInput.value) !== speed) {
+        speedInput.value = String(speed);
     }
-    speedValue.textContent = `${state.speed}x`;
+    speedValue.textContent = `${formatSpeed(speed)}x`;
 
     syncDebugInputs(Number(state.debug ?? 0));
-    historyStats.textContent = `history ${state.historyLen}`;
+    const historyStart = Number(state.historyStartTick ?? 0);
+    const historyEnd = Number(state.historyEndTick ?? 0);
+    historyStats.textContent = state.historyLen > 0
+        ? `history ${historyStart}-${historyEnd}`
+        : "history 0";
+
+    backTickInput.max = String(frameSafeTick(frame.tick));
+    backTickInput.min = String(historyStart);
+}
+
+function frameSafeTick(tick) {
+    const value = Number(tick ?? 0);
+    if (!Number.isFinite(value) || value < 0) {
+        return 0;
+    }
+    return Math.floor(value);
+}
+
+function formatSpeed(value) {
+    const number = Number(value ?? 0);
+    if (!Number.isFinite(number)) {
+        return "0";
+    }
+
+    return Number(number.toFixed(2)).toString();
 }
