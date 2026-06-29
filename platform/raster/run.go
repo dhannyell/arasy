@@ -1,6 +1,7 @@
 package raster
 
 import (
+	"fmt"
 	"image"
 	"image/color/palette"
 	"image/draw"
@@ -16,13 +17,14 @@ import (
 
 // Options configures an offline raster render run.
 type Options struct {
-	Width   int
-	Height  int
-	Frames  int     // number of simulation frames to render into GIF; ignored if GIF is empty
-	FrameDT float64 // seconds per frame
-	PNG     string  // output path for a single PNG of the initial frame; empty = skip
-	GIF     string  // output path for an animated GIF; empty = skip
-	Log     *slog.Logger
+	Width     int
+	Height    int
+	Frames    int     // number of simulation frames to render for animated outputs
+	FrameDT   float64 // seconds per frame
+	PNG       string  // output path for a single PNG of the initial frame; empty = skip
+	GIF       string  // output path for an animated GIF; empty = skip
+	FramesDir string  // output directory for frame-0000.png sequence; empty = skip
+	Log       *slog.Logger
 }
 
 // Run drives game through an offline raster render and writes PNG and/or GIF output.
@@ -52,29 +54,48 @@ func Run(game runtime.Game, opts Options) error {
 		}
 	}
 
-	if opts.GIF != "" && opts.Frames > 0 {
+	if (opts.GIF != "" || opts.FramesDir != "") && opts.Frames > 0 {
 		delay := int(math.Round(opts.FrameDT * 100))
 		if delay < 1 {
 			delay = 1
 		}
-		anim := &gif.GIF{
-			Image: make([]*image.Paletted, 0, opts.Frames),
-			Delay: make([]int, 0, opts.Frames),
+		var anim *gif.GIF
+		if opts.GIF != "" {
+			anim = &gif.GIF{
+				Image: make([]*image.Paletted, 0, opts.Frames),
+				Delay: make([]int, 0, opts.Frames),
+			}
 		}
-		for range opts.Frames {
+		for frame := range opts.Frames {
 			img := r.Render(driver.Frame().Commands)
-			anim.Image = append(anim.Image, toPaletted(img))
-			anim.Delay = append(anim.Delay, delay)
+			if opts.FramesDir != "" {
+				if err := writeFramePNG(opts.FramesDir, frame, img); err != nil {
+					return err
+				}
+			}
+			if anim != nil {
+				anim.Image = append(anim.Image, toPaletted(img))
+				anim.Delay = append(anim.Delay, delay)
+			}
 			driver.Advance(opts.FrameDT)
 		}
-		if err := writeFile(opts.GIF, func(f *os.File) error {
-			return gif.EncodeAll(f, anim)
-		}); err != nil {
-			return err
+		if anim != nil {
+			if err := writeFile(opts.GIF, func(f *os.File) error {
+				return gif.EncodeAll(f, anim)
+			}); err != nil {
+				return err
+			}
 		}
 	}
 
 	return nil
+}
+
+func writeFramePNG(dir string, frame int, img image.Image) error {
+	path := filepath.Join(dir, fmt.Sprintf("frame-%04d.png", frame))
+	return writeFile(path, func(f *os.File) error {
+		return png.Encode(f, img)
+	})
 }
 
 func writeFile(path string, fn func(*os.File) error) error {
