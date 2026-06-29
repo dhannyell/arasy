@@ -8,8 +8,13 @@ import (
 	"github.com/dhannyell/frameforge/scene"
 )
 
+var (
+	benchmarkSpreadSizes = []int{10, 25, 50, 75, 100, 1000, 5000}
+	benchmarkGridSizes   = []int{10, 25, 50, 75, 100, 1000}
+)
+
 func BenchmarkDetectCircleOverlaps(b *testing.B) {
-	for _, size := range []int{100, 1000, 5000} {
+	for _, size := range benchmarkSpreadSizes {
 		b.Run(fmt.Sprintf("narrow/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)
 
@@ -24,7 +29,7 @@ func BenchmarkDetectCircleOverlaps(b *testing.B) {
 }
 
 func BenchmarkDetectCircleOverlapsGrid(b *testing.B) {
-	for _, size := range []int{100, 1000, 5000} {
+	for _, size := range benchmarkSpreadSizes {
 		b.Run(fmt.Sprintf("grid/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)
 
@@ -39,7 +44,7 @@ func BenchmarkDetectCircleOverlapsGrid(b *testing.B) {
 }
 
 func BenchmarkDetectCircleOverlapsGridDense(b *testing.B) {
-	for _, size := range []int{100, 1000} {
+	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("grid/%d/dense", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 64, 64, 1)
 
@@ -54,7 +59,7 @@ func BenchmarkDetectCircleOverlapsGridDense(b *testing.B) {
 }
 
 func BenchmarkDetectCircleOverlapsGridLargeColliders(b *testing.B) {
-	for _, size := range []int{100, 1000} {
+	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("grid/%d/large-colliders", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 12)
 
@@ -69,7 +74,7 @@ func BenchmarkDetectCircleOverlapsGridLargeColliders(b *testing.B) {
 }
 
 func BenchmarkResolveCircleOverlapsGrid(b *testing.B) {
-	for _, size := range []int{100, 1000} {
+	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("resolve-grid/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)
 
