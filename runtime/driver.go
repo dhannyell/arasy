@@ -124,7 +124,7 @@ func (d *Driver) Advance(dt float64) {
 		d.buffer.ClearBefore(inputRetainFrom(d.tick, 120))
 	}
 
-	d.log.Debug("advance", "tick", d.tick)
+	d.log.Debug("advance", "tick", d.tick, "checksum", d.world.Checksum())
 }
 
 func (d *Driver) Commands() []render.Command {
