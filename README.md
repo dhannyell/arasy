@@ -2,7 +2,7 @@
 
 FrameForge is an experimental 2D engine written in Go.
 
-The project is focused on learning, clarity, deterministic simulation, and low coupling between core engine concepts and rendering backends. It currently provides a small foundation for 2D math, fixed timestep loops, render commands, a raster renderer, and a lightweight scene/entity model.
+The project is focused on learning, clarity, deterministic simulation, and low coupling between core engine concepts and rendering backends. It currently provides a small foundation for 2D math, fixed timestep loops, render commands, a portable runtime driver, a raster renderer, and a lightweight scene/entity model.
 
 FrameForge is not trying to compete with commercial engines. The goal is to build a compact, inspectable engine from first principles using mostly the Go standard library.
 
@@ -16,6 +16,7 @@ Current capabilities:
 - Fixed timestep helper.
 - Camera with aspect-ratio modes.
 - Backend-agnostic render commands.
+- Runtime package with a portable `Game` contract, driver, input mapping, dev controls, and optional rewind history.
 - Raster renderer using Go's standard `image` packages.
 - Filled/stroked rectangles.
 - Filled/stroked circles.
@@ -23,7 +24,7 @@ Current capabilities:
 - Basic scene world with entities and components.
 - Transform, circle sprite, and velocity components.
 - Simple integration system for linear movement.
-- PNG and GIF render demo.
+- PNG render demo with optional frame sequence output.
 
 ## Project Structure
 
@@ -49,8 +50,12 @@ scene/
 input/
   Typed input mapping system (device codes → semantic actions).
 
+runtime/
+  Platform-agnostic Game contract, Context, Driver, input/control plumbing,
+  frame production, and optional rewind history.
+
 cmd/demos/football/raster/
-  Offline render demo that generates PNG and GIF output.
+  Offline render demo that generates a PNG and frame-by-frame PNG sequence.
 
 cmd/demos/football/webCanvas/
   Browser-based canvas demo with live simulation and debug visualization.
@@ -74,7 +79,7 @@ go test ./...
 
 ## Running The Offline Demo
 
-Generate PNG and GIF output:
+Generate a static PNG and a frame-by-frame PNG sequence:
 
 ```powershell
 go run ./cmd/demos/football/raster
@@ -84,10 +89,12 @@ Output files:
 
 ```text
 output/renderdemo.png
-output/renderdemo.gif
+output/frames/frame-0000.png
+output/frames/frame-0001.png
+...
 ```
 
-The PNG is a static high-resolution render. The GIF is a smaller animated preview used to validate movement and rendering.
+The PNG is a static high-resolution render. The frame sequence is used to validate movement and rendering, and can be combined into a video with external tools such as `ffmpeg`.
 
 ## Running The Browser Demo
 
@@ -137,6 +144,7 @@ go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-coll
 
 ## Documentation
 
+- [Runtime guide](docs/runtime.md)
 - [Math visual guide](docs/math2d-visual-guide.md)
 - [Camera, world, and viewport](docs/camera-world-viewport.md)
 - [Architectural review (2026-06-26)](docs/revisao-arquitetural-2026-06-26.md)
