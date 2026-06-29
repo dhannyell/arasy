@@ -105,16 +105,18 @@ type client struct {
 
 // clientMessage is the JSON envelope coming from the browser. Web-specific knowledge.
 type clientMessage struct {
-	Type   string  `json:"type"`
-	Action string  `json:"action"`
-	Device string  `json:"device"`
-	Code   string  `json:"code"`
-	Kind   string  `json:"kind"`
-	Width  float64 `json:"width"`
-	Height float64 `json:"height"`
-	Speed  int     `json:"speed"`
-	Debug  uint32  `json:"debug"`
-	Value  float64 `json:"value"`
+	Type    string  `json:"type"`
+	Action  string  `json:"action"`
+	Device  string  `json:"device"`
+	Code    string  `json:"code"`
+	Kind    string  `json:"kind"`
+	Width   float64 `json:"width"`
+	Height  float64 `json:"height"`
+	Speed   float64 `json:"speed"`
+	Debug   uint32  `json:"debug"`
+	Tick    uint64  `json:"tick"`
+	Seconds float64 `json:"seconds"`
+	Value   float64 `json:"value"`
 }
 
 // ---------------------------------------------------------------------------
@@ -290,6 +292,10 @@ func controlCommandFromMessage(msg clientMessage) (runtime.ControlCommand, bool)
 		return runtime.ControlCommand{Kind: runtime.ControlStep}, true
 	case "back":
 		return runtime.ControlCommand{Kind: runtime.ControlBack}, true
+	case "backToTick":
+		return runtime.ControlCommand{Kind: runtime.ControlBackToTick, Tick: msg.Tick}, true
+	case "backSeconds":
+		return runtime.ControlCommand{Kind: runtime.ControlBackSeconds, Seconds: msg.Seconds}, true
 	case "reset":
 		return runtime.ControlCommand{Kind: runtime.ControlReset}, true
 	case "setSpeed":
@@ -321,12 +327,14 @@ func (h *hub) broadcast(commands []render.Command, camera render.Camera, state r
 			h.clientCamera(camera, c),
 			h.clear,
 			web.StateDTO{
-				Paused:       state.Paused,
-				Speed:        state.Speed,
-				Debug:        uint32(state.DebugLayers),
-				HistoryLen:   state.HistoryLen,
-				RenderFPS:    h.fps,
-				SimulationHz: h.simHz,
+				Paused:           state.Paused,
+				Speed:            state.Speed,
+				Debug:            uint32(state.DebugLayers),
+				HistoryLen:       state.HistoryLen,
+				HistoryStartTick: state.HistoryStartTick,
+				HistoryEndTick:   state.HistoryEndTick,
+				RenderFPS:        h.fps,
+				SimulationHz:     h.simHz,
 			},
 			commands,
 		)
