@@ -17,6 +17,7 @@ Current capabilities:
 - Camera with aspect-ratio modes.
 - Backend-agnostic render commands.
 - Runtime package with a portable `Game` contract, driver, input mapping, dev controls, and optional rewind history.
+- Immediate-mode UI package with basic widgets, pointer interaction, and theme support.
 - Raster renderer using Go's standard `image` packages.
 - Filled/stroked rectangles.
 - Filled/stroked circles.
@@ -49,6 +50,9 @@ scene/
 
 input/
   Typed input mapping system (device codes → semantic actions).
+
+ui/
+  Immediate-mode UI widgets, themes, and pointer interaction helpers.
 
 runtime/
   Platform-agnostic Game contract, Context, Driver, input/control plumbing,
@@ -105,6 +109,7 @@ go run ./cmd/demos/football/webCanvas
 ```
 
 Then open `http://localhost:8080` in your browser. Use WASD or arrow keys to move the controlled player.
+The demo also includes a small screen-space UI overlay with a score panel and reset button.
 
 ## Running Benchmarks
 
@@ -145,6 +150,7 @@ go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-coll
 ## Documentation
 
 - [Runtime guide](docs/runtime.md)
+- [UI guide](docs/ui.md)
 - [Math visual guide](docs/math2d-visual-guide.md)
 - [Camera, world, and viewport](docs/camera-world-viewport.md)
 - [Architectural review (2026-06-26)](docs/revisao-arquitetural-2026-06-26.md)
