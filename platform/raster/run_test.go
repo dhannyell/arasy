@@ -32,11 +32,11 @@ func (frameSequenceGame) Setup() runtime.Config {
 	}
 }
 
-func (frameSequenceGame) Init(ctx *runtime.Context) {}
+func (frameSequenceGame) Init(ctx *runtime.UpdateContext) {}
 
-func (frameSequenceGame) Update(ctx *runtime.Context, dt float64) {}
+func (frameSequenceGame) Update(ctx *runtime.UpdateContext, dt float64) {}
 
-func (frameSequenceGame) Render(ctx *runtime.Context) []render.Command {
+func (frameSequenceGame) Render(ctx *runtime.RenderContext) []render.Command {
 	return []render.Command{
 		render.DrawRect{
 			Rect: math2d.NewRect(

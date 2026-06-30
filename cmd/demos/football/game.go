@@ -103,7 +103,7 @@ func (f *Football) Setup() runtime.Config {
 	}
 }
 
-func (f *Football) Init(ctx *runtime.Context) {
+func (f *Football) Init(ctx *runtime.UpdateContext) {
 	demo := BuildPlayableDemoWorldIn(ctx.World)
 	f.controlledPlayer = demo.ControlledPlayer
 	f.ball = demo.Ball
@@ -121,8 +121,8 @@ func (f *Football) Init(ctx *runtime.Context) {
 	)
 }
 
-func (f *Football) Update(ctx *runtime.Context, dt float64) {
-	_, reset := hudLayout(ctx.Camera.Viewport)
+func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
+	_, reset := hudLayout(ctx.Camera().Viewport)
 	if ctx.UI.Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
 	}
@@ -175,15 +175,15 @@ func (f *Football) Update(ctx *runtime.Context, dt float64) {
 	_ = stats
 }
 
-func (f *Football) Render(ctx *runtime.Context) []render.Command {
-	if f.shakeOffset != (math2d.Vec2{}) {
-		ctx.Camera.World = math2d.NewRect(worldOrigin.Add(f.shakeOffset), worldSize)
-	}
+func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
+	//if f.shakeOffset != (math2d.Vec2{}) {
+	//	ctx.Camera() = math2d.NewRect(worldOrigin.Add(f.shakeOffset), worldSize)
+	//}
 
 	cmds := BuildFieldCommands()
 	cmds = append(cmds, ctx.World.RenderCommands()...)
 
-	score, reset := hudLayout(ctx.Camera.Viewport)
+	score, reset := hudLayout(ctx.Camera().Viewport)
 	left, right := f.score()
 
 	ctx.UI.Panel(score)
