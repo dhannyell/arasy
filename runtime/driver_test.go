@@ -273,6 +273,42 @@ func TestDriverSetSpeedClampsFractionalRange(t *testing.T) {
 
 var _ Game = (*inputBackGame)(nil)
 
+// statefulGame is a minimal StatefulGame built on StateSlot[int]: no
+// hand-written GameState/RestoreGameState/Clone — GameState() and
+// RestoreGameState() come promoted from the embedded StateSlot.
+type statefulGame struct {
+	StateSlot[int]
+}
+
+func (g *statefulGame) Setup() Config                              { return Config{HistoryLen: 4} }
+func (g *statefulGame) Init(ctx *UpdateContext)                    {}
+func (g *statefulGame) Update(ctx *UpdateContext, dt float64)      { g.State++ }
+func (g *statefulGame) Render(ctx *RenderContext) []render.Command { return nil }
+
+var (
+	_ Game         = (*statefulGame)(nil)
+	_ StatefulGame = (*statefulGame)(nil)
+)
+
+func TestDriverBackRestoresGameStateInsteadOfResettingIt(t *testing.T) {
+	game := &statefulGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.Advance(1) // State: 0 -> 1, snapshot captured at State=0
+	driver.Advance(1) // State: 1 -> 2, snapshot captured at State=1
+
+	if game.State != 2 {
+		t.Fatalf("counter = %d, want 2", game.State)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBack})
+	driver.Advance(1)
+
+	if game.State != 1 {
+		t.Fatalf("counter after back = %d, want 1 (restored from snapshot, not reset to 0)", game.State)
+	}
+}
+
 type pointerUIGame struct {
 	rect   math2d.Rect
 	theme  ui.Theme

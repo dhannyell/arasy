@@ -144,7 +144,7 @@ func (d *Driver) Advance(dt float64) {
 
 	for range stepsToRun {
 		if d.recorder != nil {
-			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.uiState, d.pointer, d.tick)
+			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.uiState, d.pointer, d.captureGameState(), d.tick)
 		}
 
 		d.lastInput = d.mapper.State()
@@ -399,6 +399,22 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.pointer = snap.pointer
 	d.resetFrame()
 	d.tick = snap.tick
+
+	if game, ok := d.game.(StatefulGame); ok {
+		game.RestoreGameState(snap.gameState)
+	}
+}
+
+func (d *Driver) captureGameState() GameState {
+	game, ok := d.game.(StatefulGame)
+	if !ok {
+		return nil
+	}
+
+	// StateSlot[T].GameState() already returns an independent value snapshot
+	// (boxing a value type into the GameState interface copies it) — no
+	// further cloning needed here, unlike world/mapper/uiState/pointer.
+	return game.GameState()
 }
 
 func inputRetainFrom(tick, retainedTicks uint64) uint64 {
