@@ -81,11 +81,13 @@ export function drawArc(ctx, command) {
 }
 
 export function drawText(ctx, command) {
-    if (!hasAlpha(command.color) || !command.text) {
-        return;
-    }
+    if (!hasAlpha(command.color) || !command.text) return;
 
     ctx.fillStyle = colorToCSS(command.color);
     ctx.font = `${command.size}px system-ui, sans-serif`;
+    ctx.textAlign    = command.align    ?? "left";
+    ctx.textBaseline = command.baseline ?? "alphabetic";
     ctx.fillText(command.text, command.position.x, command.position.y);
+    ctx.textAlign    = "left";        // reset para não vazar em outros draws
+    ctx.textBaseline = "alphabetic";
 }
