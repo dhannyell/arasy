@@ -18,54 +18,38 @@ const (
 	goalDepth   = 1.0
 )
 
+const (
+	shakeDurationTicks = 18 // 0.3s a 60Hz — mesma duração do CameraShake antigo
+	shakeAmplitude     = 0.45
+	shakeSeed          = 0          // CameraShake.Seed nunca foi setado antes; mantém o comportamento atual
+	shakeSimDt         = 1.0 / 60.0 // casa com Setup().SimulationHz — só pra frequência do seno/cosseno
+)
+
 type Football struct {
+	runtime.StateSlot[MatchState]
+
 	controlledPlayer scene.EntityID
 	ball             scene.EntityID
-
-	leftGoal  math2d.Rect
-	rightGoal math2d.Rect
-
-	shake       CameraShake
-	shakeOffset math2d.Vec2
-
-	scoreLeft  int
-	scoreRight int
+	leftGoal         math2d.Rect
+	rightGoal        math2d.Rect
 }
 
-type CameraShake struct {
-	Time      float64
-	Duration  float64
-	Amplitude float64
-	Seed      uint64
-}
-
-func (c *CameraShake) Start(duration, amplitude float64) {
-	if c.Time > 0 {
-		return
+// shakeOffset é função pura do tick atual: nenhum estado mutável a manter, e
+// fica automaticamente correto em qualquer ponto do rewind porque depende só
+// de ctx.Tick (restaurado pelo snapshot) e de f.state.LastGoalTick (restaurado
+// pelo StatefulGame).
+func shakeOffset(elapsedTicks uint64) (math2d.Vec2, bool) {
+	if elapsedTicks >= shakeDurationTicks {
+		return math2d.Vec2{}, false
 	}
 
-	c.Time = duration
-	c.Duration = duration
-	c.Amplitude = amplitude
-}
+	remaining := float64(shakeDurationTicks-elapsedTicks) / float64(shakeDurationTicks)
+	t := float64(elapsedTicks) * shakeSimDt
 
-func (c *CameraShake) Step(dt float64) math2d.Vec2 {
-	if c.Time <= 0 || c.Duration <= 0 {
-		return math2d.Vec2{}
-	}
-
-	t := c.Time / c.Duration
-	offset := math2d.Vec2{
-		X: math.Sin(float64(c.Seed)*12.9898+c.Time*90) * c.Amplitude * t,
-		Y: math.Cos(float64(c.Seed)*78.233+c.Time*110) * c.Amplitude * t,
-	}
-
-	c.Time -= dt
-	if c.Time < 0 {
-		c.Time = 0
-	}
-
-	return offset
+	return math2d.Vec2{
+		X: math.Sin(float64(shakeSeed)*12.9898+t*90) * shakeAmplitude * remaining,
+		Y: math.Cos(float64(shakeSeed)*78.233+t*110) * shakeAmplitude * remaining,
+	}, true
 }
 
 func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
@@ -77,10 +61,6 @@ func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
 		math2d.Vec2{X: vp.Width() - 100, Y: 8},
 		math2d.Vec2{X: 92, Y: 28})
 	return
-}
-
-func (f *Football) score() (scoreLeft, scoreRight int) {
-	return f.scoreLeft, f.scoreRight
 }
 
 func (f *Football) resetMatch(world *scene.World) {
@@ -103,12 +83,12 @@ func (f *Football) Setup() runtime.Config {
 	}
 }
 
-func (f *Football) Init(ctx *runtime.Context) {
+func (f *Football) Init(ctx *runtime.UpdateContext) {
+	f.State = MatchState{}
+
 	demo := BuildPlayableDemoWorldIn(ctx.World)
 	f.controlledPlayer = demo.ControlledPlayer
 	f.ball = demo.Ball
-	f.shake = CameraShake{}
-	f.shakeOffset = math2d.Vec2{}
 
 	goalTop := fieldTop + fieldHeight/2 - goalWidth/2
 	f.leftGoal = math2d.NewRect(
@@ -121,13 +101,12 @@ func (f *Football) Init(ctx *runtime.Context) {
 	)
 }
 
-func (f *Football) Update(ctx *runtime.Context, dt float64) {
-	_, reset := hudLayout(ctx.Camera.Viewport)
+func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
+	_, reset := hudLayout(ctx.Camera().Viewport)
 	if ctx.UI.Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
 	}
 
-	f.shakeOffset = f.shake.Step(dt)
 	previousBallTransform, _ := ctx.World.Transform(f.ball)
 
 	applyPlayerInput(ctx.World, f.controlledPlayer, ctx.Input)
@@ -162,32 +141,38 @@ func (f *Football) Update(ctx *runtime.Context, dt float64) {
 	switch {
 	case leftGoalScored:
 		ctx.Log.Debug("goal", "side", "left")
-		f.scoreLeft++
-		f.shake.Start(0.3, 0.45)
+		f.State.ScoreLeft++
+		f.State.HasGoal = true
+		f.State.LastGoalTick = ctx.Tick
 		resetBall(ctx.World, f.ball)
 	case rightGoalScored:
 		ctx.Log.Debug("goal", "side", "right")
-		f.scoreRight++
-		f.shake.Start(0.3, 0.45)
+		f.State.ScoreRight++
+		f.State.HasGoal = true
+		f.State.LastGoalTick = ctx.Tick
 		resetBall(ctx.World, f.ball)
 	}
 
 	_ = stats
 }
 
-func (f *Football) Render(ctx *runtime.Context) []render.Command {
-	if f.shakeOffset != (math2d.Vec2{}) {
-		ctx.Camera.World = math2d.NewRect(worldOrigin.Add(f.shakeOffset), worldSize)
+func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
+	cam := ctx.Camera()
+	if f.State.HasGoal {
+		elapsed := ctx.Tick - f.State.LastGoalTick
+		if offset, shaking := shakeOffset(elapsed); shaking {
+			cam.World = math2d.NewRect(worldOrigin.Add(offset), worldSize)
+		}
 	}
+	ctx.SetCamera(cam)
 
 	cmds := BuildFieldCommands()
 	cmds = append(cmds, ctx.World.RenderCommands()...)
 
-	score, reset := hudLayout(ctx.Camera.Viewport)
-	left, right := f.score()
+	score, reset := hudLayout(ctx.Camera().Viewport)
 
 	ctx.UI.Panel(score)
-	ctx.UI.Label(fmt.Sprintf("%d — %d", left, right), score.Center())
+	ctx.UI.Label(fmt.Sprintf("%d — %d", f.State.ScoreLeft, f.State.ScoreRight), score.Center())
 	ctx.UI.Button("btn_reset", "Reset", reset)
 
 	AppendDebugCommands(&cmds, ctx.World, ctx.Debug, DefaultDebugStyle())

@@ -8,13 +8,13 @@ type Game interface {
 	Setup() Config
 
 	//Init populates a new World. Called at the start AND on every reset.
-	Init(ctx *Context)
+	Init(ctx *UpdateContext)
 
 	// Update advances one fixed-timestep tick: reads ctx.Input, drives entities,
 	// calls ctx.World.Step(dt, ctx.StepConfig), and reacts to ctx.World.Contacts().
 	// Full control — the World is never hidden.
-	Update(ctx *Context, dt float64)
+	Update(ctx *UpdateContext, dt float64)
 
 	// Render returns the drawing commands for the current state of the World.
-	Render(ctx *Context) []render.Command
+	Render(ctx *RenderContext) []render.Command
 }
