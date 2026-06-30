@@ -2,6 +2,23 @@ package render
 
 import "github.com/dhannyell/frameforge/math2d"
 
+type TextAlign uint8
+
+const (
+	AlignLeft TextAlign = iota
+	AlignCenter
+	AlignRight
+)
+
+type TextBaseline uint8
+
+const (
+	BaselineAlphabetic TextBaseline = iota
+	BaselineTop
+	BaselineMiddle
+	BaselineBottom
+)
+
 // Command represents a render operation.
 type Command interface {
 	isRenderCommand()
@@ -59,6 +76,8 @@ type DrawText struct {
 	Text     string
 	Color    Color
 	Size     float64
+	Align    TextAlign
+	Baseline TextBaseline
 }
 
 // DrawArc describes an arc stroke draw command.
