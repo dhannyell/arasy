@@ -45,6 +45,41 @@ func TestDriverFrameReturnsCameraModifiedByRender(t *testing.T) {
 
 var _ Game = cameraGame{}
 
+type updateCameraGame struct {
+	viewport math2d.Rect
+}
+
+func (g *updateCameraGame) Setup() Config {
+	return Config{
+		Camera: render.Camera{
+			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+			Aspect:   render.AspectStretch,
+		},
+	}
+}
+
+func (g *updateCameraGame) Init(ctx *UpdateContext) {}
+
+func (g *updateCameraGame) Update(ctx *UpdateContext, dt float64) {
+	g.viewport = ctx.Camera().Viewport
+}
+
+func (g *updateCameraGame) Render(ctx *RenderContext) []render.Command { return nil }
+
+func TestDriverUpdateContextUsesSurfaceViewport(t *testing.T) {
+	game := &updateCameraGame{}
+	driver := NewDriver(game, slog.Default())
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})
+
+	driver.SetViewport(viewport)
+	driver.Advance(1)
+
+	if game.viewport != viewport {
+		t.Fatalf("update viewport = %+v, want %+v", game.viewport, viewport)
+	}
+}
+
 type inputBackGame struct {
 	player scene.EntityID
 }

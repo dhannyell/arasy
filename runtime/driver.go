@@ -250,6 +250,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Tick:       d.tick,
 		UI:         uiInst,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
+		camera:     d.cameraForSurface(),
 	}
 }
 

@@ -2,6 +2,7 @@ package football
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"math/rand"
 
@@ -52,6 +53,18 @@ func shakeOffset(elapsedTicks uint64) (math2d.Vec2, bool) {
 	}, true
 }
 
+func menuLayout(vp math2d.Rect) (panel, play math2d.Rect) {
+	panel = math2d.NewRect(
+		math2d.Vec2{X: vp.Width()/2 - 160, Y: vp.Height()/2 - 100},
+		math2d.Vec2{X: 320, Y: 200},
+	)
+	play = math2d.NewRect(
+		math2d.Vec2{X: vp.Width()/2 - 60, Y: vp.Height()/2 + 10},
+		math2d.Vec2{X: 120, Y: 36},
+	)
+	return
+}
+
 func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
 	score = math2d.NewRect(
 		math2d.Vec2{X: vp.Width()/2 - 60, Y: 8},
@@ -64,7 +77,9 @@ func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
 }
 
 func (f *Football) resetMatch(world *scene.World) {
+	slog.Debug("Reset Button")
 	resetBall(world, f.ball)
+	f.State = MatchState{}
 }
 
 func (f *Football) Setup() runtime.Config {
@@ -102,6 +117,15 @@ func (f *Football) Init(ctx *runtime.UpdateContext) {
 }
 
 func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
+	if !f.State.Started {
+		_, play := menuLayout(ctx.Camera().Viewport)
+		if ctx.UI.Clicked("btn_play", play) {
+			f.State.Started = true
+		}
+
+		return
+	}
+
 	_, reset := hudLayout(ctx.Camera().Viewport)
 	if ctx.UI.Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
@@ -157,6 +181,13 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 }
 
 func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
+	if !f.State.Started {
+		panel, play := menuLayout(ctx.Camera().Viewport)
+		ctx.UI.Panel(panel)
+		ctx.UI.Label("Football", panel.Center())
+		ctx.UI.Button("btn_play", "Play", play)
+	}
+
 	cam := ctx.Camera()
 	if f.State.HasGoal {
 		elapsed := ctx.Tick - f.State.LastGoalTick
