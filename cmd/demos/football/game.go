@@ -1,6 +1,7 @@
 package football
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 
@@ -26,6 +27,9 @@ type Football struct {
 
 	shake       CameraShake
 	shakeOffset math2d.Vec2
+
+	scoreLeft  int
+	scoreRight int
 }
 
 type CameraShake struct {
@@ -64,6 +68,25 @@ func (c *CameraShake) Step(dt float64) math2d.Vec2 {
 	return offset
 }
 
+func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
+	score = math2d.NewRect(
+		math2d.Vec2{X: vp.Width()/2 - 60, Y: 8},
+		math2d.Vec2{X: 120, Y: 28},
+	)
+	reset = math2d.NewRect(
+		math2d.Vec2{X: vp.Width() - 100, Y: 8},
+		math2d.Vec2{X: 92, Y: 28})
+	return
+}
+
+func (f *Football) score() (scoreLeft, scoreRight int) {
+	return f.scoreLeft, f.scoreRight
+}
+
+func (f *Football) resetMatch(world *scene.World) {
+	resetBall(world, f.ball)
+}
+
 func (f *Football) Setup() runtime.Config {
 	return runtime.Config{
 		Camera: render.Camera{
@@ -99,6 +122,11 @@ func (f *Football) Init(ctx *runtime.Context) {
 }
 
 func (f *Football) Update(ctx *runtime.Context, dt float64) {
+	_, reset := hudLayout(ctx.Camera.Viewport)
+	if ctx.UI.Clicked("btn_reset", reset) {
+		f.resetMatch(ctx.World)
+	}
+
 	f.shakeOffset = f.shake.Step(dt)
 	previousBallTransform, _ := ctx.World.Transform(f.ball)
 
@@ -134,10 +162,12 @@ func (f *Football) Update(ctx *runtime.Context, dt float64) {
 	switch {
 	case leftGoalScored:
 		ctx.Log.Debug("goal", "side", "left")
+		f.scoreLeft++
 		f.shake.Start(0.3, 0.45)
 		resetBall(ctx.World, f.ball)
 	case rightGoalScored:
 		ctx.Log.Debug("goal", "side", "right")
+		f.scoreRight++
 		f.shake.Start(0.3, 0.45)
 		resetBall(ctx.World, f.ball)
 	}
@@ -152,6 +182,14 @@ func (f *Football) Render(ctx *runtime.Context) []render.Command {
 
 	cmds := BuildFieldCommands()
 	cmds = append(cmds, ctx.World.RenderCommands()...)
+
+	score, reset := hudLayout(ctx.Camera.Viewport)
+	left, right := f.score()
+
+	ctx.UI.Panel(score)
+	ctx.UI.Label(fmt.Sprintf("%d — %d", left, right), score.Center())
+	ctx.UI.Button("btn_reset", "Reset", reset)
+
 	AppendDebugCommands(&cmds, ctx.World, ctx.Debug, DefaultDebugStyle())
 	return cmds
 }

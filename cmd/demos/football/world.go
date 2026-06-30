@@ -64,6 +64,8 @@ var (
 		X: fieldLeft + fieldWidth - penaltyMarkDistance,
 		Y: fieldCenter.Y,
 	}
+	scoreLeft  = 0
+	scoreRight = 0
 )
 
 type DebugStyle struct {
