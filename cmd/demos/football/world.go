@@ -64,8 +64,6 @@ var (
 		X: fieldLeft + fieldWidth - penaltyMarkDistance,
 		Y: fieldCenter.Y,
 	}
-	scoreLeft  = 0
-	scoreRight = 0
 )
 
 type DebugStyle struct {
@@ -135,6 +133,13 @@ type DemoWorld struct {
 	World            *scene.World
 	ControlledPlayer scene.EntityID
 	Ball             scene.EntityID
+}
+
+type MatchState struct {
+	ScoreLeft    int
+	ScoreRight   int
+	HasGoal      bool
+	LastGoalTick uint64
 }
 
 func BuildDemoWorld() *scene.World {

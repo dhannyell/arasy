@@ -23,12 +23,12 @@ func (cameraGame) Setup() Config {
 	}
 }
 
-func (cameraGame) Init(ctx *Context) {}
+func (cameraGame) Init(ctx *UpdateContext) {}
 
-func (cameraGame) Update(ctx *Context, dt float64) {}
+func (cameraGame) Update(ctx *UpdateContext, dt float64) {}
 
-func (cameraGame) Render(ctx *Context) []render.Command {
-	ctx.Camera.World = math2d.NewRect(math2d.Vec2{X: 2, Y: 3}, math2d.Vec2{X: 10, Y: 10})
+func (cameraGame) Render(ctx *RenderContext) []render.Command {
+	ctx.camera.World = math2d.NewRect(math2d.Vec2{X: 2, Y: 3}, math2d.Vec2{X: 10, Y: 10})
 	return nil
 }
 
@@ -66,7 +66,7 @@ func (g *inputBackGame) Setup() Config {
 	}
 }
 
-func (g *inputBackGame) Init(ctx *Context) {
+func (g *inputBackGame) Init(ctx *UpdateContext) {
 	g.player = ctx.World.Spawn()
 	ctx.World.SetTransform(g.player, scene.Transform{
 		Scale: math2d.Vec2{X: 1, Y: 1},
@@ -74,14 +74,14 @@ func (g *inputBackGame) Init(ctx *Context) {
 	ctx.World.SetVelocity(g.player, scene.Velocity{})
 }
 
-func (g *inputBackGame) Update(ctx *Context, dt float64) {
+func (g *inputBackGame) Update(ctx *UpdateContext, dt float64) {
 	ctx.World.SetVelocity(g.player, scene.Velocity{
 		Linear: math2d.Vec2{X: ctx.Input.Value(input.ActionMoveX) * 10},
 	})
 	ctx.World.Step(dt, ctx.StepConfig)
 }
 
-func (g *inputBackGame) Render(ctx *Context) []render.Command { return nil }
+func (g *inputBackGame) Render(ctx *RenderContext) []render.Command { return nil }
 
 func TestDriverBackRestoresInputSnapshotBeforeManualStep(t *testing.T) {
 	game := &inputBackGame{}
@@ -273,6 +273,42 @@ func TestDriverSetSpeedClampsFractionalRange(t *testing.T) {
 
 var _ Game = (*inputBackGame)(nil)
 
+// statefulGame is a minimal StatefulGame built on StateSlot[int]: no
+// hand-written GameState/RestoreGameState/Clone — GameState() and
+// RestoreGameState() come promoted from the embedded StateSlot.
+type statefulGame struct {
+	StateSlot[int]
+}
+
+func (g *statefulGame) Setup() Config                              { return Config{HistoryLen: 4} }
+func (g *statefulGame) Init(ctx *UpdateContext)                    {}
+func (g *statefulGame) Update(ctx *UpdateContext, dt float64)      { g.State++ }
+func (g *statefulGame) Render(ctx *RenderContext) []render.Command { return nil }
+
+var (
+	_ Game         = (*statefulGame)(nil)
+	_ StatefulGame = (*statefulGame)(nil)
+)
+
+func TestDriverBackRestoresGameStateInsteadOfResettingIt(t *testing.T) {
+	game := &statefulGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.Advance(1) // State: 0 -> 1, snapshot captured at State=0
+	driver.Advance(1) // State: 1 -> 2, snapshot captured at State=1
+
+	if game.State != 2 {
+		t.Fatalf("counter = %d, want 2", game.State)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBack})
+	driver.Advance(1)
+
+	if game.State != 1 {
+		t.Fatalf("counter after back = %d, want 1 (restored from snapshot, not reset to 0)", game.State)
+	}
+}
+
 type pointerUIGame struct {
 	rect   math2d.Rect
 	theme  ui.Theme
@@ -303,15 +339,15 @@ func (g *pointerUIGame) Setup() Config {
 	}
 }
 
-func (g *pointerUIGame) Init(ctx *Context) {}
+func (g *pointerUIGame) Init(ctx *UpdateContext) {}
 
-func (g *pointerUIGame) Update(ctx *Context, dt float64) {
+func (g *pointerUIGame) Update(ctx *UpdateContext, dt float64) {
 	if ctx.UI.Clicked("button", g.rect) {
 		g.clicks++
 	}
 }
 
-func (g *pointerUIGame) Render(ctx *Context) []render.Command {
+func (g *pointerUIGame) Render(ctx *RenderContext) []render.Command {
 	ctx.UI.Button("button", "Button", g.rect)
 	return nil
 }

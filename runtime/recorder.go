@@ -17,6 +17,7 @@ type driverSnapshot struct {
 	lastInput input.State
 	uiState   ui.State
 	pointer   input.PointerState
+	gameState GameState
 	tick      uint64
 }
 
@@ -27,7 +28,7 @@ func newRecorder(limit int) *recorder {
 	}
 }
 
-func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput input.State, uiState ui.State, pointer input.PointerState, tick uint64) {
+func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput input.State, uiState ui.State, pointer input.PointerState, gameState GameState, tick uint64) {
 	if r.limit <= 0 || world == nil || mapper == nil {
 		return
 	}
@@ -38,6 +39,7 @@ func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput i
 		lastInput: lastInput.Clone(),
 		uiState:   uiState.Clone(),
 		pointer:   pointer.Clone(),
+		gameState: gameState,
 		tick:      tick,
 	})
 
