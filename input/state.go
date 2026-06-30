@@ -32,11 +32,11 @@ func (s *State) JustReleased(action Action) bool {
 	return s.justReleased[action]
 }
 
-func (s State) Clone() State {
+func (s *State) Clone() State {
 	return s.clone()
 }
 
-func (s State) clone() State {
+func (s *State) clone() State {
 	clone := NewState()
 
 	for action, value := range s.values {

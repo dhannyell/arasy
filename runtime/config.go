@@ -5,6 +5,7 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/frameforge/ui"
 )
 
 type Config struct {
@@ -18,4 +19,6 @@ type Config struct {
 
 	// Max ticks recorded.
 	HistoryLen int
+
+	UITheme ui.Theme
 }

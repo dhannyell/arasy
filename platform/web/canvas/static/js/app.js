@@ -230,6 +230,25 @@ connection = connectFrameSocket({
     },
 });
 
+function pointerPayload(e, kind, code) {
+    const r = canvas.getBoundingClientRect();
+    return {
+        type: "input", device: "mouse", kind, code,
+        x: (e.clientX - r.left) * canvas.width / r.width,
+        y: (e.clientY - r.top)  * canvas.height / r.height,
+    };
+}
+
+canvas.addEventListener("mousemove", e => connection?.send(pointerPayload(e, "move", "Position")));
+canvas.addEventListener("mousedown", e => connection?.send(pointerPayload(e, "down", mouseButtonCode(e.button))));
+canvas.addEventListener("mouseup",   e => connection?.send(pointerPayload(e, "up",   mouseButtonCode(e.button))));
+canvas.addEventListener("mouseleave", () =>
+    connection?.send({ type: "input", device: "mouse", code: "Leave", kind: "leave" }));
+
+function mouseButtonCode(button) {
+    return ["Left", "Middle", "Right"][button] ?? "Left";
+}
+
 function markPendingRewind(targetTick) {
     const currentTick = frameSafeTick(lastFrame?.tick);
     const historyLen = Number(lastFrame?.state?.historyLen ?? 0);

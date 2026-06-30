@@ -3,6 +3,7 @@ package runtime
 import (
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/frameforge/ui"
 )
 
 type recorder struct {
@@ -14,6 +15,8 @@ type driverSnapshot struct {
 	world     *scene.World
 	mapper    *input.Mapper
 	lastInput input.State
+	uiState   ui.State
+	pointer   input.PointerState
 	tick      uint64
 }
 
@@ -24,7 +27,7 @@ func newRecorder(limit int) *recorder {
 	}
 }
 
-func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput input.State, tick uint64) {
+func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput input.State, uiState ui.State, pointer input.PointerState, tick uint64) {
 	if r.limit <= 0 || world == nil || mapper == nil {
 		return
 	}
@@ -33,6 +36,8 @@ func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput i
 		world:     world.Clone(),
 		mapper:    mapper.Clone(),
 		lastInput: lastInput.Clone(),
+		uiState:   uiState.Clone(),
+		pointer:   pointer.Clone(),
 		tick:      tick,
 	})
 
