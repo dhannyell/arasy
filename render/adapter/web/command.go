@@ -25,9 +25,11 @@ type CommandDTO struct {
 	Stroke *ColorDTO `json:"stroke,omitempty"`
 	Color  *ColorDTO `json:"color,omitempty"`
 
-	Text  string  `json:"text,omitempty"`
-	Size  float64 `json:"size,omitempty"`
-	Layer int     `json:"layer"`
+	Text     string  `json:"text,omitempty"`
+	Size     float64 `json:"size,omitempty"`
+	Align    string  `json:"align,omitempty"`
+	Baseline string  `json:"baseline,omitempty"`
+	Layer    int     `json:"layer"`
 }
 
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
@@ -99,6 +101,8 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Text:     command.Text,
 				Color:    new(NewColorDTO(command.Color)),
 				Size:     command.Size,
+				Align:    textAlignToString(command.Align),
+				Baseline: textBaselineToString(command.Baseline),
 				Layer:    command.Layer(),
 			}
 		default:
@@ -109,4 +113,28 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 	}
 
 	return commandDTOs
+}
+
+func textAlignToString(a render.TextAlign) string {
+	switch a {
+	case render.AlignCenter:
+		return "center"
+	case render.AlignRight:
+		return "right"
+	default:
+		return "left"
+	}
+}
+
+func textBaselineToString(b render.TextBaseline) string {
+	switch b {
+	case render.BaselineTop:
+		return "top"
+	case render.BaselineMiddle:
+		return "middle"
+	case render.BaselineBottom:
+		return "bottom"
+	default:
+		return "alphabetic"
+	}
 }
