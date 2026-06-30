@@ -148,7 +148,7 @@ func (d *Driver) Advance(dt float64) {
 		}
 
 		d.lastInput = d.mapper.State()
-		ctx := d.makeContext(d.newUpdateUI())
+		ctx := d.makeUpdateContext(d.newUpdateUI())
 		d.game.Update(&ctx, dt)
 		d.resetFrame()
 
@@ -162,7 +162,7 @@ func (d *Driver) Advance(dt float64) {
 
 func (d *Driver) Commands() []render.Command {
 	uiInst := d.newRenderUI()
-	ctx := d.makeContext(uiInst)
+	ctx := d.makeRenderContext(uiInst)
 	cmds := d.game.Render(&ctx)
 	cmds = append(cmds, uiInst.Commands()...)
 	return cmds
@@ -198,11 +198,11 @@ func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 
 func (d *Driver) Frame() Frame {
 	uiInst := d.newRenderUI()
-	ctx := d.makeContext(uiInst)
+	ctx := d.makeRenderContext(uiInst)
 	cmds := d.game.Render(&ctx)
 	cmds = append(cmds, uiInst.Commands()...)
 	return Frame{
-		Camera:   ctx.Camera,
+		Camera:   ctx.Camera(),
 		Commands: cmds,
 	}
 }
@@ -240,17 +240,27 @@ func (d *Driver) resetFrame() {
 		Buttons: d.pointer.Buttons(),
 	}
 }
-func (d *Driver) makeContext(uiInst *ui.UI) Context {
-	return Context{
+
+func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
+	return UpdateContext{
 		World:      d.world,
 		Input:      d.lastInput,
 		Pointer:    d.frame,
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
-		Debug:      d.controls.debugLayers,
-		Camera:     d.cameraForSurface(),
 		UI:         uiInst,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
+	}
+}
+
+func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
+	return RenderContext{
+		World:  d.world,
+		UI:     uiInst,
+		Debug:  d.controls.debugLayers,
+		Log:    d.log.With("scope", "game"),
+		Tick:   d.tick,
+		camera: d.cameraForSurface(),
 	}
 }
 
@@ -332,7 +342,7 @@ func (d *Driver) doReset() {
 	if d.recorder != nil {
 		d.recorder.Clear()
 	}
-	ctx := d.makeContext(d.newRenderUI())
+	ctx := d.makeUpdateContext(d.newRenderUI())
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }
