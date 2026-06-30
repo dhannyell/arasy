@@ -86,9 +86,11 @@ type hub struct {
 	camera render.Camera
 
 	// inbox: escrito pelos handlers WS, drenado pela simLoop no início de cada tick
-	inboxMu       sync.Mutex
-	pendingEvents []input.Event
-	pendingCmds   []runtime.ControlCommand
+	inboxMu         sync.Mutex
+	pendingEvents   []input.Event
+	pendingCmds     []runtime.ControlCommand
+	pendingViewport math2d.Rect
+	haveViewport    bool
 
 	// worldMu: Advance exclusivo, Commands compartilhado
 	worldMu sync.RWMutex
@@ -117,6 +119,8 @@ type clientMessage struct {
 	Tick    uint64  `json:"tick"`
 	Seconds float64 `json:"seconds"`
 	Value   float64 `json:"value"`
+	X       float64 `json:"x"`
+	Y       float64 `json:"y"`
 }
 
 // ---------------------------------------------------------------------------
@@ -147,12 +151,17 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time, dt f
 			h.inboxMu.Lock()
 			events := append([]input.Event(nil), h.pendingEvents...)
 			cmds := append([]runtime.ControlCommand(nil), h.pendingCmds...)
+			viewport := h.pendingViewport
+			haveViewport := h.haveViewport
 			h.pendingEvents = h.pendingEvents[:0]
 			h.pendingCmds = h.pendingCmds[:0]
 			h.inboxMu.Unlock()
 
 			// The driver is lock-free; the hub serializes access via worldMu.
 			h.worldMu.Lock()
+			if haveViewport {
+				h.driver.SetViewport(viewport)
+			}
 			for _, cmd := range cmds {
 				h.driver.Control(cmd)
 			}
@@ -214,6 +223,7 @@ func (h *hub) readClientMessages(ctx context.Context, c *client) {
 		switch msg.Type {
 		case "resize":
 			c.applyResize(msg)
+			h.enqueueResize(msg)
 		case "control":
 			h.enqueueControl(msg)
 		case "input":
@@ -243,30 +253,85 @@ func (h *hub) enqueueInput(msg clientMessage) {
 	h.inboxMu.Unlock()
 }
 
+func (h *hub) enqueueResize(msg clientMessage) {
+	if msg.Width <= 0 || msg.Height <= 0 {
+		return
+	}
+	h.inboxMu.Lock()
+	h.pendingViewport = math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: msg.Width, Y: msg.Height})
+	h.haveViewport = true
+	h.inboxMu.Unlock()
+}
+
 // inputEventFromClientMessage translates the browser's JSON envelope into input.Event.
 // Web-specific knowledge: device/kind names come from JS; BrowserKeyboardCode
 // maps browser key strings to input.SourceCode.
 func inputEventFromClientMessage(msg clientMessage) (input.Event, bool) {
-	if msg.Device != "keyboard" {
+	switch msg.Device {
+	case "keyboard":
+		code, ok := BrowserKeyboardCode(msg.Code)
+		if !ok {
+			return input.Event{}, false
+		}
+
+		kind, ok := browserInputKind(msg.Kind)
+		if !ok {
+			return input.Event{}, false
+		}
+
+		event := input.Event{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: code},
+			Kind:   kind,
+			Value:  msg.Value,
+		}
+		return event, event.Valid()
+	case "mouse":
+		return mouseEventFromMessage(msg)
+	default:
 		return input.Event{}, false
 	}
+}
 
-	code, ok := BrowserKeyboardCode(msg.Code)
-	if !ok {
-		return input.Event{}, false
+func mouseEventFromMessage(msg clientMessage) (input.Event, bool) {
+	switch msg.Code {
+	case "Position":
+		return input.Event{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseX},
+			Kind:   input.EventPointerMove,
+			X:      msg.X, Y: msg.Y,
+		}, true
+	case "Leave":
+		return input.Event{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
+			Kind:   input.EventPointerLeave,
+		}, true
+	default:
+		code, ok := browserMouseCode(msg.Code)
+		if !ok {
+			return input.Event{}, false
+		}
+		kind, ok := browserInputKind(msg.Kind)
+		if !ok {
+			return input.Event{}, false
+		}
+		return input.Event{
+			Source: input.Source{Device: input.DeviceMouse, Code: code},
+			Kind:   kind,
+			X:      msg.X, Y: msg.Y,
+		}, true
 	}
+}
 
-	kind, ok := browserInputKind(msg.Kind)
-	if !ok {
-		return input.Event{}, false
+func browserMouseCode(code string) (input.SourceCode, bool) {
+	switch code {
+	case "Left":
+		return input.MouseLeft, true
+	case "Right":
+		return input.MouseRight, true
+	case "Middle":
+		return input.MouseMiddle, true
 	}
-
-	event := input.Event{
-		Source: input.Source{Device: input.DeviceKeyboard, Code: code},
-		Kind:   kind,
-		Value:  msg.Value,
-	}
-	return event, event.Valid()
+	return 0, false
 }
 
 func browserInputKind(kind string) (input.EventKind, bool) {

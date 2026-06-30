@@ -28,6 +28,79 @@ func TestInputEventFromClientMessageMapsKeyboardEvents(t *testing.T) {
 	}
 }
 
+func TestInputEventFromClientMessageMapsMouseMove(t *testing.T) {
+	event, ok := inputEventFromClientMessage(clientMessage{
+		Device: "mouse",
+		Code:   "Position",
+		Kind:   "move",
+		X:      12,
+		Y:      34,
+	})
+	if !ok {
+		t.Fatal("inputEventFromClientMessage ok = false, want true")
+	}
+
+	if event.Source.Device != input.DeviceMouse || event.Source.Code != input.MouseX {
+		t.Fatalf("source = %#v, want mouse MouseX", event.Source)
+	}
+	if event.Kind != input.EventPointerMove {
+		t.Fatalf("kind = %v, want EventPointerMove", event.Kind)
+	}
+	if event.X != 12 || event.Y != 34 {
+		t.Fatalf("position = (%v, %v), want (12, 34)", event.X, event.Y)
+	}
+	if !event.Valid() {
+		t.Fatal("event.Valid() = false, want true")
+	}
+}
+
+func TestInputEventFromClientMessageMapsMouseButton(t *testing.T) {
+	event, ok := inputEventFromClientMessage(clientMessage{
+		Device: "mouse",
+		Code:   "Left",
+		Kind:   "down",
+		X:      56,
+		Y:      78,
+	})
+	if !ok {
+		t.Fatal("inputEventFromClientMessage ok = false, want true")
+	}
+
+	if event.Source.Device != input.DeviceMouse || event.Source.Code != input.MouseLeft {
+		t.Fatalf("source = %#v, want mouse MouseLeft", event.Source)
+	}
+	if event.Kind != input.EventButtonDown {
+		t.Fatalf("kind = %v, want EventButtonDown", event.Kind)
+	}
+	if event.X != 56 || event.Y != 78 {
+		t.Fatalf("position = (%v, %v), want (56, 78)", event.X, event.Y)
+	}
+	if !event.Valid() {
+		t.Fatal("event.Valid() = false, want true")
+	}
+}
+
+func TestInputEventFromClientMessageMapsMouseLeave(t *testing.T) {
+	event, ok := inputEventFromClientMessage(clientMessage{
+		Device: "mouse",
+		Code:   "Leave",
+		Kind:   "leave",
+	})
+	if !ok {
+		t.Fatal("inputEventFromClientMessage ok = false, want true")
+	}
+
+	if event.Source.Device != input.DeviceMouse || event.Source.Code != input.MouseUnknown {
+		t.Fatalf("source = %#v, want mouse MouseUnknown", event.Source)
+	}
+	if event.Kind != input.EventPointerLeave {
+		t.Fatalf("kind = %v, want EventPointerLeave", event.Kind)
+	}
+	if !event.Valid() {
+		t.Fatal("event.Valid() = false, want true")
+	}
+}
+
 func TestInputEventFromClientMessageRejectsUnknownInput(t *testing.T) {
 	if _, ok := inputEventFromClientMessage(clientMessage{
 		Device: "mouse",
