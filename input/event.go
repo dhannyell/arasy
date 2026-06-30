@@ -6,11 +6,17 @@ const (
 	EventButtonDown EventKind = iota
 	EventButtonUp
 	EventAxisChanged
+	EventPointerMove
+	EventPointerLeave
 )
 
 func (k EventKind) Valid() bool {
 	switch k {
-	case EventButtonDown, EventButtonUp, EventAxisChanged:
+	case EventButtonDown,
+		EventButtonUp,
+		EventAxisChanged,
+		EventPointerMove,
+		EventPointerLeave:
 		return true
 	default:
 		return false
@@ -22,6 +28,7 @@ type Event struct {
 	Source Source
 	Kind   EventKind
 	Value  float64
+	X, Y   float64
 }
 
 func (e Event) Valid() bool {

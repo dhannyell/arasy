@@ -5,8 +5,10 @@ import (
 	"math"
 
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/frameforge/ui"
 )
 
 const defaultSimulationHz = 60
@@ -27,6 +29,13 @@ type Driver struct {
 	controls devControls
 	tick     uint64
 	log      *slog.Logger
+
+	// UI
+	viewport math2d.Rect
+	pointer  input.PointerState
+	frame    input.PointerFrame
+	uiState  ui.State
+	uiTheme  ui.Theme
 
 	lastInput        input.State
 	speedAccumulator float64
@@ -60,6 +69,10 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 		buffer:   input.NewBuffer(),
 		controls: devControls{speed: 1},
 	}
+	d.uiTheme = cfg.UITheme
+	if d.uiTheme == (ui.Theme{}) {
+		d.uiTheme = ui.DefaultTheme()
+	}
 	if cfg.HistoryLen > 0 {
 		d.recorder = newRecorder(cfg.HistoryLen)
 	}
@@ -73,7 +86,14 @@ func (d *Driver) ApplyInput(events []input.Event) {
 	for _, event := range events {
 		event.Tick = d.tick
 		d.buffer.Push(event)
-		d.mapper.Apply(event)
+
+		if event.Kind != input.EventPointerMove && event.Kind != input.EventPointerLeave {
+			d.mapper.Apply(event)
+		}
+
+		if event.Source.Device == input.DeviceMouse {
+			d.accumulatePointer(event)
+		}
 	}
 }
 
@@ -124,12 +144,13 @@ func (d *Driver) Advance(dt float64) {
 
 	for range stepsToRun {
 		if d.recorder != nil {
-			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.tick)
+			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.uiState, d.pointer, d.tick)
 		}
 
 		d.lastInput = d.mapper.State()
-		ctx := d.makeContext()
+		ctx := d.makeContext(d.newUpdateUI())
 		d.game.Update(&ctx, dt)
+		d.resetFrame()
 
 		d.tick++
 		d.mapper.EndFrame()
@@ -140,8 +161,11 @@ func (d *Driver) Advance(dt float64) {
 }
 
 func (d *Driver) Commands() []render.Command {
-	ctx := d.makeContext()
-	return d.game.Render(&ctx)
+	uiInst := d.newRenderUI()
+	ctx := d.makeContext(uiInst)
+	cmds := d.game.Render(&ctx)
+	cmds = append(cmds, uiInst.Commands()...)
+	return cmds
 }
 
 func (d *Driver) State() DriveState {
@@ -173,35 +197,125 @@ func (d *Driver) HistoryLen() int {
 func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 
 func (d *Driver) Frame() Frame {
-	ctx := d.makeContext()
+	uiInst := d.newRenderUI()
+	ctx := d.makeContext(uiInst)
 	cmds := d.game.Render(&ctx)
+	cmds = append(cmds, uiInst.Commands()...)
 	return Frame{
 		Camera:   ctx.Camera,
 		Commands: cmds,
 	}
 }
 
-func (d *Driver) makeContext() Context {
+func (d *Driver) cameraForSurface() render.Camera {
+	cam := d.cfg.Camera
+	if d.viewport.Width() > 0 && d.viewport.Height() > 0 {
+		cam.Viewport = d.viewport
+	}
+	return cam
+}
+
+// newRenderUI builds the draw face of the UI, used in Render/Init.
+func (d *Driver) newRenderUI() *ui.UI {
+	cam := d.cameraForSurface()
+	return ui.New(&d.uiState, d.pointer.Pos(), d.pointer.Inside(), cam, d.uiTheme)
+}
+
+// newUpdateUI builds the interaction face of the UI, used in Update.
+func (d *Driver) newUpdateUI() *ui.UI {
+	cam := d.cameraForSurface()
+	return ui.NewUpdate(&d.uiState, d.frame, cam, d.uiTheme)
+}
+
+// SetViewport updates the surface size used for camera fitting and UI layout.
+func (d *Driver) SetViewport(viewport math2d.Rect) {
+	d.viewport = viewport
+}
+
+// resetFrame clears the per-tick PointerFrame after Update consumes it.
+func (d *Driver) resetFrame() {
+	d.frame = input.PointerFrame{
+		Pos:     d.pointer.Pos(),
+		Inside:  d.pointer.Inside(),
+		Buttons: d.pointer.Buttons(),
+	}
+}
+func (d *Driver) makeContext(uiInst *ui.UI) Context {
 	return Context{
 		World:      d.world,
 		Input:      d.lastInput,
+		Pointer:    d.frame,
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
 		Debug:      d.controls.debugLayers,
-		Camera:     d.cfg.Camera,
+		Camera:     d.cameraForSurface(),
+		UI:         uiInst,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
 	}
 }
 
-func (d *Driver) context() Context {
-	return Context{
-		World: d.world,
-		Log:   d.log.With("scope", "game"),
-		Tick:  d.tick,
-		StepConfig: scene.StepConfig{
-			Bounds:  d.cfg.Bounds,
-			Physics: d.cfg.Physics,
-		},
+// accumulatePointer folds a mouse event into the current tick's PointerFrame
+// (coalesce) and updates the Driver's persistent pointer state.
+func (d *Driver) accumulatePointer(e input.Event) {
+	pos := math2d.Vec2{X: e.X, Y: e.Y}
+
+	switch e.Kind {
+	case input.EventPointerMove:
+		d.frame.Pos = pos
+		d.frame.Inside = true
+		d.pointer.SetPos(pos)
+		d.pointer.SetInside(true)
+	case input.EventButtonDown:
+		if btn, ok := mouseButton(e.Source.Code); ok {
+			d.frame.Pos = pos
+			d.frame.Inside = true
+			d.frame.Buttons[btn] = true
+			d.frame.Events = append(d.frame.Events, input.PointerEvent{
+				Kind: e.Kind, Button: btn, Pos: pos,
+			})
+			d.pointer.SetPos(pos)
+			d.pointer.SetButton(btn, true)
+			d.pointer.SetInside(true)
+		}
+	case input.EventButtonUp:
+		if btn, ok := mouseButton(e.Source.Code); ok {
+			d.frame.Pos = pos
+			d.frame.Inside = true
+			d.frame.Buttons[btn] = false
+			d.frame.Events = append(d.frame.Events, input.PointerEvent{
+				Kind: e.Kind, Button: btn, Pos: pos,
+			})
+			d.pointer.SetPos(pos)
+			d.pointer.SetButton(btn, false)
+			d.pointer.SetInside(true)
+		}
+	case input.EventPointerLeave:
+		d.frame.Inside = false
+		for btn, down := range d.pointer.Buttons() {
+			if down {
+				d.frame.Buttons[btn] = false
+				d.frame.Events = append(d.frame.Events, input.PointerEvent{
+					Kind: input.EventButtonUp, Button: input.PointerButton(btn), Pos: d.pointer.Pos(),
+				})
+				d.pointer.SetButton(input.PointerButton(btn), false)
+			}
+		}
+		d.pointer.SetInside(false)
+	default:
+		d.frame.Inside = false
+	}
+}
+
+func mouseButton(code input.SourceCode) (input.PointerButton, bool) {
+	switch code {
+	case input.MouseLeft:
+		return input.PointerPrimary, true
+	case input.MouseRight:
+		return input.PointerSecondary, true
+	case input.MouseMiddle:
+		return input.PointerMiddle, true
+	default:
+		return input.PointerUnknown, false
 	}
 }
 
@@ -212,11 +326,13 @@ func (d *Driver) doReset() {
 	d.tick = 0
 	d.lastInput = input.NewState()
 	d.speedAccumulator = 0
+	d.uiState = ui.State{}
+	d.resetFrame()
 	d.mapper.Reset()
 	if d.recorder != nil {
 		d.recorder.Clear()
 	}
-	ctx := d.makeContext()
+	ctx := d.makeContext(d.newRenderUI())
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }
@@ -230,10 +346,7 @@ func (d *Driver) doBack() {
 	if !ok {
 		return
 	}
-	d.world = snap.world
-	d.mapper = snap.mapper
-	d.lastInput = snap.lastInput
-	d.tick = snap.tick
+	d.restoreSnapshot(snap)
 
 	d.log.Debug("back", "tick", d.tick, "checksum", d.world.Checksum())
 }
@@ -272,6 +385,9 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.world = snap.world
 	d.mapper = snap.mapper
 	d.lastInput = snap.lastInput
+	d.uiState = snap.uiState
+	d.pointer = snap.pointer
+	d.resetFrame()
 	d.tick = snap.tick
 }
 

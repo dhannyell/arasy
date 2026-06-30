@@ -14,5 +14,5 @@ const (
 )
 
 func IsMouseCode(code SourceCode) bool {
-	return code >= MouseLeft && code <= MouseWheelY
+	return code >= MouseUnknown && code <= MouseWheelY
 }
