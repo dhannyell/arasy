@@ -95,6 +95,10 @@ func (f *Football) Setup() runtime.Config {
 		SimulationHz: 60, FPS: 60,
 		InputBindings: movementBindings(),
 		HistoryLen:    600,
+		DebugOverlay: scene.DebugOverlayConfig{
+			Bounds:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 115.5, Y: 74.8}),
+			CellSize: physicsCellSize,
+		},
 	}
 }
 
@@ -206,7 +210,6 @@ func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 	ctx.UI.Label(fmt.Sprintf("%d — %d", f.State.ScoreLeft, f.State.ScoreRight), score.Center())
 	ctx.UI.Button("btn_reset", "Reset", reset)
 
-	AppendDebugCommands(&cmds, ctx.World, ctx.Debug, DefaultDebugStyle())
 	return cmds
 }
 

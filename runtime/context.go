@@ -37,7 +37,6 @@ func (ctx *UpdateContext) Camera() render.Camera { return ctx.camera }
 type RenderContext struct {
 	World *scene.World
 	UI    ui.Drawer
-	Debug scene.DebugLayers
 	Time  float64
 	Dt    float64
 	Log   *slog.Logger

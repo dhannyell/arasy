@@ -163,7 +163,9 @@ func (d *Driver) Advance(dt float64) {
 func (d *Driver) Commands() []render.Command {
 	uiInst := d.newRenderUI()
 	ctx := d.makeRenderContext(uiInst)
-	cmds := d.game.Render(&ctx)
+	gameCmds := d.game.Render(&ctx)
+	cmds := append([]render.Command(nil), gameCmds...)
+	cmds = append(cmds, d.debugCommands(gameCmds, ctx.Camera())...)
 	cmds = append(cmds, uiInst.Commands()...)
 	return cmds
 }
@@ -199,12 +201,30 @@ func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 func (d *Driver) Frame() Frame {
 	uiInst := d.newRenderUI()
 	ctx := d.makeRenderContext(uiInst)
-	cmds := d.game.Render(&ctx)
+	gameCmds := d.game.Render(&ctx)
+	cmds := append([]render.Command(nil), gameCmds...)
+	cmds = append(cmds, d.debugCommands(gameCmds, ctx.Camera())...)
 	cmds = append(cmds, uiInst.Commands()...)
 	return Frame{
 		Camera:   ctx.Camera(),
 		Commands: cmds,
 	}
+}
+
+func (d *Driver) debugCommands(gameCmds []render.Command, cam render.Camera) []render.Command {
+	if d.controls.debugLayers == 0 {
+		return nil
+	}
+
+	return debugRenderer{driver: d}.Commands(gameCmds, cam)
+}
+
+func (d *Driver) debugOverlayBounds() math2d.Rect {
+	if d.cfg.Bounds.Width() > 0 && d.cfg.Bounds.Height() > 0 {
+		return d.cfg.Bounds
+	}
+
+	return d.cfg.Camera.World
 }
 
 func (d *Driver) cameraForSurface() render.Camera {
@@ -265,7 +285,6 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	return RenderContext{
 		World:  d.world,
 		UI:     uiInst,
-		Debug:  d.controls.debugLayers,
 		Log:    d.log.With("scope", "game"),
 		Tick:   d.tick,
 		camera: d.cameraForSurface(),
