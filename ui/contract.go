@@ -7,6 +7,7 @@ import "github.com/dhannyell/frameforge/math2d"
 // (constructed via NewUpdate).
 type Interactor interface {
 	Clicked(id string, rect math2d.Rect) bool
+	ClickedIn(id string, rect math2d.Rect, space Space) bool
 }
 
 // Drawer is the rendering interface: pure functions of World + cursor position that
@@ -16,4 +17,9 @@ type Drawer interface {
 	Panel(rect math2d.Rect)
 	Label(text string, pos math2d.Vec2)
 	ProgressBar(rect math2d.Rect, value float64)
+
+	ButtonIn(id, label string, rect math2d.Rect, space Space)
+	PanelIn(rect math2d.Rect, space Space)
+	LabelIn(text string, pos math2d.Vec2, space Space)
+	ProgressBarIn(rect math2d.Rect, value float64, space Space)
 }
