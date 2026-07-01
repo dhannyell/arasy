@@ -9,6 +9,7 @@ const (
 	ActionConfirm
 	ActionCancel
 	ActionPause
+	ActionJump
 )
 
 func (a Action) Valid() bool {
