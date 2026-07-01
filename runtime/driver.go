@@ -218,13 +218,20 @@ func (d *Driver) cameraForSurface() render.Camera {
 // newRenderUI builds the draw face of the UI, used in Render/Init.
 func (d *Driver) newRenderUI() *ui.UI {
 	cam := d.cameraForSurface()
-	return ui.New(&d.uiState, d.pointer.Pos(), d.pointer.Inside(), cam, d.uiTheme)
+	return ui.New(
+		&d.uiState,
+		d.pointer.Pos(),
+		d.pointer.Inside(),
+		cam,
+		d.uiTheme,
+		d.cfg.Camera.Viewport,
+	)
 }
 
 // newUpdateUI builds the interaction face of the UI, used in Update.
 func (d *Driver) newUpdateUI() *ui.UI {
 	cam := d.cameraForSurface()
-	return ui.NewUpdate(&d.uiState, d.frame, cam, d.uiTheme)
+	return ui.NewUpdate(&d.uiState, d.frame, cam, d.uiTheme, d.cfg.Camera.Viewport)
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.
@@ -250,6 +257,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Tick:       d.tick,
 		UI:         uiInst,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
+		camera:     d.cameraForSurface(),
 	}
 }
 
