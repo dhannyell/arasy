@@ -5,9 +5,11 @@ import (
 	"github.com/dhannyell/frameforge/render"
 )
 
-func (u *UI) Button(id, label string, rect math2d.Rect) {
+func (u *UI) Button(id, label string, rect math2d.Rect) { u.ButtonIn(id, label, rect, SpaceRef) }
+
+func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 	wid := HashID(id)
-	hot := rect.Contains(u.cursorPos) && u.inside
+	hot := rect.Contains(u.cursorIn(space)) && u.inside
 
 	style := u.theme.Button.Normal
 	switch {
@@ -21,49 +23,55 @@ func (u *UI) Button(id, label string, rect math2d.Rect) {
 	u.commands = append(u.commands,
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
-			Rect:        u.screenRectToWorld(rect),
+			Rect:        u.rectToWorld(rect, space),
 			Fill:        style.Background,
 			Stroke:      style.Border,
-			StrokeWidth: u.screenSizeToWorld(style.BorderWidth),
+			StrokeWidth: u.sizeToWorld(style.BorderWidth, space),
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
-			Position:    u.screenToWorld(rect.Center()),
+			Position:    u.toWorld(rect.Center(), space),
 			Text:        label,
 			Color:       style.TextColor,
-			Size:        u.screenSizeToWorld(style.TextSize),
+			Size:        u.sizeToWorld(style.TextSize, space),
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		})
 }
 
-func (u *UI) Panel(rect math2d.Rect) {
+func (u *UI) Panel(rect math2d.Rect) { u.PanelIn(rect, SpaceRef) }
+
+func (u *UI) PanelIn(rect math2d.Rect, space Space) {
 	layer := u.nextLayer()
 
 	u.commands = append(u.commands, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: layer},
-		Rect:        u.screenRectToWorld(rect),
+		Rect:        u.rectToWorld(rect, space),
 		Fill:        u.theme.Panel.Background,
 		Stroke:      u.theme.Panel.Border,
-		StrokeWidth: u.screenSizeToWorld(u.theme.Panel.BorderWidth),
+		StrokeWidth: u.sizeToWorld(u.theme.Panel.BorderWidth, space),
 	})
 }
 
-func (u *UI) Label(text string, pos math2d.Vec2) {
+func (u *UI) Label(text string, pos math2d.Vec2) { u.LabelIn(text, pos, SpaceRef) }
+
+func (u *UI) LabelIn(text string, pos math2d.Vec2, space Space) {
 	layer := u.nextLayer()
 
 	u.commands = append(u.commands, render.DrawText{
 		BaseCommand: render.BaseCommand{LayerValue: layer},
-		Position:    u.screenToWorld(pos),
+		Position:    u.toWorld(pos, space),
 		Text:        text,
 		Color:       u.theme.Label.Color,
-		Size:        u.screenSizeToWorld(u.theme.Label.Size),
+		Size:        u.sizeToWorld(u.theme.Label.Size, space),
 		Align:       render.AlignCenter,
 		Baseline:    render.BaselineMiddle,
 	})
 }
 
-func (u *UI) ProgressBar(rect math2d.Rect, value float64) {
+func (u *UI) ProgressBar(rect math2d.Rect, value float64) { u.ProgressBarIn(rect, value, SpaceRef) }
+
+func (u *UI) ProgressBarIn(rect math2d.Rect, value float64, space Space) {
 	if value < 0 {
 		value = 0
 	}
@@ -80,14 +88,14 @@ func (u *UI) ProgressBar(rect math2d.Rect, value float64) {
 	u.commands = append(u.commands,
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
-			Rect:        u.screenRectToWorld(rect),
+			Rect:        u.rectToWorld(rect, space),
 			Fill:        u.theme.Progress.Background,
 			Stroke:      u.theme.Progress.Border,
-			StrokeWidth: u.screenSizeToWorld(u.theme.Progress.BorderWidth),
+			StrokeWidth: u.sizeToWorld(u.theme.Progress.BorderWidth, space),
 		},
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
-			Rect:        u.screenRectToWorld(fillRect),
+			Rect:        u.rectToWorld(fillRect, space),
 			Fill:        u.theme.Progress.Fill,
 		},
 	)

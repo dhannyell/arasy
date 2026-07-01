@@ -1,5 +1,7 @@
 package input
 
+import "maps"
+
 type State struct {
 	values       map[Action]float64
 	pressed      map[Action]bool
@@ -39,21 +41,13 @@ func (s *State) Clone() State {
 func (s *State) clone() State {
 	clone := NewState()
 
-	for action, value := range s.values {
-		clone.values[action] = value
-	}
+	maps.Copy(clone.values, s.values)
 
-	for action, pressed := range s.pressed {
-		clone.pressed[action] = pressed
-	}
+	maps.Copy(clone.pressed, s.pressed)
 
-	for action, justPressed := range s.justPressed {
-		clone.justPressed[action] = justPressed
-	}
+	maps.Copy(clone.justPressed, s.justPressed)
 
-	for action, justReleased := range s.justReleased {
-		clone.justReleased[action] = justReleased
-	}
+	maps.Copy(clone.justReleased, s.justReleased)
 
 	return clone
 }
