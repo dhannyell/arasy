@@ -11,9 +11,9 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/internal/render/adapter/web"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/render/adapter/web"
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/dhannyell/frameforge/scene"
 )
