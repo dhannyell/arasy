@@ -29,6 +29,10 @@ func (b *Breakout) Setup() runtime.Config {
 		FPS:           60,
 		InputBindings: breakoutBindings(),
 		HistoryLen:    1000,
+		DebugOverlay: scene.DebugOverlayConfig{
+			Bounds:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
+			CellSize: physicsCellSize,
+		},
 	}
 }
 
@@ -172,15 +176,8 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
 
 	cmds = append(cmds, ctx.World.RenderCommands()...)
-	AppendDebugCommands(&cmds, ctx.World, ctx.Debug, DefaultDebugStyle())
 
 	return cmds
-}
-
-func playfieldRect(cam render.Camera) math2d.Rect {
-	return math2d.NewRectFromCorners(
-		cam.WorldToScreen(math2d.Vec2{}),
-		cam.WorldToScreen(math2d.Vec2{X: worldWidth, Y: worldHeight}))
 }
 
 func hudLayout() (score, reset math2d.Rect) {

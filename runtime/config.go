@@ -21,4 +21,6 @@ type Config struct {
 	HistoryLen int
 
 	UITheme ui.Theme
+
+	DebugOverlay scene.DebugOverlayConfig
 }
