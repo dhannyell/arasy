@@ -56,9 +56,9 @@ Um jogo implementa `runtime.Game`:
 ```go
 type Game interface {
     Setup() Config
-    Init(ctx *Context)
-    Update(ctx *Context, dt float64)
-    Render(ctx *Context) []render.Command
+    Init(ctx *UpdateContext)
+    Update(ctx *UpdateContext, dt float64)
+    Render(ctx *RenderContext) []render.Command
 }
 ```
 
@@ -118,7 +118,7 @@ Essa decisao e importante: a ordem da simulacao fica explicita no jogo.
 `Render` retorna comandos de desenho:
 
 ```go
-func (g *Game) Render(ctx *runtime.Context) []render.Command {
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
     return ctx.World.RenderCommands()
 }
 ```
@@ -132,21 +132,34 @@ O `runtime` nao sabe se eles vao virar:
 - draw calls nativas;
 - comandos de GPU no futuro.
 
-## Context
+## Contextos
 
-`Context` e o pacote de informacoes entregue ao jogo:
+O `runtime` separa o contexto de update do contexto de render.
 
 ```go
-type Context struct {
+type UpdateContext struct {
     World      *scene.World
     Input      input.State
+    Pointer    input.PointerFrame
+    UI         ui.Interactor
     Log        *slog.Logger
     Tick       uint64
-    Debug      scene.DebugLayers
-    Camera     render.Camera
     StepConfig scene.StepConfig
 }
+
+type RenderContext struct {
+    World *scene.World
+    UI    ui.Drawer
+    Debug scene.DebugLayers
+    Time  float64
+    Dt    float64
+    Log   *slog.Logger
+    Tick  uint64
+}
 ```
+
+Os dois contextos tambem expoem `Camera()`. O contexto de render permite ajustar
+a camera do frame com `SetCamera(cam)`.
 
 ### World
 
@@ -193,9 +206,15 @@ if ctx.Debug.Has(scene.DebugColliders) {
 
 ### Camera
 
-`Camera` comeca com a camera base do `Config`.
+`Camera()` comeca com a camera base do `Config`.
 
-O jogo pode ajustar a camera em `Render`, por exemplo para shake, zoom ou pan visual.
+O jogo pode ajustar a camera em `Render`, por exemplo para shake, zoom ou pan visual:
+
+```go
+cam := ctx.Camera()
+cam.World = shiftedWorld
+ctx.SetCamera(cam)
+```
 
 O `Driver.Frame()` devolve a camera resultante junto dos comandos.
 
@@ -375,7 +394,7 @@ Essas coisas pertencem a:
 runtime.Game:
   contrato portatil do jogo
 
-runtime.Context:
+runtime.UpdateContext / runtime.RenderContext:
   dados entregues ao jogo por tick/frame
 
 runtime.Driver:

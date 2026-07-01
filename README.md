@@ -75,6 +75,56 @@ docs/
 
 - Go 1.26 or newer, based on the current `go.mod`.
 
+## Quick Start
+
+A game implements `runtime.Game`: configure once, populate a `scene.World`,
+advance the simulation in `Update`, and return backend-agnostic render commands
+from `Render`.
+
+```go
+type Game struct {
+	player scene.EntityID
+}
+
+func (g *Game) Setup() runtime.Config {
+	return runtime.Config{
+		Camera: render.Camera{
+			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 75}),
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 600}),
+			Aspect:   render.AspectExpand,
+		},
+		Clear:        render.RGBA(0.05, 0.08, 0.10, 1),
+		Bounds:       math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 75}),
+		SimulationHz: 60,
+		FPS:          60,
+	}
+}
+
+func (g *Game) Init(ctx *runtime.UpdateContext) {
+	g.player = ctx.World.Spawn()
+	ctx.World.SetTransform(g.player, scene.Transform{
+		Position: math2d.Vec2{X: 50, Y: 37.5},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	ctx.World.SetCircleSprite(g.player, scene.CircleSprite{
+		Radius: 3,
+		Color:  render.RGBA(0.9, 0.2, 0.15, 1),
+		Layer:  10,
+	})
+}
+
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+	ctx.World.Step(dt, ctx.StepConfig)
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+	return ctx.World.RenderCommands()
+}
+```
+
+Run it through a platform package, such as `platform/raster` for offline PNG/frame
+output or `platform/web/canvas` for an interactive browser canvas.
+
 ## Running Tests
 
 ```powershell
@@ -149,12 +199,10 @@ go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-coll
 
 ## Documentation
 
-- [Runtime guide](docs/runtime.md)
-- [UI guide](docs/ui.md)
-- [Math visual guide](docs/math2d-visual-guide.md)
-- [Camera, world, and viewport](docs/camera-world-viewport.md)
-- [Architectural review (2026-06-26)](docs/revisao-arquitetural-2026-06-26.md)
-- [Internal development notes](DEVELOPMENT.md)
+- Runtime guide: [Portuguese](docs/runtime.md) | [English](docs/runtime-en.md)
+- UI guide: [Portuguese](docs/ui.md) | [English](docs/ui-en.md)
+- Math visual guide: [Portuguese](docs/math2d-visual-guide.md) | [English](docs/math2d-visual-guide-en.md)
+- Camera, world, and viewport: [Portuguese](docs/camera-world-viewport.md) | [English](docs/camera-world-viewport-en.md)
 
 ## License
 
