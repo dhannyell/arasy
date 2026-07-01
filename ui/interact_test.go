@@ -16,13 +16,21 @@ func pointerFrame(events ...input.PointerEvent) input.PointerFrame {
 	return input.PointerFrame{Inside: true, Events: events}
 }
 
+// testInteractCamera has World == Viewport, so refCamera's AspectFit resolves
+// to an identity mapping — physical pointer positions pass through unchanged,
+// which is what these tests assert against.
+func testInteractCamera() render.Camera {
+	return render.Camera{Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 400, Y: 400})}
+}
+
 func TestClickedTrueWhenDownAndUpInsideSameTick(t *testing.T) {
 	state := &State{}
 	rect := btnRect()
+	cam := testInteractCamera()
 	u := NewUpdate(state, pointerFrame(
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
-	), render.Camera{}, DefaultTheme())
+	), cam, DefaultTheme(), cam.Viewport)
 
 	if !u.Clicked("btn", rect) {
 		t.Fatal("expected click when down+up inside the rect in the same tick")
@@ -35,10 +43,11 @@ func TestClickedTrueWhenDownAndUpInsideSameTick(t *testing.T) {
 func TestClickedFalseWhenUpOutside(t *testing.T) {
 	state := &State{}
 	rect := btnRect()
+	cam := testInteractCamera()
 	u := NewUpdate(state, pointerFrame(
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 10, Y: 10}},
-	), render.Camera{}, DefaultTheme())
+	), cam, DefaultTheme(), cam.Viewport)
 
 	if u.Clicked("btn", rect) {
 		t.Fatal("did not expect click when up is outside the rect")
@@ -49,7 +58,8 @@ func TestClickedFalseWhenUpOutside(t *testing.T) {
 }
 
 func TestClickedFalseWithNoEvents(t *testing.T) {
-	u := NewUpdate(&State{}, pointerFrame(), render.Camera{}, DefaultTheme())
+	cam := testInteractCamera()
+	u := NewUpdate(&State{}, pointerFrame(), cam, DefaultTheme(), cam.Viewport)
 	if u.Clicked("btn", btnRect()) {
 		t.Fatal("did not expect click with no pointer events")
 	}
@@ -58,10 +68,11 @@ func TestClickedFalseWithNoEvents(t *testing.T) {
 func TestClickedIgnoresNonPrimaryButton(t *testing.T) {
 	state := &State{}
 	rect := btnRect()
+	cam := testInteractCamera()
 	u := NewUpdate(state, pointerFrame(
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerSecondary, Pos: math2d.Vec2{X: 150, Y: 120}},
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerSecondary, Pos: math2d.Vec2{X: 150, Y: 120}},
-	), render.Camera{}, DefaultTheme())
+	), cam, DefaultTheme(), cam.Viewport)
 
 	if u.Clicked("btn", rect) {
 		t.Fatal("did not expect click from a non-primary button")

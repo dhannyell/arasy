@@ -140,6 +140,8 @@ type MatchState struct {
 	ScoreRight   int
 	HasGoal      bool
 	LastGoalTick uint64
+
+	Started bool
 }
 
 func BuildDemoWorld() *scene.World {

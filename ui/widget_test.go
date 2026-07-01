@@ -16,7 +16,8 @@ func testCamera() render.Camera {
 }
 
 func TestProgressBarClampsFillWidth(t *testing.T) {
-	u := New(&State{}, math2d.Vec2{}, true, testCamera(), DefaultTheme())
+	cam := testCamera()
+	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport)
 	u.ProgressBar(math2d.NewRect(math2d.Vec2{X: 10, Y: 20}, math2d.Vec2{X: 40, Y: 8}), 1.5)
 
 	commands := u.Commands()

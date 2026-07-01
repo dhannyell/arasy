@@ -40,6 +40,13 @@ const (
 	KeyArrowRight
 )
 
+func Keyboard(code SourceCode) Source {
+	return Source{
+		Device: DeviceKeyboard,
+		Code:   code,
+	}
+}
+
 func IsKeyboardCode(code SourceCode) bool {
 	return code >= KeyA && code <= KeyArrowRight
 }
