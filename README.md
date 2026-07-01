@@ -83,7 +83,13 @@ from `Render`.
 
 ```go
 type Game struct {
+	runtime.StateSlot[GlobalState]
+
 	player scene.EntityID
+}
+
+type GlobalState struct {
+	Score int
 }
 
 func (g *Game) Setup() runtime.Config {
@@ -122,8 +128,36 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 }
 ```
 
-Run it through a platform package, such as `platform/raster` for offline PNG/frame
-output or `platform/web/canvas` for an interactive browser canvas.
+Embedding `runtime.StateSlot[T]` is optional. Use it when the game has global
+state that is not tied to a single entity, such as score, lives, match phase, or
+the last tick that triggered a visual effect. The runtime captures and restores
+that state together with rewind history:
+
+```go
+g.State.Score++
+```
+
+Run the game through a platform package, such as `platform/raster` for offline
+PNG/frame output or `platform/web/canvas` for an interactive browser canvas.
+
+```go
+package main
+
+import (
+	"log/slog"
+	"os"
+
+	"github.com/dhannyell/frameforge/platform/web/canvas"
+)
+
+func main() {
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	if err := canvas.Run(&Game{}, canvas.Options{Addr: ":8080", Log: log}); err != nil {
+		log.Error("server failed", "err", err)
+		os.Exit(1)
+	}
+}
+```
 
 ## Running Tests
 
