@@ -42,6 +42,7 @@ const inputCodes = new Set([
     "ArrowDown",
     "ArrowLeft",
     "ArrowRight",
+    "Space"
 ]);
 const pressedCodes = new Set();
 
