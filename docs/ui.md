@@ -37,35 +37,76 @@ Isso significa:
 
 ## Screen-space
 
-Widgets recebem retangulos e posicoes em pixels de viewport:
+Widgets recebem retangulos e posicoes em uma area de referencia da UI:
 
 ```go
 reset := math2d.NewRect(
-    math2d.Vec2{X: ctx.Camera.Viewport.Width() - 100, Y: 8},
+    math2d.Vec2{X: ctx.Camera().Viewport.Width() - 100, Y: 8},
     math2d.Vec2{X: 92, Y: 28},
 )
 ```
 
 O segundo argumento de `math2d.NewRect` e tamanho, nao canto maximo.
 
-Internamente, o pacote converte esses valores para world-space usando a camera
-do contexto:
+Por padrao, essa area de referencia e `Config.Camera.Viewport`. Isso permite
+desenhar a UI em uma resolucao de design fixa e deixar o `runtime` escalar e
+centralizar os widgets quando o viewport real muda.
+
+Internamente, o pacote converte os valores da UI para world-space usando a
+camera do contexto:
 
 ```text
-screen rect -> camera.ScreenToWorld -> render.DrawRect
-screen text size -> camera.ScreenScalarToWorld -> render.DrawText
+UI rect -> responsive UI camera -> camera.ScreenToWorld -> render.DrawRect
+UI text size -> responsive UI camera -> camera.ScreenScalarToWorld -> render.DrawText
 ```
 
 Essa escolha permite que o pipeline de render atual continue unico: tanto jogo
 quanto UI produzem comandos backend-agnostic.
+
+## UI responsiva com `ui.Space`
+
+O arquivo `ui/space.go` define o parametro `ui.Space`, usado pelas variantes
+`*In(...)` dos widgets e por `ClickedIn(...)`.
+
+```go
+ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
+if ctx.UI.ClickedIn("btn_reset", reset, ui.SpacePlayfield) {
+    g.reset()
+}
+```
+
+Espacos disponiveis:
+
+- `ui.SpaceRef`: usa a resolucao de referencia da UI (`Config.Camera.Viewport`)
+  e aplica `AspectFit` dentro do viewport fisico. E o padrao usado por
+  `Button`, `Panel`, `Label`, `ProgressBar` e `Clicked`. Use para menus, HUDs
+  genericos e paineis que devem escalar de forma responsiva.
+- `ui.SpacePlayfield`: ancora a UI dentro do retangulo onde o `World` realmente
+  foi desenhado depois da estrategia de aspecto da camera. Use para elementos
+  que nao podem sair das bordas do jogo, como score bar, minimapa ou indicadores
+  presos ao campo.
+- `ui.SpaceScreen`: usa pixels fisicos do viewport, sem escala e sem letterbox.
+  Use para overlays pixel-exatos, como debug HUDs ou icones presos ao canto da
+  janela.
+
+Os metodos sem sufixo sao atalhos para `SpaceRef`:
+
+```go
+ctx.UI.Button("btn_play", "Play", play)
+// equivalente a:
+ctx.UI.ButtonIn("btn_play", "Play", play, ui.SpaceRef)
+```
+
+Para a interacao funcionar corretamente, use o mesmo `Space` no `Update` e no
+`Render` para o mesmo widget.
 
 ## Update vs Render
 
 Interacao que muda simulacao deve acontecer em `Update`.
 
 ```go
-func (g *Game) Update(ctx *runtime.Context, dt float64) {
-    _, reset := hudLayout(ctx.Camera.Viewport)
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    _, reset := hudLayout(ctx.Camera().Viewport)
     if ctx.UI.Clicked("btn_reset", reset) {
         g.resetMatch(ctx.World)
     }
@@ -75,8 +116,8 @@ func (g *Game) Update(ctx *runtime.Context, dt float64) {
 Desenho deve acontecer em `Render`.
 
 ```go
-func (g *Game) Render(ctx *runtime.Context) []render.Command {
-    score, reset := hudLayout(ctx.Camera.Viewport)
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    score, reset := hudLayout(ctx.Camera().Viewport)
 
     ctx.UI.Panel(score)
     ctx.UI.Label("0 - 0", score.Center())
@@ -121,9 +162,15 @@ snapshot do recorder.
 Widgets disponiveis:
 
 - `Button(id, label, rect)`
+- `ButtonIn(id, label, rect, space)`
 - `Label(text, pos)`
+- `LabelIn(text, pos, space)`
 - `Panel(rect)`
+- `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
+- `ProgressBarIn(rect, value, space)`
+- `Clicked(id, rect)`
+- `ClickedIn(id, rect, space)`
 
 `Button`, `Panel` e `ProgressBar` desenham retangulos. `Label` e o texto de
 `Button` usam `render.DrawText` com alinhamento central e baseline middle.
@@ -205,15 +252,15 @@ func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
     return
 }
 
-func (g *Game) Update(ctx *runtime.Context, dt float64) {
-    _, reset := hudLayout(ctx.Camera.Viewport)
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    _, reset := hudLayout(ctx.Camera().Viewport)
     if ctx.UI.Clicked("btn_reset", reset) {
         g.reset()
     }
 }
 
-func (g *Game) Render(ctx *runtime.Context) []render.Command {
-    score, reset := hudLayout(ctx.Camera.Viewport)
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    score, reset := hudLayout(ctx.Camera().Viewport)
 
     ctx.UI.Panel(score)
     ctx.UI.Label("0 - 0", score.Center())
