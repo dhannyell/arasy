@@ -66,62 +66,6 @@ var (
 	}
 )
 
-type DebugStyle struct {
-	ColliderColor       render.Color
-	ColliderStrokeWidth float64
-	ColliderLayer       int
-
-	ContactColor        render.Color
-	ContactPointRadius  float64
-	ContactLineWidth    float64
-	ContactNormalLength float64
-	ContactLayer        int
-
-	GridColor       render.Color
-	GridDashLength  float64
-	GridStrokeWidth float64
-	GridLayer       int
-
-	ActiveGridFill        render.Color
-	ActiveGridStroke      render.Color
-	ActiveGridStrokeWidth float64
-	ActiveGridLayer       int
-
-	CandidateGridFill        render.Color
-	CandidateGridStroke      render.Color
-	CandidateGridStrokeWidth float64
-	CandidateGridLayer       int
-}
-
-func DefaultDebugStyle() DebugStyle {
-	return DebugStyle{
-		ColliderColor:       render.RGBA(1, 1, 0, 1),
-		ColliderStrokeWidth: 0.08,
-		ColliderLayer:       100,
-
-		ContactColor:        render.RGBA(1, 0, 1, 1),
-		ContactPointRadius:  0.18,
-		ContactLineWidth:    0.12,
-		ContactNormalLength: 1.25,
-		ContactLayer:        101,
-
-		GridColor:       render.RGBA(0.5, 0.5, 0.5, 0.4),
-		GridDashLength:  1.5,
-		GridStrokeWidth: 0.2,
-		GridLayer:       200,
-
-		ActiveGridFill:        render.RGBA(1, 0.55, 0.05, 0.22),
-		ActiveGridStroke:      render.RGBA(1, 0.75, 0.05, 0.9),
-		ActiveGridStrokeWidth: 0.12,
-		ActiveGridLayer:       201,
-
-		CandidateGridFill:        render.RGBA(1, 0.95, 0.05, 0.35),
-		CandidateGridStroke:      render.RGBA(1, 1, 0.15, 1),
-		CandidateGridStrokeWidth: 0.18,
-		CandidateGridLayer:       202,
-	}
-}
-
 type side int
 
 const (
@@ -228,63 +172,6 @@ func BuildPlayableDemoWorldIn(world *scene.World) DemoWorld {
 		ControlledPlayer: controlledPlayer,
 		Ball:             ball,
 	}
-}
-
-func AppendDebugCommands(commands *[]render.Command, world *scene.World, layers scene.DebugLayers, style DebugStyle) {
-	if layers.Has(scene.DebugGrid) {
-		*commands = append(*commands, scene.DebugGridAreaCommands(
-			math2d.NewRect(fieldOrigin, fieldSize),
-			physicsCellSize,
-			style.GridColor,
-			style.GridStrokeWidth,
-			style.GridDashLength,
-			style.GridLayer,
-		)...)
-	}
-
-	if layers.Has(scene.DebugActiveGrid) {
-		*commands = append(*commands, world.DebugActiveGridCommands(
-			style.ActiveGridFill,
-			style.ActiveGridStroke,
-			style.ActiveGridStrokeWidth,
-			style.ActiveGridLayer,
-		)...)
-	}
-
-	if layers.Has(scene.DebugCandidateGrid) {
-		*commands = append(*commands, world.DebugCandidateGridCommands(
-			style.CandidateGridFill,
-			style.CandidateGridStroke,
-			style.CandidateGridStrokeWidth,
-			style.CandidateGridLayer,
-		)...)
-	}
-
-	if layers.Has(scene.DebugColliders) {
-		*commands = append(
-			*commands,
-			world.DebugColliderCommands(
-				style.ColliderColor,
-				style.ColliderStrokeWidth,
-				style.ColliderLayer,
-			)...,
-		)
-	}
-
-	if !layers.Has(scene.DebugContacts) {
-		return
-	}
-
-	*commands = append(
-		*commands,
-		world.DebugContactCommands(
-			style.ContactColor,
-			style.ContactPointRadius,
-			style.ContactLineWidth,
-			style.ContactNormalLength,
-			style.ContactLayer,
-		)...,
-	)
 }
 
 func BuildFieldCommands() []render.Command {
