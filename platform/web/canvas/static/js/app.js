@@ -22,6 +22,12 @@ const DebugLayers = {
     grid: 1 << 2,
     activeGrid: 1 << 3,
     candidateGrid: 1 << 4,
+    velocityLine: 1 << 5,
+    entityID: 1 << 6,
+    renderLayers: 1 << 7,
+    inputState: 1 << 8,
+    runtimeStats: 1 << 9,
+
 };
 
 let connection = null;
