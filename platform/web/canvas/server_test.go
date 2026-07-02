@@ -171,6 +171,23 @@ func TestControlCommandFromMessageMapsBackToTick(t *testing.T) {
 	}
 }
 
+func TestControlCommandFromMessageMapsScrubToTick(t *testing.T) {
+	cmd, ok := controlCommandFromMessage(clientMessage{
+		Action: "scrubToTick",
+		Tick:   42,
+	})
+	if !ok {
+		t.Fatal("controlCommandFromMessage ok = false, want true")
+	}
+
+	if cmd.Kind != runtime.ControlScrubToTick {
+		t.Fatalf("kind = %v, want ControlScrubToTick", cmd.Kind)
+	}
+	if cmd.Tick != 42 {
+		t.Fatalf("tick = %v, want 42", cmd.Tick)
+	}
+}
+
 func TestControlCommandFromMessageMapsBackSeconds(t *testing.T) {
 	cmd, ok := controlCommandFromMessage(clientMessage{
 		Action:  "backSeconds",

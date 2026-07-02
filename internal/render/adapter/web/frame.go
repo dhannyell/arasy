@@ -21,6 +21,11 @@ type StateDTO struct {
 	HistoryStartTick uint64  `json:"historyStartTick"`
 	HistoryEndTick   uint64  `json:"historyEndTick"`
 
+	// MaxRecordedTick is the highest tick ScrubToTick can reach — unlike
+	// HistoryStartTick/HistoryEndTick (the bounded recorder snapshot
+	// window), the full scrub range is [0, MaxRecordedTick].
+	MaxRecordedTick uint64 `json:"maxRecordedTick"`
+
 	RenderFPS    int `json:"renderFPS"`
 	SimulationHz int `json:"simulationHz"`
 }
