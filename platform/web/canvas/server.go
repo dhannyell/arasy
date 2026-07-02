@@ -92,7 +92,7 @@ type hub struct {
 	pendingViewport math2d.Rect
 	haveViewport    bool
 
-	// worldMu: Advance exclusivo, Commands compartilhado
+	// worldMu: AdvanceTime exclusivo, Commands compartilhado
 	worldMu sync.RWMutex
 
 	clientsMu sync.RWMutex
@@ -133,19 +133,30 @@ func (h *hub) run(ctx context.Context) {
 	defer simTicker.Stop()
 	defer renderTicker.Stop()
 
-	go h.simulationLoop(ctx, simTicker.C, 1.0/float64(h.simHz))
+	go h.simulationLoop(ctx, simTicker.C)
 	h.renderLoop(ctx, renderTicker.C)
 }
 
-func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time, dt float64) {
+func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
+	last := time.Now()
+	active := false
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-simTick:
+		case now := <-simTick:
 			if h.clientCount() == 0 {
+				active = false
 				continue
 			}
+
+			elapsed := now.Sub(last)
+			if !active {
+				elapsed = 0
+				active = true
+			}
+			last = now
 
 			// drains the inbox atomically — fast operation, only copies slices
 			h.inboxMu.Lock()
@@ -166,7 +177,7 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time, dt f
 				h.driver.Control(cmd)
 			}
 			h.driver.ApplyInput(events)
-			h.driver.Advance(dt)
+			h.driver.AdvanceTime(elapsed)
 			h.worldMu.Unlock()
 		}
 	}

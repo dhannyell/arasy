@@ -13,7 +13,7 @@
 // rewind/time-travel, and produces complete Frames for render backends. Driver
 // intentionally contains no transport, windowing, HTTP, canvas, or raster
 // details; each platform serializes access and adapts its native input/output
-// to ApplyInput, Control, Advance, and Frame.
+// to ApplyInput, Control, AdvanceTime, Step, and Frame.
 //
 // The package sits above the core engine packages and below platform packages:
 //

@@ -3,6 +3,7 @@ package runtime
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -73,7 +74,7 @@ func TestDriverUpdateContextUsesSurfaceViewport(t *testing.T) {
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})
 
 	driver.SetViewport(viewport)
-	driver.Advance(1)
+	driver.Step()
 
 	if game.viewport != viewport {
 		t.Fatalf("update viewport = %+v, want %+v", game.viewport, viewport)
@@ -111,7 +112,7 @@ func (g *inputBackGame) Init(ctx *UpdateContext) {
 
 func (g *inputBackGame) Update(ctx *UpdateContext, dt float64) {
 	ctx.World.SetVelocity(g.player, scene.Velocity{
-		Linear: math2d.Vec2{X: ctx.Input.Value(input.ActionMoveX) * 10},
+		Linear: math2d.Vec2{X: ctx.Input.Value(input.ActionMoveX) * 600},
 	})
 	ctx.World.Step(dt, ctx.StepConfig)
 }
@@ -128,7 +129,7 @@ func TestDriverBackRestoresInputSnapshotBeforeManualStep(t *testing.T) {
 			Kind:   input.EventButtonDown,
 		},
 	})
-	driver.Advance(1)
+	driver.Step()
 
 	transform, ok := driver.world.Transform(game.player)
 	if !ok {
@@ -139,7 +140,7 @@ func TestDriverBackRestoresInputSnapshotBeforeManualStep(t *testing.T) {
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBack})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	transform, ok = driver.world.Transform(game.player)
 	if !ok {
@@ -150,7 +151,7 @@ func TestDriverBackRestoresInputSnapshotBeforeManualStep(t *testing.T) {
 	}
 
 	driver.Control(ControlCommand{Kind: ControlStep})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	transform, ok = driver.world.Transform(game.player)
 	if !ok {
@@ -172,11 +173,11 @@ func TestDriverBackToTickRestoresTargetSnapshot(t *testing.T) {
 		},
 	})
 	for range 5 {
-		driver.Advance(1)
+		driver.Step()
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	if driver.Tick() != 2 {
 		t.Fatalf("tick after back to tick = %v, want 2", driver.Tick())
@@ -211,11 +212,11 @@ func TestDriverBackSecondsRestoresRelativeSnapshot(t *testing.T) {
 		},
 	})
 	for range 5 {
-		driver.Advance(1)
+		driver.Step()
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBackSeconds, Seconds: 2.0 / 60.0})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	if driver.Tick() != 3 {
 		t.Fatalf("tick after back seconds = %v, want 3", driver.Tick())
@@ -241,13 +242,13 @@ func TestDriverPlayAfterBackToTickContinuesFromRestoredTick(t *testing.T) {
 		},
 	})
 	for range 5 {
-		driver.Advance(1)
+		driver.Step()
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 	driver.Control(ControlCommand{Kind: ControlPlay})
-	driver.Advance(1)
+	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 
 	if driver.Tick() != 3 {
 		t.Fatalf("tick after play following back to tick = %v, want 3", driver.Tick())
@@ -266,22 +267,22 @@ func TestDriverSlowMotionSpeedAccumulatesFractionalTicks(t *testing.T) {
 	driver := NewDriver(&inputBackGame{}, slog.Default())
 
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.5})
-	driver.Advance(1)
+	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 	if driver.Tick() != 0 {
 		t.Fatalf("tick after first half-speed advance = %v, want 0", driver.Tick())
 	}
 
-	driver.Advance(1)
+	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 	if driver.Tick() != 1 {
 		t.Fatalf("tick after second half-speed advance = %v, want 1", driver.Tick())
 	}
 
-	driver.Advance(1)
+	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 	if driver.Tick() != 1 {
 		t.Fatalf("tick after third half-speed advance = %v, want 1", driver.Tick())
 	}
 
-	driver.Advance(1)
+	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 	if driver.Tick() != 2 {
 		t.Fatalf("tick after fourth half-speed advance = %v, want 2", driver.Tick())
 	}
@@ -329,15 +330,15 @@ func TestDriverBackRestoresGameStateInsteadOfResettingIt(t *testing.T) {
 	game := &statefulGame{}
 	driver := NewDriver(game, slog.Default())
 
-	driver.Advance(1) // State: 0 -> 1, snapshot captured at State=0
-	driver.Advance(1) // State: 1 -> 2, snapshot captured at State=1
+	driver.Step() // State: 0 -> 1, snapshot captured at State=0
+	driver.Step() // State: 1 -> 2, snapshot captured at State=1
 
 	if game.State != 2 {
 		t.Fatalf("counter = %d, want 2", game.State)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBack})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	if game.State != 1 {
 		t.Fatalf("counter after back = %d, want 1 (restored from snapshot, not reset to 0)", game.State)
@@ -395,13 +396,13 @@ func TestDriverPointerClickIsConsumedOnce(t *testing.T) {
 		mouseButtonEvent(input.EventButtonDown, 15, 15),
 		mouseButtonEvent(input.EventButtonUp, 15, 15),
 	})
-	driver.Advance(1)
+	driver.Step()
 
 	if game.clicks != 1 {
 		t.Fatalf("clicks after click tick = %v, want 1", game.clicks)
 	}
 
-	driver.Advance(1)
+	driver.Step()
 
 	if game.clicks != 1 {
 		t.Fatalf("clicks after next tick = %v, want old pointer events consumed", game.clicks)
@@ -424,14 +425,14 @@ func TestDriverPointerLeaveReleasesButtonFromPreviousTick(t *testing.T) {
 	driver := NewDriver(game, slog.Default())
 
 	driver.ApplyInput([]input.Event{mouseButtonEvent(input.EventButtonDown, 15, 15)})
-	driver.Advance(1)
+	driver.Step()
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Active.Background; got != want {
 		t.Fatalf("button fill after down = %+v, want active %+v", got, want)
 	}
 
 	driver.ApplyInput([]input.Event{mouseLeaveEvent()})
-	driver.Advance(1)
+	driver.Step()
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Normal.Background; got != want {
 		t.Fatalf("button fill after leave = %+v, want normal %+v", got, want)
@@ -443,7 +444,7 @@ func TestDriverBackRestoresPointerSnapshot(t *testing.T) {
 	driver := NewDriver(game, slog.Default())
 
 	driver.ApplyInput([]input.Event{mouseMoveEvent(15, 15)})
-	driver.Advance(1)
+	driver.Step()
 	driver.ApplyInput([]input.Event{mouseLeaveEvent()})
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Normal.Background; got != want {
@@ -451,7 +452,7 @@ func TestDriverBackRestoresPointerSnapshot(t *testing.T) {
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBack})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Hovered.Background; got != want {
 		t.Fatalf("button fill after back = %+v, want restored hover %+v", got, want)
@@ -463,18 +464,18 @@ func TestDriverBackToTickRestoresUIStateSnapshot(t *testing.T) {
 	driver := NewDriver(game, slog.Default())
 
 	driver.ApplyInput([]input.Event{mouseButtonEvent(input.EventButtonDown, 15, 15)})
-	driver.Advance(1)
-	driver.Advance(1)
+	driver.Step()
+	driver.Step()
 
 	driver.ApplyInput([]input.Event{mouseLeaveEvent()})
-	driver.Advance(1)
+	driver.Step()
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Normal.Background; got != want {
 		t.Fatalf("button fill after leave = %+v, want normal %+v", got, want)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 1})
-	driver.Advance(1)
+	driver.AdvanceTime(0)
 
 	if got, want := buttonFill(t, driver), game.theme.Button.Active.Background; got != want {
 		t.Fatalf("button fill after back to active tick = %+v, want active %+v", got, want)

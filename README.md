@@ -14,18 +14,18 @@ Current capabilities:
 
 - 2D vector and rectangle math.
 - Fixed timestep helper.
-- Camera with aspect-ratio modes.
-- Backend-agnostic render commands.
-- Runtime package with a portable `Game` contract, driver, input mapping, dev controls, and optional rewind history.
-- Immediate-mode UI package with basic widgets, pointer interaction, and theme support.
-- Raster renderer using Go's standard `image` packages.
-- Filled/stroked rectangles.
-- Filled/stroked circles.
-- Lines, arcs, and point markers.
-- Basic scene world with entities and components.
-- Transform, circle sprite, and velocity components.
-- Simple integration system for linear movement.
-- PNG render demo with optional frame sequence output.
+- Camera with aspect-ratio modes (stretch, fit, expand).
+- Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
+- Runtime package with a portable `Game` contract, fixed-timestep driver pump, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
+- Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
+- Raster renderer using Go's standard `image` packages (text rendering not supported yet on this backend).
+- Scene world with entities and components: transform, circle sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle collider.
+- Physics step pipeline: acceleration → integration → bounds bounce → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
+- Deterministic simulation: sorted broad-phase pairs and a per-tick world checksum for sync verification.
+- Debug overlays: colliders, contacts, spatial grid, velocities, entity IDs, input state, and a runtime stats HUD.
+- WebSocket canvas platform with live simulation, browser input, and dev controls including rewind (back, back-to-tick, back-seconds).
+- Offline raster platform producing PNG, animated GIF, and frame-by-frame sequences.
+- Two playable demos: football and breakout.
 
 ## Project Structure
 
@@ -34,41 +34,62 @@ math2d/
   Basic 2D math primitives such as Vec2 and Rect.
 
 loop/
-  Fixed timestep utilities.
+  Fixed timestep utilities (accumulator and step planner).
 
 render/
   Backend-agnostic rendering types, colors, commands, and camera.
 
-platform/raster/
-  Software renderer that draws render commands into image.RGBA.
-
-platform/web/canvas/
-  WebSocket server that streams render commands to a browser canvas.
-
 scene/
-  Minimal entity/component world and simple simulation systems.
+  Entity/component world, physics simulation systems (movement, bounds
+  bounce, spatial-grid collision), debug overlay builders, and a
+  deterministic world checksum.
 
 input/
-  Typed input mapping system (device codes → semantic actions).
+  Typed input mapping system (device codes → semantic actions), pointer
+  state, and a per-tick event buffer.
 
 ui/
   Immediate-mode UI widgets, themes, and pointer interaction helpers.
 
 runtime/
-  Platform-agnostic Game contract, Context, Driver, input/control plumbing,
-  frame production, and optional rewind history.
+  Orchestration hub: platform-agnostic Game contract, Context, Driver,
+  input/control plumbing, fixed timestep pump, frame production, dev controls,
+  and optional rewind history. The only behavioral API platforms need to drive.
+
+platform/raster/
+  Software renderer that draws render commands into image.RGBA, plus an
+  offline runner producing PNG/GIF/frame-sequence output.
+
+platform/web/canvas/
+  HTTP + WebSocket server that streams JSON frames to a browser canvas and
+  translates browser input/control messages back into the runtime.
+
+internal/render/adapter/web/
+  JSON DTO conversion of render commands and camera for the web canvas.
+
+debug/
+  Standalone World snapshot recorder (the runtime keeps its own internal
+  recorder for rewind).
+
+cmd/demos/football/
+  Top-down football demo: controlled player, ball physics, goals, score
+  HUD, and camera shake.
 
 cmd/demos/football/raster/
-  Offline render demo that generates a PNG and frame-by-frame PNG sequence.
+  Offline render of the football demo (PNG + frame-by-frame PNG sequence).
 
 cmd/demos/football/webCanvas/
-  Browser-based canvas demo with live simulation and debug visualization.
+  Browser-based football demo with live simulation and debug visualization.
+
+cmd/demos/breakout/
+  Breakout demo: paddle input, brick collisions, menu/game-over states, and
+  UI overlays, playable in the browser via cmd/demos/breakout/canvas/.
 
 cmd/benchsave/
   Cross-platform helper that runs Go benchmarks and saves a Markdown report.
 
 docs/
-  Additional notes and visual explanations.
+  Additional notes, guides, and the technical review/roadmap.
 ```
 
 ## Requirements
@@ -184,16 +205,23 @@ output/frames/frame-0001.png
 
 The PNG is a static high-resolution render. The frame sequence is used to validate movement and rendering, and can be combined into a video with external tools such as `ffmpeg`.
 
-## Running The Browser Demo
+## Running The Browser Demos
 
-Start the WebSocket server:
+Start the WebSocket server for one of the demos:
 
 ```powershell
+# Football: WASD or arrow keys move the controlled player
 go run ./cmd/demos/football/webCanvas
+
+# Breakout: A/D or arrow keys move the paddle, Space launches the ball
+go run ./cmd/demos/breakout/canvas
 ```
 
-Then open `http://localhost:8080` in your browser. Use WASD or arrow keys to move the controlled player.
-The demo also includes a small screen-space UI overlay with a score panel and reset button.
+Then open `http://localhost:8080` in your browser.
+Both demos include a screen-space UI overlay (score panel, reset button) and
+the dev control bar: pause, single-step, speed, rewind, and debug overlay
+toggles (colliders, contacts, spatial grid, velocities, entity IDs, runtime
+stats).
 
 ## Running Benchmarks
 

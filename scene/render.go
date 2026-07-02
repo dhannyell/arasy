@@ -38,9 +38,16 @@ func (w *World) RenderCommands() []render.Command {
 }
 
 func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
-	commands := make([]render.Command, 0, len(w.circleColliders))
+	ids := make([]EntityID, 0, len(w.circleColliders))
+	for id := range w.circleColliders {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
 
-	for id, collider := range w.circleColliders {
+	commands := make([]render.Command, 0, len(ids))
+
+	for _, id := range ids {
+		collider := w.circleColliders[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
@@ -61,7 +68,7 @@ func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, l
 }
 
 func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth, normalLength float64, layer int) []render.Command {
-	contacts := w.DetectCircleOverlaps()
+	contacts := w.Contacts()
 	commands := make([]render.Command, 0, len(contacts)*2)
 
 	for _, contact := range contacts {

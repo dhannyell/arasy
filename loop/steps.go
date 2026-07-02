@@ -11,12 +11,12 @@ type StepPlan struct {
 // It accumulates renderDT*speed and divides by simulationDT.
 // At most max steps are returned; excess time is discarded when clamped.
 // Pass max=0 to use no limit.
-func Steps(speed int, renderDT, simulationDT float64, accumulator *float64, max int) StepPlan {
+func Steps(speed float64, renderDT, simulationDT float64, accumulator *float64, max int) StepPlan {
 	if speed <= 0 || simulationDT <= 0 || renderDT <= 0 {
 		return StepPlan{}
 	}
 
-	*accumulator += renderDT * float64(speed)
+	*accumulator += renderDT * speed
 
 	steps := int(math.Floor(*accumulator / simulationDT))
 	if max > 0 && steps > max {

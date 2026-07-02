@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/scene"
 	"github.com/dhannyell/frameforge/ui"
 )
@@ -11,12 +10,12 @@ type recorder struct {
 	snapshots []driverSnapshot
 }
 
+// driverSnapshot is the complete mutable runtime state needed for rewind.
+// Every mutable collaborator must contribute a Snapshot/Restore payload here.
 type driverSnapshot struct {
 	world     *scene.World
-	mapper    *input.Mapper
-	lastInput input.State
+	input     driverInputSnapshot
 	uiState   ui.State
-	pointer   input.PointerState
 	gameState GameState
 	tick      uint64
 }
@@ -28,20 +27,12 @@ func newRecorder(limit int) *recorder {
 	}
 }
 
-func (r *recorder) Capture(world *scene.World, mapper *input.Mapper, lastInput input.State, uiState ui.State, pointer input.PointerState, gameState GameState, tick uint64) {
-	if r.limit <= 0 || world == nil || mapper == nil {
+func (r *recorder) Capture(snapshot driverSnapshot) {
+	if r.limit <= 0 || snapshot.world == nil || snapshot.input.mapper == nil {
 		return
 	}
 
-	r.snapshots = append(r.snapshots, driverSnapshot{
-		world:     world.Clone(),
-		mapper:    mapper.Clone(),
-		lastInput: lastInput.Clone(),
-		uiState:   uiState.Clone(),
-		pointer:   pointer.Clone(),
-		gameState: gameState,
-		tick:      tick,
-	})
+	r.snapshots = append(r.snapshots, snapshot)
 
 	if len(r.snapshots) > r.limit {
 		copy(r.snapshots, r.snapshots[1:])

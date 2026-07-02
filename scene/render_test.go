@@ -132,6 +132,41 @@ func TestWorldDebugColliderCommandsSkipsColliderWithoutTransform(t *testing.T) {
 	}
 }
 
+func TestWorldDebugColliderCommandsSortsByEntityID(t *testing.T) {
+	world := scene.NewWorld()
+	first := world.Spawn()
+	second := world.Spawn()
+
+	world.SetTransform(second, scene.Transform{
+		Position: math2d.Vec2{X: 20, Y: 0},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleCollider(second, scene.CircleCollider{Radius: 2})
+
+	world.SetTransform(first, scene.Transform{
+		Position: math2d.Vec2{X: 10, Y: 0},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetCircleCollider(first, scene.CircleCollider{Radius: 1})
+
+	commands := world.DebugColliderCommands(render.RGBA(1, 1, 0, 1), 0.1, 100)
+	if len(commands) != 2 {
+		t.Fatalf("got %d commands, want 2", len(commands))
+	}
+
+	firstCommand, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	secondCommand, ok := commands[1].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[1])
+	}
+	if firstCommand.Radius != 1 || secondCommand.Radius != 2 {
+		t.Fatalf("collider radii order = %v, %v; want 1, 2", firstCommand.Radius, secondCommand.Radius)
+	}
+}
+
 func TestWorldDebugContactCommandsCreatesPointAndNormalLineForOverlap(t *testing.T) {
 	world := scene.NewWorld()
 	color := render.RGBA(1, 0, 1, 1)
@@ -154,6 +189,7 @@ func TestWorldDebugContactCommandsCreatesPointAndNormalLineForOverlap(t *testing
 		Radius: 2,
 	})
 
+	world.ResolveCircleOverlaps()
 	commands := world.DebugContactCommands(color, 0.2, 0.1, 1, 101)
 	if len(commands) != 2 {
 		t.Fatalf("got %d commands, want 2", len(commands))
@@ -229,6 +265,7 @@ func TestWorldDebugContactCommandsReturnsNoCommandsWithoutOverlap(t *testing.T) 
 		Radius: 2,
 	})
 
+	world.ResolveCircleOverlaps()
 	commands := world.DebugContactCommands(render.RGBA(1, 0, 1, 1), 0.2, 0.1, 1, 101)
 	if len(commands) != 0 {
 		t.Fatalf("got %d commands, want 0", len(commands))
