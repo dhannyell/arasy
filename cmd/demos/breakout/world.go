@@ -97,11 +97,13 @@ func spawnBuildBricks(world *scene.World) []Brick {
 				X: startX + float64(col)*(brickWidth+brickGap),
 				Y: brickTop + float64(row)*(brickHeight+brickGap),
 			}
+			// Transform.Position is the collider center; the sprite spans
+			// pos..pos+size, so its center is pos+half — keep them aligned.
+			center := pos.Add(math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2})
 			id := world.SpawnBundle(
 				scene.Bundle{
 					Transform: &scene.Transform{
-						Position: pos,
-						Scale:    math2d.Vec2{X: brickWidth, Y: brickHeight},
+						Position: center,
 					},
 					RectCollider: &scene.RectCollider{
 						HalfExtends: math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2},

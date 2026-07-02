@@ -208,7 +208,8 @@ func (w *World) DebugGridCells() []DebugGridCell {
 	return w.debugGridCells
 }
 
-// Contacts returns the circle contacts resolved during the last Step.
+// Contacts returns the contacts resolved during the last Step, across all
+// collider shape combinations.
 func (w *World) Contacts() []Contact {
 	return w.contacts
 }
