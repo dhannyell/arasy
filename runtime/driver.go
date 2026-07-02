@@ -176,15 +176,7 @@ func (d *Driver) runSteps(steps int) {
 
 func (d *Driver) stepOnce(dt float64) {
 	if d.recorder != nil {
-		d.recorder.Capture(
-			d.world,
-			d.input.Mapper(),
-			d.input.LastInput(),
-			d.uiState,
-			d.input.Pointer(),
-			d.captureGameState(),
-			d.tick,
-		)
+		d.recorder.Capture(d.captureSnapshot())
 	}
 
 	d.input.BeginTick()
@@ -383,11 +375,21 @@ func (d *Driver) doBackSeconds(seconds float64) {
 func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.world = snap.world
 	d.uiState = snap.uiState
-	d.input.Restore(snap.mapper, snap.lastInput, snap.pointer)
+	d.input.Restore(snap.input)
 	d.tick = snap.tick
 
 	if game, ok := d.game.(StatefulGame); ok {
 		game.RestoreGameState(snap.gameState)
+	}
+}
+
+func (d *Driver) captureSnapshot() driverSnapshot {
+	return driverSnapshot{
+		world:     d.world.Clone(),
+		input:     d.input.Snapshot(),
+		uiState:   d.uiState.Clone(),
+		gameState: d.captureGameState(),
+		tick:      d.tick,
 	}
 }
 
@@ -399,6 +401,6 @@ func (d *Driver) captureGameState() GameState {
 
 	// StateSlot[T].GameState() already returns an independent value snapshot
 	// (boxing a value type into the GameState interface copies it) — no
-	// further cloning needed here, unlike world/mapper/uiState/pointer.
+	// further cloning needed here, unlike world/input/uiState.
 	return game.GameState()
 }
