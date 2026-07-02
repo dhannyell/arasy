@@ -14,7 +14,7 @@ body {
     width: 100vw;
     height: 100dvh;
     display: grid;
-    grid-template-rows: auto 1fr;
+    grid-template-rows: auto auto 1fr;
     background: #080b10;
     overflow: hidden;
 }
@@ -27,6 +27,32 @@ header {
     padding: 12px 16px;
     border-bottom: 1px solid #273244;
     background: #111722;
+}
+
+.timeline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px;
+    background: #0d1320;
+    border-bottom: 1px solid #273244;
+}
+
+.timeline input[type="range"] {
+    flex: 1;
+    width: auto;
+}
+
+.timeline input[type="range"]:disabled {
+    opacity: 0.4;
+}
+
+#scrub-value {
+    font-variant-numeric: tabular-nums;
+    color: #cbd5e1;
+    font-size: 13px;
+    min-width: 8ch;
+    text-align: right;
 }
 
 .debug-menu {

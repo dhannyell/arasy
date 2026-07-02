@@ -346,7 +346,7 @@ func (d *Driver) doBackToTick(target uint64) {
 	if d.recorder == nil {
 		return
 	}
-	snap, ok := d.recorder.BackToTick(target)
+	snap, ok := d.recorder.BackToTick(d.tick, target)
 	if !ok {
 		return
 	}
