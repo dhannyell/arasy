@@ -50,8 +50,13 @@ func (r *recorder) Back() (driverSnapshot, bool) {
 	return snapshot, true
 }
 
-func (r *recorder) BackToTick(target uint64) (driverSnapshot, bool) {
-	if len(r.snapshots) == 0 {
+// BackToTick restores the snapshot at or before target. currentTick is the
+// live driver tick the caller is restoring from; BackToTick is a no-op when
+// target is not strictly before it. Without this guard, calling BackToTick
+// with the same target twice would truncate the snapshot stack twice and
+// rewind one extra tick on the second call instead of staying put.
+func (r *recorder) BackToTick(currentTick, target uint64) (driverSnapshot, bool) {
+	if len(r.snapshots) == 0 || target >= currentTick {
 		return driverSnapshot{}, false
 	}
 
