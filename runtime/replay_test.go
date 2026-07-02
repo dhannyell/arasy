@@ -74,3 +74,53 @@ func TestReplayDivergesWhenInputDiffers(t *testing.T) {
 		t.Fatal("expected checksum to diverge when replayed with different input, but it matched")
 	}
 }
+
+// TestResetRestartsActiveRecording: a reset restarts tick 0, so keeping the
+// pre-reset events would collide with the new run's ticks — Replay would
+// apply both runs' events on the same ticks and reproduce a state that never
+// existed. The capture must restart with the run, keeping StopRecording
+// reproducible.
+func TestResetRestartsActiveRecording(t *testing.T) {
+	game := &inputBackGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.StartRecording()
+
+	// Pre-reset run: D held on ticks 0..4. If these events survived the
+	// reset, the replay below would move the player from tick 0.
+	for range 5 {
+		driver.ApplyInput([]input.Event{
+			{Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD}, Kind: input.EventButtonDown},
+		})
+		driver.Step()
+	}
+
+	driver.Control(ControlCommand{Kind: ControlReset})
+	driver.AdvanceTime(0)
+
+	// Post-reset run: idle on ticks 0..4 (where the stale events would
+	// land), then a press/release pair.
+	for tick := range 10 {
+		switch tick {
+		case 5:
+			driver.ApplyInput([]input.Event{
+				{Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD}, Kind: input.EventButtonDown},
+			})
+		case 8:
+			driver.ApplyInput([]input.Event{
+				{Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD}, Kind: input.EventButtonUp},
+			})
+		}
+		driver.Step()
+	}
+
+	rec := driver.StopRecording()
+	if rec.Ticks != 10 {
+		t.Fatalf("recording ticks = %d, want 10 (post-reset run only)", rec.Ticks)
+	}
+
+	replay := Replay(&inputBackGame{}, slog.Default(), rec)
+	if got, want := replay.Checksum(), driver.Checksum(); got != want {
+		t.Fatalf("replay checksum = %d, want %d — recording kept pre-reset events", got, want)
+	}
+}
