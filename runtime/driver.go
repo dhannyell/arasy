@@ -37,6 +37,13 @@ type Driver struct {
 	uiTheme  ui.Theme
 
 	pendingReset bool
+
+	// recording captures every event applied via ApplyInput, tagged with the
+	// tick it landed on, while recordingEnabled is true. Unlike the internal
+	// input.Buffer (a bounded window used for Back/BackToTick), this keeps
+	// the full log so Replay can reproduce a run from tick 0.
+	recordingEnabled bool
+	recording        []input.Event
 }
 
 type DriveState struct {
@@ -87,6 +94,13 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 // Called by the platform before AdvanceTime or Step, within the same lock.
 func (d *Driver) ApplyInput(events []input.Event) {
 	d.input.Apply(events, d.tick)
+
+	if d.recordingEnabled {
+		for _, event := range events {
+			event.Tick = d.tick
+			d.recording = append(d.recording, event)
+		}
+	}
 }
 
 // Control applies a ControlCommand to the internal state.
@@ -224,6 +238,11 @@ func (d *Driver) HistoryLen() int {
 	return d.recorder.Len()
 }
 func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
+
+// Checksum returns a deterministic hash of the current world state. Two
+// driver runs that reach the same tick via the same inputs always produce
+// the same value — use it to verify a Replay reproduced a recording exactly.
+func (d *Driver) Checksum() uint64 { return d.world.Checksum() }
 
 func (d *Driver) Frame() Frame {
 	uiInst := d.newRenderUI()
