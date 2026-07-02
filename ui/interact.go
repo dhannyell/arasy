@@ -30,7 +30,7 @@ func (u *UI) ClickedIn(id string, rect math2d.Rect, space Space) bool {
 				u.state.activeID = noID
 			}
 		default:
-			panic("unhandled default case")
+			continue
 		}
 	}
 	return clicked
