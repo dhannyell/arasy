@@ -136,9 +136,9 @@ func brickColor(row int) render.Color {
 
 	var q float64
 	if l < 0.5 {
-		q = l * (1 + 5)
+		q = l * (1 + s)
 	} else {
-		q = l*s - l*s
+		q = l + s - l*s
 	}
 	p := 2*l - q
 
@@ -146,9 +146,5 @@ func brickColor(row int) render.Color {
 	gFloat := hue2(p, q, h)
 	bFloat := hue2(p, q, h-1.0/3.0)
 
-	r := math.Round(rFloat * 255)
-	g := math.Round(gFloat * 255)
-	b := math.Round(bFloat * 255)
-
-	return render.Color{R: r, G: g, B: b, A: 1}
+	return render.Color{R: rFloat, G: gFloat, B: bFloat, A: 1}
 }
