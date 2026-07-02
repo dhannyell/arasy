@@ -16,15 +16,17 @@ func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
 
 	initial := controlledPlayerPosition(t, driver, game)
 
+	clickPlay(t, driver, game)
+
 	driver.ApplyInput([]input.Event{
 		{
 			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
 			Kind:   input.EventButtonDown,
 		},
 	})
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 	afterFirstAdvance := controlledPlayerPosition(t, driver, game)
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 	afterSecondAdvance := controlledPlayerPosition(t, driver, game)
 
 	if afterFirstAdvance == initial {
@@ -35,7 +37,7 @@ func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
 	}
 
 	driver.Control(runtime.ControlCommand{Kind: runtime.ControlBack})
-	driver.Advance(1.0 / 60.0)
+	driver.AdvanceTime(0)
 
 	afterBack := controlledPlayerPosition(t, driver, game)
 	if afterBack != afterFirstAdvance {
@@ -93,4 +95,30 @@ func controlledPlayerPosition(t *testing.T, driver *runtime.Driver, game *Footba
 		t.Fatal("controlled player render command missing")
 	}
 	return best
+}
+
+func clickPlay(t *testing.T, driver *runtime.Driver, game *Football) {
+	t.Helper()
+
+	_, play := menuLayout(driver.Config().Camera.Viewport)
+	pos := play.Center()
+	driver.ApplyInput([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseLeft},
+			Kind:   input.EventButtonDown,
+			X:      pos.X,
+			Y:      pos.Y,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseLeft},
+			Kind:   input.EventButtonUp,
+			X:      pos.X,
+			Y:      pos.Y,
+		},
+	})
+	driver.Step()
+
+	if !game.State.Started {
+		t.Fatal("play click did not start the game")
+	}
 }

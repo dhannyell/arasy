@@ -141,7 +141,7 @@ func (debugStatsGame) Render(ctx *RenderContext) []render.Command { return nil }
 
 func TestDebugRuntimeStatsLinesReportsTickPausedSpeedAndChecksum(t *testing.T) {
 	driver := NewDriver(debugStatsGame{}, slog.Default())
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 
 	lines := debugRuntimeStatsLines(debugRenderer{driver: driver}, debugContext{})
 
@@ -161,8 +161,8 @@ func TestDebugRuntimeStatsLinesReportsTickPausedSpeedAndChecksum(t *testing.T) {
 
 func TestDebugRuntimeStatsLinesIncludesHistoryRangeWhenRecorderPresent(t *testing.T) {
 	driver := NewDriver(&statefulGame{}, slog.Default())
-	driver.Advance(1.0 / 60.0)
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
+	driver.Step()
 
 	lines := debugRuntimeStatsLines(debugRenderer{driver: driver}, debugContext{})
 

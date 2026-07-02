@@ -11,6 +11,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -77,7 +78,7 @@ func Run(game runtime.Game, opts Options) error {
 				anim.Image = append(anim.Image, toPaletted(img))
 				anim.Delay = append(anim.Delay, delay)
 			}
-			driver.Advance(opts.FrameDT)
+			driver.AdvanceTime(time.Duration(opts.FrameDT * float64(time.Second)))
 		}
 		if anim != nil {
 			if err := writeFile(opts.GIF, func(f *os.File) error {
