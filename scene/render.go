@@ -9,29 +9,49 @@ import (
 )
 
 func (w *World) RenderCommands() []render.Command {
-	ids := make([]EntityID, 0, len(w.circleSprites))
+	totalSprites := len(w.circleSprites) + len(w.rectSprites)
+	ids := make([]EntityID, 0, totalSprites)
+
 	for id := range w.circleSprites {
 		ids = append(ids, id)
 	}
+	for id := range w.rectSprites {
+		ids = append(ids, id)
+	}
+
 	slices.Sort(ids)
 
-	commands := make([]render.Command, 0, len(ids))
+	commands := make([]render.Command, 0, totalSprites)
 
 	for _, id := range ids {
-		sprite := w.circleSprites[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		commands = append(commands, render.DrawCircle{
-			Center: transform.Position,
-			Radius: sprite.Radius,
-			Fill:   sprite.Color,
-			BaseCommand: render.BaseCommand{
-				LayerValue: sprite.Layer,
-			},
-		})
+		if circle, hasCircle := w.circleSprites[id]; hasCircle {
+			commands = append(commands, render.DrawCircle{
+				Center: transform.Position,
+				Radius: circle.Radius,
+				Fill:   circle.Color,
+				BaseCommand: render.BaseCommand{
+					LayerValue: circle.Layer,
+				},
+			})
+			continue
+		}
+
+		if rect, hasRect := w.rectSprites[id]; hasRect {
+			commands = append(commands, render.DrawRect{
+				Rect:        rect.Rect,
+				Fill:        rect.Color,
+				Stroke:      rect.Stroke,
+				StrokeWidth: rect.StrokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: rect.Layer,
+				},
+			})
+		}
 	}
 
 	return commands

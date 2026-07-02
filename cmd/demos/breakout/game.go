@@ -38,7 +38,7 @@ func (b *Breakout) Setup() runtime.Config {
 
 func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	b.State = MatchState{}
-	b.State.bricks = buildBricks()
+	b.State.bricks = spawnBuildBricks(ctx.World)
 	b.State.bricksLeft = len(b.State.bricks)
 
 	b.State.paddle.Rect = math2d.NewRect(math2d.Vec2{X: (worldWidth - paddleWidth) / 2, Y: paddleY}, math2d.Vec2{X: paddleWidth, Y: paddleHeight})
@@ -47,11 +47,33 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	b.State.ball.Radius = ballRadius
 
 	b.State.ball.id = ctx.World.SpawnBundle(scene.Bundle{
-		Transform:      &scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}},
-		Velocity:       &scene.Velocity{Linear: b.State.ball.Velocity},
-		CircleSprite:   &scene.CircleSprite{Radius: ballRadius, Color: render.RGBA(0.5, 1, 1, 1)},
+		Transform: &scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}},
+		Velocity:  &scene.Velocity{Linear: b.State.ball.Velocity},
+		CircleSprite: &scene.CircleSprite{
+			Radius: ballRadius,
+			BaseSprite: scene.BaseSprite{
+				Color: render.RGBA(0.5, 1, 1, 1),
+				Layer: 1,
+			},
+		},
 		CircleCollider: &scene.CircleCollider{Radius: ballRadius},
 		Body:           &scene.Body{InvMass: 1.0, Restitution: 0.8},
+	})
+
+	b.State.paddle.id = ctx.World.SpawnBundle(scene.Bundle{
+		Transform: &scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}},
+		Velocity:  &scene.Velocity{Linear: b.State.ball.Velocity},
+		RectSprite: &scene.RectSprite{
+			BaseSprite: scene.BaseSprite{
+				Color: render.RGBA(0.5, 1, 1, 1),
+				Layer: 1,
+			},
+			Rect: math2d.NewRect(math2d.Vec2{X: (worldWidth - paddleWidth) / 2, Y: paddleY}, math2d.Vec2{X: paddleWidth, Y: paddleHeight}),
+		},
+		RectCollider: &scene.RectCollider{
+			HalfExtends: math2d.Vec2{X: paddleWidth / 2, Y: brickHeight / 2},
+		},
+		Body: &scene.Body{InvMass: 0.0, Restitution: 1.0},
 	})
 
 	b.State.lives = 3
@@ -109,7 +131,6 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 		if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
 			b.State.lives--
 			b.attachBallToPaddle()
-			b.writeBallToWorld(ctx.World)
 			if b.State.lives <= 0 {
 				b.State.state = StateGameOver
 				return
@@ -117,7 +138,6 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 			b.State.state = StateReady
 			return
 		}
-		b.resolveBallRectCollisions(ctx.World)
 	}
 
 }
@@ -148,19 +168,9 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 		if !brick.Alive {
 			continue
 		}
-
-		cmds = append(cmds, render.DrawRect{
-			BaseCommand: render.BaseCommand{LayerValue: 10},
-			Rect:        brick.Rect,
-			Fill:        brick.Color,
-		})
 	}
 
 	cmds = append(cmds, render.DrawRect{
-		BaseCommand: render.BaseCommand{LayerValue: 20},
-		Rect:        b.State.paddle.Rect,
-		Fill:        render.RGBA(0.85, 0.88, 0.95, 1),
-	}, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: 30},
 		Rect:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
 		Stroke:      render.RGBA(1, 1, 1, 1),
@@ -245,96 +255,6 @@ func (b *Breakout) syncBallFromWorld(world *scene.World) {
 	if velocity, ok := world.Velocity(b.State.ball.id); ok {
 		b.State.ball.Velocity = velocity.Linear
 	}
-}
-
-func (b *Breakout) resolveBallRectCollisions(world *scene.World) {
-	if hit, ok := circleVsRect(b.State.ball.Position, b.State.ball.Radius, b.State.paddle.Rect); ok {
-		b.resolveBallHit(world, hit)
-		b.bounceFromPaddle()
-		b.writeBallToWorld(world)
-		return
-	}
-
-	for i := range b.State.bricks {
-		if !b.State.bricks[i].Alive {
-			continue
-		}
-
-		hit, ok := circleVsRect(b.State.ball.Position, b.State.ball.Radius, b.State.bricks[i].Rect)
-		if !ok {
-			continue
-		}
-
-		b.State.bricks[i].Alive = false
-		b.State.bricksLeft--
-		b.State.ball.Velocity.Y -= 1.5
-		b.State.score += 100
-		b.resolveBallHit(world, hit)
-		b.writeBallToWorld(world)
-		return
-	}
-}
-
-func (b *Breakout) resolveBallHit(world *scene.World, hit Hit) {
-	b.State.ball.Position = hit.Point.Add(hit.Normal.Mul(b.State.ball.Radius + 0.01))
-	b.State.ball.Velocity = reflectVelocity(b.State.ball.Velocity, hit.Normal)
-	b.writeBallToWorld(world)
-}
-
-func (b *Breakout) writeBallToWorld(world *scene.World) {
-	world.SetTransform(b.State.ball.id, scene.Transform{Position: b.State.ball.Position})
-	world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
-}
-
-func reflectVelocity(velocity, normal math2d.Vec2) math2d.Vec2 {
-	if velocity.Dot(normal) >= 0 {
-		return velocity
-	}
-
-	return velocity.Sub(normal.Mul(2 * velocity.Dot(normal)))
-}
-
-func circleVsRect(center math2d.Vec2, radius float64, rect math2d.Rect) (Hit, bool) {
-	closest := math2d.Vec2{
-		X: math2d.Clamp(center.X, rect.Min.X, rect.Max.X),
-		Y: math2d.Clamp(center.Y, rect.Min.Y, rect.Max.Y),
-	}
-
-	delta := center.Sub(closest)
-	distSq := delta.LenSq()
-	if distSq > radius*radius {
-		return Hit{}, false
-	}
-
-	if distSq == 0 {
-		return Hit{Normal: rectExitNormal(center, rect), Point: closest}, true
-	}
-
-	return Hit{Normal: delta.Normalize(), Point: closest}, true
-}
-
-func rectExitNormal(point math2d.Vec2, rect math2d.Rect) math2d.Vec2 {
-	left := point.X - rect.Min.X
-	right := rect.Max.X - point.X
-	top := point.Y - rect.Min.Y
-	bottom := rect.Max.Y - point.Y
-
-	minDist := left
-	normal := math2d.Vec2{X: -1}
-
-	if right < minDist {
-		minDist = right
-		normal = math2d.Vec2{X: 1}
-	}
-	if top < minDist {
-		minDist = top
-		normal = math2d.Vec2{Y: -1}
-	}
-	if bottom < minDist {
-		normal = math2d.Vec2{Y: 1}
-	}
-
-	return normal
 }
 
 func (b *Breakout) movePaddle(i input.State, dt float64) {

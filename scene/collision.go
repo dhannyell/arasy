@@ -22,7 +22,7 @@ type spatialHashGrid struct {
 	cells    map[gridCell][]EntityID
 }
 
-type CircleContact struct {
+type Contact struct {
 	A EntityID
 	B EntityID
 
@@ -34,7 +34,7 @@ type CircleContact struct {
 }
 
 type collisionStats struct {
-	contacts        []CircleContact
+	contacts        []Contact
 	broadPhasePairs int
 	gridCells       int
 }
@@ -50,45 +50,59 @@ func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 	}
 }
 
-func (w *World) BounceCirclesInside(bounds math2d.Rect) {
-	for id, collider := range w.circleColliders {
+func (w *World) BounceEntitiesInside(bounds math2d.Rect) {
+	for id, velocity := range w.velocities {
+		if velocity.Linear.X == 0 && velocity.Linear.Y == 0 {
+			continue
+		}
+
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		velocity, ok := w.velocities[id]
-		if !ok {
+		// Determine the size (radius or extent) using fast switches
+		var extentX, extentY float64
+
+		if rect, isRect := w.rectColliders[id]; isRect {
+			extentX = rect.HalfExtends.X
+			extentY = rect.HalfExtends.Y
+		} else if circle, isCircle := w.circleColliders[id]; isCircle {
+			extentX = circle.Radius
+			extentY = circle.Radius
+		} else {
 			continue
 		}
 
-		radius := collider.Radius
-
-		if transform.Position.X-radius < bounds.Min.X {
-			transform.Position.X = bounds.Min.X + radius
+		minXBound := bounds.Min.X + extentX
+		if transform.Position.X < minXBound {
+			transform.Position.X = minXBound
 			if velocity.Linear.X < 0 {
 				velocity.Linear.X = -velocity.Linear.X
 			}
-		}
-
-		if transform.Position.X+radius > bounds.Max.X {
-			transform.Position.X = bounds.Max.X - radius
-			if velocity.Linear.X > 0 {
-				velocity.Linear.X = -velocity.Linear.X
+		} else {
+			maxXBound := bounds.Max.X - extentX
+			if transform.Position.X > maxXBound {
+				transform.Position.X = maxXBound
+				if velocity.Linear.X > 0 {
+					velocity.Linear.X = -velocity.Linear.X
+				}
 			}
 		}
 
-		if transform.Position.Y-radius < bounds.Min.Y {
-			transform.Position.Y = bounds.Min.Y + radius
+		minYBound := bounds.Min.Y + extentY
+		if transform.Position.Y < minYBound {
+			transform.Position.Y = minYBound
 			if velocity.Linear.Y < 0 {
 				velocity.Linear.Y = -velocity.Linear.Y
 			}
-		}
-
-		if transform.Position.Y+radius > bounds.Max.Y {
-			transform.Position.Y = bounds.Max.Y - radius
-			if velocity.Linear.Y > 0 {
-				velocity.Linear.Y = -velocity.Linear.Y
+		} else {
+			maxYBound := bounds.Max.Y - extentY
+			if transform.Position.Y > maxYBound {
+				transform.Position.Y = maxYBound
+				if velocity.Linear.Y > 0 {
+					velocity.Linear.Y = -velocity.Linear.Y
+				}
 			}
 		}
 
@@ -97,7 +111,7 @@ func (w *World) BounceCirclesInside(bounds math2d.Rect) {
 	}
 }
 
-func (w *World) DetectCircleOverlaps() []CircleContact {
+func (w *World) DetectCircleOverlaps() []Contact {
 	entities := w.circleColliderEntities()
 	pairs := make([]entityPair, 0, len(entities))
 
@@ -107,10 +121,10 @@ func (w *World) DetectCircleOverlaps() []CircleContact {
 		}
 	}
 
-	return w.detectCircleOverlapsForPairs(pairs)
+	return w.detectOverlapsForPairs(pairs)
 }
 
-func (w *World) DetectCircleOverlapsGrid(cellSize float64) []CircleContact {
+func (w *World) DetectCircleOverlapsGrid(cellSize float64) []Contact {
 	if cellSize <= 0 {
 		w.debugGridCells = nil
 		return w.DetectCircleOverlaps()
@@ -120,7 +134,7 @@ func (w *World) DetectCircleOverlapsGrid(cellSize float64) []CircleContact {
 	grid.populate(w)
 	w.debugGridCells = grid.debugCells()
 
-	return w.detectCircleOverlapsForPairs(grid.entityPairs())
+	return w.detectOverlapsForPairs(grid.entityPairs())
 }
 
 func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
@@ -137,7 +151,7 @@ func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
 		w.debugGridCells = nil
 
 		return collisionStats{
-			contacts:        w.detectCircleOverlapsForPairs(pairs),
+			contacts:        w.detectOverlapsForPairs(pairs),
 			broadPhasePairs: len(pairs),
 			gridCells:       0,
 		}
@@ -150,17 +164,17 @@ func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
 	pairs := grid.entityPairs()
 
 	return collisionStats{
-		contacts:        w.detectCircleOverlapsForPairs(pairs),
+		contacts:        w.detectOverlapsForPairs(pairs),
 		broadPhasePairs: len(pairs),
 		gridCells:       len(w.debugGridCells),
 	}
 }
 
-func (w *World) detectCircleOverlapsForPairs(pairs []entityPair) []CircleContact {
-	contacts := make([]CircleContact, 0)
+func (w *World) detectOverlapsForPairs(pairs []entityPair) []Contact {
+	contacts := make([]Contact, 0)
 
 	for _, pair := range pairs {
-		if contact, ok := w.detectCircleOverlapPair(pair); ok {
+		if contact, ok := w.detectOverlapPair(pair); ok {
 			contacts = append(contacts, contact)
 		}
 	}
@@ -168,19 +182,40 @@ func (w *World) detectCircleOverlapsForPairs(pairs []entityPair) []CircleContact
 	return contacts
 }
 
-func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
+func (w *World) detectOverlapPair(pair entityPair) (Contact, bool) {
+	circleA, aIsCircle := w.circleColliders[pair.A]
+	circleB, bIsCircle := w.circleColliders[pair.B]
+	rectA, aIsRect := w.rectColliders[pair.A]
+	rectB, bIsRect := w.rectColliders[pair.B]
+
+	// circle collider override rect collider in same entity
+	aIsRect = aIsRect && !aIsCircle
+	bIsRect = bIsRect && !bIsCircle
+
+	switch {
+	case aIsCircle && bIsCircle:
+		return w.circleVsCircle(pair, circleA, circleB)
+	case aIsRect && bIsRect:
+		return w.rectVsRect(pair, rectA, rectB)
+	case aIsCircle && bIsRect:
+		return w.circleVsRect(pair.A, pair.B, circleA, rectB, false)
+	case aIsRect && bIsCircle:
+		return w.circleVsRect(pair.B, pair.A, circleB, rectA, true)
+	}
+
+	return Contact{}, false
+}
+
+func (w *World) circleVsCircle(pair entityPair, colliderA, colliderB CircleCollider) (Contact, bool) {
 	transformA, ok := w.transforms[pair.A]
 	if !ok {
-		return CircleContact{}, false
+		return Contact{}, false
 	}
 
 	transformB, ok := w.transforms[pair.B]
 	if !ok {
-		return CircleContact{}, false
+		return Contact{}, false
 	}
-
-	colliderA := w.circleColliders[pair.A]
-	colliderB := w.circleColliders[pair.B]
 
 	delta := transformB.Position.Sub(transformA.Position)
 	distanceSq := delta.LenSq()
@@ -188,11 +223,11 @@ func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
 	radiusSumSq := radiusSum * radiusSum
 
 	if distanceSq >= radiusSumSq {
-		return CircleContact{}, false
+		return Contact{}, false
 	}
 
 	if distanceSq == 0 {
-		return CircleContact{
+		return Contact{
 			A:      pair.A,
 			B:      pair.B,
 			Normal: math2d.Vec2{X: 1, Y: 0},
@@ -201,7 +236,7 @@ func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
 	}
 
 	distance := math.Sqrt(distanceSq)
-	return CircleContact{
+	return Contact{
 		A:      pair.A,
 		B:      pair.B,
 		Normal: delta.Div(distance),
@@ -209,17 +244,179 @@ func (w *World) detectCircleOverlapPair(pair entityPair) (CircleContact, bool) {
 	}, true
 }
 
+func (w *World) circleVsRect(
+	circleID,
+	rectID EntityID,
+	circleCollider CircleCollider,
+	rectCollider RectCollider,
+	invertNormal bool,
+) (Contact, bool) {
+	circleTransform, ok := w.transforms[circleID]
+	if !ok {
+		return Contact{}, false
+	}
+
+	rectTransform, ok := w.transforms[rectID]
+	if !ok {
+		return Contact{}, false
+	}
+
+	minX := rectTransform.Position.X - rectCollider.HalfExtends.X
+	maxX := rectTransform.Position.X + rectCollider.HalfExtends.X
+	minY := rectTransform.Position.Y - rectCollider.HalfExtends.Y
+	maxY := rectTransform.Position.Y + rectCollider.HalfExtends.Y
+
+	// find closest point from circle and rect
+	closest := math2d.Vec2{
+		X: math2d.Clamp(circleTransform.Position.X, minX, maxX),
+		Y: math2d.Clamp(circleTransform.Position.Y, minY, maxY),
+	}
+
+	delta := closest.Sub(circleTransform.Position)
+	distSq := delta.LenSq()
+
+	if distSq > circleCollider.Radius*circleCollider.Radius {
+		return Contact{}, false
+	}
+
+	// circle center inside rect
+	if distSq == 0 {
+		left := circleTransform.Position.X - (rectTransform.Position.X - rectCollider.HalfExtends.X)
+		right := (rectTransform.Position.X + rectCollider.HalfExtends.X) - circleTransform.Position.X
+		top := circleTransform.Position.Y - (rectTransform.Position.Y - rectCollider.HalfExtends.Y)
+		bottom := (rectTransform.Position.Y + rectCollider.HalfExtends.Y) - circleTransform.Position.Y
+
+		minDist := left
+		normal := math2d.Vec2{X: -1}
+
+		if right < minDist {
+			minDist = right
+			normal = math2d.Vec2{X: 1}
+		}
+		if top < minDist {
+			minDist = top
+			normal = math2d.Vec2{Y: -1}
+		}
+		if bottom < minDist {
+			normal = math2d.Vec2{Y: 1}
+		}
+
+		if invertNormal {
+			normal = normal.Mul(-1)
+		}
+
+		return Contact{
+			A:      circleID,
+			B:      rectID,
+			Normal: normal,
+			Depth:  circleCollider.Radius + minDist,
+		}, true
+	}
+
+	normal := delta.Normalize()
+
+	if invertNormal {
+		normal = normal.Mul(-1)
+	}
+
+	// circle center out rect but border touch rect
+	return Contact{
+		A:      circleID,
+		B:      rectID,
+		Normal: normal,
+		Depth:  circleCollider.Radius - math.Sqrt(distSq),
+	}, true
+}
+
+func (w *World) rectVsRect(pair entityPair, colliderA, colliderB RectCollider) (Contact, bool) {
+	transformA, ok := w.transforms[pair.A]
+	if !ok {
+		return Contact{}, false
+	}
+
+	transformB, ok := w.transforms[pair.B]
+	if !ok {
+		return Contact{}, false
+	}
+
+	centerAX := transformA.Position.X + (transformA.Scale.X * 0.5)
+	centerAY := transformA.Position.Y + (transformA.Scale.Y * 0.5)
+
+	minAX := centerAX - colliderA.HalfExtends.X
+	maxAX := centerAX + colliderA.HalfExtends.X
+
+	if minAX > (transformB.Position.X+colliderB.HalfExtends.X) ||
+		maxAX < (transformB.Position.X+colliderB.HalfExtends.X) {
+		return Contact{}, false
+	}
+
+	minAY := centerAY - colliderA.HalfExtends.Y
+	maxAY := centerAY + colliderA.HalfExtends.Y
+
+	if minAY > (transformB.Position.Y+colliderB.HalfExtends.Y) ||
+		maxAY < (transformB.Position.Y-colliderB.HalfExtends.Y) {
+		return Contact{}, false
+	}
+
+	// Here collision is 100% confirmed, only need to find normal and depth
+	minBX := transformB.Position.X - colliderB.HalfExtends.X
+	maxBX := transformB.Position.X + colliderB.HalfExtends.X
+	minBY := transformB.Position.Y - colliderB.HalfExtends.Y
+	maxBY := transformB.Position.Y + colliderB.HalfExtends.Y
+
+	overlapLeft := maxAX - minBX
+	overlapRight := maxBX - minAX
+	overlapBottom := maxAY - minBY
+	overlapTop := maxBY - minAY
+
+	if overlapLeft < overlapRight {
+		if overlapLeft < overlapBottom && overlapLeft < overlapTop {
+			return Contact{
+				A:      pair.A,
+				B:      pair.B,
+				Normal: math2d.Vec2{X: -1.0, Y: 0.0},
+				Depth:  overlapLeft,
+			}, true
+		}
+	} else {
+		if overlapRight < overlapBottom && overlapRight < overlapTop {
+			return Contact{
+				A:      pair.A,
+				B:      pair.B,
+				Normal: math2d.Vec2{X: 1.0, Y: 0.0},
+				Depth:  overlapRight,
+			}, true
+		}
+	}
+
+	if overlapBottom < overlapTop {
+		return Contact{
+			A:      pair.A,
+			B:      pair.B,
+			Normal: math2d.Vec2{X: 0.0, Y: -1.0},
+			Depth:  overlapLeft,
+		}, true
+	}
+
+	return Contact{
+		A:      pair.A,
+		B:      pair.B,
+		Normal: math2d.Vec2{X: 0.0, Y: 1.0},
+		Depth:  overlapTop,
+	}, true
+}
+
 func (w *World) ResolveCircleOverlaps() {
 	contacts := w.DetectCircleOverlaps()
-	w.resolveCircleContacts(contacts)
+	w.resolveContacts(contacts)
 }
 
 func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
 	contacts := w.DetectCircleOverlapsGrid(cellSize)
-	w.resolveCircleContacts(contacts)
+	w.resolveContacts(contacts)
 }
 
-func (w *World) resolveCircleContacts(contacts []CircleContact) {
+func (w *World) resolveContacts(contacts []Contact) {
 	w.contacts = contacts
 
 	for _, contact := range contacts {
@@ -281,9 +478,9 @@ func (w *World) resolveCircleContacts(contacts []CircleContact) {
 }
 
 func (g *spatialHashGrid) populate(w *World) {
-	entities := w.circleColliderEntities()
+	circleEntities := w.circleColliderEntities()
 
-	for _, id := range entities {
+	for _, id := range circleEntities {
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
@@ -295,6 +492,28 @@ func (g *spatialHashGrid) populate(w *World) {
 		maxCellX := cellCoord(transform.Position.X+collider.Radius, g.cellSize)
 		minCellY := cellCoord(transform.Position.Y-collider.Radius, g.cellSize)
 		maxCellY := cellCoord(transform.Position.Y+collider.Radius, g.cellSize)
+
+		for cellX := minCellX; cellX <= maxCellX; cellX++ {
+			for cellY := minCellY; cellY <= maxCellY; cellY++ {
+				cell := gridCell{X: cellX, Y: cellY}
+				g.cells[cell] = append(g.cells[cell], id)
+			}
+		}
+	}
+
+	rectEntities := w.rectColliderEntities()
+	for _, id := range rectEntities {
+		transform, ok := w.transforms[id]
+		if !ok {
+			continue
+		}
+
+		collider := w.rectColliders[id]
+
+		minCellX := cellCoord(transform.Position.X-collider.HalfExtends.X, g.cellSize)
+		maxCellX := cellCoord(transform.Position.X+collider.HalfExtends.X, g.cellSize)
+		minCellY := cellCoord(transform.Position.Y-collider.HalfExtends.Y, g.cellSize)
+		maxCellY := cellCoord(transform.Position.Y+collider.HalfExtends.Y, g.cellSize)
 
 		for cellX := minCellX; cellX <= maxCellX; cellX++ {
 			for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -399,6 +618,18 @@ func (w *World) circleColliderEntities() []EntityID {
 	entities := make([]EntityID, 0, len(w.circleColliders))
 
 	for id := range w.circleColliders {
+		entities = append(entities, id)
+	}
+
+	slices.Sort(entities)
+
+	return entities
+}
+
+func (w *World) rectColliderEntities() []EntityID {
+	entities := make([]EntityID, 0, len(w.rectColliders))
+
+	for id := range w.rectColliders {
 		entities = append(entities, id)
 	}
 

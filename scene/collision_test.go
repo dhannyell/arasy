@@ -68,7 +68,7 @@ func TestWorldBounceCirclesInsideBounces(t *testing.T) {
 			})
 
 			world.Integrate(0.5)
-			world.BounceCirclesInside(bounds)
+			world.BounceEntitiesInside(bounds)
 
 			transform, ok := world.Transform(entity)
 			if !ok {
@@ -102,7 +102,7 @@ func TestWorldBounceCirclesInsideSkipsEntityWithoutVelocity(t *testing.T) {
 		Radius: 2,
 	})
 
-	world.BounceCirclesInside(math2d.NewRect(
+	world.BounceEntitiesInside(math2d.NewRect(
 		math2d.Vec2{X: 0, Y: 0},
 		math2d.Vec2{X: 100, Y: 100},
 	))
@@ -131,7 +131,7 @@ func TestWorldBounceCirclesInsideSkipsEntityWithoutTransform(t *testing.T) {
 		Radius: 2,
 	})
 
-	world.BounceCirclesInside(math2d.NewRect(
+	world.BounceEntitiesInside(math2d.NewRect(
 		math2d.Vec2{X: 0, Y: 0},
 		math2d.Vec2{X: 100, Y: 100},
 	))
@@ -668,7 +668,7 @@ func TestWorldResolveCircleOverlapsSkipsTwoStaticBodies(t *testing.T) {
 	}
 }
 
-func assertContactPairs(t *testing.T, contacts []scene.CircleContact, want [][2]scene.EntityID) {
+func assertContactPairs(t *testing.T, contacts []scene.Contact, want [][2]scene.EntityID) {
 	t.Helper()
 
 	if len(contacts) != len(want) {
@@ -689,7 +689,7 @@ func assertContactPairs(t *testing.T, contacts []scene.CircleContact, want [][2]
 	}
 }
 
-func contactPairs(contacts []scene.CircleContact) [][2]scene.EntityID {
+func contactPairs(contacts []scene.Contact) [][2]scene.EntityID {
 	pairs := make([][2]scene.EntityID, 0, len(contacts))
 	for _, contact := range contacts {
 		pairs = append(pairs, [2]scene.EntityID{contact.A, contact.B})
