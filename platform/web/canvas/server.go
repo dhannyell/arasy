@@ -370,6 +370,8 @@ func controlCommandFromMessage(msg clientMessage) (runtime.ControlCommand, bool)
 		return runtime.ControlCommand{Kind: runtime.ControlBack}, true
 	case "backToTick":
 		return runtime.ControlCommand{Kind: runtime.ControlBackToTick, Tick: msg.Tick}, true
+	case "scrubToTick":
+		return runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: msg.Tick}, true
 	case "backSeconds":
 		return runtime.ControlCommand{Kind: runtime.ControlBackSeconds, Seconds: msg.Seconds}, true
 	case "reset":
@@ -409,6 +411,7 @@ func (h *hub) broadcast(commands []render.Command, camera render.Camera, state r
 				HistoryLen:       state.HistoryLen,
 				HistoryStartTick: state.HistoryStartTick,
 				HistoryEndTick:   state.HistoryEndTick,
+				MaxRecordedTick:  state.MaxRecordedTick,
 				RenderFPS:        h.fps,
 				SimulationHz:     h.simHz,
 			},
