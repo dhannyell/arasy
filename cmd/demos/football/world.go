@@ -204,8 +204,10 @@ func spawnCircleEntity(
 		},
 		CircleSprite: &scene.CircleSprite{
 			Radius: visualRadius,
-			Color:  color,
-			Layer:  layer,
+			BaseSprite: scene.BaseSprite{
+				Color: color,
+				Layer: layer,
+			},
 		},
 		CircleCollider: &scene.CircleCollider{
 			Radius: colliderRadius,

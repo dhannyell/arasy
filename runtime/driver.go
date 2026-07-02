@@ -458,7 +458,9 @@ func (d *Driver) doScrubToTick(target uint64) {
 		return
 	}
 
-	replayed := Replay(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target})
+	// Thread the live viewport so viewport-dependent Update logic (UI
+	// hit-testing above all) reconstructs identically — see replayWithViewport.
+	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target}, d.viewport)
 
 	d.world = replayed.world
 	d.uiState = replayed.uiState

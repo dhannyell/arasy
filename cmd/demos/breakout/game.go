@@ -11,11 +11,6 @@ import (
 	"github.com/dhannyell/frameforge/ui"
 )
 
-type Hit struct {
-	Normal math2d.Vec2
-	Point  math2d.Vec2
-}
-
 func (b *Breakout) Setup() runtime.Config {
 	return runtime.Config{
 		Camera: render.Camera{
@@ -61,17 +56,16 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	})
 
 	b.State.paddle.id = ctx.World.SpawnBundle(scene.Bundle{
-		Transform: &scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}},
-		Velocity:  &scene.Velocity{Linear: b.State.ball.Velocity},
+		Transform: &scene.Transform{Position: b.State.paddle.Rect.Center()},
 		RectSprite: &scene.RectSprite{
 			BaseSprite: scene.BaseSprite{
 				Color: render.RGBA(0.5, 1, 1, 1),
 				Layer: 1,
 			},
-			Rect: math2d.NewRect(math2d.Vec2{X: (worldWidth - paddleWidth) / 2, Y: paddleY}, math2d.Vec2{X: paddleWidth, Y: paddleHeight}),
+			Rect: b.State.paddle.Rect,
 		},
 		RectCollider: &scene.RectCollider{
-			HalfExtends: math2d.Vec2{X: paddleWidth / 2, Y: brickHeight / 2},
+			HalfExtends: math2d.Vec2{X: paddleWidth / 2, Y: paddleHeight / 2},
 		},
 		Body: &scene.Body{InvMass: 0.0, Restitution: 1.0},
 	})
@@ -93,11 +87,7 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 		if ctx.UI.Clicked("btn_play", play) {
 			b.State.state = StateReady
 			b.State.lives = 3
-			b.State.bricksLeft = len(b.State.bricks)
-
-			for i := range b.State.bricks {
-				b.State.bricks[i].Alive = true
-			}
+			b.respawnBricks(ctx.World)
 		}
 		return
 	}
@@ -107,6 +97,7 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 
 	b.movePaddle(ctx.Input, dt)
+	b.syncPaddleToWorld(ctx.World)
 
 	if b.State.state == StateReady {
 		b.attachBallToPaddle()
@@ -127,6 +118,7 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 	if b.State.state == StatePlaying {
 		ctx.World.Step(dt, ctx.StepConfig)
 		b.syncBallFromWorld(ctx.World)
+		b.resolveGameContacts(ctx.World)
 
 		if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
 			b.State.lives--
@@ -254,6 +246,77 @@ func (b *Breakout) syncBallFromWorld(world *scene.World) {
 	}
 	if velocity, ok := world.Velocity(b.State.ball.id); ok {
 		b.State.ball.Velocity = velocity.Linear
+	}
+}
+
+// syncPaddleToWorld pushes the paddle's game-owned Rect into its entity so the
+// collider and sprite follow the player's input (the entity is the physics
+// truth the ball collides with).
+func (b *Breakout) syncPaddleToWorld(world *scene.World) {
+	rect := b.State.paddle.Rect
+	world.SetTransform(b.State.paddle.id, scene.Transform{Position: rect.Center()})
+	if sprite, ok := world.RectSprite(b.State.paddle.id); ok {
+		sprite.Rect = rect
+		world.SetRectSprite(b.State.paddle.id, sprite)
+	}
+}
+
+// resolveGameContacts applies breakout's game rules to the physics contacts of
+// the last Step: paddle bounce angle by impact point, and brick destruction.
+func (b *Breakout) resolveGameContacts(world *scene.World) {
+	for _, contact := range world.Contacts() {
+		other, involvesBall := contactOther(contact, b.State.ball.id)
+		if !involvesBall {
+			continue
+		}
+
+		if other == b.State.paddle.id {
+			b.bounceFromPaddle()
+			world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
+			continue
+		}
+
+		if idx := b.brickIndex(other); idx >= 0 && b.State.bricks[idx].Alive {
+			b.State.bricks[idx].HP--
+			if b.State.bricks[idx].HP <= 0 {
+				b.State.bricks[idx].Alive = false
+				world.Despawn(other)
+				b.State.score += 10
+				b.State.bricksLeft--
+			}
+		}
+	}
+}
+
+// respawnBricks clears any live brick entities and rebuilds the wall, keeping
+// the entity world and the game-side brick list in sync on (re)start.
+func (b *Breakout) respawnBricks(world *scene.World) {
+	for _, brick := range b.State.bricks {
+		world.Despawn(brick.ID)
+	}
+	b.State.bricks = spawnBuildBricks(world)
+	b.State.bricksLeft = len(b.State.bricks)
+}
+
+func (b *Breakout) brickIndex(id scene.EntityID) int {
+	for i := range b.State.bricks {
+		if b.State.bricks[i].ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// contactOther returns the entity paired with id in the contact, and whether id
+// took part at all.
+func contactOther(contact scene.Contact, id scene.EntityID) (scene.EntityID, bool) {
+	switch id {
+	case contact.A:
+		return contact.B, true
+	case contact.B:
+		return contact.A, true
+	default:
+		return 0, false
 	}
 }
 

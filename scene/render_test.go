@@ -21,8 +21,10 @@ func TestWorldRenderCommandsCreatesCircleForRenderableEntity(t *testing.T) {
 	})
 	world.SetCircleSprite(entity, scene.CircleSprite{
 		Radius: 2,
-		Color:  color,
-		Layer:  5,
+		BaseSprite: scene.BaseSprite{
+			Color: color,
+			Layer: 5,
+		},
 	})
 
 	commands := world.RenderCommands()
@@ -58,8 +60,10 @@ func TestWorldRenderCommandsSkipsEntityWithoutTransform(t *testing.T) {
 
 	world.SetCircleSprite(entity, scene.CircleSprite{
 		Radius: 2,
-		Color:  render.RGBA(1, 0, 0, 1),
-		Layer:  5,
+		BaseSprite: scene.BaseSprite{
+			Color: render.RGBA(1, 0, 0, 1),
+			Layer: 5,
+		},
 	})
 
 	commands := world.RenderCommands()

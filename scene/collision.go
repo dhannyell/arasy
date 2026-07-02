@@ -29,7 +29,7 @@ type Contact struct {
 	// Normal points from A to B
 	Normal math2d.Vec2
 
-	// Depth is how much the two circles overlap.
+	// Depth is how much the two shapes overlap.
 	Depth float64
 }
 
@@ -198,8 +198,10 @@ func (w *World) detectOverlapPair(pair entityPair) (Contact, bool) {
 	case aIsRect && bIsRect:
 		return w.rectVsRect(pair, rectA, rectB)
 	case aIsCircle && bIsRect:
+		// circle is pair.A -> circleIsB=false
 		return w.circleVsRect(pair.A, pair.B, circleA, rectB, false)
 	case aIsRect && bIsCircle:
+		// circle is pair.B -> circleIsB=true (normal flipped to stay A->B)
 		return w.circleVsRect(pair.B, pair.A, circleB, rectA, true)
 	}
 
@@ -244,12 +246,16 @@ func (w *World) circleVsCircle(pair entityPair, colliderA, colliderB CircleColli
 	}, true
 }
 
+// circleVsRect resolves a circle against an axis-aligned rect. The math always
+// runs "circle vs rect" and produces a normal pointing circle->rect; the caller
+// tells us whether the circle is the pair's B entity so we can keep the Contact
+// convention (A<B by pair order, Normal pointing A->B).
 func (w *World) circleVsRect(
 	circleID,
 	rectID EntityID,
 	circleCollider CircleCollider,
 	rectCollider RectCollider,
-	invertNormal bool,
+	circleIsB bool,
 ) (Contact, bool) {
 	circleTransform, ok := w.transforms[circleID]
 	if !ok {
@@ -266,65 +272,67 @@ func (w *World) circleVsRect(
 	minY := rectTransform.Position.Y - rectCollider.HalfExtends.Y
 	maxY := rectTransform.Position.Y + rectCollider.HalfExtends.Y
 
-	// find closest point from circle and rect
+	// find closest point on the rect to the circle center
 	closest := math2d.Vec2{
 		X: math2d.Clamp(circleTransform.Position.X, minX, maxX),
 		Y: math2d.Clamp(circleTransform.Position.Y, minY, maxY),
 	}
 
-	delta := closest.Sub(circleTransform.Position)
+	delta := closest.Sub(circleTransform.Position) // points circle -> rect
 	distSq := delta.LenSq()
 
-	if distSq > circleCollider.Radius*circleCollider.Radius {
-		return Contact{}, false
-	}
+	var normal math2d.Vec2 // circle -> rect
+	var depth float64
 
-	// circle center inside rect
 	if distSq == 0 {
-		left := circleTransform.Position.X - (rectTransform.Position.X - rectCollider.HalfExtends.X)
-		right := (rectTransform.Position.X + rectCollider.HalfExtends.X) - circleTransform.Position.X
-		top := circleTransform.Position.Y - (rectTransform.Position.Y - rectCollider.HalfExtends.Y)
-		bottom := (rectTransform.Position.Y + rectCollider.HalfExtends.Y) - circleTransform.Position.Y
+		// circle center inside rect: push out through the nearest face. The
+		// face normals below point circle->rect (toward the rect center).
+		left := circleTransform.Position.X - minX
+		right := maxX - circleTransform.Position.X
+		top := circleTransform.Position.Y - minY
+		bottom := maxY - circleTransform.Position.Y
 
 		minDist := left
-		normal := math2d.Vec2{X: -1}
+		normal = math2d.Vec2{X: 1}
 
 		if right < minDist {
 			minDist = right
-			normal = math2d.Vec2{X: 1}
+			normal = math2d.Vec2{X: -1}
 		}
 		if top < minDist {
 			minDist = top
-			normal = math2d.Vec2{Y: -1}
-		}
-		if bottom < minDist {
 			normal = math2d.Vec2{Y: 1}
 		}
-
-		if invertNormal {
-			normal = normal.Mul(-1)
+		if bottom < minDist {
+			minDist = bottom
+			normal = math2d.Vec2{Y: -1}
 		}
 
-		return Contact{
-			A:      circleID,
-			B:      rectID,
-			Normal: normal,
-			Depth:  circleCollider.Radius + minDist,
-		}, true
+		depth = circleCollider.Radius + minDist
+	} else {
+		// touching-only (distSq == r²) does not count, matching the >= used by
+		// circle×circle and the >0 overlap used by rect×rect.
+		if distSq >= circleCollider.Radius*circleCollider.Radius {
+			return Contact{}, false
+		}
+
+		// circle center outside the rect but within radius of the border
+		normal = delta.Div(math.Sqrt(distSq))
+		depth = circleCollider.Radius - math.Sqrt(distSq)
 	}
 
-	normal := delta.Normalize()
-
-	if invertNormal {
+	a, b := circleID, rectID
+	if circleIsB {
+		// keep A<B ordering and flip the normal so it still points A->B
+		a, b = rectID, circleID
 		normal = normal.Mul(-1)
 	}
 
-	// circle center out rect but border touch rect
 	return Contact{
-		A:      circleID,
-		B:      rectID,
+		A:      a,
+		B:      b,
 		Normal: normal,
-		Depth:  circleCollider.Radius - math.Sqrt(distSq),
+		Depth:  depth,
 	}, true
 }
 
@@ -339,70 +347,54 @@ func (w *World) rectVsRect(pair entityPair, colliderA, colliderB RectCollider) (
 		return Contact{}, false
 	}
 
-	centerAX := transformA.Position.X + (transformA.Scale.X * 0.5)
-	centerAY := transformA.Position.Y + (transformA.Scale.Y * 0.5)
+	minAX := transformA.Position.X - colliderA.HalfExtends.X
+	maxAX := transformA.Position.X + colliderA.HalfExtends.X
+	minAY := transformA.Position.Y - colliderA.HalfExtends.Y
+	maxAY := transformA.Position.Y + colliderA.HalfExtends.Y
 
-	minAX := centerAX - colliderA.HalfExtends.X
-	maxAX := centerAX + colliderA.HalfExtends.X
-
-	if minAX > (transformB.Position.X+colliderB.HalfExtends.X) ||
-		maxAX < (transformB.Position.X+colliderB.HalfExtends.X) {
-		return Contact{}, false
-	}
-
-	minAY := centerAY - colliderA.HalfExtends.Y
-	maxAY := centerAY + colliderA.HalfExtends.Y
-
-	if minAY > (transformB.Position.Y+colliderB.HalfExtends.Y) ||
-		maxAY < (transformB.Position.Y-colliderB.HalfExtends.Y) {
-		return Contact{}, false
-	}
-
-	// Here collision is 100% confirmed, only need to find normal and depth
 	minBX := transformB.Position.X - colliderB.HalfExtends.X
 	maxBX := transformB.Position.X + colliderB.HalfExtends.X
 	minBY := transformB.Position.Y - colliderB.HalfExtends.Y
 	maxBY := transformB.Position.Y + colliderB.HalfExtends.Y
 
-	overlapLeft := maxAX - minBX
-	overlapRight := maxBX - minAX
-	overlapBottom := maxAY - minBY
-	overlapTop := maxBY - minAY
-
-	if overlapLeft < overlapRight {
-		if overlapLeft < overlapBottom && overlapLeft < overlapTop {
-			return Contact{
-				A:      pair.A,
-				B:      pair.B,
-				Normal: math2d.Vec2{X: -1.0, Y: 0.0},
-				Depth:  overlapLeft,
-			}, true
-		}
-	} else {
-		if overlapRight < overlapBottom && overlapRight < overlapTop {
-			return Contact{
-				A:      pair.A,
-				B:      pair.B,
-				Normal: math2d.Vec2{X: 1.0, Y: 0.0},
-				Depth:  overlapRight,
-			}, true
-		}
+	// Bordas apenas encostando (overlap zero) não geram contato, consistente
+	// com o >= do círculo.
+	overlapX := min(maxAX, maxBX) - max(minAX, minBX)
+	if overlapX <= 0 {
+		return Contact{}, false
 	}
 
-	if overlapBottom < overlapTop {
+	overlapY := min(maxAY, maxBY) - max(minAY, minBY)
+	if overlapY <= 0 {
+		return Contact{}, false
+	}
+
+	// Normal no eixo de menor penetração; sinal pela diferença de centros
+	// (A->B). Desempate X==Y -> eixo X; centros coincidentes -> +X/+Y.
+	if overlapX <= overlapY {
+		normalX := 1.0
+		if transformB.Position.X < transformA.Position.X {
+			normalX = -1.0
+		}
+
 		return Contact{
 			A:      pair.A,
 			B:      pair.B,
-			Normal: math2d.Vec2{X: 0.0, Y: -1.0},
-			Depth:  overlapLeft,
+			Normal: math2d.Vec2{X: normalX},
+			Depth:  overlapX,
 		}, true
+	}
+
+	normalY := 1.0
+	if transformB.Position.Y < transformA.Position.Y {
+		normalY = -1.0
 	}
 
 	return Contact{
 		A:      pair.A,
 		B:      pair.B,
-		Normal: math2d.Vec2{X: 0.0, Y: 1.0},
-		Depth:  overlapTop,
+		Normal: math2d.Vec2{Y: normalY},
+		Depth:  overlapY,
 	}, true
 }
 
@@ -503,6 +495,13 @@ func (g *spatialHashGrid) populate(w *World) {
 
 	rectEntities := w.rectColliderEntities()
 	for _, id := range rectEntities {
+		// D1 precedence: a circle collider on the same entity wins, so the rect
+		// is ignored. Skipping it here also avoids inserting the entity twice
+		// (which would create a spurious self-pair in entityPairs).
+		if _, isCircle := w.circleColliders[id]; isCircle {
+			continue
+		}
+
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
@@ -534,6 +533,11 @@ func (g *spatialHashGrid) entityPairs() []entityPair {
 
 		for i := range entities {
 			for j := i + 1; j < len(entities); j++ {
+				if entities[i] == entities[j] {
+					// never pair an entity with itself (e.g. if it was ever
+					// inserted under the same cell twice)
+					continue
+				}
 				pairSet[makeEntityPair(entities[i], entities[j])] = struct{}{}
 			}
 		}

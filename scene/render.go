@@ -58,8 +58,16 @@ func (w *World) RenderCommands() []render.Command {
 }
 
 func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
-	ids := make([]EntityID, 0, len(w.circleColliders))
+	ids := make([]EntityID, 0, len(w.circleColliders)+len(w.rectColliders))
 	for id := range w.circleColliders {
+		ids = append(ids, id)
+	}
+	for id := range w.rectColliders {
+		if _, isCircle := w.circleColliders[id]; isCircle {
+			// circle collider takes precedence on the same entity (see
+			// detectOverlapPair); don't draw the ignored rect.
+			continue
+		}
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
@@ -67,21 +75,38 @@ func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, l
 	commands := make([]render.Command, 0, len(ids))
 
 	for _, id := range ids {
-		collider := w.circleColliders[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		commands = append(commands, render.DrawCircle{
-			Center:      transform.Position,
-			Radius:      collider.Radius,
-			Stroke:      color,
-			StrokeWidth: strokeWidth,
-			BaseCommand: render.BaseCommand{
-				LayerValue: layer,
-			},
-		})
+		if collider, isCircle := w.circleColliders[id]; isCircle {
+			commands = append(commands, render.DrawCircle{
+				Center:      transform.Position,
+				Radius:      collider.Radius,
+				Stroke:      color,
+				StrokeWidth: strokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
+			})
+			continue
+		}
+
+		if collider, isRect := w.rectColliders[id]; isRect {
+			half := collider.HalfExtends
+			commands = append(commands, render.DrawRect{
+				Rect: math2d.NewRectFromCorners(
+					transform.Position.Sub(half),
+					transform.Position.Add(half),
+				),
+				Stroke:      color,
+				StrokeWidth: strokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
+			})
+		}
 	}
 
 	return commands

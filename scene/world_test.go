@@ -56,8 +56,10 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 	world.SetVelocity(entity, velocity)
 	world.SetCircleSprite(entity, scene.CircleSprite{
 		Radius: 2,
-		Color:  render.RGBA(1, 0, 0, 1),
-		Layer:  5,
+		BaseSprite: scene.BaseSprite{
+			Color: render.RGBA(1, 0, 0, 1),
+			Layer: 5,
+		},
 	})
 	world.SetCircleCollider(entity, scene.CircleCollider{
 		Radius: 1.5,
@@ -133,8 +135,10 @@ func TestWorldStoresAndReadsCircleSprite(t *testing.T) {
 
 	sprite := scene.CircleSprite{
 		Radius: 1.25,
-		Color:  render.RGBA(0.2, 0.4, 0.6, 1),
-		Layer:  8,
+		BaseSprite: scene.BaseSprite{
+			Color: render.RGBA(0.2, 0.4, 0.6, 1),
+			Layer: 8,
+		},
 	}
 
 	world.SetCircleSprite(entity, sprite)
