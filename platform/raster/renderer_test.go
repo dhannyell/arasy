@@ -357,6 +357,84 @@ func TestRendererDrawsArc(t *testing.T) {
 	assertPixel(t, img.At(3, 5), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 }
 
+func TestDrawTextRendersPixels(t *testing.T) {
+	renderer := raster.Renderer{
+		Width:  100,
+		Height: 50,
+		Camera: render.Camera{
+			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 50}),
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 50}),
+		},
+		Clear: render.RGBA(0, 0, 0, 1),
+	}
+
+	img := renderer.Render([]render.Command{
+		render.DrawText{
+			Position: math2d.Vec2{X: 10, Y: 10},
+			Text:     "Hi",
+			Color:    render.RGBA(1, 1, 1, 1),
+			Size:     16,
+			Baseline: render.BaselineTop,
+		},
+	})
+
+	foundNonBackground := false
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y && !foundNonBackground; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			if r>>8 > 0 || g>>8 > 0 || b>>8 > 0 {
+				foundNonBackground = true
+				break
+			}
+		}
+	}
+
+	if !foundNonBackground {
+		t.Fatal("DrawText produced no visible pixels — text is being silently dropped")
+	}
+}
+
+func TestDrawTextEmptyStringDrawsNothing(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawText{
+			Position: math2d.Vec2{X: 5, Y: 5},
+			Text:     "",
+			Color:    render.RGBA(1, 1, 1, 1),
+			Size:     4,
+		},
+	})
+
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
+func TestDrawRectAlphaBlends(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+			Fill: render.RGBA(1, 1, 1, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
+		},
+		render.DrawRect{
+			Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+			Fill: render.RGBA(0, 0, 0, 0.5),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 2,
+			},
+		},
+	})
+
+	// 127 not 128: alpha 0.5 quantizes to byte 128/255 ≈ 0.502, so the
+	// blended channel rounds down by one from the mathematically exact half.
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 127, G: 127, B: 127, A: 255})
+}
+
 func TestRendererDrawsArcAcrossZeroAngle(t *testing.T) {
 	renderer := newTestRenderer()
 

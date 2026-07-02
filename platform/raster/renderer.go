@@ -7,6 +7,10 @@ import (
 	"math"
 	"sort"
 
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/math/fixed"
+
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
@@ -41,6 +45,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawLine(img, command)
 		case render.DrawArc:
 			r.drawArc(img, command)
+		case render.DrawText:
+			r.drawText(img, command)
 		}
 	}
 
@@ -135,7 +141,7 @@ func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA
 
 			closest := from.Lerp(to, t)
 			if point.DistanceSq(closest) <= radiusSq {
-				img.SetRGBA(x, y, c)
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
 			}
 		}
 	}
@@ -151,8 +157,113 @@ func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 	strokeArc(img, center, radius, width, command.StartAngle, command.EndAngle, toRGBA(command.Color))
 }
 
+// textFace is the built-in bitmap font used to render DrawText commands.
+// Its native pixel height anchors the scale factor derived from
+// DrawText.Size, so text grows/shrinks with the camera like other shapes.
+var textFace = basicfont.Face7x13
+
+func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
+	if command.Text == "" || command.Color.A <= 0 {
+		return
+	}
+
+	metrics := textFace.Metrics()
+	nativeHeight := float64(metrics.Height.Ceil())
+	nativeAscent := float64(metrics.Ascent.Ceil())
+	nativeWidth := float64(font.MeasureString(textFace, command.Text).Ceil())
+	if nativeWidth <= 0 {
+		return
+	}
+
+	size := command.Size
+	if size <= 0 {
+		size = nativeHeight
+	}
+	scale := r.Camera.WorldScalarToScreen(size) / nativeHeight
+	if scale <= 0 {
+		return
+	}
+
+	glyphs := image.NewRGBA(image.Rect(0, 0, int(math.Ceil(nativeWidth)), int(math.Ceil(nativeHeight))))
+	drawer := &font.Drawer{
+		Dst:  glyphs,
+		Src:  image.NewUniform(toRGBA(command.Color)),
+		Face: textFace,
+		Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
+	}
+	drawer.DrawString(command.Text)
+
+	destWidth := nativeWidth * scale
+	destHeight := nativeHeight * scale
+
+	screenPos := r.Camera.WorldToScreen(command.Position)
+
+	offsetX := 0.0
+	switch command.Align {
+	case render.AlignCenter:
+		offsetX = -destWidth / 2
+	case render.AlignRight:
+		offsetX = -destWidth
+	}
+
+	offsetY := 0.0
+	switch command.Baseline {
+	case render.BaselineTop:
+		offsetY = 0
+	case render.BaselineMiddle:
+		offsetY = -destHeight / 2
+	case render.BaselineBottom:
+		offsetY = -destHeight
+	default: // BaselineAlphabetic
+		offsetY = -nativeAscent * scale
+	}
+
+	destX := screenPos.X + offsetX
+	destY := screenPos.Y + offsetY
+
+	blitScaled(img, glyphs, destX, destY, destWidth, destHeight)
+}
+
+// blitScaled nearest-neighbor scales src into dst at the given destination
+// rect, alpha-blending each opaque source pixel over the destination.
+func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destHeight float64) {
+	if destWidth <= 0 || destHeight <= 0 {
+		return
+	}
+
+	bounds := image.Rect(
+		int(math.Floor(destX)),
+		int(math.Floor(destY)),
+		int(math.Ceil(destX+destWidth)),
+		int(math.Ceil(destY+destHeight)),
+	).Intersect(dst.Bounds())
+
+	srcBounds := src.Bounds()
+	scaleX := float64(srcBounds.Dx()) / destWidth
+	scaleY := float64(srcBounds.Dy()) / destHeight
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		srcY := srcBounds.Min.Y + int((float64(y)+0.5-destY)*scaleY)
+		if srcY < srcBounds.Min.Y || srcY >= srcBounds.Max.Y {
+			continue
+		}
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			srcX := srcBounds.Min.X + int((float64(x)+0.5-destX)*scaleX)
+			if srcX < srcBounds.Min.X || srcX >= srcBounds.Max.X {
+				continue
+			}
+
+			c := src.RGBAAt(srcX, srcY)
+			if c.A == 0 {
+				continue
+			}
+			dst.SetRGBA(x, y, blendRGBA(dst.RGBAAt(x, y), c))
+		}
+	}
+}
+
 func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
-	draw.Draw(img, rect, &image.Uniform{c}, image.Point{}, draw.Src)
+	draw.Draw(img, rect, &image.Uniform{c}, image.Point{}, draw.Over)
 }
 
 func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGBA) {
@@ -170,7 +281,7 @@ func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGB
 			dy := float64(y) + 0.5 - center.Y
 
 			if dx*dx+dy*dy <= radiusSq {
-				img.SetRGBA(x, y, c)
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
 			}
 		}
 	}
@@ -238,7 +349,7 @@ func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width flo
 			distSq := dx*dx + dy*dy
 
 			if distSq >= innerSq && distSq <= outerSq {
-				img.SetRGBA(x, y, c)
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
 			}
 		}
 	}
@@ -281,7 +392,7 @@ func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, e
 			}
 
 			if angleBetween(angle, startAngle, endAngle) {
-				img.SetRGBA(x, y, c)
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
 			}
 		}
 	}
@@ -310,12 +421,33 @@ func normalizeAngle(angle float64) float64 {
 	return angle
 }
 
+// toRGBA converts a normalized render.Color into the alpha-premultiplied
+// color.RGBA that image.RGBA's pixel format requires.
 func toRGBA(c render.Color) color.RGBA {
 	return color.RGBA{
-		R: toByte(c.R),
-		G: toByte(c.G),
-		B: toByte(c.B),
+		R: toByte(c.R * c.A),
+		G: toByte(c.G * c.A),
+		B: toByte(c.B * c.A),
 		A: toByte(c.A),
+	}
+}
+
+// blendRGBA composites premultiplied src over premultiplied dst
+// (the Porter-Duff "over" operator).
+func blendRGBA(dst, src color.RGBA) color.RGBA {
+	if src.A == 255 {
+		return src
+	}
+	if src.A == 0 {
+		return dst
+	}
+
+	inv := uint32(255 - src.A)
+	return color.RGBA{
+		R: src.R + uint8(uint32(dst.R)*inv/255),
+		G: src.G + uint8(uint32(dst.G)*inv/255),
+		B: src.B + uint8(uint32(dst.B)*inv/255),
+		A: src.A + uint8(uint32(dst.A)*inv/255),
 	}
 }
 
