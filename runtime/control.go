@@ -23,6 +23,7 @@ const (
 	ControlReset
 	ControlSetSpeed
 	ControlSetDebugLayers
+	ControlScrubToTick
 )
 
 type ControlCommand struct {
@@ -41,6 +42,7 @@ type devControls struct {
 	backPending int
 	backTicks   []uint64
 	backSeconds []float64
+	scrubTicks  []uint64
 }
 
 type devFrame struct {
@@ -52,6 +54,7 @@ type devFrame struct {
 	backs       int
 	backTicks   []uint64
 	backSeconds []float64
+	scrubTicks  []uint64
 }
 
 func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
@@ -72,11 +75,15 @@ func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 	case ControlBackSeconds:
 		c.paused = true
 		c.backSeconds = append(c.backSeconds, cmd.Seconds)
+	case ControlScrubToTick:
+		c.paused = true
+		c.scrubTicks = append(c.scrubTicks, cmd.Tick)
 	case ControlReset:
 		c.stepPending = 0
 		c.backPending = 0
 		c.backTicks = c.backTicks[:0]
 		c.backSeconds = c.backSeconds[:0]
+		c.scrubTicks = c.scrubTicks[:0]
 		return true
 	case ControlSetSpeed:
 		if math.IsNaN(cmd.Speed) || cmd.Speed < minSpeed {
@@ -107,6 +114,8 @@ func (c *devControls) consume() devFrame {
 	c.backTicks = c.backTicks[:0]
 	backSeconds := append([]float64(nil), c.backSeconds...)
 	c.backSeconds = c.backSeconds[:0]
+	scrubTicks := append([]uint64(nil), c.scrubTicks...)
+	c.scrubTicks = c.scrubTicks[:0]
 	return devFrame{
 		paused:      c.paused,
 		speed:       speed,
@@ -115,5 +124,6 @@ func (c *devControls) consume() devFrame {
 		backs:       backs,
 		backTicks:   backTicks,
 		backSeconds: backSeconds,
+		scrubTicks:  scrubTicks,
 	}
 }

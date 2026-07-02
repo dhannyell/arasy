@@ -37,6 +37,31 @@ type Driver struct {
 	uiTheme  ui.Theme
 
 	pendingReset bool
+
+	// recording captures every event applied via ApplyInput, tagged with the
+	// tick it landed on, while recordingEnabled is true. Unlike the internal
+	// input.Buffer (a bounded window used for Back/BackToTick), this keeps
+	// the full log so Replay can reproduce a run from tick 0.
+	recordingEnabled bool
+	recording        []input.Event
+
+	// scrubLog is an always-on twin of recording, kept for ScrubToTick. It is
+	// never bounded by HistoryLen (unlike the recorder's snapshot stack), so
+	// it can reconstruct any tick in [0, maxTick] via Replay. maxTick is the
+	// highest tick this driver has actually simulated; it only moves forward
+	// during normal play, so scrubbing backward doesn't lower the ceiling —
+	// scrubbing is non-destructive and works in both directions.
+	//
+	// The timeline forks (truncating the now-stale recorded future) at the
+	// moment a simulation step runs from a tick earlier than maxTick — that
+	// is when live state actually diverges from the log. Input alone never
+	// forks: events arriving while rewound go to stagedEvents, are committed
+	// to scrubLog at the fork, and are discarded if a scrub/back/reset
+	// rewinds away first (their mapper effect is discarded by the same
+	// restore, keeping log and live state consistent).
+	scrubLog     []input.Event
+	stagedEvents []input.Event
+	maxTick      uint64
 }
 
 type DriveState struct {
@@ -47,6 +72,10 @@ type DriveState struct {
 	HistoryLen       int
 	HistoryStartTick uint64
 	HistoryEndTick   uint64
+
+	// MaxRecordedTick is the highest tick ScrubToTick can reach — the full
+	// scrub range is [0, MaxRecordedTick], independent of HistoryLen.
+	MaxRecordedTick uint64
 }
 
 type AdvanceStats struct {
@@ -87,6 +116,35 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 // Called by the platform before AdvanceTime or Step, within the same lock.
 func (d *Driver) ApplyInput(events []input.Event) {
 	d.input.Apply(events, d.tick)
+
+	if d.recordingEnabled {
+		for _, event := range events {
+			event.Tick = d.tick
+			d.recording = append(d.recording, event)
+		}
+	}
+
+	for _, event := range events {
+		event.Tick = d.tick
+		if d.tick < d.maxTick {
+			// Rewound: the log still holds the old future at this tick, so
+			// fresh events can't be appended yet — stage them until a step
+			// forks the timeline (or a scrub/back discards them).
+			d.stagedEvents = append(d.stagedEvents, event)
+		} else {
+			d.scrubLog = append(d.scrubLog, event)
+		}
+	}
+}
+
+func truncateAtTick(events []input.Event, tick uint64) []input.Event {
+	kept := events[:0]
+	for _, e := range events {
+		if e.Tick < tick {
+			kept = append(kept, e)
+		}
+	}
+	return kept
 }
 
 // Control applies a ControlCommand to the internal state.
@@ -117,6 +175,9 @@ func (d *Driver) AdvanceTime(elapsed time.Duration) AdvanceStats {
 	}
 	for _, seconds := range frame.backSeconds {
 		d.doBackSeconds(seconds)
+	}
+	for _, tick := range frame.scrubTicks {
+		d.doScrubToTick(tick)
 	}
 
 	if frame.paused && frame.steps == 0 {
@@ -156,6 +217,9 @@ func (d *Driver) Step() AdvanceStats {
 	for _, seconds := range frame.backSeconds {
 		d.doBackSeconds(seconds)
 	}
+	for _, tick := range frame.scrubTicks {
+		d.doScrubToTick(tick)
+	}
 
 	d.runSteps(1)
 
@@ -175,6 +239,16 @@ func (d *Driver) runSteps(steps int) {
 }
 
 func (d *Driver) stepOnce(dt float64) {
+	// A step from a rewound point is the moment live state diverges from the
+	// recorded future — fork the timeline: drop the stale future and commit
+	// the input staged since the rewind (all stamped with the current tick).
+	if d.tick < d.maxTick {
+		d.scrubLog = truncateAtTick(d.scrubLog, d.tick)
+		d.scrubLog = append(d.scrubLog, d.stagedEvents...)
+		d.stagedEvents = nil
+		d.maxTick = d.tick
+	}
+
 	if d.recorder != nil {
 		d.recorder.Capture(d.captureSnapshot())
 	}
@@ -184,6 +258,9 @@ func (d *Driver) stepOnce(dt float64) {
 	d.game.Update(&ctx, dt)
 
 	d.tick++
+	if d.tick > d.maxTick {
+		d.maxTick = d.tick
+	}
 	d.input.EndTick(d.tick)
 }
 
@@ -199,11 +276,12 @@ func (d *Driver) Commands() []render.Command {
 
 func (d *Driver) State() DriveState {
 	state := DriveState{
-		Tick:        d.tick,
-		Paused:      d.controls.paused,
-		Speed:       d.controls.speed,
-		DebugLayers: d.controls.debugLayers,
-		HistoryLen:  d.HistoryLen(),
+		Tick:            d.tick,
+		Paused:          d.controls.paused,
+		Speed:           d.controls.speed,
+		DebugLayers:     d.controls.debugLayers,
+		HistoryLen:      d.HistoryLen(),
+		MaxRecordedTick: d.maxTick,
 	}
 	if d.recorder != nil {
 		start, end, ok := d.recorder.Range()
@@ -224,6 +302,11 @@ func (d *Driver) HistoryLen() int {
 	return d.recorder.Len()
 }
 func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
+
+// Checksum returns a deterministic hash of the current world state. Two
+// driver runs that reach the same tick via the same inputs always produce
+// the same value — use it to verify a Replay reproduced a recording exactly.
+func (d *Driver) Checksum() uint64 { return d.world.Checksum() }
 
 func (d *Driver) Frame() Frame {
 	uiInst := d.newRenderUI()
@@ -317,6 +400,9 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
+	d.maxTick = 0
+	d.scrubLog = nil
+	d.stagedEvents = nil
 	d.clock.Reset()
 	d.uiState = ui.State{}
 	d.input.Reset()
@@ -355,6 +441,30 @@ func (d *Driver) doBackToTick(target uint64) {
 	d.log.Debug("backToTick", "tick", d.tick, "target", target)
 }
 
+// doScrubToTick moves the driver to target by deterministically replaying
+// the full scrub log from tick 0, then adopting the replayed driver's
+// world/input/recorder/tick. It's a no-op outside [0, maxTick]. Unlike
+// doBack/doBackToTick, it never discards scrubLog, so scrubbing backward
+// and then forward again always lands on the exact original state.
+func (d *Driver) doScrubToTick(target uint64) {
+	if target > d.maxTick {
+		return
+	}
+
+	replayed := Replay(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target})
+
+	d.world = replayed.world
+	d.uiState = replayed.uiState
+	d.input = replayed.input
+	d.recorder = replayed.recorder
+	d.tick = replayed.tick
+	// The replayed mapper carries none of the input staged since the last
+	// rewind — discard the staged events too, keeping log and state aligned.
+	d.stagedEvents = nil
+
+	d.log.Debug("scrubToTick", "tick", d.tick, "target", target)
+}
+
 func (d *Driver) doBackSeconds(seconds float64) {
 	if seconds <= 0 {
 		return
@@ -377,6 +487,9 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.uiState = snap.uiState
 	d.input.Restore(snap.input)
 	d.tick = snap.tick
+	// Restoring replaces the mapper wholesale, dropping the effect of any
+	// staged input — drop the staged events with it (see stepOnce's fork).
+	d.stagedEvents = nil
 
 	if game, ok := d.game.(StatefulGame); ok {
 		game.RestoreGameState(snap.gameState)

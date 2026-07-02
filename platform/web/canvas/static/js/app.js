@@ -35,7 +35,7 @@ const DebugLayers = {
 let connection = null;
 let paused = false;
 let lastFrame = null;
-let pendingRewindFromTick = null;
+let pendingScrubTarget = null;
 
 let scrubbing = false;
 let lastScrubTick = null;
@@ -144,7 +144,7 @@ backTickButton.addEventListener("click", () => {
 
 scrubInput.addEventListener("input", () => {
     scrubbing = true;
-    const tick = clampHistoryTick(Number(scrubInput.value));
+    const tick = clampScrubTick(Number(scrubInput.value));
     updateScrubLabel(tick);
 
     const now = performance.now();
@@ -155,7 +155,7 @@ scrubInput.addEventListener("input", () => {
 });
 
 scrubInput.addEventListener("change", () => {
-    const tick = clampHistoryTick(Number(scrubInput.value));
+    const tick = clampScrubTick(Number(scrubInput.value));
     requestScrubTick(tick);
     scrubbing = false;
 });
@@ -226,7 +226,7 @@ connection = connectFrameSocket({
     },
 
     onClose() {
-        pendingRewindFromTick = null;
+        pendingScrubTarget = null;
         if (lastFrame) {
             renderer.render(lastFrame);
         }
@@ -281,9 +281,12 @@ function mouseButtonCode(button) {
     return ["Left", "Middle", "Right"][button] ?? "Left";
 }
 
-// requestScrubTick sends backToTick, deduped against the last tick actually
-// sent purely to cut down on redundant network traffic while dragging —
-// the backend's BackToTick is idempotent, so a duplicate send is harmless.
+// requestScrubTick sends scrubToTick, deduped against the last tick actually
+// sent purely to cut down on redundant network traffic while dragging.
+// Unlike backToTick, ScrubToTick reconstructs the target tick by replaying
+// the full recorded input log — it never discards state, so dragging the
+// slider left and right (bidirectionally, anywhere in [0, maxRecordedTick])
+// always lands back on the exact original frame.
 function requestScrubTick(tick) {
     if (tick === lastScrubTick) {
         return;
@@ -297,7 +300,7 @@ function requestScrubTick(tick) {
 
     connection?.send({
         type: "control",
-        action: "backToTick",
+        action: "scrubToTick",
         tick,
     });
 }
@@ -306,11 +309,15 @@ function updateScrubLabel(tick) {
     scrubValueLabel.textContent = `tick ${tick}`;
 }
 
+// markPendingRewind records the tick a scrub/back jump is headed for, so
+// isStaleWhileRewinding can hide in-flight frames that still reflect the
+// pre-jump tick. Works in both directions: ScrubToTick can move forward
+// (redo) as well as backward, unlike the old destructive backToTick-only
+// version of this guard.
 function markPendingRewind(targetTick) {
     const currentTick = frameSafeTick(lastFrame?.tick);
-    const historyLen = Number(lastFrame?.state?.historyLen ?? 0);
-    if (historyLen > 0 && targetTick < currentTick) {
-        pendingRewindFromTick = currentTick;
+    if (targetTick !== currentTick) {
+        pendingScrubTarget = targetTick;
     }
 }
 
@@ -341,14 +348,26 @@ function clampHistoryTick(tick) {
     return Math.min(Math.max(tick, minTick), currentTick);
 }
 
+// clampScrubTick bounds a requested scrub target to [0, maxRecordedTick] —
+// the full range ScrubToTick can reach, independent of the recorder's
+// bounded snapshot window used by clampHistoryTick/back-tick.
+function clampScrubTick(tick) {
+    const maxRecordedTick = Number(lastFrame?.state?.maxRecordedTick ?? frameSafeTick(lastFrame?.tick));
+    return Math.min(Math.max(tick, 0), maxRecordedTick);
+}
+
+// isStaleWhileRewinding hides in-flight frames still reflecting the
+// pre-jump tick, until one arrives exactly at pendingScrubTarget — exact
+// match works for both directions since ScrubToTick lands on the target
+// tick precisely (deterministic replay), not just "closest available".
 function isStaleWhileRewinding(frame) {
-    if (pendingRewindFromTick === null) {
+    if (pendingScrubTarget === null) {
         return false;
     }
 
     const frameTick = frameSafeTick(frame?.tick);
-    if (frameTick < pendingRewindFromTick) {
-        pendingRewindFromTick = null;
+    if (frameTick === pendingScrubTarget) {
+        pendingScrubTarget = null;
         return false;
     }
 
@@ -426,15 +445,17 @@ function syncControls(frame) {
     backTickInput.max = String(currentTick);
     backTickInput.min = String(historyStart);
 
-    scrubInput.disabled = state.historyLen <= 0;
+    const maxRecordedTick = Number(state.maxRecordedTick ?? currentTick);
+    scrubInput.disabled = maxRecordedTick <= 0;
 
-    // Bounds and value are frozen while the user is dragging: backToTick
-    // truncates the recorder's snapshot stack on every call, so the true
-    // max shrinks as you drag left. Updating min/max live would make the
-    // track resize under the thumb mid-drag. Resync once, on release.
+    // Bounds and value are frozen while the user is dragging. ScrubToTick
+    // is non-destructive (it replays the input log rather than truncating
+    // a snapshot stack), so the range only grows over time — freezing here
+    // is purely to stop the track from resizing under the thumb mid-drag,
+    // not to work around data loss like the old backToTick-backed version.
     if (!scrubbing) {
-        scrubInput.min = String(historyStart);
-        scrubInput.max = String(currentTick);
+        scrubInput.min = "0";
+        scrubInput.max = String(maxRecordedTick);
         scrubInput.value = String(currentTick);
         updateScrubLabel(currentTick);
         lastScrubTick = null;
