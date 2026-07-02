@@ -38,17 +38,17 @@ func (b *Breakout) Setup() runtime.Config {
 
 func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	b.State = MatchState{}
-	b.bricks = buildBricks()
-	b.State.bricksLeft = len(b.bricks)
+	b.State.bricks = buildBricks()
+	b.State.bricksLeft = len(b.State.bricks)
 
-	b.paddle.Rect = math2d.NewRect(math2d.Vec2{X: (worldWidth - paddleWidth) / 2, Y: paddleY}, math2d.Vec2{X: paddleWidth, Y: paddleHeight})
-	b.paddle.Speed = paddleSpeed
-	b.ball.Velocity = math2d.Vec2{}
-	b.ball.Radius = ballRadius
+	b.State.paddle.Rect = math2d.NewRect(math2d.Vec2{X: (worldWidth - paddleWidth) / 2, Y: paddleY}, math2d.Vec2{X: paddleWidth, Y: paddleHeight})
+	b.State.paddle.Speed = paddleSpeed
+	b.State.ball.Velocity = math2d.Vec2{}
+	b.State.ball.Radius = ballRadius
 
-	b.ball.id = ctx.World.SpawnBundle(scene.Bundle{
+	b.State.ball.id = ctx.World.SpawnBundle(scene.Bundle{
 		Transform:      &scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}},
-		Velocity:       &scene.Velocity{Linear: b.ball.Velocity},
+		Velocity:       &scene.Velocity{Linear: b.State.ball.Velocity},
 		CircleSprite:   &scene.CircleSprite{Radius: ballRadius, Color: render.RGBA(0.5, 1, 1, 1)},
 		CircleCollider: &scene.CircleCollider{Radius: ballRadius},
 		Body:           &scene.Body{InvMass: 1.0, Restitution: 0.8},
@@ -67,15 +67,14 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 
 	if b.State.state == StateMenu || b.State.state == StateGameOver || b.State.state == StateWon {
-		_, play := menuLayout()
+		_, _, play := menuLayout()
 		if ctx.UI.Clicked("btn_play", play) {
-			b.State = MatchState{}
 			b.State.state = StateReady
 			b.State.lives = 3
-			b.State.bricksLeft = len(b.bricks)
+			b.State.bricksLeft = len(b.State.bricks)
 
-			for i := range b.bricks {
-				b.bricks[i].Alive = true
+			for i := range b.State.bricks {
+				b.State.bricks[i].Alive = true
 			}
 		}
 		return
@@ -89,25 +88,25 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 
 	if b.State.state == StateReady {
 		b.attachBallToPaddle()
-		ctx.World.SetTransform(b.ball.id,
+		ctx.World.SetTransform(b.State.ball.id,
 			scene.Transform{
-				Position: b.ball.Position,
+				Position: b.State.ball.Position,
 			},
 		)
-		ctx.World.SetVelocity(b.ball.id, scene.Velocity{Linear: b.ball.Velocity})
+		ctx.World.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 	}
 
-	if ctx.Input.JustPressed(input.ActionJump) {
+	if ctx.Input.JustPressed(input.ActionJump) && b.State.state == StateReady {
 		b.State.state = StatePlaying
-		b.ball.Velocity = math2d.Vec2{X: 0.35, Y: -1}.Normalize().Mul(ballSpeed)
-		ctx.World.SetVelocity(b.ball.id, scene.Velocity{Linear: b.ball.Velocity})
+		b.State.ball.Velocity = math2d.Vec2{X: 0.35, Y: -1}.Normalize().Mul(ballSpeed)
+		ctx.World.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 	}
 
 	if b.State.state == StatePlaying {
 		ctx.World.Step(dt, ctx.StepConfig)
 		b.syncBallFromWorld(ctx.World)
 
-		if b.ball.Position.Y-b.ball.Radius > worldHeight {
+		if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
 			b.State.lives--
 			b.attachBallToPaddle()
 			b.writeBallToWorld(ctx.World)
@@ -125,27 +124,27 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 
 func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	if b.State.state == StateWon {
-		panel, play := menuLayout()
+		panel, label, play := menuLayout()
 		ctx.UI.Panel(panel)
-		ctx.UI.Label("You Win!", panel.Center())
+		ctx.UI.Label("You Win!", label)
 		ctx.UI.Button("btn_play", "Play Again", play)
 	}
 	if b.State.state == StateGameOver {
-		panel, play := menuLayout()
+		panel, label, play := menuLayout()
 		ctx.UI.Panel(panel)
-		ctx.UI.Label("Game Over!", panel.Center())
+		ctx.UI.Label("Game Over!", label)
 		ctx.UI.Button("btn_play", "Play Again", play)
 	}
 	if b.State.state == StateMenu {
-		panel, play := menuLayout()
+		panel, label, play := menuLayout()
 		ctx.UI.Panel(panel)
-		ctx.UI.Label("Breakout", panel.Center())
+		ctx.UI.Label("Breakout", label)
 		ctx.UI.Button("btn_play", "Play", play)
 	}
 
 	cmds := make([]render.Command, 0)
 
-	for _, brick := range b.bricks {
+	for _, brick := range b.State.bricks {
 		if !brick.Alive {
 			continue
 		}
@@ -159,7 +158,7 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 
 	cmds = append(cmds, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: 20},
-		Rect:        b.paddle.Rect,
+		Rect:        b.State.paddle.Rect,
 		Fill:        render.RGBA(0.85, 0.88, 0.95, 1),
 	}, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: 30},
@@ -191,14 +190,20 @@ func hudLayout() (score, reset math2d.Rect) {
 	return
 }
 
-func menuLayout() (panel, play math2d.Rect) {
+func menuLayout() (panel math2d.Rect, label math2d.Vec2, play math2d.Rect) {
+	panelSize := math2d.Vec2{X: 320, Y: 220}
 	panel = math2d.NewRect(
-		math2d.Vec2{X: viewportWidth/2 - 160, Y: viewportHeight/2 - 100},
-		math2d.Vec2{X: viewportWidth / 2, Y: viewportHeight / 2},
+		math2d.Vec2{X: viewportWidth/2 - panelSize.X/2, Y: viewportHeight/2 - panelSize.Y/2},
+		panelSize,
 	)
+
+	center := panel.Center()
+	label = math2d.Vec2{X: center.X, Y: center.Y - 30}
+
+	playSize := math2d.Vec2{X: 120, Y: 36}
 	play = math2d.NewRect(
-		math2d.Vec2{X: viewportWidth/2 - 60, Y: viewportHeight/2 + 10},
-		math2d.Vec2{X: 120, Y: 36},
+		math2d.Vec2{X: center.X - playSize.X/2, Y: center.Y + 30 - playSize.Y/2},
+		playSize,
 	)
 	return
 }
@@ -211,59 +216,59 @@ func breakoutPhysicsBounds() math2d.Rect {
 }
 
 func (b *Breakout) attachBallToPaddle() {
-	center := b.paddle.Rect.Center()
-	b.ball.Position = math2d.Vec2{
+	center := b.State.paddle.Rect.Center()
+	b.State.ball.Position = math2d.Vec2{
 		X: center.X,
-		Y: b.paddle.Rect.Min.Y - b.ball.Radius - 0.2,
+		Y: b.State.paddle.Rect.Min.Y - b.State.ball.Radius - 0.2,
 	}
-	b.ball.Velocity = math2d.Vec2{}
+	b.State.ball.Velocity = math2d.Vec2{}
 }
 
 func (b *Breakout) bounceFromPaddle() {
-	paddleCenter := b.paddle.Rect.Center()
-	halfWidth := b.paddle.Rect.Width() * 0.5
-	offset := math2d.Clamp((b.ball.Position.X-paddleCenter.X)/halfWidth, -1, 1)
+	paddleCenter := b.State.paddle.Rect.Center()
+	halfWidth := b.State.paddle.Rect.Width() * 0.5
+	offset := math2d.Clamp((b.State.ball.Position.X-paddleCenter.X)/halfWidth, -1, 1)
 
-	speed := b.ball.Velocity.Len()
+	speed := b.State.ball.Velocity.Len()
 	direction := math2d.Vec2{
 		X: offset * 0.85,
 		Y: -1,
 	}.Normalize()
 
-	b.ball.Velocity = direction.Mul(speed)
+	b.State.ball.Velocity = direction.Mul(speed)
 }
 
 func (b *Breakout) syncBallFromWorld(world *scene.World) {
-	if transform, ok := world.Transform(b.ball.id); ok {
-		b.ball.Position = transform.Position
+	if transform, ok := world.Transform(b.State.ball.id); ok {
+		b.State.ball.Position = transform.Position
 	}
-	if velocity, ok := world.Velocity(b.ball.id); ok {
-		b.ball.Velocity = velocity.Linear
+	if velocity, ok := world.Velocity(b.State.ball.id); ok {
+		b.State.ball.Velocity = velocity.Linear
 	}
 }
 
 func (b *Breakout) resolveBallRectCollisions(world *scene.World) {
-	if hit, ok := circleVsRect(b.ball.Position, b.ball.Radius, b.paddle.Rect); ok {
+	if hit, ok := circleVsRect(b.State.ball.Position, b.State.ball.Radius, b.State.paddle.Rect); ok {
 		b.resolveBallHit(world, hit)
 		b.bounceFromPaddle()
 		b.writeBallToWorld(world)
 		return
 	}
 
-	for i := range b.bricks {
-		if !b.bricks[i].Alive {
+	for i := range b.State.bricks {
+		if !b.State.bricks[i].Alive {
 			continue
 		}
 
-		hit, ok := circleVsRect(b.ball.Position, b.ball.Radius, b.bricks[i].Rect)
+		hit, ok := circleVsRect(b.State.ball.Position, b.State.ball.Radius, b.State.bricks[i].Rect)
 		if !ok {
 			continue
 		}
 
-		b.bricks[i].Alive = false
-		b.State.score += 100
+		b.State.bricks[i].Alive = false
 		b.State.bricksLeft--
-		b.ball.Velocity.Y -= 1.5
+		b.State.ball.Velocity.Y -= 1.5
+		b.State.score += 100
 		b.resolveBallHit(world, hit)
 		b.writeBallToWorld(world)
 		return
@@ -271,14 +276,14 @@ func (b *Breakout) resolveBallRectCollisions(world *scene.World) {
 }
 
 func (b *Breakout) resolveBallHit(world *scene.World, hit Hit) {
-	b.ball.Position = hit.Point.Add(hit.Normal.Mul(b.ball.Radius + 0.01))
-	b.ball.Velocity = reflectVelocity(b.ball.Velocity, hit.Normal)
+	b.State.ball.Position = hit.Point.Add(hit.Normal.Mul(b.State.ball.Radius + 0.01))
+	b.State.ball.Velocity = reflectVelocity(b.State.ball.Velocity, hit.Normal)
 	b.writeBallToWorld(world)
 }
 
 func (b *Breakout) writeBallToWorld(world *scene.World) {
-	world.SetTransform(b.ball.id, scene.Transform{Position: b.ball.Position})
-	world.SetVelocity(b.ball.id, scene.Velocity{Linear: b.ball.Velocity})
+	world.SetTransform(b.State.ball.id, scene.Transform{Position: b.State.ball.Position})
+	world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 }
 
 func reflectVelocity(velocity, normal math2d.Vec2) math2d.Vec2 {
@@ -333,9 +338,9 @@ func rectExitNormal(point math2d.Vec2, rect math2d.Rect) math2d.Vec2 {
 }
 
 func (b *Breakout) movePaddle(i input.State, dt float64) {
-	dx := i.Value(input.ActionMoveX) * b.paddle.Speed * dt
-	b.paddle.Rect = translateRect(b.paddle.Rect, math2d.Vec2{X: dx})
-	b.paddle.Rect = math2d.ClampRect(b.paddle.Rect, 0, worldWidth)
+	dx := i.Value(input.ActionMoveX) * b.State.paddle.Speed * dt
+	b.State.paddle.Rect = translateRect(b.State.paddle.Rect, math2d.Vec2{X: dx})
+	b.State.paddle.Rect = math2d.ClampRect(b.State.paddle.Rect, 0, worldWidth)
 }
 
 func translateRect(rect math2d.Rect, delta math2d.Vec2) math2d.Rect {

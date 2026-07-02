@@ -201,6 +201,41 @@ func TestDriverBackToTickRestoresTargetSnapshot(t *testing.T) {
 	}
 }
 
+func TestDriverBackToTickIsIdempotentForRepeatedTarget(t *testing.T) {
+	game := &inputBackGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.ApplyInput([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		},
+	})
+	for range 5 {
+		driver.Step()
+	}
+
+	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
+	driver.AdvanceTime(0)
+
+	// Sending the same target again (as a scrubber UI throttled by wall
+	// time might) must be a no-op, not rewind a second tick further.
+	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
+	driver.AdvanceTime(0)
+
+	if driver.Tick() != 2 {
+		t.Fatalf("tick after repeated back to tick = %v, want 2", driver.Tick())
+	}
+
+	transform, ok := driver.world.Transform(game.player)
+	if !ok {
+		t.Fatal("expected player transform after repeated back to tick")
+	}
+	if transform.Position.X != 20 {
+		t.Fatalf("position after repeated back to tick = %v, want 20", transform.Position.X)
+	}
+}
+
 func TestDriverBackSecondsRestoresRelativeSnapshot(t *testing.T) {
 	game := &inputBackGame{}
 	driver := NewDriver(game, slog.Default())

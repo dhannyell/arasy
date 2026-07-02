@@ -9,6 +9,16 @@ type StatefulGame interface {
 	RestoreGameState(GameState)
 }
 
+// Cloneable is an opt-in hook for T. StateSlot[T].GameState() boxes T by
+// value, which is only a real snapshot when T has no slice/map/pointer
+// fields — those share their backing storage across every boxed copy, so
+// mutating current state after a snapshot corrupts the "historical" one too.
+// Implement Clone() on T to deep-copy such fields; StateSlot uses it when
+// present and falls back to the plain value copy otherwise.
+type Cloneable[T any] interface {
+	Clone() T
+}
+
 type stateSnapshot[T any] struct {
 	value T
 }
@@ -20,7 +30,11 @@ type StateSlot[T any] struct {
 }
 
 func (s *StateSlot[T]) GameState() GameState {
-	return stateSnapshot[T]{value: s.State}
+	value := s.State
+	if cloneable, ok := any(value).(Cloneable[T]); ok {
+		value = cloneable.Clone()
+	}
+	return stateSnapshot[T]{value: value}
 }
 
 func (s *StateSlot[T]) RestoreGameState(state GameState) {

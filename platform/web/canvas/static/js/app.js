@@ -10,6 +10,8 @@ const backSecondsButton = document.getElementById("back-seconds");
 const backSecondsInput = document.getElementById("back-seconds-value");
 const backTickButton = document.getElementById("back-tick");
 const backTickInput = document.getElementById("back-tick-value");
+const scrubInput = document.getElementById("scrub");
+const scrubValueLabel = document.getElementById("scrub-value");
 const stepButton = document.getElementById("step");
 const resetButton = document.getElementById("reset");
 const speedInput = document.getElementById("speed");
@@ -34,6 +36,11 @@ let connection = null;
 let paused = false;
 let lastFrame = null;
 let pendingRewindFromTick = null;
+
+let scrubbing = false;
+let lastScrubTick = null;
+let lastScrubSendTime = 0;
+const SCRUB_THROTTLE_MS = 50;
 
 let fpsFrames = 0;
 let fpsLastTime = performance.now();
@@ -133,6 +140,24 @@ backTickButton.addEventListener("click", () => {
         action: "backToTick",
         tick,
     });
+});
+
+scrubInput.addEventListener("input", () => {
+    scrubbing = true;
+    const tick = clampHistoryTick(Number(scrubInput.value));
+    updateScrubLabel(tick);
+
+    const now = performance.now();
+    if (now - lastScrubSendTime < SCRUB_THROTTLE_MS) {
+        return;
+    }
+    requestScrubTick(tick);
+});
+
+scrubInput.addEventListener("change", () => {
+    const tick = clampHistoryTick(Number(scrubInput.value));
+    requestScrubTick(tick);
+    scrubbing = false;
 });
 
 resetButton.addEventListener("click", () => {
@@ -256,6 +281,31 @@ function mouseButtonCode(button) {
     return ["Left", "Middle", "Right"][button] ?? "Left";
 }
 
+// requestScrubTick sends backToTick, deduped against the last tick actually
+// sent purely to cut down on redundant network traffic while dragging —
+// the backend's BackToTick is idempotent, so a duplicate send is harmless.
+function requestScrubTick(tick) {
+    if (tick === lastScrubTick) {
+        return;
+    }
+    lastScrubTick = tick;
+    lastScrubSendTime = performance.now();
+
+    paused = true;
+    playPauseButton.textContent = "Play";
+    markPendingRewind(tick);
+
+    connection?.send({
+        type: "control",
+        action: "backToTick",
+        tick,
+    });
+}
+
+function updateScrubLabel(tick) {
+    scrubValueLabel.textContent = `tick ${tick}`;
+}
+
 function markPendingRewind(targetTick) {
     const currentTick = frameSafeTick(lastFrame?.tick);
     const historyLen = Number(lastFrame?.state?.historyLen ?? 0);
@@ -372,8 +422,23 @@ function syncControls(frame) {
         ? `history ${historyStart}-${historyEnd}`
         : "history 0";
 
-    backTickInput.max = String(frameSafeTick(frame.tick));
+    const currentTick = frameSafeTick(frame.tick);
+    backTickInput.max = String(currentTick);
     backTickInput.min = String(historyStart);
+
+    scrubInput.disabled = state.historyLen <= 0;
+
+    // Bounds and value are frozen while the user is dragging: backToTick
+    // truncates the recorder's snapshot stack on every call, so the true
+    // max shrinks as you drag left. Updating min/max live would make the
+    // track resize under the thumb mid-drag. Resync once, on release.
+    if (!scrubbing) {
+        scrubInput.min = String(historyStart);
+        scrubInput.max = String(currentTick);
+        scrubInput.value = String(currentTick);
+        updateScrubLabel(currentTick);
+        lastScrubTick = null;
+    }
 }
 
 function frameSafeTick(tick) {

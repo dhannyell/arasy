@@ -39,14 +39,22 @@ type MatchState struct {
 	lives      int
 	bricksLeft int
 	state      State
-}
-
-type Breakout struct {
-	runtime.StateSlot[MatchState]
 
 	ball   Ball
 	paddle Paddle
 	bricks []Brick
+}
+
+// Clone deep-copies bricks so rewind snapshots don't share the backing
+// array with live state (see runtime.Cloneable).
+func (m MatchState) Clone() MatchState {
+	clone := m
+	clone.bricks = append([]Brick(nil), m.bricks...)
+	return clone
+}
+
+type Breakout struct {
+	runtime.StateSlot[MatchState]
 }
 
 type State int
