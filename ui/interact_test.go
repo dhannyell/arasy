@@ -65,6 +65,21 @@ func TestClickedFalseWithNoEvents(t *testing.T) {
 	}
 }
 
+func TestClickedIgnoresUnhandledEventKind(t *testing.T) {
+	state := &State{}
+	rect := btnRect()
+	cam := testInteractCamera()
+	u := NewUpdate(state, pointerFrame(
+		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
+		input.PointerEvent{Kind: input.EventPointerMove, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
+		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
+	), cam, DefaultTheme(), cam.Viewport)
+
+	if !u.Clicked("btn", rect) {
+		t.Fatal("expected click to still complete when an unhandled event kind is interleaved")
+	}
+}
+
 func TestClickedIgnoresNonPrimaryButton(t *testing.T) {
 	state := &State{}
 	rect := btnRect()

@@ -98,7 +98,7 @@ func benchmarkWorldSpread(count int, width, height, radius float64) *scene.World
 
 	for i := 0; i < count; i++ {
 		x := float64(i%cols)*spacingX + spacingX*0.5
-		y := float64(i%cols)*spacingY + spacingY*0.5
+		y := float64(i/cols)*spacingY + spacingY*0.5
 
 		entity := world.Spawn()
 		world.SetTransform(entity, scene.Transform{
