@@ -20,10 +20,10 @@ const (
 )
 
 const (
-	shakeDurationTicks = 18 // 0.3s a 60Hz — mesma duração do CameraShake antigo
+	shakeDurationTicks = 18
 	shakeAmplitude     = 0.45
-	shakeSeed          = 0          // CameraShake.Seed nunca foi setado antes; mantém o comportamento atual
-	shakeSimDt         = 1.0 / 60.0 // casa com Setup().SimulationHz — só pra frequência do seno/cosseno
+	shakeSeed          = 0
+	shakeSimDt         = 1.0 / 60.0
 )
 
 type Football struct {
@@ -35,10 +35,10 @@ type Football struct {
 	rightGoal        math2d.Rect
 }
 
-// shakeOffset é função pura do tick atual: nenhum estado mutável a manter, e
-// fica automaticamente correto em qualquer ponto do rewind porque depende só
-// de ctx.Tick (restaurado pelo snapshot) e de f.state.LastGoalTick (restaurado
-// pelo StatefulGame).
+// shakeOffset is a pure function of the current tick: no mutable state to maintain, and
+// it remains automatically correct at any point during a rewind because it depends only
+// on ctx.Tick (restored by the snapshot) and f.state.LastGoalTick (restored
+// by StatefulGame).
 func shakeOffset(elapsedTicks uint64) (math2d.Vec2, bool) {
 	if elapsedTicks >= shakeDurationTicks {
 		return math2d.Vec2{}, false
@@ -263,8 +263,8 @@ func resetBall(world *scene.World, ball scene.EntityID) {
 
 func ballIntersectsGoal(center math2d.Vec2, radius float64, rect math2d.Rect) bool {
 	closest := math2d.Vec2{
-		X: clamp(center.X, rect.Min.X, rect.Max.X),
-		Y: clamp(center.Y, rect.Min.Y, rect.Max.Y),
+		X: math2d.Clamp(center.X, rect.Min.X, rect.Max.X),
+		Y: math2d.Clamp(center.Y, rect.Min.Y, rect.Max.Y),
 	}
 
 	return center.DistanceSq(closest) <= radius*radius
@@ -291,14 +291,4 @@ func ballCrossedGoalLine(previous, current math2d.Vec2, radius float64, lineX fl
 	y := previous.Y + (current.Y-previous.Y)*t
 
 	return y >= goalTop-radius && y <= goalBottom+radius
-}
-
-func clamp(v, min, max float64) float64 {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
 }

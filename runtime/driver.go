@@ -3,6 +3,7 @@ package runtime
 import (
 	"log/slog"
 	"math"
+	"time"
 
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -24,22 +25,18 @@ type Driver struct {
 	cfg      Config
 	world    *scene.World
 	recorder *recorder
-	mapper   *input.Mapper
-	buffer   *input.Buffer
+	input    *driverInput
+	clock    *clock
 	controls devControls
 	tick     uint64
 	log      *slog.Logger
 
 	// UI
 	viewport math2d.Rect
-	pointer  input.PointerState
-	frame    input.PointerFrame
 	uiState  ui.State
 	uiTheme  ui.Theme
 
-	lastInput        input.State
-	speedAccumulator float64
-	pendingReset     bool
+	pendingReset bool
 }
 
 type DriveState struct {
@@ -50,6 +47,12 @@ type DriveState struct {
 	HistoryLen       int
 	HistoryStartTick uint64
 	HistoryEndTick   uint64
+}
+
+type AdvanceStats struct {
+	Steps   int
+	Clamped bool
+	Alpha   float64
 }
 
 func NewDriver(game Game, log *slog.Logger) *Driver {
@@ -65,8 +68,8 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 		game:     game,
 		cfg:      cfg,
 		log:      log.With("scope", "engine"),
-		mapper:   input.NewMapper(cfg.InputBindings),
-		buffer:   input.NewBuffer(),
+		input:    newDriverInput(cfg.InputBindings),
+		clock:    newClock(cfg.SimulationHz),
 		controls: devControls{speed: 1},
 	}
 	d.uiTheme = cfg.UITheme
@@ -80,41 +83,30 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 	return d
 }
 
-// ApplyInput receives raw events from the platform and applies them to the mapper/buffer.
-// Called by the platform before Advance, within the same lock.
+// ApplyInput receives raw events from the platform and applies them to driver input.
+// Called by the platform before AdvanceTime or Step, within the same lock.
 func (d *Driver) ApplyInput(events []input.Event) {
-	for _, event := range events {
-		event.Tick = d.tick
-		d.buffer.Push(event)
-
-		if event.Kind != input.EventPointerMove && event.Kind != input.EventPointerLeave {
-			d.mapper.Apply(event)
-		}
-
-		if event.Source.Device == input.DeviceMouse {
-			d.accumulatePointer(event)
-		}
-	}
+	d.input.Apply(events, d.tick)
 }
 
 // Control applies a ControlCommand to the internal state.
-// Called by the platform before Advance, within the same lock.
+// Called by the platform before AdvanceTime or Step, within the same lock.
 func (d *Driver) Control(cmd ControlCommand) {
 	if d.controls.apply(cmd) {
 		d.pendingReset = true
 	}
 }
 
-// Advance executes a simulation tick.
-// The platform calls this under an exclusive lock.
-func (d *Driver) Advance(dt float64) {
+// AdvanceTime advances using elapsed wall time. Platforms should use this entry
+// point; deterministic replay and tests should prefer Step.
+func (d *Driver) AdvanceTime(elapsed time.Duration) AdvanceStats {
 	frame := d.controls.consume()
 
 	if d.pendingReset {
 		d.doReset()
 		d.pendingReset = false
 		// skips the reset tick (World has just been rebuilt)
-		return
+		return AdvanceStats{Alpha: d.clock.Alpha()}
 	}
 
 	for range frame.backs {
@@ -128,36 +120,79 @@ func (d *Driver) Advance(dt float64) {
 	}
 
 	if frame.paused && frame.steps == 0 {
-		return
+		return AdvanceStats{Alpha: d.clock.Alpha()}
 	}
 
 	stepsToRun := frame.steps
-	if stepsToRun == 0 && frame.speed > 0 {
-		d.speedAccumulator += frame.speed
-		stepsToRun = int(math.Floor(d.speedAccumulator))
-		d.speedAccumulator -= float64(stepsToRun)
+	clamped := false
+	if stepsToRun == 0 {
+		plan := d.clock.Consume(elapsed, frame.speed)
+		stepsToRun = plan.Steps
+		clamped = plan.Clamped
 	}
 
-	if stepsToRun <= 0 {
+	d.runSteps(stepsToRun)
+
+	return AdvanceStats{Steps: stepsToRun, Clamped: clamped, Alpha: d.clock.Alpha()}
+}
+
+// Step advances exactly one fixed simulation tick. It does not touch the clock
+// accumulator, making it the deterministic entry point for tests and replay.
+func (d *Driver) Step() AdvanceStats {
+	frame := d.controls.consume()
+
+	if d.pendingReset {
+		d.doReset()
+		d.pendingReset = false
+		return AdvanceStats{Alpha: d.clock.Alpha()}
+	}
+
+	for range frame.backs {
+		d.doBack()
+	}
+	for _, tick := range frame.backTicks {
+		d.doBackToTick(tick)
+	}
+	for _, seconds := range frame.backSeconds {
+		d.doBackSeconds(seconds)
+	}
+
+	d.runSteps(1)
+
+	return AdvanceStats{Steps: 1, Alpha: d.clock.Alpha()}
+}
+
+func (d *Driver) runSteps(steps int) {
+	if steps <= 0 {
 		return
 	}
 
-	for range stepsToRun {
-		if d.recorder != nil {
-			d.recorder.Capture(d.world, d.mapper, d.lastInput, d.uiState, d.pointer, d.captureGameState(), d.tick)
-		}
-
-		d.lastInput = d.mapper.State()
-		ctx := d.makeUpdateContext(d.newUpdateUI())
-		d.game.Update(&ctx, dt)
-		d.resetFrame()
-
-		d.tick++
-		d.mapper.EndFrame()
-		d.buffer.ClearBefore(inputRetainFrom(d.tick, 120))
+	for range steps {
+		d.stepOnce(d.clock.DT())
 	}
 
 	d.log.Debug("advance", "tick", d.tick, "checksum", d.world.Checksum())
+}
+
+func (d *Driver) stepOnce(dt float64) {
+	if d.recorder != nil {
+		d.recorder.Capture(
+			d.world,
+			d.input.Mapper(),
+			d.input.LastInput(),
+			d.uiState,
+			d.input.Pointer(),
+			d.captureGameState(),
+			d.tick,
+		)
+	}
+
+	d.input.BeginTick()
+	ctx := d.makeUpdateContext(d.newUpdateUI())
+	d.game.Update(&ctx, dt)
+
+	d.tick++
+	d.input.EndTick(d.tick)
 }
 
 func (d *Driver) Commands() []render.Command {
@@ -238,10 +273,11 @@ func (d *Driver) cameraForSurface() render.Camera {
 // newRenderUI builds the draw face of the UI, used in Render/Init.
 func (d *Driver) newRenderUI() *ui.UI {
 	cam := d.cameraForSurface()
+	pointer := d.input.Pointer()
 	return ui.New(
 		&d.uiState,
-		d.pointer.Pos(),
-		d.pointer.Inside(),
+		pointer.Pos(),
+		pointer.Inside(),
 		cam,
 		d.uiTheme,
 		d.cfg.Camera.Viewport,
@@ -251,7 +287,7 @@ func (d *Driver) newRenderUI() *ui.UI {
 // newUpdateUI builds the interaction face of the UI, used in Update.
 func (d *Driver) newUpdateUI() *ui.UI {
 	cam := d.cameraForSurface()
-	return ui.NewUpdate(&d.uiState, d.frame, cam, d.uiTheme, d.cfg.Camera.Viewport)
+	return ui.NewUpdate(&d.uiState, d.input.PointerFrame(), cam, d.uiTheme, d.cfg.Camera.Viewport)
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.
@@ -259,20 +295,11 @@ func (d *Driver) SetViewport(viewport math2d.Rect) {
 	d.viewport = viewport
 }
 
-// resetFrame clears the per-tick PointerFrame after Update consumes it.
-func (d *Driver) resetFrame() {
-	d.frame = input.PointerFrame{
-		Pos:     d.pointer.Pos(),
-		Inside:  d.pointer.Inside(),
-		Buttons: d.pointer.Buttons(),
-	}
-}
-
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 	return UpdateContext{
 		World:      d.world,
-		Input:      d.lastInput,
-		Pointer:    d.frame,
+		Input:      d.input.LastInput(),
+		Pointer:    d.input.PointerFrame(),
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
 		UI:         uiInst,
@@ -285,87 +312,22 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	return RenderContext{
 		World:  d.world,
 		UI:     uiInst,
+		Time:   float64(d.tick) * d.clock.DT(),
+		Dt:     d.clock.DT(),
 		Log:    d.log.With("scope", "game"),
 		Tick:   d.tick,
 		camera: d.cameraForSurface(),
 	}
 }
 
-// accumulatePointer folds a mouse event into the current tick's PointerFrame
-// (coalesce) and updates the Driver's persistent pointer state.
-func (d *Driver) accumulatePointer(e input.Event) {
-	pos := math2d.Vec2{X: e.X, Y: e.Y}
-
-	switch e.Kind {
-	case input.EventPointerMove:
-		d.frame.Pos = pos
-		d.frame.Inside = true
-		d.pointer.SetPos(pos)
-		d.pointer.SetInside(true)
-	case input.EventButtonDown:
-		if btn, ok := mouseButton(e.Source.Code); ok {
-			d.frame.Pos = pos
-			d.frame.Inside = true
-			d.frame.Buttons[btn] = true
-			d.frame.Events = append(d.frame.Events, input.PointerEvent{
-				Kind: e.Kind, Button: btn, Pos: pos,
-			})
-			d.pointer.SetPos(pos)
-			d.pointer.SetButton(btn, true)
-			d.pointer.SetInside(true)
-		}
-	case input.EventButtonUp:
-		if btn, ok := mouseButton(e.Source.Code); ok {
-			d.frame.Pos = pos
-			d.frame.Inside = true
-			d.frame.Buttons[btn] = false
-			d.frame.Events = append(d.frame.Events, input.PointerEvent{
-				Kind: e.Kind, Button: btn, Pos: pos,
-			})
-			d.pointer.SetPos(pos)
-			d.pointer.SetButton(btn, false)
-			d.pointer.SetInside(true)
-		}
-	case input.EventPointerLeave:
-		d.frame.Inside = false
-		for btn, down := range d.pointer.Buttons() {
-			if down {
-				d.frame.Buttons[btn] = false
-				d.frame.Events = append(d.frame.Events, input.PointerEvent{
-					Kind: input.EventButtonUp, Button: input.PointerButton(btn), Pos: d.pointer.Pos(),
-				})
-				d.pointer.SetButton(input.PointerButton(btn), false)
-			}
-		}
-		d.pointer.SetInside(false)
-	default:
-		d.frame.Inside = false
-	}
-}
-
-func mouseButton(code input.SourceCode) (input.PointerButton, bool) {
-	switch code {
-	case input.MouseLeft:
-		return input.PointerPrimary, true
-	case input.MouseRight:
-		return input.PointerSecondary, true
-	case input.MouseMiddle:
-		return input.PointerMiddle, true
-	default:
-		return input.PointerUnknown, false
-	}
-}
-
 // doReset rebuilds the World and calls Game.Init. Never called directly by the
-// platform — it goes through Control(ControlReset) → pendingReset → Advance.
+// platform — it goes through Control(ControlReset) → pendingReset → AdvanceTime/Step.
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
-	d.lastInput = input.NewState()
-	d.speedAccumulator = 0
+	d.clock.Reset()
 	d.uiState = ui.State{}
-	d.resetFrame()
-	d.mapper.Reset()
+	d.input.Reset()
 	if d.recorder != nil {
 		d.recorder.Clear()
 	}
@@ -420,11 +382,8 @@ func (d *Driver) doBackSeconds(seconds float64) {
 
 func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.world = snap.world
-	d.mapper = snap.mapper
-	d.lastInput = snap.lastInput
 	d.uiState = snap.uiState
-	d.pointer = snap.pointer
-	d.resetFrame()
+	d.input.Restore(snap.mapper, snap.lastInput, snap.pointer)
 	d.tick = snap.tick
 
 	if game, ok := d.game.(StatefulGame); ok {
@@ -442,11 +401,4 @@ func (d *Driver) captureGameState() GameState {
 	// (boxing a value type into the GameState interface copies it) — no
 	// further cloning needed here, unlike world/mapper/uiState/pointer.
 	return game.GameState()
-}
-
-func inputRetainFrom(tick, retainedTicks uint64) uint64 {
-	if tick <= retainedTicks {
-		return 0
-	}
-	return tick - retainedTicks
 }
