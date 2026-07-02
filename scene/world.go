@@ -2,8 +2,6 @@ package scene
 
 import (
 	"maps"
-
-	"github.com/dhannyell/frameforge/math2d"
 )
 
 const defaultCellSize = 64
@@ -26,13 +24,15 @@ type World struct {
 
 	transforms      map[EntityID]Transform
 	circleSprites   map[EntityID]CircleSprite
+	rectSprites     map[EntityID]RectSprite
 	velocities      map[EntityID]Velocity
 	accelerations   map[EntityID]Acceleration
 	dampings        map[EntityID]Damping
 	bodies          map[EntityID]Body
 	circleColliders map[EntityID]CircleCollider
+	rectColliders   map[EntityID]RectCollider
 	debugGridCells  []DebugGridCell
-	contacts        []CircleContact
+	contacts        []Contact
 }
 
 func NewWorld() *World {
@@ -40,11 +40,13 @@ func NewWorld() *World {
 		nextID:          1,
 		transforms:      make(map[EntityID]Transform),
 		circleSprites:   make(map[EntityID]CircleSprite),
+		rectSprites:     make(map[EntityID]RectSprite),
 		velocities:      make(map[EntityID]Velocity),
 		accelerations:   make(map[EntityID]Acceleration),
 		dampings:        make(map[EntityID]Damping),
 		bodies:          make(map[EntityID]Body),
 		circleColliders: make(map[EntityID]CircleCollider),
+		rectColliders:   make(map[EntityID]RectCollider),
 	}
 }
 
@@ -54,11 +56,13 @@ func (w *World) Clone() *World {
 		stepTick:        w.stepTick,
 		transforms:      cloneMap(w.transforms),
 		circleSprites:   cloneMap(w.circleSprites),
+		rectSprites:     cloneMap(w.rectSprites),
 		velocities:      cloneMap(w.velocities),
 		accelerations:   cloneMap(w.accelerations),
 		dampings:        cloneMap(w.dampings),
 		bodies:          cloneMap(w.bodies),
 		circleColliders: cloneMap(w.circleColliders),
+		rectColliders:   cloneMap(w.rectColliders),
 		debugGridCells:  append([]DebugGridCell(nil), w.debugGridCells...),
 		// contacts are transient per-tick — not cloned
 	}
@@ -74,11 +78,13 @@ func (w *World) Spawn() EntityID {
 func (w *World) Despawn(id EntityID) {
 	delete(w.transforms, id)
 	delete(w.circleSprites, id)
+	delete(w.rectSprites, id)
 	delete(w.velocities, id)
 	delete(w.accelerations, id)
 	delete(w.dampings, id)
 	delete(w.bodies, id)
 	delete(w.circleColliders, id)
+	delete(w.rectColliders, id)
 }
 
 func (w *World) SetTransform(id EntityID, transform Transform) {
@@ -89,9 +95,8 @@ func (w *World) SetCircleSprite(id EntityID, sprite CircleSprite) {
 	w.circleSprites[id] = sprite
 }
 
-func (w *World) Transform(id EntityID) (Transform, bool) {
-	transform, ok := w.transforms[id]
-	return transform, ok
+func (w *World) RemoveCircleSprite(id EntityID) {
+	delete(w.circleSprites, id)
 }
 
 func (w *World) CircleSprite(id EntityID) (CircleSprite, bool) {
@@ -99,12 +104,26 @@ func (w *World) CircleSprite(id EntityID) (CircleSprite, bool) {
 	return sprite, ok
 }
 
-func (w *World) RemoveTransform(id EntityID) {
-	delete(w.transforms, id)
+func (w *World) SetRectSprite(id EntityID, sprite RectSprite) {
+	w.rectSprites[id] = sprite
 }
 
-func (w *World) RemoveCircleSprite(id EntityID) {
-	delete(w.circleSprites, id)
+func (w *World) RemoveRectSprite(id EntityID) {
+	delete(w.rectSprites, id)
+}
+
+func (w *World) RectSprite(id EntityID) (RectSprite, bool) {
+	sprite, ok := w.rectSprites[id]
+	return sprite, ok
+}
+
+func (w *World) Transform(id EntityID) (Transform, bool) {
+	transform, ok := w.transforms[id]
+	return transform, ok
+}
+
+func (w *World) RemoveTransform(id EntityID) {
+	delete(w.transforms, id)
 }
 
 func (w *World) SetVelocity(id EntityID, velocity Velocity) {
@@ -172,44 +191,27 @@ func (w *World) RemoveCircleCollider(id EntityID) {
 	delete(w.circleColliders, id)
 }
 
+func (w *World) RectCollider(id EntityID) (RectCollider, bool) {
+	collider, ok := w.rectColliders[id]
+	return collider, ok
+}
+
+func (w *World) SetRectCollider(id EntityID, collider RectCollider) {
+	w.rectColliders[id] = collider
+}
+
+func (w *World) RemoveRectCollider(id EntityID) {
+	delete(w.rectColliders, id)
+}
+
 func (w *World) DebugGridCells() []DebugGridCell {
 	return w.debugGridCells
 }
 
-// Contacts returns the circle contacts resolved during the last Step.
-func (w *World) Contacts() []CircleContact {
+// Contacts returns the contacts resolved during the last Step, across all
+// collider shape combinations.
+func (w *World) Contacts() []Contact {
 	return w.contacts
-}
-
-func (w *World) SpawnBundle(b Bundle) EntityID {
-	id := w.Spawn()
-	if b.Transform != nil {
-		t := *b.Transform
-		if t.Scale == (math2d.Vec2{}) {
-			t.Scale = math2d.Vec2{X: 1, Y: 1}
-		}
-		w.SetTransform(id, t)
-	}
-	if b.CircleSprite != nil {
-		w.SetCircleSprite(id, *b.CircleSprite)
-	}
-	if b.Velocity != nil {
-		w.SetVelocity(id, *b.Velocity)
-	}
-	if b.Acceleration != nil {
-		w.SetAcceleration(id, *b.Acceleration)
-	}
-	if b.Damping != nil {
-		w.SetDamping(id, *b.Damping)
-	}
-	if b.Body != nil {
-		w.SetBody(id, *b.Body)
-	}
-	if b.CircleCollider != nil {
-		w.SetCircleCollider(id, *b.CircleCollider)
-	}
-	return id
-
 }
 
 func (w *World) entityCount() int {
@@ -219,6 +221,9 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for id := range w.circleSprites {
+		ids[id] = struct{}{}
+	}
+	for id := range w.rectSprites {
 		ids[id] = struct{}{}
 	}
 	for id := range w.velocities {
@@ -234,6 +239,9 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for id := range w.circleColliders {
+		ids[id] = struct{}{}
+	}
+	for id := range w.rectColliders {
 		ids[id] = struct{}{}
 	}
 

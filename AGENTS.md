@@ -139,6 +139,7 @@ per-tick debug log exist to verify simulations stay in sync.
 - `README.md` — current capabilities, quick start (`runtime.Game` example), demo instructions.
 - `docs/runtime.md` / `docs/runtime-en.md` — runtime guide.
 - `docs/ui.md` / `docs/ui-en.md` — UI guide.
+- `docs/scrubbing.md` / `docs/scrubbing-en.md` — bidirectional time scrubbing guide (replay-based ScrubToTick, timeline forking, checksum verification).
 - `docs/revisao-tecnica-2026-07-01.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
 - `docs/decisoes-arquiteturais-2026-07-01.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
 - `docs/plano-runtime-pump-e-decomposicao-driver-2026-07-01.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.

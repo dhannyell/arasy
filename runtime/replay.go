@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/math2d"
 )
 
 // Recording is the exact input log and tick count needed to deterministically
@@ -49,7 +50,21 @@ func (d *Driver) StopRecording() Recording {
 // scrubber relies on this same in-place behavior on purpose: it replays the
 // live driver's own game so the reconstructed state is adopted directly.
 func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
+	return replayWithViewport(game, log, rec, math2d.Rect{})
+}
+
+// replayWithViewport is Replay with the surface viewport applied before the
+// first step. The viewport is not part of the input log, yet it shapes any
+// viewport-dependent Update logic — most importantly UI hit-testing (a button
+// click maps through the camera, which uses the viewport). The internal
+// scrubber threads the live driver's viewport here so replayed UI interactions
+// (e.g. breakout's Play button) land exactly as they did live; without it a
+// UI-gated game reconstructs a divergent, frozen world during scrub.
+func replayWithViewport(game Game, log *slog.Logger, rec Recording, viewport math2d.Rect) *Driver {
 	driver := NewDriver(game, log)
+	if viewport.Width() > 0 && viewport.Height() > 0 {
+		driver.SetViewport(viewport)
+	}
 
 	byTick := make(map[uint64][]input.Event, len(rec.Events))
 	for _, event := range rec.Events {
