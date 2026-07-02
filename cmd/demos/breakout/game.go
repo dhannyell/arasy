@@ -222,7 +222,7 @@ func (b *Breakout) attachBallToPaddle() {
 func (b *Breakout) bounceFromPaddle() {
 	paddleCenter := b.paddle.Rect.Center()
 	halfWidth := b.paddle.Rect.Width() * 0.5
-	offset := clamp((b.ball.Position.X-paddleCenter.X)/halfWidth, -1, 1)
+	offset := math2d.Clamp((b.ball.Position.X-paddleCenter.X)/halfWidth, -1, 1)
 
 	speed := b.ball.Velocity.Len()
 	direction := math2d.Vec2{
@@ -291,8 +291,8 @@ func reflectVelocity(velocity, normal math2d.Vec2) math2d.Vec2 {
 
 func circleVsRect(center math2d.Vec2, radius float64, rect math2d.Rect) (Hit, bool) {
 	closest := math2d.Vec2{
-		X: clamp(center.X, rect.Min.X, rect.Max.X),
-		Y: clamp(center.Y, rect.Min.Y, rect.Max.Y),
+		X: math2d.Clamp(center.X, rect.Min.X, rect.Max.X),
+		Y: math2d.Clamp(center.Y, rect.Min.Y, rect.Max.Y),
 	}
 
 	delta := center.Sub(closest)
@@ -335,7 +335,7 @@ func rectExitNormal(point math2d.Vec2, rect math2d.Rect) math2d.Vec2 {
 func (b *Breakout) movePaddle(i input.State, dt float64) {
 	dx := i.Value(input.ActionMoveX) * b.paddle.Speed * dt
 	b.paddle.Rect = translateRect(b.paddle.Rect, math2d.Vec2{X: dx})
-	b.paddle.Rect = clampRect(b.paddle.Rect, 0, worldWidth)
+	b.paddle.Rect = math2d.ClampRect(b.paddle.Rect, 0, worldWidth)
 }
 
 func translateRect(rect math2d.Rect, delta math2d.Vec2) math2d.Rect {
@@ -343,20 +343,6 @@ func translateRect(rect math2d.Rect, delta math2d.Vec2) math2d.Rect {
 		Min: rect.Min.Add(delta),
 		Max: rect.Max.Add(delta),
 	}
-}
-
-func clampRect(rect math2d.Rect, min, max float64) math2d.Rect {
-	if rect.Min.X < min {
-		shift := min - rect.Min.X
-		rect.Min.X += shift
-		rect.Max.X += shift
-	}
-	if rect.Max.X > max {
-		shift := rect.Max.X - max
-		rect.Min.X -= shift
-		rect.Max.X -= shift
-	}
-	return rect
 }
 
 func breakoutBindings() []input.Binding {
@@ -367,14 +353,4 @@ func breakoutBindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyArrowRight), Action: input.ActionMoveX, Scale: 1},
 		{Source: input.Keyboard(input.KeySpace), Action: input.ActionJump, Scale: 1},
 	}
-}
-
-func clamp(v, min, max float64) float64 {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
 }

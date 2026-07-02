@@ -24,9 +24,9 @@ func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
 			Kind:   input.EventButtonDown,
 		},
 	})
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 	afterFirstAdvance := controlledPlayerPosition(t, driver, game)
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 	afterSecondAdvance := controlledPlayerPosition(t, driver, game)
 
 	if afterFirstAdvance == initial {
@@ -37,7 +37,7 @@ func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
 	}
 
 	driver.Control(runtime.ControlCommand{Kind: runtime.ControlBack})
-	driver.Advance(1.0 / 60.0)
+	driver.AdvanceTime(0)
 
 	afterBack := controlledPlayerPosition(t, driver, game)
 	if afterBack != afterFirstAdvance {
@@ -116,7 +116,7 @@ func clickPlay(t *testing.T, driver *runtime.Driver, game *Football) {
 			Y:      pos.Y,
 		},
 	})
-	driver.Advance(1.0 / 60.0)
+	driver.Step()
 
 	if !game.State.Started {
 		t.Fatal("play click did not start the game")

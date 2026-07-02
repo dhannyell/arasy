@@ -77,12 +77,13 @@ func debugInputStateLines(r debugRenderer, _ debugContext) []string {
 	d := r.driver
 	lines := []string{"Input"}
 
-	actions := debugInputActions(d.mapper.Bindings())
+	lastInput := d.input.LastInput()
+	actions := debugInputActions(d.input.Bindings())
 	for _, action := range actions {
-		value := d.lastInput.Value(action)
-		pressed := d.lastInput.Pressed(action)
-		justPressed := d.lastInput.JustPressed(action)
-		justReleased := d.lastInput.JustReleased(action)
+		value := lastInput.Value(action)
+		pressed := lastInput.Pressed(action)
+		justPressed := lastInput.JustPressed(action)
+		justReleased := lastInput.JustReleased(action)
 
 		if value == 0 && !pressed && !justPressed && !justReleased {
 			continue
@@ -98,10 +99,11 @@ func debugInputStateLines(r debugRenderer, _ debugContext) []string {
 		))
 	}
 
-	pos := d.pointer.Pos()
-	buttons := d.pointer.Buttons()
+	pointer := d.input.Pointer()
+	pos := pointer.Pos()
+	buttons := pointer.Buttons()
 	lines = append(lines,
-		fmt.Sprintf("pointer: %.0f, %.0f inside=%v", pos.X, pos.Y, d.pointer.Inside()),
+		fmt.Sprintf("pointer: %.0f, %.0f inside=%v", pos.X, pos.Y, pointer.Inside()),
 		fmt.Sprintf("mouse: primary=%v secondary=%v middle=%v", buttons[0], buttons[1], buttons[2]),
 	)
 
