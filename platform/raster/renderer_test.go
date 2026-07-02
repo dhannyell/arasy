@@ -435,6 +435,39 @@ func TestDrawRectAlphaBlends(t *testing.T) {
 	assertPixel(t, img.At(5, 5), color.RGBA{R: 127, G: 127, B: 127, A: 255})
 }
 
+// TestStrokeRectTranslucentCornersBlendOnce guards against the four stroke
+// bands overlapping: fills composite with "over", so a corner covered by two
+// bands (top ∩ left in the naive full-height layout) would blend the
+// translucent stroke twice and come out darker than the edges.
+func TestStrokeRectTranslucentCornersBlendOnce(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+			Fill: render.RGBA(1, 1, 1, 1),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 1,
+			},
+		},
+		render.DrawRect{
+			Rect:        math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 8, Y: 8}),
+			Stroke:      render.RGBA(0, 0, 0, 0.5),
+			StrokeWidth: 2,
+			BaseCommand: render.BaseCommand{
+				LayerValue: 2,
+			},
+		},
+	})
+
+	// Same quantization as TestDrawRectAlphaBlends: 50% black over white → 127.
+	want := color.RGBA{R: 127, G: 127, B: 127, A: 255}
+	assertPixel(t, img.At(5, 1), want) // top edge: single band
+	assertPixel(t, img.At(1, 5), want) // left edge: single band
+	assertPixel(t, img.At(1, 1), want) // corner: was 63 when two bands overlapped
+	assertPixel(t, img.At(8, 8), want) // opposite corner
+}
+
 func TestRendererDrawsArcAcrossZeroAngle(t *testing.T) {
 	renderer := newTestRenderer()
 
