@@ -33,10 +33,10 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 
 	w.ApplyAcceleration(dt)
 	w.Integrate(dt)
-	w.BounceCirclesInside(config.Bounds)
+	w.BounceEntitiesInside(config.Bounds)
 
 	collision := w.detectCircleOverlapsGridStats(cellSize)
-	w.resolveCircleContacts(collision.contacts)
+	w.resolveContacts(collision.contacts)
 
 	stats.BroadPhasePairs = collision.broadPhasePairs
 	stats.Contacts = len(w.contacts)

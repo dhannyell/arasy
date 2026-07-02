@@ -75,18 +75,18 @@ type Ball struct {
 }
 
 type Paddle struct {
-	Rect  math2d.Rect
+	id    scene.EntityID
 	Speed float64
+	Rect  math2d.Rect
 }
 
 type Brick struct {
-	Rect  math2d.Rect
+	ID    scene.EntityID
 	HP    int
 	Alive bool
-	Color render.Color
 }
 
-func buildBricks() []Brick {
+func spawnBuildBricks(world *scene.World) []Brick {
 	bricks := make([]Brick, 0, brickRows*brickColumns)
 	totalWidth := float64(brickColumns)*brickWidth + float64(brickColumns-1)*brickGap
 	startX := (worldWidth - totalWidth) * 0.5
@@ -97,11 +97,34 @@ func buildBricks() []Brick {
 				X: startX + float64(col)*(brickWidth+brickGap),
 				Y: brickTop + float64(row)*(brickHeight+brickGap),
 			}
+			// Transform.Position is the collider center; the sprite spans
+			// pos..pos+size, so its center is pos+half — keep them aligned.
+			center := pos.Add(math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2})
+			id := world.SpawnBundle(
+				scene.Bundle{
+					Transform: &scene.Transform{
+						Position: center,
+					},
+					RectCollider: &scene.RectCollider{
+						HalfExtends: math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2},
+					},
+					RectSprite: &scene.RectSprite{
+						BaseSprite: scene.BaseSprite{
+							Layer: 1,
+							Color: brickColor(row),
+						},
+						Rect: math2d.NewRect(pos, math2d.Vec2{X: brickWidth, Y: brickHeight}),
+					},
+					Body: &scene.Body{
+						InvMass:     0,
+						Restitution: 1,
+					},
+				})
+
 			bricks = append(bricks, Brick{
-				Rect:  math2d.NewRect(pos, math2d.Vec2{X: brickWidth, Y: brickHeight}),
+				ID:    id,
 				HP:    1,
 				Alive: true,
-				Color: brickColor(row),
 			})
 		}
 	}

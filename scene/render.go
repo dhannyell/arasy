@@ -9,37 +9,65 @@ import (
 )
 
 func (w *World) RenderCommands() []render.Command {
-	ids := make([]EntityID, 0, len(w.circleSprites))
+	totalSprites := len(w.circleSprites) + len(w.rectSprites)
+	ids := make([]EntityID, 0, totalSprites)
+
 	for id := range w.circleSprites {
 		ids = append(ids, id)
 	}
+	for id := range w.rectSprites {
+		ids = append(ids, id)
+	}
+
 	slices.Sort(ids)
 
-	commands := make([]render.Command, 0, len(ids))
+	commands := make([]render.Command, 0, totalSprites)
 
 	for _, id := range ids {
-		sprite := w.circleSprites[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		commands = append(commands, render.DrawCircle{
-			Center: transform.Position,
-			Radius: sprite.Radius,
-			Fill:   sprite.Color,
-			BaseCommand: render.BaseCommand{
-				LayerValue: sprite.Layer,
-			},
-		})
+		if circle, hasCircle := w.circleSprites[id]; hasCircle {
+			commands = append(commands, render.DrawCircle{
+				Center: transform.Position,
+				Radius: circle.Radius,
+				Fill:   circle.Color,
+				BaseCommand: render.BaseCommand{
+					LayerValue: circle.Layer,
+				},
+			})
+			continue
+		}
+
+		if rect, hasRect := w.rectSprites[id]; hasRect {
+			commands = append(commands, render.DrawRect{
+				Rect:        rect.Rect,
+				Fill:        rect.Color,
+				Stroke:      rect.Stroke,
+				StrokeWidth: rect.StrokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: rect.Layer,
+				},
+			})
+		}
 	}
 
 	return commands
 }
 
 func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
-	ids := make([]EntityID, 0, len(w.circleColliders))
+	ids := make([]EntityID, 0, len(w.circleColliders)+len(w.rectColliders))
 	for id := range w.circleColliders {
+		ids = append(ids, id)
+	}
+	for id := range w.rectColliders {
+		if _, isCircle := w.circleColliders[id]; isCircle {
+			// circle collider takes precedence on the same entity (see
+			// detectOverlapPair); don't draw the ignored rect.
+			continue
+		}
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
@@ -47,21 +75,38 @@ func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, l
 	commands := make([]render.Command, 0, len(ids))
 
 	for _, id := range ids {
-		collider := w.circleColliders[id]
 		transform, ok := w.transforms[id]
 		if !ok {
 			continue
 		}
 
-		commands = append(commands, render.DrawCircle{
-			Center:      transform.Position,
-			Radius:      collider.Radius,
-			Stroke:      color,
-			StrokeWidth: strokeWidth,
-			BaseCommand: render.BaseCommand{
-				LayerValue: layer,
-			},
-		})
+		if collider, isCircle := w.circleColliders[id]; isCircle {
+			commands = append(commands, render.DrawCircle{
+				Center:      transform.Position,
+				Radius:      collider.Radius,
+				Stroke:      color,
+				StrokeWidth: strokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
+			})
+			continue
+		}
+
+		if collider, isRect := w.rectColliders[id]; isRect {
+			half := collider.HalfExtends
+			commands = append(commands, render.DrawRect{
+				Rect: math2d.NewRectFromCorners(
+					transform.Position.Sub(half),
+					transform.Position.Add(half),
+				),
+				Stroke:      color,
+				StrokeWidth: strokeWidth,
+				BaseCommand: render.BaseCommand{
+					LayerValue: layer,
+				},
+			})
+		}
 	}
 
 	return commands

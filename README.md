@@ -265,6 +265,7 @@ go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-coll
 - UI guide: [Portuguese](docs/ui.md) | [English](docs/ui-en.md)
 - Math visual guide: [Portuguese](docs/math2d-visual-guide.md) | [English](docs/math2d-visual-guide-en.md)
 - Camera, world, and viewport: [Portuguese](docs/camera-world-viewport.md) | [English](docs/camera-world-viewport-en.md)
+- Bidirectional time scrubbing: [Portuguese](docs/scrubbing.md) | [English](docs/scrubbing-en.md)
 
 ## License
 
