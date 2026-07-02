@@ -15,7 +15,15 @@ type Recording struct {
 
 // StartRecording begins capturing every event passed to ApplyInput. Call
 // StopRecording to retrieve the log once the run to be replayed is done.
+//
+// Start it at tick 0 (a fresh driver, or right after a reset): Replay always
+// re-runs from tick 0, so a recording started mid-run misses the input that
+// shaped the earlier ticks and cannot be reproduced. A reset while recording
+// restarts the capture from the new tick 0 for the same reason.
 func (d *Driver) StartRecording() {
+	if d.tick != 0 {
+		d.log.Warn("recording started mid-run; Replay re-runs from tick 0 and will not reproduce it", "tick", d.tick)
+	}
 	d.recordingEnabled = true
 	d.recording = nil
 }
@@ -34,6 +42,12 @@ func (d *Driver) StopRecording() Recording {
 // deterministic entry point — rec.Ticks times. Compare the returned
 // Driver's Checksum against the original run's to verify the replay
 // reproduced it exactly.
+//
+// Replay resets and mutates the game instance it receives (Setup, Init and
+// every Update run again). Do not pass a game still attached to a live
+// Driver you want to keep — hand it a fresh instance instead. The internal
+// scrubber relies on this same in-place behavior on purpose: it replays the
+// live driver's own game so the reconstructed state is adopted directly.
 func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
 	driver := NewDriver(game, log)
 

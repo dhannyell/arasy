@@ -403,6 +403,13 @@ func (d *Driver) doReset() {
 	d.maxTick = 0
 	d.scrubLog = nil
 	d.stagedEvents = nil
+	if d.recordingEnabled {
+		// Ticks restart at 0: keeping the pre-reset events would collide
+		// with the new run's ticks and Replay would apply both. Restart the
+		// capture so StopRecording returns a reproducible post-reset log.
+		d.recording = nil
+		d.log.Info("reset restarted the active input recording")
+	}
 	d.clock.Reset()
 	d.uiState = ui.State{}
 	d.input.Reset()

@@ -288,9 +288,20 @@ func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGB
 }
 
 func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) {
-	if width <= 0 {
+	if width <= 0 || rect.Empty() {
 		return
 	}
+
+	// A stroke wide enough to cover the interior is a filled rect. Falling
+	// back also keeps the bands below from overlapping each other.
+	if width*2 >= rect.Dx() || width*2 >= rect.Dy() {
+		fillRect(img, rect, c)
+		return
+	}
+
+	// The four bands must not overlap: fillRect composites with "over", so
+	// any shared pixel (the corners, in the naive full-height side bands)
+	// would be blended twice and come out darker with a translucent stroke.
 
 	// top
 	fillRect(img, image.Rect(
@@ -306,19 +317,19 @@ func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) 
 		rect.Max.X,
 		rect.Max.Y), c)
 
-	// left
+	// left (between the top and bottom bands)
 	fillRect(img, image.Rect(
 		rect.Min.X,
-		rect.Min.Y,
+		rect.Min.Y+width,
 		rect.Min.X+width,
-		rect.Max.Y), c)
+		rect.Max.Y-width), c)
 
-	// right
+	// right (between the top and bottom bands)
 	fillRect(img, image.Rect(
 		rect.Max.X-width,
-		rect.Min.Y,
+		rect.Min.Y+width,
 		rect.Max.X,
-		rect.Max.Y), c)
+		rect.Max.Y-width), c)
 }
 
 func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width float64, c color.RGBA) {
