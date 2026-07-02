@@ -16,7 +16,7 @@ Current capabilities:
 - Fixed timestep helper.
 - Camera with aspect-ratio modes (stretch, fit, expand).
 - Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
-- Runtime package with a portable `Game` contract, driver, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
+- Runtime package with a portable `Game` contract, fixed-timestep driver pump, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
 - Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
 - Raster renderer using Go's standard `image` packages (text rendering not supported yet on this backend).
 - Scene world with entities and components: transform, circle sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle collider.
@@ -53,8 +53,8 @@ ui/
 
 runtime/
   Orchestration hub: platform-agnostic Game contract, Context, Driver,
-  input/control plumbing, frame production, dev controls, and optional
-  rewind history. The only behavioral API platforms need to drive.
+  input/control plumbing, fixed timestep pump, frame production, dev controls,
+  and optional rewind history. The only behavioral API platforms need to drive.
 
 platform/raster/
   Software renderer that draws render commands into image.RGBA, plus an
