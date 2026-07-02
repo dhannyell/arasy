@@ -131,3 +131,65 @@ func TestDriverInputPointerMoveDoesNotAffectMappedActions(t *testing.T) {
 		t.Fatalf("pointer pos = %+v, want 40,50", pointer.Pos())
 	}
 }
+
+func TestDriverInputSnapshotRestoreRoundTrip(t *testing.T) {
+	driverInput := newDriverInput([]input.Binding{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Action: input.ActionMoveX,
+			Scale:  1,
+		},
+	})
+
+	driverInput.Apply([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		},
+		mouseMoveEvent(15, 20),
+	}, 3)
+	snapshotState := driverInput.BeginTick()
+	driverInput.EndTick(4)
+	snapshot := driverInput.Snapshot()
+
+	driverInput.Apply([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonUp,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
+			Kind:   input.EventPointerLeave,
+		},
+	}, 4)
+	driverInput.BeginTick()
+
+	driverInput.Restore(snapshot)
+
+	restoredState := driverInput.LastInput()
+	if restoredState.Value(input.ActionMoveX) != snapshotState.Value(input.ActionMoveX) {
+		t.Fatalf("restored move x = %v, want %v",
+			restoredState.Value(input.ActionMoveX),
+			snapshotState.Value(input.ActionMoveX),
+		)
+	}
+	pointer := driverInput.Pointer()
+	if pointer.Pos() != (math2d.Vec2{X: 15, Y: 20}) || !pointer.Inside() {
+		t.Fatalf("restored pointer = pos %+v inside=%v, want 15,20 inside", pointer.Pos(), pointer.Inside())
+	}
+	frame := driverInput.PointerFrame()
+	if frame.Pos != (math2d.Vec2{X: 15, Y: 20}) || !frame.Inside || len(frame.Events) != 0 {
+		t.Fatalf("restored frame = %+v, want seeded persistent pointer without events", frame)
+	}
+
+	driverInput.Apply([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonUp,
+		},
+	}, 5)
+	released := driverInput.BeginTick()
+	if !released.JustReleased(input.ActionMoveX) {
+		t.Fatal("restored mapper should preserve previous state for just released")
+	}
+}

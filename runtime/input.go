@@ -15,6 +15,12 @@ type driverInput struct {
 	lastInput input.State
 }
 
+type driverInputSnapshot struct {
+	mapper    *input.Mapper
+	lastInput input.State
+	pointer   input.PointerState
+}
+
 func newDriverInput(bindings []input.Binding) *driverInput {
 	i := &driverInput{
 		mapper:    input.NewMapper(bindings),
@@ -67,14 +73,18 @@ func (i *driverInput) Bindings() []input.Binding {
 	return i.mapper.Bindings()
 }
 
-func (i *driverInput) Mapper() *input.Mapper {
-	return i.mapper
+func (i *driverInput) Snapshot() driverInputSnapshot {
+	return driverInputSnapshot{
+		mapper:    i.mapper.Clone(),
+		lastInput: i.lastInput.Clone(),
+		pointer:   i.pointer.Clone(),
+	}
 }
 
-func (i *driverInput) Restore(mapper *input.Mapper, lastInput input.State, pointer input.PointerState) {
-	i.mapper = mapper
-	i.lastInput = lastInput
-	i.pointer = pointer
+func (i *driverInput) Restore(snapshot driverInputSnapshot) {
+	i.mapper = snapshot.mapper
+	i.lastInput = snapshot.lastInput
+	i.pointer = snapshot.pointer
 	i.resetFrame()
 }
 
