@@ -13,10 +13,21 @@ type Transform struct {
 	Scale    math2d.Vec2
 }
 
+type BaseSprite struct {
+	Layer int
+	Color render.Color
+}
+
 type CircleSprite struct {
+	BaseSprite
 	Radius float64
-	Color  render.Color
-	Layer  int
+}
+
+type RectSprite struct {
+	BaseSprite
+	Rect        math2d.Rect
+	Stroke      render.Color
+	StrokeWidth float64
 }
 
 type Velocity struct {
@@ -40,4 +51,10 @@ type Body struct {
 
 type CircleCollider struct {
 	Radius float64
+}
+
+type RectCollider struct {
+	// HalfExtents are the half-dimensions of the rectangle, centered at
+	// Transform.Position. Transform.Rotation is ignored (AABB).
+	HalfExtends math2d.Vec2
 }

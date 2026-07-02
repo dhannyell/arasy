@@ -31,12 +31,20 @@ func main() {
 	name := flag.String("name", "", "optional report name without extension")
 	count := flag.Int("count", 1, "benchmark count passed to -count")
 	benchmem := flag.Bool("benchmem", true, "include memory allocation metrics")
+	benchtime := flag.String("benchtime", "", "optional benchmark time passed to -benchtime (e.g. 2s or 300x)")
+	timeout := flag.String("timeout", "", "optional test timeout passed to -timeout (e.g. 30m)")
 	flag.Parse()
 
 	start := time.Now()
 	args := []string{"test", *pkg, "-run", *run, "-bench", *bench, "-count", fmt.Sprint(*count)}
 	if *benchmem {
 		args = append(args, "-benchmem")
+	}
+	if *benchtime != "" {
+		args = append(args, "-benchtime", *benchtime)
+	}
+	if *timeout != "" {
+		args = append(args, "-timeout", *timeout)
 	}
 
 	cmd := exec.Command("go", args...)
