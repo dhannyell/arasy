@@ -64,7 +64,7 @@ go run ./cmd/demos/breakout/canvas
 The core data flow is:
 
 ```
-Game.Update → scene/simulation → render commands → platform renderer
+Driver.Step/AdvanceTime → Game.Update → World.Step/PostStep → render commands → platform renderer
 ```
 
 ### Layers
@@ -105,7 +105,7 @@ Rules:
 
 - **`math2d/`** — Pure 2D math primitives (`Vec2`, `Rect`). No dependencies on other engine packages.
 - **`render/`** — Backend-agnostic render commands (`DrawRect`, `DrawCircle`, `DrawLine`, `DrawText`, `DrawArc`, `DrawPoint`), normalized `Color` (channels 0–1), and `Camera` with aspect modes (Stretch/Fit/Expand). Commands carry a `Layer()` int for draw ordering.
-- **`scene/`** — Entity/component world and simulation systems. Entities are `EntityID` (uint32). Components are plain structs stored in per-type maps on `World`. `World.Step(dt, config)` runs the full simulation tick: acceleration → integrate → bounce inside bounds → grid broad-phase → contact resolution (positional correction + restitution impulse) → damping. Contacts resolved in the last step are exposed via `World.Contacts()`. Also provides debug overlay command builders (`DebugCommands` with colliders/contacts/grid/velocities/IDs layers) and a deterministic `Checksum()` of positions+velocities.
+- **`scene/`** — Entity/component world and simulation systems. Entities are `EntityID` (uint32). Components are plain structs stored in per-type maps on `World`. `World.Step(dt, config)` runs the full simulation tick: acceleration → integrate → bounce inside bounds (per-side open mask + optional wall restitution via `StepConfig.Bounce`) → grid broad-phase → contact resolution (positional correction + restitution impulse) → damping. Contacts resolved in the last step are exposed via `World.Contacts()`. Also provides debug overlay command builders (`DebugCommands` with colliders/contacts/grid/velocities/IDs layers) and a deterministic `Checksum()` of positions+velocities.
 - **`input/`** — Typed input system: `Source` (device+code), `Action` (semantic), `Binding` (source→action mapping with scale), `Mapper` (applies events to produce `State`), `Buffer` (per-tick event log), pointer types (`PointerState`, `PointerFrame`). `Mapper.EndFrame()` runs at the end of each tick (the runtime driver handles this).
 - **`ui/`** — Immediate-mode UI: `Button`, `Panel`, `Label`, `ProgressBar`, click interaction, themes. Three coordinate spaces (`SpaceRef` reference canvas, `SpacePlayfield`, `SpaceScreen`). Interaction state (`ui.State`) is owned by the runtime driver and captured in rewind snapshots.
 - **`runtime/`** — The orchestration hub and the engine's public behavioral API. Owns the `Game` contract (`Setup`/`Init`/`Update`/`Render`), `Driver` (fixed timestep pump, input application order, dev controls: pause/step/speed/reset/back), the rewind recorder (stores complete driver snapshots composed from World+driverInput+UI+game state), `StateSlot[T]` for global game state, and the runtime debug HUD. It defines *what a tick is* — that semantic must not be duplicated in platforms.
@@ -126,10 +126,12 @@ code should use `Driver.Step()`, which executes exactly one fixed tick and does
 not touch the wall-time accumulator.
 
 Per step, the Driver captures a rewind snapshot, snapshots input state, calls
-`Game.Update`, advances the tick, clears the pointer frame, runs
-`mapper.EndFrame()`, and prunes the input buffer. Input events are applied
-*before* `AdvanceTime`/`Step` via `ApplyInput` and stamped with the current
-tick. Do not reorder this pipeline; determinism and rewind depend on it.
+`Game.Update`, automatically calls `World.Step` unless the game called
+`ctx.HoldSimulation()`, optionally calls `PostStep`, advances the tick, clears
+the pointer frame, runs `mapper.EndFrame()`, and prunes the input buffer. Input
+events are applied *before* `AdvanceTime`/`Step` via `ApplyInput` and stamped
+with the current tick. Do not reorder this pipeline; determinism and rewind
+depend on it.
 
 `StateSlot[T]` snapshots by value: `T` must be a pure value type (no slices,
 maps, or pointers), otherwise rewind snapshots alias mutable state.

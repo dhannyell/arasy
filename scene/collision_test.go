@@ -68,7 +68,7 @@ func TestWorldBounceCirclesInsideBounces(t *testing.T) {
 			})
 
 			world.Integrate(0.5)
-			world.BounceEntitiesInside(bounds)
+			world.BounceEntitiesInside(bounds, scene.BounceConfig{})
 
 			transform, ok := world.Transform(entity)
 			if !ok {
@@ -152,7 +152,7 @@ func TestWorldBounceRectsInsideBounces(t *testing.T) {
 			})
 
 			world.Integrate(0.5)
-			world.BounceEntitiesInside(bounds)
+			world.BounceEntitiesInside(bounds, scene.BounceConfig{})
 
 			transform, ok := world.Transform(entity)
 			if !ok {
@@ -195,7 +195,7 @@ func TestWorldBounceEntitiesInsidePrefersCircleWhenBothColliders(t *testing.T) {
 	world.SetCircleCollider(entity, scene.CircleCollider{Radius: 2})
 	world.SetRectCollider(entity, scene.RectCollider{HalfExtends: math2d.Vec2{X: 10, Y: 10}})
 
-	world.BounceEntitiesInside(bounds)
+	world.BounceEntitiesInside(bounds, scene.BounceConfig{})
 
 	transform, ok := world.Transform(entity)
 	if !ok {
@@ -214,6 +214,129 @@ func TestWorldBounceEntitiesInsidePrefersCircleWhenBothColliders(t *testing.T) {
 	}
 }
 
+func TestWorldBounceEntitiesInsideOpenSides(t *testing.T) {
+	bounds := math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: 100, Y: 100},
+	)
+
+	tests := []struct {
+		name         string
+		openSide     scene.SideMask
+		position     math2d.Vec2
+		velocity     math2d.Vec2
+		wantClosed   math2d.Vec2
+		wantVelocity math2d.Vec2
+	}{
+		{
+			name:         "Left",
+			openSide:     scene.SideLeft,
+			position:     math2d.Vec2{X: 1, Y: 50},
+			velocity:     math2d.Vec2{X: -5, Y: 0},
+			wantClosed:   math2d.Vec2{X: 2, Y: 50},
+			wantVelocity: math2d.Vec2{X: 5, Y: 0},
+		},
+		{
+			name:         "Right",
+			openSide:     scene.SideRight,
+			position:     math2d.Vec2{X: 99, Y: 50},
+			velocity:     math2d.Vec2{X: 5, Y: 0},
+			wantClosed:   math2d.Vec2{X: 98, Y: 50},
+			wantVelocity: math2d.Vec2{X: -5, Y: 0},
+		},
+		{
+			name:         "Top",
+			openSide:     scene.SideTop,
+			position:     math2d.Vec2{X: 50, Y: 1},
+			velocity:     math2d.Vec2{X: 0, Y: -5},
+			wantClosed:   math2d.Vec2{X: 50, Y: 2},
+			wantVelocity: math2d.Vec2{X: 0, Y: 5},
+		},
+		{
+			name:         "Bottom",
+			openSide:     scene.SideBottom,
+			position:     math2d.Vec2{X: 50, Y: 99},
+			velocity:     math2d.Vec2{X: 0, Y: 5},
+			wantClosed:   math2d.Vec2{X: 50, Y: 98},
+			wantVelocity: math2d.Vec2{X: 0, Y: -5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+"/Open", func(t *testing.T) {
+			world, entity := worldWithCircleAt(tt.position, tt.velocity)
+
+			world.BounceEntitiesInside(bounds, scene.BounceConfig{OpenSides: tt.openSide})
+
+			transform, _ := world.Transform(entity)
+			velocity, _ := world.Velocity(entity)
+			if transform.Position != tt.position {
+				t.Fatalf("open side position = %+v, want %+v", transform.Position, tt.position)
+			}
+			if velocity.Linear != tt.velocity {
+				t.Fatalf("open side velocity = %+v, want %+v", velocity.Linear, tt.velocity)
+			}
+		})
+
+		t.Run(tt.name+"/Closed", func(t *testing.T) {
+			world, entity := worldWithCircleAt(tt.position, tt.velocity)
+
+			world.BounceEntitiesInside(bounds, scene.BounceConfig{})
+
+			transform, _ := world.Transform(entity)
+			velocity, _ := world.Velocity(entity)
+			if transform.Position != tt.wantClosed {
+				t.Fatalf("closed side position = %+v, want %+v", transform.Position, tt.wantClosed)
+			}
+			if velocity.Linear != tt.wantVelocity {
+				t.Fatalf("closed side velocity = %+v, want %+v", velocity.Linear, tt.wantVelocity)
+			}
+		})
+	}
+}
+
+func TestWorldBounceEntitiesInsideWallRestitution(t *testing.T) {
+	bounds := math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: 100, Y: 100},
+	)
+
+	t.Run("UsesBodyRestitutionWhenEnabled", func(t *testing.T) {
+		world, entity := worldWithCircleAt(math2d.Vec2{X: 99, Y: 50}, math2d.Vec2{X: 10, Y: 0})
+		world.SetBody(entity, scene.Body{InvMass: 1, Restitution: 0.5})
+
+		world.BounceEntitiesInside(bounds, scene.BounceConfig{UseBodyRestitution: true})
+
+		velocity, _ := world.Velocity(entity)
+		if velocity.Linear != (math2d.Vec2{X: -5, Y: 0}) {
+			t.Fatalf("velocity = %+v, want {-5 0}", velocity.Linear)
+		}
+	})
+
+	t.Run("EntityWithoutBodyStillReflectsPerfectly", func(t *testing.T) {
+		world, entity := worldWithCircleAt(math2d.Vec2{X: 99, Y: 50}, math2d.Vec2{X: 10, Y: 0})
+
+		world.BounceEntitiesInside(bounds, scene.BounceConfig{UseBodyRestitution: true})
+
+		velocity, _ := world.Velocity(entity)
+		if velocity.Linear != (math2d.Vec2{X: -10, Y: 0}) {
+			t.Fatalf("velocity = %+v, want {-10 0}", velocity.Linear)
+		}
+	})
+
+	t.Run("DefaultIgnoresBodyRestitution", func(t *testing.T) {
+		world, entity := worldWithCircleAt(math2d.Vec2{X: 99, Y: 50}, math2d.Vec2{X: 10, Y: 0})
+		world.SetBody(entity, scene.Body{InvMass: 1, Restitution: 0})
+
+		world.BounceEntitiesInside(bounds, scene.BounceConfig{})
+
+		velocity, _ := world.Velocity(entity)
+		if velocity.Linear != (math2d.Vec2{X: -10, Y: 0}) {
+			t.Fatalf("velocity = %+v, want {-10 0}", velocity.Linear)
+		}
+	})
+}
+
 func TestWorldBounceCirclesInsideSkipsEntityWithoutVelocity(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()
@@ -228,7 +351,7 @@ func TestWorldBounceCirclesInsideSkipsEntityWithoutVelocity(t *testing.T) {
 	world.BounceEntitiesInside(math2d.NewRect(
 		math2d.Vec2{X: 0, Y: 0},
 		math2d.Vec2{X: 100, Y: 100},
-	))
+	), scene.BounceConfig{})
 
 	transform, ok := world.Transform(entity)
 	if !ok {
@@ -239,6 +362,20 @@ func TestWorldBounceCirclesInsideSkipsEntityWithoutVelocity(t *testing.T) {
 	if transform.Position != want {
 		t.Fatalf("got position %+v, want %+v", transform.Position, want)
 	}
+}
+
+func worldWithCircleAt(position, velocity math2d.Vec2) (*scene.World, scene.EntityID) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	world.SetTransform(entity, scene.Transform{
+		Position: position,
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetVelocity(entity, scene.Velocity{Linear: velocity})
+	world.SetCircleCollider(entity, scene.CircleCollider{Radius: 2})
+
+	return world, entity
 }
 
 func TestWorldBounceCirclesInsideSkipsEntityWithoutTransform(t *testing.T) {
@@ -257,7 +394,7 @@ func TestWorldBounceCirclesInsideSkipsEntityWithoutTransform(t *testing.T) {
 	world.BounceEntitiesInside(math2d.NewRect(
 		math2d.Vec2{X: 0, Y: 0},
 		math2d.Vec2{X: 100, Y: 100},
-	))
+	), scene.BounceConfig{})
 
 	got, ok := world.Velocity(entity)
 	if !ok {

@@ -23,10 +23,15 @@ type UpdateContext struct {
 	StepConfig scene.StepConfig
 
 	// read-only; camera control belongs to Render
-	camera render.Camera
+	camera         render.Camera
+	simulationHeld bool
 }
 
 func (ctx *UpdateContext) Camera() render.Camera { return ctx.camera }
+
+// HoldSimulation skips the automatic World.Step for this tick. Call it from
+// every Update where simulation should remain frozen.
+func (ctx *UpdateContext) HoldSimulation() { ctx.simulationHeld = true }
 
 // RenderContext is passed to Game.Render. World is conventionally
 // read-only here (not yet enforced by the type system — phase (b) of the

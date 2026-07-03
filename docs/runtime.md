@@ -69,6 +69,7 @@ type Game interface {
 - camera base;
 - cor de fundo;
 - bounds da simulacao;
+- configuracao de bounce;
 - configuracao de fisica;
 - frequencia de simulacao;
 - FPS alvo;
@@ -106,12 +107,14 @@ Aqui o jogo normalmente:
 
 1. Le `ctx.Input`.
 2. Atualiza componentes no `ctx.World`.
-3. Chama `ctx.World.Step(dt, ctx.StepConfig)`.
-4. Reage a `ctx.World.Contacts()`.
+3. Chama `ctx.HoldSimulation()` se este tick nao deve avancar fisica.
 
-O `runtime` nao chama `World.Step` automaticamente.
+Depois do `Update`, o `runtime` chama `World.Step(dt, ctx.StepConfig)`
+automaticamente. Jogos que precisam reagir a contatos no mesmo tick implementam
+`runtime.PostStepper` e leem `ctx.World.Contacts()` em `PostStep`.
 
-Essa decisao e importante: a ordem da simulacao fica explicita no jogo.
+Essa decisao e importante: a semantica de tick fica centralizada no Driver,
+enquanto o jogo ainda pode segurar a simulacao por tick quando necessario.
 
 ### Render
 
@@ -220,9 +223,12 @@ O `Driver.Frame()` devolve a camera resultante junto dos comandos.
 
 ### StepConfig
 
-`StepConfig` junta configuracoes de simulacao vindas do `Config`, como bounds e fisica.
+`StepConfig` junta configuracoes de simulacao vindas do `Config`, como bounds,
+bounce e fisica.
 
-O jogo passa isso para `World.Step`.
+O Driver passa isso para `World.Step` automaticamente depois de `Update`. O jogo
+pode ajustar `ctx.StepConfig` durante `Update` para afetar apenas o step do tick
+atual.
 
 ## Driver
 
@@ -287,6 +293,8 @@ driver:
   calcula input.State
   monta Context
   chama game.Update(ctx, dt)
+  chama World.Step(dt, ctx.StepConfig), a menos que Update tenha segurado a simulacao
+  chama game.PostStep(ctx, stats), se implementado
   incrementa Tick
   encerra frame de input
 ```
