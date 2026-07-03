@@ -114,7 +114,15 @@ func (c *devControls) consume() devFrame {
 	c.backTicks = c.backTicks[:0]
 	backSeconds := append([]float64(nil), c.backSeconds...)
 	c.backSeconds = c.backSeconds[:0]
-	scrubTicks := append([]uint64(nil), c.scrubTicks...)
+	// Coalesce scrub ticks: each ScrubToTick replays deterministically from
+	// tick 0, so only the final target matters. When a platform queues many
+	// scrub commands during a slider drag (the web canvas sends one every
+	// 50ms), processing every intermediate target would replay from 0 that
+	// many times -- keeping just the last tick collapses that to one replay.
+	var scrubTicks []uint64
+	if len(c.scrubTicks) > 0 {
+		scrubTicks = []uint64{c.scrubTicks[len(c.scrubTicks)-1]}
+	}
 	c.scrubTicks = c.scrubTicks[:0]
 	return devFrame{
 		paused:      c.paused,
