@@ -205,6 +205,24 @@ func TestControlCommandFromMessageMapsBackSeconds(t *testing.T) {
 	}
 }
 
+func TestHubDrainInboxConsumesViewportOnce(t *testing.T) {
+	h := &hub{}
+	h.enqueueResize(clientMessage{Width: 640, Height: 480})
+
+	_, _, viewport, haveViewport := h.drainInbox()
+	if !haveViewport {
+		t.Fatal("first drain haveViewport = false, want true")
+	}
+	if viewport.Width() != 640 || viewport.Height() != 480 {
+		t.Fatalf("viewport = %+v, want 640x480", viewport)
+	}
+
+	_, _, _, haveViewport = h.drainInbox()
+	if haveViewport {
+		t.Fatal("second drain haveViewport = true, want false")
+	}
+}
+
 func TestClientCameraPreservesFrameCameraAndUsesClientViewport(t *testing.T) {
 	h := &hub{}
 	c := &client{

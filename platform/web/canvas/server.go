@@ -158,15 +158,7 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
 			}
 			last = now
 
-			// drains the inbox atomically — fast operation, only copies slices
-			h.inboxMu.Lock()
-			events := append([]input.Event(nil), h.pendingEvents...)
-			cmds := append([]runtime.ControlCommand(nil), h.pendingCmds...)
-			viewport := h.pendingViewport
-			haveViewport := h.haveViewport
-			h.pendingEvents = h.pendingEvents[:0]
-			h.pendingCmds = h.pendingCmds[:0]
-			h.inboxMu.Unlock()
+			events, cmds, viewport, haveViewport := h.drainInbox()
 
 			// The driver is lock-free; the hub serializes access via worldMu.
 			h.worldMu.Lock()
@@ -181,6 +173,24 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
 			h.worldMu.Unlock()
 		}
 	}
+}
+
+func (h *hub) drainInbox() ([]input.Event, []runtime.ControlCommand, math2d.Rect, bool) {
+	// Drains the inbox atomically. Slices are copied so handlers can keep
+	// appending while the simulation owns the returned batch.
+	h.inboxMu.Lock()
+	defer h.inboxMu.Unlock()
+
+	events := append([]input.Event(nil), h.pendingEvents...)
+	cmds := append([]runtime.ControlCommand(nil), h.pendingCmds...)
+	viewport := h.pendingViewport
+	haveViewport := h.haveViewport
+
+	h.pendingEvents = h.pendingEvents[:0]
+	h.pendingCmds = h.pendingCmds[:0]
+	h.haveViewport = false
+
+	return events, cmds, viewport, haveViewport
 }
 
 func (h *hub) renderLoop(ctx context.Context, renderTicker <-chan time.Time) {
