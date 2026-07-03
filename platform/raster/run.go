@@ -110,8 +110,12 @@ func writeFile(path string, fn func(*os.File) error) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return fn(f)
+	err = fn(f)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func toPaletted(img image.Image) *image.Paletted {

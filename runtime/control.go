@@ -49,7 +49,6 @@ type devFrame struct {
 	paused      bool
 	speed       float64
 	debugLayers scene.DebugLayers
-	reset       bool
 	steps       int
 	backs       int
 	backTicks   []uint64
@@ -99,7 +98,7 @@ func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 	return false
 }
 
-// consume reads and resets the volatile fields (stepPending, backPending).
+// Consume reads and resets the volatile fields (stepPending, backPending).
 // Called once per tick at the start of Advance.
 func (c *devControls) consume() devFrame {
 	speed := c.speed
@@ -117,7 +116,7 @@ func (c *devControls) consume() devFrame {
 	// Coalesce scrub ticks: each ScrubToTick replays deterministically from
 	// tick 0, so only the final target matters. When a platform queues many
 	// scrub commands during a slider drag (the web canvas sends one every
-	// 50ms), processing every intermediate target would replay from 0 that
+	// 50 milliseconds), processing every intermediate target would replay from 0 that
 	// many times -- keeping just the last tick collapses that to one replay.
 	var scrubTicks []uint64
 	if len(c.scrubTicks) > 0 {
