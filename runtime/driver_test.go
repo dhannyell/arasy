@@ -81,6 +81,48 @@ func TestDriverUpdateContextUsesSurfaceViewport(t *testing.T) {
 	}
 }
 
+func TestDriverSetViewportIgnoresDuplicateViewport(t *testing.T) {
+	driver := NewDriver(cameraGame{}, slog.Default())
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})
+	other := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 600})
+
+	driver.SetViewport(viewport)
+	driver.SetViewport(viewport)
+	driver.Step()
+	driver.SetViewport(viewport)
+
+	if got := len(driver.viewportLog); got != 1 {
+		t.Fatalf("viewportLog len after duplicate viewport = %d, want 1", got)
+	}
+
+	driver.SetViewport(other)
+	if got := len(driver.viewportLog); got != 2 {
+		t.Fatalf("viewportLog len after new viewport = %d, want 2", got)
+	}
+}
+
+func TestDriverForkFromScrubCommitsCurrentViewport(t *testing.T) {
+	driver := NewDriver(cameraGame{}, slog.Default())
+	first := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
+	second := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 200, Y: 200})
+
+	driver.SetViewport(first)
+	driver.Step()
+	driver.SetViewport(second)
+	driver.Step()
+
+	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 1})
+	driver.AdvanceTime(0)
+	driver.Step()
+
+	if got := len(driver.viewportLog); got != 2 {
+		t.Fatalf("viewportLog len after fork = %d, want 2", got)
+	}
+	if got := driver.viewportLog[1]; got.tick != 1 || got.viewport != second {
+		t.Fatalf("fork viewport entry = %+v, want tick 1 viewport %+v", got, second)
+	}
+}
+
 type autoStepGame struct {
 	entity scene.EntityID
 }

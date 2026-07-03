@@ -64,6 +64,29 @@ type Driver struct {
 	scrubLog     []input.Event
 	stagedEvents []input.Event
 	maxTick      uint64
+
+	// viewportLog is an always-on log of SetViewport calls, tagged with the
+	// tick at which each occurred. Like scrubLog, it is never bounded and
+	// forks at the same moment (a step from a rewound tick). The scrubber
+	// threads it into replayWithViewport so UI hit-testing during replay uses
+	// the viewport that was active when each pointer event was originally
+	// recorded — without it, a viewport change between recording and replay
+	// makes screen-pixel click coordinates map to the wrong reference-canvas
+	// position, missing buttons and freezing UI-gated games (e.g. breakout's
+	// Play click during scrub after a browser resize).
+	viewportLog []viewportEntry
+
+	// stagedViewport holds a viewport change that arrived while rewound
+	// (tick < maxTick). It is committed to viewportLog at the fork (like
+	// stagedEvents) or discarded by the next scrub/back/reset.
+	stagedViewport    math2d.Rect
+	hasStagedViewport bool
+}
+
+// viewportEntry records a SetViewport call at the tick it was applied.
+type viewportEntry struct {
+	tick     uint64
+	viewport math2d.Rect
 }
 
 type DriveState struct {
@@ -147,6 +170,28 @@ func truncateAtTick(events []input.Event, tick uint64) []input.Event {
 		}
 	}
 	return kept
+}
+
+// truncateViewportLogAtTick drops viewport entries at or after the fork tick,
+// matching truncateAtTick for input events.
+func truncateViewportLogAtTick(log []viewportEntry, tick uint64) []viewportEntry {
+	kept := log[:0]
+	for _, ve := range log {
+		if ve.tick < tick {
+			kept = append(kept, ve)
+		}
+	}
+	return kept
+}
+
+func appendViewportLogEntry(log []viewportEntry, tick uint64, viewport math2d.Rect) []viewportEntry {
+	if viewport.Width() <= 0 || viewport.Height() <= 0 {
+		return log
+	}
+	if len(log) > 0 && log[len(log)-1].viewport == viewport {
+		return log
+	}
+	return append(log, viewportEntry{tick: tick, viewport: viewport})
 }
 
 // Control applies a ControlCommand to the internal state.
@@ -248,6 +293,14 @@ func (d *Driver) stepOnce(dt float64) {
 		d.scrubLog = truncateAtTick(d.scrubLog, d.tick)
 		d.scrubLog = append(d.scrubLog, d.stagedEvents...)
 		d.stagedEvents = nil
+		d.viewportLog = truncateViewportLogAtTick(d.viewportLog, d.tick)
+		if d.hasStagedViewport {
+			d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, d.stagedViewport)
+			d.stagedViewport = math2d.Rect{}
+			d.hasStagedViewport = false
+		} else {
+			d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, d.viewport)
+		}
 		d.maxTick = d.tick
 	}
 
@@ -388,8 +441,27 @@ func (d *Driver) newUpdateUI() *ui.UI {
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.
+// The change is recorded in viewportLog (tagged with the current tick) so the
+// scrubber can replay it at the correct tick — pointer event coordinates are
+// in screen pixels and only map to the right UI element with the viewport that
+// was active when they were recorded. When rewound (tick < maxTick), the
+// change is staged until a fork commits it, matching the staging of input
+// events.
 func (d *Driver) SetViewport(viewport math2d.Rect) {
+	if d.viewport == viewport {
+		return
+	}
+
 	d.viewport = viewport
+	if d.tick < d.maxTick {
+		if d.hasStagedViewport && d.stagedViewport == viewport {
+			return
+		}
+		d.stagedViewport = viewport
+		d.hasStagedViewport = true
+	} else {
+		d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, viewport)
+	}
 }
 
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
@@ -425,6 +497,9 @@ func (d *Driver) doReset() {
 	d.maxTick = 0
 	d.scrubLog = nil
 	d.stagedEvents = nil
+	d.viewportLog = nil
+	d.stagedViewport = math2d.Rect{}
+	d.hasStagedViewport = false
 	if d.recordingEnabled {
 		// Ticks restart at 0: keeping the pre-reset events would collide
 		// with the new run's ticks and Replay would apply both. Restart the
@@ -480,9 +555,11 @@ func (d *Driver) doScrubToTick(target uint64) {
 		return
 	}
 
-	// Thread the live viewport so viewport-dependent Update logic (UI
-	// hit-testing above all) reconstructs identically — see replayWithViewport.
-	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target}, d.viewport)
+	// Thread the live viewport AND the viewport change log so
+	// viewport-dependent Update logic (UI hit-testing above all) reconstructs
+	// identically — the viewport at each tick during replay matches what was
+	// active when the pointer events were originally recorded.
+	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target}, d.viewport, d.viewportLog)
 
 	d.world = replayed.world
 	d.uiState = replayed.uiState
@@ -490,8 +567,18 @@ func (d *Driver) doScrubToTick(target uint64) {
 	d.recorder = replayed.recorder
 	d.tick = replayed.tick
 	// The replayed mapper carries none of the input staged since the last
-	// rewind — discard the staged events too, keeping log and state aligned.
+	// rewind — discard the staged events and staged viewport too, keeping
+	// log and state aligned.
 	d.stagedEvents = nil
+	d.hasStagedViewport = false
+
+	// The replay suppressed snapshot capture (see replayWithViewport) to
+	// avoid cloning the world on every replay tick. Rebuild the recorder with
+	// a single snapshot at the target tick so Back still works after a scrub.
+	if d.cfg.HistoryLen > 0 {
+		d.recorder = newRecorder(d.cfg.HistoryLen)
+		d.recorder.Capture(d.captureSnapshot())
+	}
 
 	d.log.Debug("scrubToTick", "tick", d.tick, "target", target)
 }
@@ -519,8 +606,10 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.input.Restore(snap.input)
 	d.tick = snap.tick
 	// Restoring replaces the mapper wholesale, dropping the effect of any
-	// staged input — drop the staged events with it (see stepOnce's fork).
+	// staged input — drop the staged events and staged viewport with it
+	// (see stepOnce's fork).
 	d.stagedEvents = nil
+	d.hasStagedViewport = false
 
 	if game, ok := d.game.(StatefulGame); ok {
 		game.RestoreGameState(snap.gameState)

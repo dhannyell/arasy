@@ -50,20 +50,47 @@ func (d *Driver) StopRecording() Recording {
 // scrubber relies on this same in-place behavior on purpose: it replays the
 // live driver's own game so the reconstructed state is adopted directly.
 func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
-	return replayWithViewport(game, log, rec, math2d.Rect{})
+	return replayWithViewport(game, log, rec, math2d.Rect{}, nil)
 }
 
 // replayWithViewport is Replay with the surface viewport applied before the
 // first step. The viewport is not part of the input log, yet it shapes any
 // viewport-dependent Update logic — most importantly UI hit-testing (a button
 // click maps through the camera, which uses the viewport). The internal
-// scrubber threads the live driver's viewport here so replayed UI interactions
-// (e.g. breakout's Play button) land exactly as they did live; without it a
-// UI-gated game reconstructs a divergent, frozen world during scrub.
-func replayWithViewport(game Game, log *slog.Logger, rec Recording, viewport math2d.Rect) *Driver {
+// scrubber threads the live driver's viewport and viewport change log here so
+// replayed UI interactions (e.g. breakout's Play button) land exactly as they
+// did live; without it a UI-gated game reconstructs a divergent, frozen world
+// during scrub.
+//
+// viewportLog is a tick-tagged log of SetViewport calls. During replay, each
+// entry is applied at its tick (before any events at that tick), so the
+// viewport used for UI hit-testing at each tick matches what was active when
+// the pointer events were originally recorded. initialViewport is the
+// fallback for ticks before the first log entry.
+func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry) *Driver {
 	driver := NewDriver(game, log)
-	if viewport.Width() > 0 && viewport.Height() > 0 {
-		driver.SetViewport(viewport)
+
+	// Disable snapshot capture during replay: each Capture clones the entire
+	// World (every component map), which is O(entities × component-maps) per
+	// tick. For the scrubber this multiplies the replay cost by that factor
+	// on every tick — e.g. breakout's 74 entities make a 1000-tick scrub take
+	// 20+ seconds. The scrubber only needs the final state, not intermediate
+	// snapshots, so we suppress capture here and let doScrubToTick capture a
+	// single snapshot at the target tick afterward.
+	driver.recorder = nil
+
+	// Build a tick → viewport map (last entry per tick wins).
+	viewportByTick := make(map[uint64]math2d.Rect)
+	for _, ve := range viewportLog {
+		if ve.tick < rec.Ticks {
+			viewportByTick[ve.tick] = ve.viewport
+		}
+	}
+
+	// Apply the initial viewport for ticks before the first log entry. If
+	// there's an entry at tick 0, it overrides this at tick 0 below.
+	if initialViewport.Width() > 0 && initialViewport.Height() > 0 {
+		driver.viewport = initialViewport
 	}
 
 	byTick := make(map[uint64][]input.Event, len(rec.Events))
@@ -72,6 +99,11 @@ func replayWithViewport(game Game, log *slog.Logger, rec Recording, viewport mat
 	}
 
 	for tick := uint64(0); tick < rec.Ticks; tick++ {
+		// Apply the viewport change for this tick before any events, matching
+		// the live driver's order (SetViewport before ApplyInput before Step).
+		if vp, ok := viewportByTick[tick]; ok {
+			driver.viewport = vp
+		}
 		if events, ok := byTick[tick]; ok {
 			driver.ApplyInput(events)
 		}

@@ -36,6 +36,7 @@ let connection = null;
 let paused = false;
 let lastFrame = null;
 let pendingScrubTarget = null;
+let queuedScrubTarget = null;
 
 let scrubbing = false;
 let lastScrubTick = null;
@@ -227,6 +228,7 @@ connection = connectFrameSocket({
 
     onClose() {
         pendingScrubTarget = null;
+        queuedScrubTarget = null;
         if (lastFrame) {
             renderer.render(lastFrame);
         }
@@ -256,6 +258,7 @@ connection = connectFrameSocket({
         lastFrame = frame;
         renderer.render(frame);
         syncControls(frame);
+        flushQueuedScrub();
         stats.textContent =
             `tick ${frame.tick} | commands ${frame.commands.length} | ` +
             `sim ${formatSpeed(frame.state.simulationHz * frame.state.speed)}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
@@ -281,16 +284,33 @@ function mouseButtonCode(button) {
     return ["Left", "Middle", "Right"][button] ?? "Left";
 }
 
-// requestScrubTick sends scrubToTick, deduped against the last tick actually
-// sent purely to cut down on redundant network traffic while dragging.
+// requestScrubTick sends at most one scrubToTick at a time. If a replay is
+// already in flight, it keeps only the latest requested target and dispatches
+// that target when the in-flight frame arrives.
 // Unlike backToTick, ScrubToTick reconstructs the target tick by replaying
 // the full recorded input log — it never discards state, so dragging the
 // slider left and right (bidirectionally, anywhere in [0, maxRecordedTick])
 // always lands back on the exact original frame.
 function requestScrubTick(tick) {
+    if (pendingScrubTarget !== null) {
+        queuedScrubTarget = tick === pendingScrubTarget ? null : tick;
+        return;
+    }
+
+    queuedScrubTarget = null;
+    sendScrubTick(tick);
+}
+
+function sendScrubTick(tick) {
     if (tick === lastScrubTick) {
         return;
     }
+
+    if (tick === frameSafeTick(lastFrame?.tick)) {
+        lastScrubTick = tick;
+        return;
+    }
+
     lastScrubTick = tick;
     lastScrubSendTime = performance.now();
 
@@ -303,6 +323,24 @@ function requestScrubTick(tick) {
         action: "scrubToTick",
         tick,
     });
+}
+
+function flushQueuedScrub() {
+    if (pendingScrubTarget !== null || queuedScrubTarget === null) {
+        return;
+    }
+
+    const tick = clampScrubTick(queuedScrubTarget);
+    queuedScrubTarget = null;
+
+    if (tick === frameSafeTick(lastFrame?.tick)) {
+        updateScrubLabel(tick);
+        return;
+    }
+
+    scrubInput.value = String(tick);
+    updateScrubLabel(tick);
+    sendScrubTick(tick);
 }
 
 function updateScrubLabel(tick) {
