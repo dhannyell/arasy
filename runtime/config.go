@@ -12,6 +12,7 @@ type Config struct {
 	Camera        render.Camera
 	Clear         render.Color
 	Bounds        math2d.Rect
+	Bounce        scene.BounceConfig
 	Physics       scene.PhysicsConfig
 	SimulationHz  int
 	FPS           int

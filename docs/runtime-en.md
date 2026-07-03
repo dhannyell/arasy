@@ -72,6 +72,7 @@ type Game interface {
 - base camera;
 - clear color;
 - simulation bounds;
+- bounce configuration;
 - physics configuration;
 - simulation rate;
 - target FPS;
@@ -111,12 +112,14 @@ The game usually:
 
 1. Reads `ctx.Input`.
 2. Updates components in `ctx.World`.
-3. Calls `ctx.World.Step(dt, ctx.StepConfig)`.
-4. Reacts to `ctx.World.Contacts()`.
+3. Calls `ctx.HoldSimulation()` if physics should stay frozen for this tick.
 
-`runtime` does not call `World.Step` automatically.
+After `Update`, `runtime` calls `World.Step(dt, ctx.StepConfig)`
+automatically. Games that need to react to same-tick contacts implement
+`runtime.PostStepper` and read `ctx.World.Contacts()` in `PostStep`.
 
-That decision is important: the simulation order stays explicit in game code.
+That decision is important: tick semantics stay centralized in the Driver,
+while the game can still hold simulation for individual ticks when needed.
 
 ### Render
 
@@ -228,9 +231,10 @@ ctx.SetCamera(cam)
 ### StepConfig
 
 `StepConfig` combines simulation configuration from `Config`, such as bounds and
-physics.
+bounce and physics.
 
-The game passes it to `World.Step`.
+The Driver passes it to `World.Step` automatically after `Update`. The game may
+adjust `ctx.StepConfig` during `Update` to affect only the current tick's step.
 
 ## Driver
 
@@ -295,6 +299,8 @@ driver:
   computes input.State
   builds UpdateContext
   calls game.Update(ctx, dt)
+  calls World.Step(dt, ctx.StepConfig), unless Update held simulation
+  calls game.PostStep(ctx, stats), when implemented
   increments Tick
   ends the input frame
 ```

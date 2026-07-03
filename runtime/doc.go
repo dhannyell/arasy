@@ -2,10 +2,11 @@
 // the platform that drives it.
 //
 // Games implement Game once: Setup returns portable configuration, Init builds
-// a fresh scene.World, Update advances one fixed-timestep simulation tick, and
-// Render returns backend-agnostic render.Command values. The game receives a
-// Context on each call with the current World, semantic input state, logger,
-// tick, debug layer mask, camera, and scene.StepConfig.
+// a fresh scene.World, Update reads input and drives entities for one
+// fixed-timestep simulation tick, and Render returns backend-agnostic
+// render.Command values. Driver steps the World automatically after Update,
+// unless the game calls UpdateContext.HoldSimulation; games can implement
+// PostStepper to react to same-tick contacts.
 //
 // Driver owns the portable runtime state used by every platform target. It
 // applies raw input.Event values through the input mapper, advances the game
