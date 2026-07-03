@@ -17,8 +17,39 @@ go test ./scene -run TestStep
 # Run benchmarks
 go test ./scene -run="^$" -bench="." -benchmem
 
-# Save benchmark report to benchmarks/
+# Save benchmark report to benchmarks/ (defaults to -pkg ./scene)
 go run ./cmd/benchsave
+
+# List registered benchmark suites (cmd/benchsave/suites.go is the hub's
+# suite registry — add new families there, not via one-off -pkg flags)
+go run ./cmd/benchsave -list-suites
+
+# Run one named suite instead of passing -pkg/-bench manually
+go run ./cmd/benchsave -suite runtime
+
+# Run every registered suite (one report per suite)
+go run ./cmd/benchsave -suite all
+
+# Save a report and print/append a % comparison against the most recent
+# previous report for the same -pkg (ns/op, B/op, allocs/op; negative % = faster/smaller)
+go run ./cmd/benchsave -compare auto
+
+# Compare against a specific previous report instead of auto-detecting one
+go run ./cmd/benchsave -compare benchmarks/bench-scene-2026-06-28-211550.md
+
+# Compare two already-saved reports without running any benchmarks
+# (flags must come before the two report paths — stdlib `flag` stops parsing at the first non-flag arg)
+go run ./cmd/benchsave -diff benchmarks/old-report.md benchmarks/new-report.md
+
+# Same as above, but also save the comparison as its own markdown file
+go run ./cmd/benchsave -diff -comparison-out benchmarks/compare.md benchmarks/old-report.md benchmarks/new-report.md
+
+# Compare every report family in benchmarks/ at once (bench-scene, bench-runtime-seek, etc.),
+# diffing each family's two most recent reports — no benchmarks are run
+go run ./cmd/benchsave -compare-all
+
+# Same as above, saved to a file too
+go run ./cmd/benchsave -compare-all -comparison-out benchmarks/compare.md
 
 # Offline render demo (PNG + frame-by-frame sequence in output/)
 go run ./cmd/demos/football/raster
@@ -80,7 +111,7 @@ Rules:
 - **`runtime/`** — The orchestration hub and the engine's public behavioral API. Owns the `Game` contract (`Setup`/`Init`/`Update`/`Render`), `Driver` (fixed timestep pump, input application order, dev controls: pause/step/speed/reset/back), the rewind recorder (stores complete driver snapshots composed from World+driverInput+UI+game state), `StateSlot[T]` for global game state, and the runtime debug HUD. It defines *what a tick is* — that semantic must not be duplicated in platforms.
 - **`loop/`** — Fixed timestep accumulator (`FixedStep`) and step planner (`Steps`). Runtime's `clock` uses `Steps` to convert elapsed wall time into N fixed simulation steps with a catch-up clamp. Platforms report elapsed time through `Driver.AdvanceTime(elapsed)` or use `Driver.Step()` for deterministic tick-driven flows; platforms must not choose simulation `dt` themselves.
 - **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (no DrawText support yet, no alpha blending yet). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
-- **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `docs/decisoes-arquiteturais-2026-07-01.md`).
+- **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `plans/010-decisoes-arquiteturais.md`).
 - **`internal/render/adapter/web/`** — Converts `render.Command` values to JSON DTOs for the web canvas (handles all command types including DrawText).
 - **`cmd/`** — Runnable demos and tools. Game-specific code (e.g., `cmd/demos/football/`, `cmd/demos/breakout/`) lives here, not in engine packages.
 
@@ -111,7 +142,7 @@ maps, or pointers), otherwise rewind snapshots alias mutable state.
 3. Add `Set`, getter, and `Remove` methods to `World`.
 4. Clone the new map in `World.Clone()`.
 5. Clean up in `World.Despawn()`.
-6. Include it in `World.Checksum()` — the checksum must cover the full simulation state; equal checksums must mean equal states (AD-9 in `docs/decisoes-arquiteturais-2026-07-01.md`).
+6. Include it in `World.Checksum()` — the checksum must cover the full simulation state; equal checksums must mean equal states (AD-9 in `plans/010-decisoes-arquiteturais.md`).
 
 ### Simulation Determinism
 
@@ -139,7 +170,7 @@ per-tick debug log exist to verify simulations stay in sync.
 - `docs/runtime.md` / `docs/runtime-en.md` — runtime guide.
 - `docs/ui.md` / `docs/ui-en.md` — UI guide.
 - `docs/scrubbing.md` / `docs/scrubbing-en.md` — bidirectional time scrubbing guide (replay-based ScrubToTick, timeline forking, checksum verification).
-- `docs/revisao-tecnica-2026-07-01.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
-- `docs/decisoes-arquiteturais-2026-07-01.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
-- `docs/plano-runtime-pump-e-decomposicao-driver-2026-07-01.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.
-- `docs/visao-diferenciais-2026-07-01.md` — strategic differentiators: "every bug is a replay file" thesis, headless mass simulation, observable-engine tooling, rollback netcode as long-term north star; explicit anti-bets (rendering as an end, visual editor).
+- `plans/009-revisao-tecnica.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
+- `plans/010-decisoes-arquiteturais.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
+- `plans/008-runtime-pump-decomposicao-driver.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.
+- `plans/011-visao-diferenciais.md` — strategic differentiators: "every bug is a replay file" thesis, headless mass simulation, observable-engine tooling, rollback netcode as long-term north star; explicit anti-bets (rendering as an end, visual editor).

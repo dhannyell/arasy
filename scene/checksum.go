@@ -9,31 +9,116 @@ import (
 	"slices"
 )
 
+const (
+	tagMeta byte = iota
+	tagTransform
+	tagCircleSprite
+	tagRectSprite
+	tagVelocity
+	tagAcceleration
+	tagDamping
+	tagBody
+	tagCircleCollider
+	tagRectCollider
+)
+
+const ChecksumComponentMaps = 9
+
 // Checksum returns a deterministic hash of all entity positions and velocities.
 // Two worlds with identical simulation state always produce the same value.
 // Log it at Debug level across runs to verify the simulation stays in sync.
 func (w *World) Checksum() uint64 {
-	ids := make([]EntityID, 0, len(w.transforms))
-	for id := range w.transforms {
+	h := fnv.New64a()
+	var buf [8]byte
+
+	_, err := h.Write([]byte{tagMeta})
+	if err != nil {
+		slog.Error("Failed to generate checksum", "err", err.Error())
+		return 0
+	}
+	hashU64(h, buf[:], uint64(w.nextID))
+	hashU64(h, buf[:], w.stepTick)
+
+	hashComponent(h, buf[:], tagTransform, w.transforms, func(t Transform) {
+		hashF64(h, buf[:], t.Position.X)
+		hashF64(h, buf[:], t.Position.Y)
+		hashF64(h, buf[:], t.Rotation)
+		hashF64(h, buf[:], t.Scale.X)
+		hashF64(h, buf[:], t.Scale.Y)
+	})
+	hashComponent(h, buf[:], tagCircleSprite, w.circleSprites, func(s CircleSprite) {
+		hashU64(h, buf[:], uint64(int64(s.Layer)))
+		hashF64(h, buf[:], s.Color.R)
+		hashF64(h, buf[:], s.Color.G)
+		hashF64(h, buf[:], s.Color.B)
+		hashF64(h, buf[:], s.Color.A)
+		hashF64(h, buf[:], s.Radius)
+	})
+	hashComponent(h, buf[:], tagRectSprite, w.rectSprites, func(s RectSprite) {
+		hashU64(h, buf[:], uint64(int64(s.Layer)))
+		hashF64(h, buf[:], s.Color.R)
+		hashF64(h, buf[:], s.Color.G)
+		hashF64(h, buf[:], s.Color.B)
+		hashF64(h, buf[:], s.Color.A)
+		hashF64(h, buf[:], s.Rect.Min.X)
+		hashF64(h, buf[:], s.Rect.Min.Y)
+		hashF64(h, buf[:], s.Rect.Max.X)
+		hashF64(h, buf[:], s.Rect.Max.Y)
+		hashF64(h, buf[:], s.StrokeWidth)
+		hashF64(h, buf[:], s.Stroke.R)
+		hashF64(h, buf[:], s.Stroke.G)
+		hashF64(h, buf[:], s.Stroke.B)
+		hashF64(h, buf[:], s.Stroke.A)
+	})
+	hashComponent(h, buf[:], tagVelocity, w.velocities, func(v Velocity) {
+		hashF64(h, buf[:], v.Linear.X)
+		hashF64(h, buf[:], v.Linear.Y)
+	})
+	hashComponent(h, buf[:], tagAcceleration, w.accelerations, func(a Acceleration) {
+		hashF64(h, buf[:], a.Linear.X)
+		hashF64(h, buf[:], a.Linear.Y)
+	})
+	hashComponent(h, buf[:], tagDamping, w.dampings, func(d Damping) {
+		hashF64(h, buf[:], d.Linear)
+	})
+	hashComponent(h, buf[:], tagBody, w.bodies, func(b Body) {
+		hashF64(h, buf[:], b.InvMass)
+		hashF64(h, buf[:], b.Restitution)
+	})
+	hashComponent(h, buf[:], tagCircleCollider, w.circleColliders, func(c CircleCollider) {
+		hashF64(h, buf[:], c.Radius)
+	})
+	hashComponent(h, buf[:], tagRectCollider, w.rectColliders, func(c RectCollider) {
+		hashF64(h, buf[:], c.HalfExtends.X)
+		hashF64(h, buf[:], c.HalfExtends.Y)
+	})
+
+	return h.Sum64()
+}
+
+func hashComponent[T any](h hash.Hash64, buf []byte, tag byte,
+	m map[EntityID]T, write func(T)) {
+	ids := make([]EntityID, 0, len(m))
+	for id := range m {
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
 
-	h := fnv.New64a()
-	var buf [8]byte
-
-	for _, id := range ids {
-		t := w.transforms[id]
-		hashF64(h, buf[:], t.Position.X)
-		hashF64(h, buf[:], t.Position.Y)
-
-		if v, ok := w.velocities[id]; ok {
-			hashF64(h, buf[:], v.Linear.X)
-			hashF64(h, buf[:], v.Linear.Y)
-		}
+	_, err := h.Write([]byte{tag})
+	if err != nil {
+		slog.Error("Failed hash component", "err", err.Error())
+		return
 	}
 
-	return h.Sum64()
+	for _, id := range ids {
+		binary.LittleEndian.PutUint64(buf, uint64(id))
+		_, err := h.Write(buf)
+		if err != nil {
+			slog.Error("Failed hash component", "err", err.Error())
+			return
+		}
+		write(m[id])
+	}
 }
 
 func hashF64(h hash.Hash64, buf []byte, v float64) {
@@ -42,5 +127,14 @@ func hashF64(h hash.Hash64, buf []byte, v float64) {
 	if err != nil {
 		slog.Error("failed to write hash", "err", err)
 		return
-	} //nolint:errcheck
+	}
+}
+
+func hashU64(h hash.Hash64, buf []byte, v uint64) {
+	binary.LittleEndian.PutUint64(buf, v)
+	_, err := h.Write(buf)
+	if err != nil {
+		slog.Error("failed to write hash", "err", err)
+		return
+	}
 }

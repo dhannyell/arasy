@@ -1,6 +1,7 @@
 package scene_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -54,6 +55,20 @@ func TestChecksumIdenticalClone(t *testing.T) {
 	clone := w.Clone()
 	if w.Checksum() != clone.Checksum() {
 		t.Fatal("cloned world produced a different checksum than the original")
+	}
+}
+
+func TestChecksumCoversAllComponentMaps(t *testing.T) {
+	wt := reflect.TypeFor[scene.World]()
+	count := 0
+	for f := range wt.Fields() {
+		if f.Type.Kind() == reflect.Map &&
+			f.Type.Key() == reflect.TypeFor[scene.EntityID]() {
+			count++
+		}
+	}
+	if count != scene.ChecksumComponentMaps {
+		t.Fatalf("wrong number of component maps: %d != %d", count, scene.ChecksumComponentMaps)
 	}
 }
 
