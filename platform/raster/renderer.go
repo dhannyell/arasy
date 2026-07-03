@@ -263,7 +263,7 @@ func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destH
 }
 
 func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
-	draw.Draw(img, rect, &image.Uniform{c}, image.Point{}, draw.Over)
+	draw.Draw(img, rect, &image.Uniform{C: c}, image.Point{}, draw.Over)
 }
 
 func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGBA) {

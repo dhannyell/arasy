@@ -157,6 +157,20 @@ or switch to sorted slices. Never use unseeded/global RNG inside `Update`;
 derive randomness from the tick if needed. `World.Checksum()` + the driver's
 per-tick debug log exist to verify simulations stay in sync.
 
+### Test Structure
+
+When creating or reorganizing tests, follow `docs/testing.md` /
+`docs/testing-en.md`. Keep Go tests next to the package they exercise, but name
+test files by behavior or responsibility instead of accumulating broad files
+like `collision_test.go`, `driver_test.go`, or `renderer_test.go` once they mix
+multiple behavior families.
+
+Use `package foo_test` by default for public API coverage. Use `package foo`
+only when the test intentionally needs package-internal state or characterizes
+internal runtime/platform behavior. Keep helpers small, call `t.Helper()`, and
+move shared helpers into `*_helpers_test.go` only when several files use them.
+Benchmarks belong in dedicated `*_benchmark_test.go` files.
+
 ## Design Constraints
 
 - Keep engine packages independent from application-specific rules.
@@ -172,6 +186,7 @@ per-tick debug log exist to verify simulations stay in sync.
 - `docs/runtime.md` / `docs/runtime-en.md` — runtime guide.
 - `docs/ui.md` / `docs/ui-en.md` — UI guide.
 - `docs/scrubbing.md` / `docs/scrubbing-en.md` — bidirectional time scrubbing guide (replay-based ScrubToTick, timeline forking, checksum verification).
+- `docs/testing.md` / `docs/testing-en.md` — test organization conventions for file naming, package choice, helpers, integration tests, and benchmarks.
 - `plans/009-revisao-tecnica.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
 - `plans/010-decisoes-arquiteturais.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
 - `plans/008-runtime-pump-decomposicao-driver.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.

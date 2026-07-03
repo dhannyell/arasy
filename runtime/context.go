@@ -9,9 +9,8 @@ import (
 	"github.com/dhannyell/frameforge/ui"
 )
 
-// UpdateContext is passed to Game.Init and Game.Update. World is mutable—it is the
-// only phase where the simulation state changes. UI is the interaction layer:
-// deterministic queries derived from the tick's logged PointerFrame.
+// UpdateContext is passed to Game.Init and Game.Update.
+// World is mutable here; UI exposes deterministic interaction queries.
 type UpdateContext struct {
 	World   *scene.World
 	Input   input.State
@@ -33,12 +32,9 @@ func (ctx *UpdateContext) Camera() render.Camera { return ctx.camera }
 // every Update where simulation should remain frozen.
 func (ctx *UpdateContext) HoldSimulation() { ctx.simulationHeld = true }
 
-// RenderContext is passed to Game.Render. World is conventionally
-// read-only here (not yet enforced by the type system — phase (b) of the
-// phasing described above); mutating it silently breaks the determinism
-// contract. Camera is accessed via Camera() and adjusted via SetCamera() —
-// never a directly writable field. UI acts as the drawing interface:
-// methods are pure functions of World + cursor, producing render.Command.
+// RenderContext is passed to Game.Render.
+// Treat World as read-only here; mutating it breaks determinism.
+// Camera is changed through SetCamera, and UI only emits render commands.
 type RenderContext struct {
 	World *scene.World
 	UI    ui.Drawer

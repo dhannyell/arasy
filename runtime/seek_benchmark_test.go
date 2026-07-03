@@ -1,41 +1,10 @@
 package runtime_test
 
-// Seek benchmark suite: measures the cost of every time-travel path the
-// Driver exposes today, through the same public API the platforms use
-// (Control + AdvanceTime / Step / Replay). It is the baseline for the
-// keyframe-recorder redesign (docs/plano-recorder-keyframes-e-persistencia):
-// any change to the recorder must be compared against these numbers.
+// Seek benchmarks measure the public time-travel paths:
+// Step, Back, ScrubToTick and Replay.
 //
-// What each benchmark isolates:
-//
-//   - BenchmarkDriverStep       — live per-tick cost, with and without the
-//     snapshot recorder. The history=0 vs history=600 delta is the price of
-//     capturing one full driver snapshot per tick (World.Clone + input +
-//     UI + ring shift once the window is full).
-//   - BenchmarkDriverBack       — O(1) seek: restore the previous snapshot.
-//     Each timed iteration pops exactly one snapshot; the refill step that
-//     re-creates it runs with the timer stopped. Run with -benchtime=Nx:
-//     the untimed refill dominates wall time, not measured time.
-//   - BenchmarkDriverScrubToTick — O(target) seek: deterministic replay of
-//     the input log from tick 0 up to the target. Cost depends only on the
-//     target tick, never on the distance from the current tick — "to-last"
-//     is the pathological one-tick rewind from the head of a long timeline.
-//   - BenchmarkReplay           — full-run reconstruction from a Recording
-//     with no snapshot recorder (HistoryLen=0): the pure input-log cost,
-//     i.e. what one re-simulated tick costs with zero snapshot overhead.
-//     Each iteration also verifies the replayed checksum, so the benchmark
-//     doubles as a determinism check.
-//
-// BackToTick/BackSeconds share doBackToTick's restore machinery with Back
-// and are O(history scan) + one restore — they are not benchmarked
-// separately because their cost does not depend on seek distance.
-//
-// The workload (seekBenchGame) mirrors the scene package benchmarks: a grid
-// of moving circle colliders with bodies, spread over a 1000×1000 world, so
-// World.Step exercises the full pipeline (integration, bounds bounce, grid
-// broad phase, contact resolution). A deterministic key-press pattern is
-// injected while priming so the scrub log carries real events, like an
-// interactive session.
+// The workload mirrors scene benchmarks: moving circle colliders with bodies,
+// plus deterministic input events so replay/scrub exercise real logs.
 
 import (
 	"fmt"

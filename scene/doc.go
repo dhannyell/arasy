@@ -1,39 +1,30 @@
 // Package scene provides a small entity/component world for 2D simulations.
 //
-// The package is intentionally simple. An EntityID identifies an entity, while
-// components store data associated with that entity. Systems are regular World
-// methods that operate over entities with specific component combinations.
+// An EntityID identifies an entity. Components store data associated with that
+// entity, and World methods act as systems over component combinations.
 //
-// Current component combinations:
+// Common component combinations:
 //
-//	Transform + CircleSprite
-//		Produces render.DrawCircle commands through RenderCommands.
+//	Transform + CircleSprite/RectSprite
+//		Produces backend-agnostic render commands.
 //
 //	Transform + Velocity
 //		Moves entities through Integrate.
 //
-//	Velocity + Acceleration
-//		Changes linear velocity through ApplyAcceleration.
+//	Velocity + Acceleration/Damping
+//		Changes velocity before/after integration.
 //
-//	Velocity + Damping
-//		Reduces linear velocity through ApplyDamping.
+//	Transform + CircleCollider/RectCollider
+//		Enables bounds checks, broad-phase detection and contact resolution.
 //
-//	Transform + Velocity + CircleCollider
-//		Allows BounceCirclesInside to keep moving circles inside a Rect.
-//
-//	Body + CircleCollider
-//		Controls inverse mass and restitution during circle overlap resolution.
-//
-// Step runs the current simulation pipeline in order: acceleration, movement
-// integration, bounds collision, circle overlap resolution, and damping.
+// Step runs the simulation pipeline in order: acceleration, integration,
+// bounds bounce, grid broad-phase, contact resolution and damping.
 //
 // The scene package does not draw pixels and does not depend on a concrete
-// platform backend. Rendering is expressed as backend-agnostic commands from
-// the render package. DebugColliderCommands and DebugContactCommands can be
-// used to inspect physics state without changing simulation state.
+// platform backend. Rendering and debug overlays are expressed as render
+// commands.
 //
 // World currently stores components in maps keyed by EntityID. This keeps the
-// first version easy to understand, but map iteration order is not deterministic
-// in Go. Systems whose output depends on entity order should use an explicit
-// ordering strategy before determinism-sensitive behavior relies on it.
+// implementation simple, but Go map iteration order is not deterministic.
+// Systems whose output depends on entity order must sort explicitly.
 package scene
