@@ -1,4 +1,5 @@
 # FrameForge
+[![CI](https://github.com/dhannyell/frameforge/actions/workflows/ci.yml/badge.svg)](...)
 
 FrameForge is an experimental 2D engine written in Go.
 
