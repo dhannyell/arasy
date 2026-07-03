@@ -82,7 +82,6 @@ Rules:
 - **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (no DrawText support yet, no alpha blending yet). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
 - **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `docs/decisoes-arquiteturais-2026-07-01.md`).
 - **`internal/render/adapter/web/`** — Converts `render.Command` values to JSON DTOs for the web canvas (handles all command types including DrawText).
-- **`debug/`** — Standalone `Recorder` for `World` snapshots. Superseded by the runtime's internal recorder and **scheduled for removal** (AD-3 in `docs/decisoes-arquiteturais-2026-07-01.md`) — do not add new uses.
 - **`cmd/`** — Runnable demos and tools. Game-specific code (e.g., `cmd/demos/football/`, `cmd/demos/breakout/`) lives here, not in engine packages.
 
 ### Runtime Tick Semantics

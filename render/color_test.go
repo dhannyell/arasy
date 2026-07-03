@@ -72,6 +72,16 @@ func TestColorFromHexInvalid(t *testing.T) {
 	}
 }
 
+func TestRGBA8(t *testing.T) {
+	got := render.RGBA8(255, 128, 0, 255)
+
+	want := render.Color{R: 1, G: 0.5019607843137255, B: 0, A: 1}
+
+	if got != want {
+		t.Fatalf("got: %v, want: %v", got, want)
+	}
+}
+
 func assertColorNear(t *testing.T, got, want render.Color) {
 	t.Helper()
 
