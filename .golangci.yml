@@ -1,0 +1,27 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+
+  settings:
+    staticcheck:
+      checks:
+        - all
+        - -QF1001
+        - -QF1012
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
