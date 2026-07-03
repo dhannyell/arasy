@@ -189,4 +189,3 @@ func TestScrubMultipleViewportChanges(t *testing.T) {
 		}
 	}
 }
-
