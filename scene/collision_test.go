@@ -91,6 +91,129 @@ func TestWorldBounceCirclesInsideBounces(t *testing.T) {
 	}
 }
 
+func TestWorldBounceRectsInsideBounces(t *testing.T) {
+	bounds := math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: 100, Y: 100},
+	)
+
+	tests := []struct {
+		name         string
+		position     math2d.Vec2
+		velocity     math2d.Vec2
+		wantPosition math2d.Vec2
+		wantVelocity math2d.Vec2
+	}{
+		{
+			name:         "Right Edge",
+			position:     math2d.Vec2{X: 97, Y: 50},
+			velocity:     math2d.Vec2{X: 10, Y: 0},
+			wantPosition: math2d.Vec2{X: 97, Y: 50},
+			wantVelocity: math2d.Vec2{X: -10, Y: 0},
+		},
+		{
+			name:         "Left Edge",
+			position:     math2d.Vec2{X: 3, Y: 50},
+			velocity:     math2d.Vec2{X: -10, Y: 0},
+			wantPosition: math2d.Vec2{X: 3, Y: 50},
+			wantVelocity: math2d.Vec2{X: 10, Y: 0},
+		},
+		{
+			name:         "Bottom Edge",
+			position:     math2d.Vec2{X: 50, Y: 98},
+			velocity:     math2d.Vec2{X: 0, Y: 10},
+			wantPosition: math2d.Vec2{X: 50, Y: 98},
+			wantVelocity: math2d.Vec2{X: 0, Y: -10},
+		},
+		{
+			name:         "Top Edge",
+			position:     math2d.Vec2{X: 50, Y: 2},
+			velocity:     math2d.Vec2{X: 0, Y: -10},
+			wantPosition: math2d.Vec2{X: 50, Y: 2},
+			wantVelocity: math2d.Vec2{X: 0, Y: 10},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			world := scene.NewWorld()
+			entity := world.Spawn()
+
+			world.SetTransform(entity, scene.Transform{
+				Position: tt.position,
+				Scale:    math2d.Vec2{X: 1, Y: 1},
+			})
+
+			world.SetVelocity(entity, scene.Velocity{
+				Linear: tt.velocity,
+			})
+			world.SetRectCollider(entity, scene.RectCollider{
+				HalfExtends: math2d.Vec2{X: 3, Y: 2},
+			})
+
+			world.Integrate(0.5)
+			world.BounceEntitiesInside(bounds)
+
+			transform, ok := world.Transform(entity)
+			if !ok {
+				t.Fatal("expected transform to exist")
+			}
+
+			velocity, ok := world.Velocity(entity)
+			if !ok {
+				t.Fatal("expected velocity to exist")
+			}
+
+			if transform.Position != tt.wantPosition {
+				t.Fatalf("got position %+v, want %+v", transform.Position, tt.wantPosition)
+			}
+
+			if velocity.Linear != tt.wantVelocity {
+				t.Fatalf("got velocity %+v, want %+v", velocity.Linear, tt.wantVelocity)
+			}
+		})
+	}
+}
+
+func TestWorldBounceEntitiesInsidePrefersCircleWhenBothColliders(t *testing.T) {
+	bounds := math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: 100, Y: 100},
+	)
+
+	world := scene.NewWorld()
+	entity := world.Spawn()
+
+	position := math2d.Vec2{X: 97, Y: 50}
+	velocity := scene.Velocity{Linear: math2d.Vec2{X: 5, Y: 0}}
+
+	world.SetTransform(entity, scene.Transform{
+		Position: position,
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetVelocity(entity, velocity)
+	world.SetCircleCollider(entity, scene.CircleCollider{Radius: 2})
+	world.SetRectCollider(entity, scene.RectCollider{HalfExtends: math2d.Vec2{X: 10, Y: 10}})
+
+	world.BounceEntitiesInside(bounds)
+
+	transform, ok := world.Transform(entity)
+	if !ok {
+		t.Fatal("expected transform to exist")
+	}
+	if transform.Position != position {
+		t.Fatalf("got position %+v, want %+v (circle collider should win, no clamp expected)", transform.Position, position)
+	}
+
+	gotVelocity, ok := world.Velocity(entity)
+	if !ok {
+		t.Fatal("expected velocity to exist")
+	}
+	if gotVelocity != velocity {
+		t.Fatalf("got velocity %+v, want %+v (circle collider should win, no bounce expected)", gotVelocity, velocity)
+	}
+}
+
 func TestWorldBounceCirclesInsideSkipsEntityWithoutVelocity(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()
@@ -204,6 +327,38 @@ func TestWorldDetectCircleOverlapsSkipsEntityWithoutTransform(t *testing.T) {
 	}
 }
 
+func TestWorldDetectRectOverlapsSkipsEntityWithoutTransform(t *testing.T) {
+	world := scene.NewWorld()
+
+	spawnCollidableRect(world, math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 2, Y: 2})
+
+	entity := world.Spawn()
+	world.SetRectCollider(entity, scene.RectCollider{
+		HalfExtends: math2d.Vec2{X: 2, Y: 2},
+	})
+
+	contacts := world.DetectCircleOverlapsGrid(8)
+	if len(contacts) != 0 {
+		t.Fatalf("got %d contacts, want 0", len(contacts))
+	}
+}
+
+func TestWorldDetectCircleVsRectSkipsRectWithoutTransform(t *testing.T) {
+	world := scene.NewWorld()
+
+	spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+
+	entity := world.Spawn()
+	world.SetRectCollider(entity, scene.RectCollider{
+		HalfExtends: math2d.Vec2{X: 2, Y: 2},
+	})
+
+	contacts := world.DetectCircleOverlapsGrid(8)
+	if len(contacts) != 0 {
+		t.Fatalf("got %d contacts, want 0", len(contacts))
+	}
+}
+
 func TestWorldDetectCircleOverlapsHandlesSamePosition(t *testing.T) {
 	world := scene.NewWorld()
 
@@ -281,6 +436,42 @@ func TestWorldDetectCircleOverlapsGridMatchesNarrowPhase(t *testing.T) {
 	gridContacts := world.DetectCircleOverlapsGrid(16)
 
 	assertContactPairs(t, gridContacts, contactPairs(narrowContacts))
+}
+
+// TestWorldDetectOverlapsGridMatchesAllPairsWithRects proves the grid
+// broad-phase agrees with an all-pairs oracle on a world mixing circles and
+// rects. DetectCircleOverlaps() cannot be used as the oracle here: it only
+// builds pairs from circleColliderEntities() and ignores rects entirely, so
+// it would silently drop every rect-involving contact. Instead, the oracle is
+// the grid itself with a single giant cell (cellSize 10000 for a 60x60
+// world), which forces it to fall back to comparing every pair — equivalent
+// to all-pairs, but through the code path that actually sees rects.
+func TestWorldDetectOverlapsGridMatchesAllPairsWithRects(t *testing.T) {
+	world := benchmarkWorldSpreadMixed(36, 60, 60, 6, 2)
+	clone := world.Clone()
+
+	small := world.DetectCircleOverlapsGrid(8)
+	large := clone.DetectCircleOverlapsGrid(10000)
+
+	if len(small) == 0 {
+		t.Fatal("expected at least one contact, got 0")
+	}
+
+	if len(small) != len(large) {
+		t.Fatalf("got %d contacts from small grid, %d from single-cell grid", len(small), len(large))
+	}
+
+	for i := range small {
+		if small[i].A != large[i].A || small[i].B != large[i].B {
+			t.Fatalf("contact %d got pair (%d,%d), want (%d,%d)", i, small[i].A, small[i].B, large[i].A, large[i].B)
+		}
+		if small[i].Normal != large[i].Normal {
+			t.Fatalf("contact %d got normal %+v, want %+v", i, small[i].Normal, large[i].Normal)
+		}
+		if small[i].Depth != large[i].Depth {
+			t.Fatalf("contact %d got depth %v, want %v", i, small[i].Depth, large[i].Depth)
+		}
+	}
 }
 
 func TestWorldDetectCircleOverlapsGridDoesNotDuplicateLargeColliderContacts(t *testing.T) {
@@ -629,6 +820,61 @@ func TestWorldResolveCircleOverlapsUsesRestitution(t *testing.T) {
 
 	if secondVelocity.Linear != (math2d.Vec2{X: 0, Y: 0}) {
 		t.Fatalf("second velocity got %v, want {0 0}", secondVelocity.Linear)
+	}
+}
+
+func TestWorldResolveCircleVsRectUsesMinRestitution(t *testing.T) {
+	tests := []struct {
+		name         string
+		restitution  float64
+		wantVelocity math2d.Vec2
+	}{
+		{
+			// min(circle=1, rect=0) = 0: normal velocity is absorbed, not reflected.
+			name:         "AbsorbsWithZeroRestitution",
+			restitution:  0,
+			wantVelocity: math2d.Vec2{X: 0, Y: 0},
+		},
+		{
+			// min(circle=1, rect=1) = 1: fully reflected. The rect is static
+			// (InvMass 0), so totalInvMass == circle's InvMass and the impulse
+			// lands entirely on the circle.
+			name:         "ReflectsWithFullRestitution",
+			restitution:  1,
+			wantVelocity: math2d.Vec2{X: -10, Y: 0},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			world := scene.NewWorld()
+
+			circle := spawnCollidableCircle(world, math2d.Vec2{X: 7, Y: 0}, 2)
+			rect := spawnCollidableRect(world, math2d.Vec2{X: 10, Y: 0}, math2d.Vec2{X: 2, Y: 2})
+
+			world.SetBody(circle, scene.Body{InvMass: 1, Restitution: 1})
+			world.SetBody(rect, scene.Body{InvMass: 0, Restitution: tt.restitution})
+			world.SetVelocity(circle, scene.Velocity{Linear: math2d.Vec2{X: 10, Y: 0}})
+
+			world.ResolveCircleOverlapsGrid(8)
+
+			velocity, ok := world.Velocity(circle)
+			if !ok {
+				t.Fatal("expected velocity to exist")
+			}
+			if velocity.Linear != tt.wantVelocity {
+				t.Fatalf("got velocity %+v, want %+v", velocity.Linear, tt.wantVelocity)
+			}
+
+			transform, ok := world.Transform(circle)
+			if !ok {
+				t.Fatal("expected transform to exist")
+			}
+			wantPosition := math2d.Vec2{X: 6, Y: 0} // pushed out by depth 1 along -X (A is circle, normal points A->B = +X)
+			if transform.Position != wantPosition {
+				t.Fatalf("got position %+v, want %+v", transform.Position, wantPosition)
+			}
+		})
 	}
 }
 
