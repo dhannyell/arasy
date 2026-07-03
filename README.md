@@ -68,10 +68,6 @@ platform/web/canvas/
 internal/render/adapter/web/
   JSON DTO conversion of render commands and camera for the web canvas.
 
-debug/
-  Standalone World snapshot recorder (the runtime keeps its own internal
-  recorder for rewind).
-
 cmd/demos/football/
   Top-down football demo: controlled player, ball physics, goals, score
   HUD, and camera shake.
@@ -248,6 +244,59 @@ Useful options:
 
 ```powershell
 go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-collision
+```
+
+### Benchmark suites
+
+`benchsave` is the hub for every benchmark family in the repo — it does not
+just run `./scene`. Named suites are registered in
+[`cmd/benchsave/suites.go`](cmd/benchsave/suites.go) (currently `scene` and
+`runtime`) so you never need to remember which package a benchmark lives in:
+
+```powershell
+# List the registered suites
+go run ./cmd/benchsave -list-suites
+
+# Run one suite by name instead of passing -pkg/-bench by hand
+go run ./cmd/benchsave -suite runtime
+
+# Run every registered suite, saving one report per suite
+go run ./cmd/benchsave -suite all
+```
+
+Adding a future benchmark family (e.g. `render` or `ui`) only requires
+appending one entry to the `benchSuites` slice in `suites.go` — `-suite`,
+`-suite all`, and `-compare-all` all pick it up automatically since the
+report name is derived from the suite name.
+
+### Comparing benchmark runs
+
+Manually diffing Markdown reports gets old fast, so `benchsave` can compare
+runs for you and show the % change per benchmark (`ns/op`, `B/op`,
+`allocs/op` — negative % is faster/smaller, i.e. an improvement):
+
+```powershell
+# Run benchmarks, then compare against the most recent previous report
+# for the same -pkg, printing the diff and appending it to the new report
+go run ./cmd/benchsave -compare auto
+
+# Compare against one specific previous report instead of auto-detecting
+go run ./cmd/benchsave -compare benchmarks/bench-scene-2026-06-28-211550.md
+
+# Compare two already-saved reports without running any benchmarks
+# (flags must come before the two paths — the stdlib `flag` package stops
+# parsing flags at the first non-flag argument)
+go run ./cmd/benchsave -diff benchmarks/old-report.md benchmarks/new-report.md
+
+# Compare every report "family" in benchmarks/ at once (bench-scene,
+# bench-runtime-seek, ...), diffing each family's two most recent reports —
+# no benchmarks are run. A family is the report name with its trailing
+# timestamp stripped, so custom -name reports (e.g. bench-runtime-seek-*)
+# get their own section too, not just the default bench-<pkg>-* ones.
+go run ./cmd/benchsave -compare-all
+
+# Any of the modes above can also save the comparison as its own file
+go run ./cmd/benchsave -compare-all -comparison-out benchmarks/compare.md
 ```
 
 ## Design Goals
