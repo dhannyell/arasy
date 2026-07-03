@@ -19,7 +19,8 @@ func (b *Breakout) Setup() runtime.Config {
 			Aspect:   render.AspectExpand,
 		},
 		Clear:         render.RGBA(0.03, 0.035, 0.045, 1),
-		Bounds:        breakoutPhysicsBounds(),
+		Bounds:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
+		Bounce:        scene.BounceConfig{OpenSides: scene.SideBottom},
 		SimulationHz:  60,
 		FPS:           60,
 		InputBindings: breakoutBindings(),
@@ -83,6 +84,7 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 
 	if b.State.state == StateMenu || b.State.state == StateGameOver || b.State.state == StateWon {
+		ctx.HoldSimulation()
 		_, _, play := menuLayout()
 		if ctx.UI.Clicked("btn_play", play) {
 			b.State.state = StateReady
@@ -94,6 +96,8 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 
 	if b.State.bricksLeft <= 0 {
 		b.State.state = StateWon
+		ctx.HoldSimulation()
+		return
 	}
 
 	b.movePaddle(ctx.Input, dt)
@@ -115,23 +119,27 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 		ctx.World.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 	}
 
-	if b.State.state == StatePlaying {
-		ctx.World.Step(dt, ctx.StepConfig)
-		b.syncBallFromWorld(ctx.World)
-		b.resolveGameContacts(ctx.World)
-
-		if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
-			b.State.lives--
-			b.attachBallToPaddle()
-			if b.State.lives <= 0 {
-				b.State.state = StateGameOver
-				return
-			}
-			b.State.state = StateReady
-			return
-		}
+	if b.State.state != StatePlaying {
+		ctx.HoldSimulation()
 	}
 
+}
+
+func (b *Breakout) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
+	b.syncBallFromWorld(ctx.World)
+	b.resolveGameContacts(ctx.World)
+
+	if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
+		b.State.lives--
+		b.attachBallToPaddle()
+		ctx.World.SetTransform(b.State.ball.id, scene.Transform{Position: b.State.ball.Position})
+		ctx.World.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
+		if b.State.lives <= 0 {
+			b.State.state = StateGameOver
+			return
+		}
+		b.State.state = StateReady
+	}
 }
 
 func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
@@ -208,13 +216,6 @@ func menuLayout() (panel math2d.Rect, label math2d.Vec2, play math2d.Rect) {
 		playSize,
 	)
 	return
-}
-
-func breakoutPhysicsBounds() math2d.Rect {
-	return math2d.NewRect(
-		math2d.Vec2{},
-		math2d.Vec2{X: worldWidth, Y: worldHeight + ballSpeed},
-	)
 }
 
 func (b *Breakout) attachBallToPaddle() {

@@ -31,6 +31,8 @@ type Driver struct {
 	tick     uint64
 	log      *slog.Logger
 
+	warnedManualStep bool
+
 	// UI
 	viewport math2d.Rect
 	uiState  ui.State
@@ -255,13 +257,33 @@ func (d *Driver) stepOnce(dt float64) {
 
 	d.input.BeginTick()
 	ctx := d.makeUpdateContext(d.newUpdateUI())
+	stepsBefore := d.world.StepTick()
 	d.game.Update(&ctx, dt)
+
+	switch {
+	case ctx.simulationHeld:
+	case d.world.StepTick() != stepsBefore:
+		d.warnManualStepOnce()
+	default:
+		stats := d.world.Step(dt, ctx.StepConfig)
+		if postStepper, ok := d.game.(PostStepper); ok {
+			postStepper.PostStep(&ctx, stats)
+		}
+	}
 
 	d.tick++
 	if d.tick > d.maxTick {
 		d.maxTick = d.tick
 	}
 	d.input.EndTick(d.tick)
+}
+
+func (d *Driver) warnManualStepOnce() {
+	if d.warnedManualStep {
+		return
+	}
+	d.warnedManualStep = true
+	d.log.Warn("game called World.Step inside Update; auto-step skipped; migrate to PostStep (AD-1)")
 }
 
 func (d *Driver) Commands() []render.Command {
@@ -378,7 +400,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
 		UI:         uiInst,
-		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Physics: d.cfg.Physics},
+		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
 		camera:     d.cameraForSurface(),
 	}
 }

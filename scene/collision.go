@@ -50,7 +50,7 @@ func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 	}
 }
 
-func (w *World) BounceEntitiesInside(bounds math2d.Rect) {
+func (w *World) BounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
 	for id, velocity := range w.velocities {
 		if velocity.Linear.X == 0 && velocity.Linear.Y == 0 {
 			continue
@@ -61,47 +61,56 @@ func (w *World) BounceEntitiesInside(bounds math2d.Rect) {
 			continue
 		}
 
-		// Determine the size (radius or extent) using fast switches
+		// Determine the size (radius or extent).
+		// precedence: a circle collider on the same entity wins over a rect.
 		var extentX, extentY float64
 
-		if rect, isRect := w.rectColliders[id]; isRect {
-			extentX = rect.HalfExtends.X
-			extentY = rect.HalfExtends.Y
-		} else if circle, isCircle := w.circleColliders[id]; isCircle {
+		if circle, isCircle := w.circleColliders[id]; isCircle {
 			extentX = circle.Radius
 			extentY = circle.Radius
+		} else if rect, isRect := w.rectColliders[id]; isRect {
+			extentX = rect.HalfExtends.X
+			extentY = rect.HalfExtends.Y
 		} else {
 			continue
 		}
 
-		minXBound := bounds.Min.X + extentX
-		if transform.Position.X < minXBound {
-			transform.Position.X = minXBound
-			if velocity.Linear.X < 0 {
-				velocity.Linear.X = -velocity.Linear.X
+		factor := wallRestitutionFactor(w, id, cfg)
+
+		if cfg.OpenSides&SideLeft == 0 {
+			minXBound := bounds.Min.X + extentX
+			if transform.Position.X < minXBound {
+				transform.Position.X = minXBound
+				if velocity.Linear.X < 0 {
+					velocity.Linear.X = -velocity.Linear.X * factor
+				}
 			}
-		} else {
+		}
+		if cfg.OpenSides&SideRight == 0 {
 			maxXBound := bounds.Max.X - extentX
 			if transform.Position.X > maxXBound {
 				transform.Position.X = maxXBound
 				if velocity.Linear.X > 0 {
-					velocity.Linear.X = -velocity.Linear.X
+					velocity.Linear.X = -velocity.Linear.X * factor
 				}
 			}
 		}
 
-		minYBound := bounds.Min.Y + extentY
-		if transform.Position.Y < minYBound {
-			transform.Position.Y = minYBound
-			if velocity.Linear.Y < 0 {
-				velocity.Linear.Y = -velocity.Linear.Y
+		if cfg.OpenSides&SideTop == 0 {
+			minYBound := bounds.Min.Y + extentY
+			if transform.Position.Y < minYBound {
+				transform.Position.Y = minYBound
+				if velocity.Linear.Y < 0 {
+					velocity.Linear.Y = -velocity.Linear.Y * factor
+				}
 			}
-		} else {
+		}
+		if cfg.OpenSides&SideBottom == 0 {
 			maxYBound := bounds.Max.Y - extentY
 			if transform.Position.Y > maxYBound {
 				transform.Position.Y = maxYBound
 				if velocity.Linear.Y > 0 {
-					velocity.Linear.Y = -velocity.Linear.Y
+					velocity.Linear.Y = -velocity.Linear.Y * factor
 				}
 			}
 		}
@@ -109,6 +118,25 @@ func (w *World) BounceEntitiesInside(bounds math2d.Rect) {
 		w.transforms[id] = transform
 		w.velocities[id] = velocity
 	}
+}
+
+func wallRestitutionFactor(w *World, id EntityID, cfg BounceConfig) float64 {
+	if !cfg.UseBodyRestitution {
+		return 1
+	}
+
+	body, ok := w.bodies[id]
+	if !ok {
+		return 1
+	}
+
+	if body.Restitution < 0 {
+		return 0
+	}
+	if body.Restitution > 1 {
+		return 1
+	}
+	return body.Restitution
 }
 
 func (w *World) DetectCircleOverlaps() []Contact {

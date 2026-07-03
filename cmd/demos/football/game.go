@@ -33,6 +33,7 @@ type Football struct {
 	ball             scene.EntityID
 	leftGoal         math2d.Rect
 	rightGoal        math2d.Rect
+	previousBallPos  math2d.Vec2
 }
 
 // shakeOffset is a pure function of the current tick: no mutable state to maintain, and
@@ -122,6 +123,7 @@ func (f *Football) Init(ctx *runtime.UpdateContext) {
 
 func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	if !f.State.Started {
+		ctx.HoldSimulation()
 		_, play := menuLayout(ctx.Camera().Viewport)
 		if ctx.UI.Clicked("btn_play", play) {
 			f.State.Started = true
@@ -136,9 +138,12 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 
 	previousBallTransform, _ := ctx.World.Transform(f.ball)
+	f.previousBallPos = previousBallTransform.Position
 
 	applyPlayerInput(ctx.World, f.controlledPlayer, ctx.Input)
-	stats := ctx.World.Step(dt, ctx.StepConfig)
+}
+
+func (f *Football) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 	for _, c := range ctx.World.Contacts() {
 		ctx.Log.Debug("contact", "a", c.A, "b", c.B, "depth", c.Depth)
 		if c.A == f.ball && c.B == f.controlledPlayer {
@@ -162,9 +167,9 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	goalTop := fieldTop + fieldHeight/2 - goalWidth/2
 	goalBottom := goalTop + goalWidth
 	leftGoalScored := ballIntersectsGoal(ballTransform.Position, ballCollider.Radius, f.leftGoal) ||
-		ballCrossedGoalLine(previousBallTransform.Position, ballTransform.Position, ballCollider.Radius, fieldLeft, goalTop, goalBottom, true)
+		ballCrossedGoalLine(f.previousBallPos, ballTransform.Position, ballCollider.Radius, fieldLeft, goalTop, goalBottom, true)
 	rightGoalScored := ballIntersectsGoal(ballTransform.Position, ballCollider.Radius, f.rightGoal) ||
-		ballCrossedGoalLine(previousBallTransform.Position, ballTransform.Position, ballCollider.Radius, fieldLeft+fieldWidth, goalTop, goalBottom, false)
+		ballCrossedGoalLine(f.previousBallPos, ballTransform.Position, ballCollider.Radius, fieldLeft+fieldWidth, goalTop, goalBottom, false)
 
 	switch {
 	case leftGoalScored:
@@ -180,8 +185,6 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 		f.State.LastGoalTick = ctx.Tick
 		resetBall(ctx.World, f.ball)
 	}
-
-	_ = stats
 }
 
 func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {

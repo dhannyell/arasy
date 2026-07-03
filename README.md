@@ -17,11 +17,11 @@ Current capabilities:
 - Fixed timestep helper.
 - Camera with aspect-ratio modes (stretch, fit, expand).
 - Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
-- Runtime package with a portable `Game` contract, fixed-timestep driver pump, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
+- Runtime package with a portable `Game` contract, automatic fixed-timestep world stepping, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
 - Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
 - Raster renderer using Go's standard `image` packages (text rendering not supported yet on this backend).
-- Scene world with entities and components: transform, circle sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle collider.
-- Physics step pipeline: acceleration → integration → bounds bounce → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
+- Scene world with entities and components: transform, circle/rect sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle/rect collider.
+- Physics step pipeline: acceleration → integration → bounds bounce (per-side open mask + optional wall restitution) → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
 - Deterministic simulation: sorted broad-phase pairs and a per-tick world checksum for sync verification.
 - Debug overlays: colliders, contacts, spatial grid, velocities, entity IDs, input state, and a runtime stats HUD.
 - WebSocket canvas platform with live simulation, browser input, and dev controls including rewind (back, back-to-tick, back-seconds).
@@ -96,8 +96,10 @@ docs/
 ## Quick Start
 
 A game implements `runtime.Game`: configure once, populate a `scene.World`,
-advance the simulation in `Update`, and return backend-agnostic render commands
-from `Render`.
+drive entities in `Update`, and return backend-agnostic render commands from
+`Render`. The runtime steps the world automatically after `Update`; use
+`ctx.HoldSimulation()` for menus or ready states, and implement
+`runtime.PostStepper` to react to same-tick contacts.
 
 ```go
 type Game struct {
@@ -138,7 +140,7 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 }
 
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
-	ctx.World.Step(dt, ctx.StepConfig)
+	// Read input and update world components here.
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
