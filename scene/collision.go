@@ -61,15 +61,16 @@ func (w *World) BounceEntitiesInside(bounds math2d.Rect) {
 			continue
 		}
 
-		// Determine the size (radius or extent) using fast switches
+		// Determine the size (radius or extent).
+		// precedence: a circle collider on the same entity wins over a rect.
 		var extentX, extentY float64
 
-		if rect, isRect := w.rectColliders[id]; isRect {
-			extentX = rect.HalfExtends.X
-			extentY = rect.HalfExtends.Y
-		} else if circle, isCircle := w.circleColliders[id]; isCircle {
+		if circle, isCircle := w.circleColliders[id]; isCircle {
 			extentX = circle.Radius
 			extentY = circle.Radius
+		} else if rect, isRect := w.rectColliders[id]; isRect {
+			extentX = rect.HalfExtends.X
+			extentY = rect.HalfExtends.Y
 		} else {
 			continue
 		}
