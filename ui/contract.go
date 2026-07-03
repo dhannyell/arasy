@@ -10,8 +10,7 @@ type Interactor interface {
 	ClickedIn(id string, rect math2d.Rect, space Space) bool
 }
 
-// Drawer is the rendering interface: pure functions of World + cursor position that
-// accumulate render.Command. Implemented by *UI (constructed via New).
+// Drawer emits UI render commands.
 type Drawer interface {
 	Button(id, label string, rect math2d.Rect)
 	Panel(rect math2d.Rect)

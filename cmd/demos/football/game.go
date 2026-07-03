@@ -36,10 +36,7 @@ type Football struct {
 	previousBallPos  math2d.Vec2
 }
 
-// shakeOffset is a pure function of the current tick: no mutable state to maintain, and
-// it remains automatically correct at any point during a rewind because it depends only
-// on ctx.Tick (restored by the snapshot) and f.state.LastGoalTick (restored
-// by StatefulGame).
+// shakeOffset is derived from tick state, so rewind restores it automatically.
 func shakeOffset(elapsedTicks uint64) (math2d.Vec2, bool) {
 	if elapsedTicks >= shakeDurationTicks {
 		return math2d.Vec2{}, false

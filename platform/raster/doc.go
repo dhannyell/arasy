@@ -1,15 +1,10 @@
-// Package raster renders Frameforge render commands into images using the Go
+// Package raster renders FrameForge render commands into images using the Go
 // standard library.
 //
-// This package is a CPU rasterizer. It converts backend-agnostic render
-// commands, such as render.DrawRect, render.DrawCircle and render.DrawLine,
-// into pixels in an image.RGBA buffer.
+// It converts backend-agnostic render commands into pixels in an image.RGBA
+// buffer. The package is intended for PNG/GIF output, debug visualization,
+// tests and headless rendering.
 //
-// The raster renderer is intended for simple PNG output, debug visualizations,
-// golden-image style tests and headless rendering. It is deliberately small and
-// dependency-free.
-//
-// It does not currently provide antialiasing, text rendering, GPU acceleration
-// or real-time presentation. Future platform backends can translate the same
-// render commands to Canvas, WebGPU, OpenGL or another rendering target.
+// The renderer is deliberately small. It does not provide antialiasing, GPU
+// acceleration or real-time presentation.
 package raster

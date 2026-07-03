@@ -318,6 +318,7 @@ go run ./cmd/benchsave -compare-all -comparison-out benchmarks/compare.md
 - Math visual guide: [Portuguese](docs/math2d-visual-guide.md) | [English](docs/math2d-visual-guide-en.md)
 - Camera, world, and viewport: [Portuguese](docs/camera-world-viewport.md) | [English](docs/camera-world-viewport-en.md)
 - Bidirectional time scrubbing: [Portuguese](docs/scrubbing.md) | [English](docs/scrubbing-en.md)
+- Test structure conventions: [Portuguese](docs/testing.md) | [English](docs/testing-en.md)
 
 ## License
 

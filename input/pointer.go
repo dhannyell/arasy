@@ -13,17 +13,15 @@ const (
 	PointerUnknown
 )
 
-// PointerEvent is a pointer event with a position. It carries the position instead of
-// just a boolean — necessary for down-outside/up-inside and down-inside/up-outside.
+// PointerEvent preserves the event position for edge-crossing clicks.
 type PointerEvent struct {
 	Kind   EventKind
 	Button PointerButton
 	Pos    math2d.Vec2
 }
 
-// PointerFrame is the coalesced set of events from a single tick, consumed in Update.
-// Moves collapse to the final position; button transitions (rare) are preserved
-// along with their position. inside controls hover/leave.
+// PointerFrame is the coalesced pointer input for one tick.
+// Moves collapse to the final position; button transitions keep their origin.
 type PointerFrame struct {
 	Pos     math2d.Vec2
 	Inside  bool

@@ -40,45 +40,21 @@ type Driver struct {
 
 	pendingReset bool
 
-	// recording captures every event applied via ApplyInput, tagged with the
-	// tick it landed on, while recordingEnabled is true. Unlike the internal
-	// input.Buffer (a bounded window used for Back/BackToTick), this keeps
-	// the full log so Replay can reproduce a run from tick 0.
+	// Recording keeps the full input log while explicit recording is enabled.
 	recordingEnabled bool
 	recording        []input.Event
 
-	// scrubLog is an always-on twin of recording, kept for ScrubToTick. It is
-	// never bounded by HistoryLen (unlike the recorder's snapshot stack), so
-	// it can reconstruct any tick in [0, maxTick] via Replay. maxTick is the
-	// highest tick this driver has actually simulated; it only moves forward
-	// during normal play, so scrubbing backward doesn't lower the ceiling —
-	// scrubbing is non-destructive and works in both directions.
-	//
-	// The timeline forks (truncating the now-stale recorded future) at the
-	// moment a simulation step runs from a tick earlier than maxTick — that
-	// is when live state actually diverges from the log. Input alone never
-	// forks: events arriving while rewound go to stagedEvents, are committed
-	// to scrubLog at the fork, and are discarded if a scrub/back/reset
-	// rewinds away first (their mapper effect is discarded by the same
-	// restore, keeping log and live state consistent).
+	// scrubLog is the unbounded input log used by ScrubToTick.
+	// A step from an older tick forks the timeline and drops stale future input.
 	scrubLog     []input.Event
 	stagedEvents []input.Event
 	maxTick      uint64
 
-	// viewportLog is an always-on log of SetViewport calls, tagged with the
-	// tick at which each occurred. Like scrubLog, it is never bounded and
-	// forks at the same moment (a step from a rewound tick). The scrubber
-	// threads it into replayWithViewport so UI hit-testing during replay uses
-	// the viewport that was active when each pointer event was originally
-	// recorded — without it, a viewport change between recording and replay
-	// makes screen-pixel click coordinates map to the wrong reference-canvas
-	// position, missing buttons and freezing UI-gated games (e.g. breakout's
-	// Play click during scrub after a browser resize).
+	// viewportLog lets replay map screen-space pointer events with the viewport
+	// that was active when each event was recorded.
 	viewportLog []viewportEntry
 
-	// stagedViewport holds a viewport change that arrived while rewound
-	// (tick < maxTick). It is committed to viewportLog at the fork (like
-	// stagedEvents) or discarded by the next scrub/back/reset.
+	// stagedViewport follows the same fork/discard rules as stagedEvents.
 	stagedViewport    math2d.Rect
 	hasStagedViewport bool
 }
@@ -137,8 +113,7 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 	return d
 }
 
-// ApplyInput receives raw events from the platform and applies them to driver input.
-// Called by the platform before AdvanceTime or Step, within the same lock.
+// ApplyInput applies platform events before AdvanceTime or Step.
 func (d *Driver) ApplyInput(events []input.Event) {
 	d.input.Apply(events, d.tick)
 
@@ -194,8 +169,7 @@ func appendViewportLogEntry(log []viewportEntry, tick uint64, viewport math2d.Re
 	return append(log, viewportEntry{tick: tick, viewport: viewport})
 }
 
-// Control applies a ControlCommand to the internal state.
-// Called by the platform before AdvanceTime or Step, within the same lock.
+// Control applies a platform control command before AdvanceTime or Step.
 func (d *Driver) Control(cmd ControlCommand) {
 	if d.controls.apply(cmd) {
 		d.pendingReset = true
@@ -210,7 +184,7 @@ func (d *Driver) AdvanceTime(elapsed time.Duration) AdvanceStats {
 	if d.pendingReset {
 		d.doReset()
 		d.pendingReset = false
-		// skips the reset tick (World has just been rebuilt)
+		// Skip the reset tick; World has just been rebuilt.
 		return AdvanceStats{Alpha: d.clock.Alpha()}
 	}
 
@@ -286,9 +260,7 @@ func (d *Driver) runSteps(steps int) {
 }
 
 func (d *Driver) stepOnce(dt float64) {
-	// A step from a rewound point is the moment live state diverges from the
-	// recorded future — fork the timeline: drop the stale future and commit
-	// the input staged since the rewind (all stamped with the current tick).
+	// Stepping from a rewound tick forks the timeline.
 	if d.tick < d.maxTick {
 		d.scrubLog = truncateAtTick(d.scrubLog, d.tick)
 		d.scrubLog = append(d.scrubLog, d.stagedEvents...)
@@ -441,12 +413,7 @@ func (d *Driver) newUpdateUI() *ui.UI {
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.
-// The change is recorded in viewportLog (tagged with the current tick) so the
-// scrubber can replay it at the correct tick — pointer event coordinates are
-// in screen pixels and only map to the right UI element with the viewport that
-// was active when they were recorded. When rewound (tick < maxTick), the
-// change is staged until a fork commits it, matching the staging of input
-// events.
+// Rewound viewport changes are staged until the next timeline fork.
 func (d *Driver) SetViewport(viewport math2d.Rect) {
 	if d.viewport == viewport {
 		return
@@ -489,8 +456,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	}
 }
 
-// doReset rebuilds the World and calls Game.Init. Never called directly by the
-// platform — it goes through Control(ControlReset) → pendingReset → AdvanceTime/Step.
+// doReset rebuilds the World and calls Game.Init.
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
