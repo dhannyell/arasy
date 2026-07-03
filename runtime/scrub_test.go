@@ -105,12 +105,7 @@ func TestResumeAfterScrubForksTimeline(t *testing.T) {
 	}
 }
 
-// TestInputWhilePausedAfterScrubKeepsFutureScrubbable is the regression test
-// for the "mouse wiggle destroys the future" bug: the web canvas forwards
-// pointer-move events to ApplyInput on every tick, even paused. Input alone
-// must not fork the timeline — only a simulation step from a rewound tick
-// does — so after staging input while paused, the whole original range must
-// still be scrubbable, landing on the exact original states.
+// Regression: pointer movement while paused must not fork the future.
 func TestInputWhilePausedAfterScrubKeepsFutureScrubbable(t *testing.T) {
 	game := &inputBackGame{}
 	driver := NewDriver(game, slog.Default())
@@ -126,7 +121,7 @@ func TestInputWhilePausedAfterScrubKeepsFutureScrubbable(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 10})
 	driver.AdvanceTime(0)
 
-	// Pointer moves over the canvas while paused — no step runs.
+	// Pointer moves over the canvas while paused; no step runs.
 	driver.ApplyInput([]input.Event{{
 		Source: input.Source{Device: input.DeviceMouse, Code: input.MouseX},
 		Kind:   input.EventPointerMove,
@@ -144,12 +139,7 @@ func TestInputWhilePausedAfterScrubKeepsFutureScrubbable(t *testing.T) {
 	}
 }
 
-// TestResumeWithoutInputForksTimeline is the regression test for the silent
-// divergence bug: recorded events are not re-injected during live play, so
-// stepping forward from a rewound tick diverges from the recorded future even
-// when no new input arrives. The fork must happen at the step — afterwards,
-// scrubbing must reproduce the branch the user actually watched, not the
-// discarded original future.
+// Regression: resuming from a rewound tick forks even without new input.
 func TestResumeWithoutInputForksTimeline(t *testing.T) {
 	game := &inputBackGame{}
 	driver := NewDriver(game, slog.Default())

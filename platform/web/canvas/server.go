@@ -105,7 +105,7 @@ type client struct {
 	camera render.Camera
 }
 
-// clientMessage is the JSON envelope coming from the browser. Web-specific knowledge.
+// clientMessage is the JSON envelope sent by the browser.
 type clientMessage struct {
 	Type    string  `json:"type"`
 	Action  string  `json:"action"`
@@ -284,9 +284,7 @@ func (h *hub) enqueueResize(msg clientMessage) {
 	h.inboxMu.Unlock()
 }
 
-// inputEventFromClientMessage translates the browser's JSON envelope into input.Event.
-// Web-specific knowledge: device/kind names come from JS; BrowserKeyboardCode
-// maps browser key strings to input.SourceCode.
+// inputEventFromClientMessage maps browser input JSON to input.Event.
 func inputEventFromClientMessage(msg clientMessage) (input.Event, bool) {
 	switch msg.Device {
 	case "keyboard":
@@ -366,8 +364,7 @@ func browserInputKind(kind string) (input.EventKind, bool) {
 	}
 }
 
-// controlCommandFromMessage translates the browser action string into a ControlCommand.
-// Web-specific knowledge: action names come from JS, not the runtime.
+// controlCommandFromMessage maps browser action strings to runtime controls.
 func controlCommandFromMessage(msg clientMessage) (runtime.ControlCommand, bool) {
 	switch msg.Action {
 	case "play":

@@ -2,8 +2,7 @@ package ui
 
 import "github.com/dhannyell/frameforge/render"
 
-// Theme agrega o estilo de todos os widgets. Passado ao Driver via Config.UITheme;
-// zero value → DefaultTheme() é aplicado pelo Driver.
+// Theme groups widget styles used by runtime.Config.
 type Theme struct {
 	Button   ButtonTheme
 	Label    LabelTheme
@@ -11,23 +10,22 @@ type Theme struct {
 	Progress ProgressBarTheme
 }
 
-// ButtonStyle é a aparência do botão num estado (normal/hover/active).
+// ButtonStyle describes one button state.
 type ButtonStyle struct {
 	Background  render.Color
 	Border      render.Color
 	BorderWidth float64
 	TextColor   render.Color
-	TextSize    float64 // em pixels de viewport
+	TextSize    float64 // viewport pixels
 }
 
-// ButtonTheme tem um estilo por estado + velocidades de transição (§13.6).
-// HoverSpeed/PressSpeed = 0 → transição instantânea (sem animação).
+// ButtonTheme defines button states and transition speeds.
 type ButtonTheme struct {
 	Normal     ButtonStyle
 	Hovered    ButtonStyle
 	Active     ButtonStyle
-	HoverSpeed float64 // 1/s do Approach entre Normal↔Hovered
-	PressSpeed float64 // 1/s do Approach ao entrar/sair de Active
+	HoverSpeed float64 // 1/s between Normal and Hovered
+	PressSpeed float64 // 1/s entering or leaving Active
 }
 
 type LabelTheme struct {

@@ -82,6 +82,16 @@ func TestRGBA8(t *testing.T) {
 	}
 }
 
+func TestRGBA(t *testing.T) {
+	got := render.RGBA(0.1, 0.2, 0.3, 0.4)
+
+	want := render.Color{R: 0.1, G: 0.2, B: 0.3, A: 0.4}
+
+	if got != want {
+		t.Fatalf("got: %v, want: %v", got, want)
+	}
+}
+
 func assertColorNear(t *testing.T, got, want render.Color) {
 	t.Helper()
 

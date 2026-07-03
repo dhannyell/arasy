@@ -474,8 +474,7 @@ func (w *World) resolveContacts(contacts []Contact) {
 		vRel := velocityA.Linear.Sub(velocityB.Linear)
 		vRelNormal := (vRel.X * contact.Normal.X) + (vRel.Y * contact.Normal.Y)
 
-		// it means the objects are approaching each other.
-		// When the objects are already moving apart, there is no need to update the relative velocity.
+		// Positive relative velocity means the shapes are approaching.
 		if vRelNormal > 0 {
 			restitution := min(bodyA.Restitution, bodyB.Restitution)
 			impulseMagnitude := (1 + restitution) * vRelNormal / totalInvMass
