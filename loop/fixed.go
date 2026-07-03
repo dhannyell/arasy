@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// FixedStep accumulates elapsed time and reports how many fixed updates should run.
+// FixedStep accumulates elapsed time for fixed updates.
 type FixedStep struct {
 	step        time.Duration
 	accumulator time.Duration

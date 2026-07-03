@@ -191,7 +191,7 @@ func (c Camera) expandView() (math2d.Rect, math2d.Rect) {
 	return world, viewport
 }
 
-// Resolve returns the adjusted scale based on the current camera viewport and aspect ratio.
+// Resolve returns the aspect-adjusted camera and scale.
 func (c Camera) Resolve() ResolvedCamera {
 	world, viewport := c.resolveView()
 

@@ -14,16 +14,8 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// TestBreakoutScrubEndToEnd starts the web canvas server with the real
-// Breakout game, connects a WebSocket client, simulates the full user flow
-// (resize → Play click → Space → run), then scrubs and verifies:
-//  1. the broadcasted frame tick matches the scrub target
-//  2. the frame's command signature matches the originally recorded frame
-//     at that tick (proving the simulation state is correctly reconstructed)
-//
-// This exercises the server→driver→render→broadcast pipeline that the
-// browser would use, and implements the browser's isStaleWhileRewinding
-// guard to catch the "screen freezes" symptom.
+// TestBreakoutScrubEndToEnd exercises browser-facing scrub with Breakout:
+// resize, click Play, launch, scrub, and compare reconstructed frames.
 func TestBreakoutScrubEndToEnd(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

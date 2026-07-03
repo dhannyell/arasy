@@ -29,8 +29,7 @@ type Options struct {
 	Log       *slog.Logger
 }
 
-// Run drives game through an offline raster render and writes PNG and/or GIF output.
-// It mirrors canvas.Run: game is written once; this is the headless/offline target.
+// Run drives a game through the offline raster target.
 func Run(game runtime.Game, opts Options) error {
 	log := opts.Log
 	if log == nil {
@@ -111,8 +110,12 @@ func writeFile(path string, fn func(*os.File) error) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return fn(f)
+	err = fn(f)
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func toPaletted(img image.Image) *image.Paletted {
