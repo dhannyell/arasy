@@ -208,6 +208,12 @@ func (w *World) DebugGridCells() []DebugGridCell {
 	return w.debugGridCells
 }
 
+// StepTick returns how many simulation steps this world has run. Runtime uses
+// it to detect games that still call Step manually from Update.
+func (w *World) StepTick() uint64 {
+	return w.stepTick
+}
+
 // Contacts returns the contacts resolved during the last Step, across all
 // collider shape combinations.
 func (w *World) Contacts() []Contact {

@@ -5,7 +5,27 @@ import "github.com/dhannyell/frameforge/math2d"
 // StepConfig configures one simulation step.
 type StepConfig struct {
 	Bounds  math2d.Rect
+	Bounce  BounceConfig
 	Physics PhysicsConfig
+}
+
+type SideMask uint8
+
+const (
+	SideLeft SideMask = 1 << iota
+	SideRight
+	SideTop
+	SideBottom
+)
+
+type BounceConfig struct {
+	// OpenSides marks bounds sides that entities may cross freely. The zero
+	// value keeps all four sides closed, matching the original behavior.
+	OpenSides SideMask
+
+	// UseBodyRestitution applies an entity Body.Restitution factor to wall
+	// bounces. Entities without a Body still reflect perfectly.
+	UseBodyRestitution bool
 }
 
 type StepStats struct {
@@ -33,7 +53,7 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 
 	w.ApplyAcceleration(dt)
 	w.Integrate(dt)
-	w.BounceEntitiesInside(config.Bounds)
+	w.BounceEntitiesInside(config.Bounds, config.Bounce)
 
 	collision := w.detectCircleOverlapsGridStats(cellSize)
 	w.resolveContacts(collision.contacts)

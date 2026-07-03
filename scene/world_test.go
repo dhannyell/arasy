@@ -129,6 +129,20 @@ func TestWorldStoresAndReadsTransform(t *testing.T) {
 	}
 }
 
+func TestWorldStepTickCountsSimulationSteps(t *testing.T) {
+	world := scene.NewWorld()
+
+	if world.StepTick() != 0 {
+		t.Fatalf("initial StepTick = %d, want 0", world.StepTick())
+	}
+
+	world.Step(1.0/60.0, scene.StepConfig{})
+
+	if world.StepTick() != 1 {
+		t.Fatalf("StepTick after step = %d, want 1", world.StepTick())
+	}
+}
+
 func TestWorldStoresAndReadsCircleSprite(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()

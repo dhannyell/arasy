@@ -118,7 +118,6 @@ func (g *seekBenchGame) Update(ctx *runtime.UpdateContext, dt float64) {
 	ctx.World.SetVelocity(g.player, scene.Velocity{
 		Linear: math2d.Vec2{X: ctx.Input.Value(input.ActionMoveX) * 120},
 	})
-	ctx.World.Step(dt, ctx.StepConfig)
 }
 
 func (g *seekBenchGame) Render(ctx *runtime.RenderContext) []render.Command { return nil }
