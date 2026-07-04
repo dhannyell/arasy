@@ -47,9 +47,9 @@ func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
 }
 
 func TestHUDLayoutKeepsWidgetsInsideViewport(t *testing.T) {
-	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})
+	ref := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: viewportWidth, Y: viewportHeight})
 
-	score, reset := hudLayout(viewport)
+	score, reset := hudLayout()
 
 	if score.Width() != 120 || score.Height() != 28 {
 		t.Fatalf("score size = %vx%v, want 120x28", score.Width(), score.Height())
@@ -57,11 +57,26 @@ func TestHUDLayoutKeepsWidgetsInsideViewport(t *testing.T) {
 	if reset.Width() != 92 || reset.Height() != 28 {
 		t.Fatalf("reset size = %vx%v, want 92x28", reset.Width(), reset.Height())
 	}
-	if !viewport.Contains(score.Min) || !viewport.Contains(math2d.Vec2{X: score.Max.X - 1, Y: score.Max.Y - 1}) {
-		t.Fatalf("score rect %+v should fit inside viewport %+v", score, viewport)
+	if !ref.Contains(score.Min) || !ref.Contains(math2d.Vec2{X: score.Max.X - 1, Y: score.Max.Y - 1}) {
+		t.Fatalf("score rect %+v should fit inside reference %+v", score, ref)
 	}
-	if !viewport.Contains(reset.Min) || !viewport.Contains(math2d.Vec2{X: reset.Max.X - 1, Y: reset.Max.Y - 1}) {
-		t.Fatalf("reset rect %+v should fit inside viewport %+v", reset, viewport)
+	if !ref.Contains(reset.Min) || !ref.Contains(math2d.Vec2{X: reset.Max.X - 1, Y: reset.Max.Y - 1}) {
+		t.Fatalf("reset rect %+v should fit inside reference %+v", reset, ref)
+	}
+}
+
+func TestGoalBannerRectIsCenteredOnField(t *testing.T) {
+	rect := goalBannerRect(12)
+	wantCenterX := fieldCenter.X
+
+	if rect.Width() != goalBannerWidth || rect.Height() != goalBannerHeight {
+		t.Fatalf("banner size = %vx%v, want %vx%v", rect.Width(), rect.Height(), goalBannerWidth, goalBannerHeight)
+	}
+	if rect.Center().X != wantCenterX {
+		t.Fatalf("banner center X = %v, want %v", rect.Center().X, wantCenterX)
+	}
+	if rect.Min.X < fieldLeft || rect.Max.X > fieldLeft+fieldWidth {
+		t.Fatalf("banner rect %+v should fit inside field X range [%v,%v]", rect, fieldLeft, fieldLeft+fieldWidth)
 	}
 }
 
@@ -150,7 +165,7 @@ func controlledPlayerPosition(t *testing.T, driver *runtime.Driver, game *Footba
 	t.Helper()
 
 	target := math2d.Vec2{X: fieldLeft + 18, Y: fieldCenter.Y}
-	commands := driver.Frame().Commands
+	commands := driver.Frame(0).Commands
 	var (
 		best     math2d.Vec2
 		bestDist float64
@@ -182,7 +197,7 @@ func controlledPlayerPosition(t *testing.T, driver *runtime.Driver, game *Footba
 func clickPlay(t *testing.T, driver *runtime.Driver, game *Football) {
 	t.Helper()
 
-	_, play := menuLayout(driver.Config().Camera.Viewport)
+	_, play := menuLayout()
 	pos := play.Center()
 	driver.ApplyInput([]input.Event{
 		{

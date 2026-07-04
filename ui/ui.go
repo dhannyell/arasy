@@ -18,9 +18,12 @@ type UI struct {
 	inside    bool
 	cursorPos math2d.Vec2
 	commands  []render.Command
+	store     *AnimStore
+	dt        float64
+	time      float64
 }
 
-func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, theme Theme, reference math2d.Rect) *UI {
+func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, theme Theme, reference math2d.Rect, store *AnimStore, dt, time float64) *UI {
 	return &UI{
 		state:     state,
 		cursorPos: cursorPos,
@@ -28,6 +31,9 @@ func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, th
 		camera:    cam,
 		theme:     theme,
 		reference: reference,
+		store:     store,
+		dt:        dt,
+		time:      time,
 		layer:     LayerBase,
 	}
 }

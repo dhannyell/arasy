@@ -175,7 +175,7 @@ func mouseLeaveEvent() input.Event {
 func buttonFill(t *testing.T, driver *Driver) render.Color {
 	t.Helper()
 
-	for _, command := range driver.Frame().Commands {
+	for _, command := range driver.Frame(0).Commands {
 		rect, ok := command.(render.DrawRect)
 		if !ok || rect.Layer() < ui.LayerBase {
 			continue
