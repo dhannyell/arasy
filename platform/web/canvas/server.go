@@ -194,18 +194,29 @@ func (h *hub) drainInbox() ([]input.Event, []runtime.ControlCommand, math2d.Rect
 }
 
 func (h *hub) renderLoop(ctx context.Context, renderTicker <-chan time.Time) {
+	last := time.Now()
+	active := false
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-renderTicker:
+		case now := <-renderTicker:
 			if h.clientCount() == 0 {
+				active = false
 				continue
 			}
 
+			elapsed := now.Sub(last)
+			if !active {
+				elapsed = 0
+				active = true
+			}
+			last = now
+
 			// RLock: can contend with other readers, never with Advance
 			h.worldMu.RLock()
-			frame := h.driver.Frame()
+			frame := h.driver.Frame(elapsed)
 			state := h.driver.State()
 			h.worldMu.RUnlock()
 
