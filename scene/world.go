@@ -23,7 +23,9 @@ type World struct {
 	stepTick uint64
 
 	transforms      map[EntityID]Transform
+	transformTweens map[EntityID]TransformTween
 	circleSprites   map[EntityID]CircleSprite
+	circleTweens    map[EntityID]CircleSpriteTween
 	rectSprites     map[EntityID]RectSprite
 	velocities      map[EntityID]Velocity
 	accelerations   map[EntityID]Acceleration
@@ -39,7 +41,9 @@ func NewWorld() *World {
 	return &World{
 		nextID:          1,
 		transforms:      make(map[EntityID]Transform),
+		transformTweens: make(map[EntityID]TransformTween),
 		circleSprites:   make(map[EntityID]CircleSprite),
+		circleTweens:    make(map[EntityID]CircleSpriteTween),
 		rectSprites:     make(map[EntityID]RectSprite),
 		velocities:      make(map[EntityID]Velocity),
 		accelerations:   make(map[EntityID]Acceleration),
@@ -55,7 +59,9 @@ func (w *World) Clone() *World {
 		nextID:          w.nextID,
 		stepTick:        w.stepTick,
 		transforms:      cloneMap(w.transforms),
+		transformTweens: cloneMap(w.transformTweens),
 		circleSprites:   cloneMap(w.circleSprites),
+		circleTweens:    cloneMap(w.circleTweens),
 		rectSprites:     cloneMap(w.rectSprites),
 		velocities:      cloneMap(w.velocities),
 		accelerations:   cloneMap(w.accelerations),
@@ -77,7 +83,9 @@ func (w *World) Spawn() EntityID {
 
 func (w *World) Despawn(id EntityID) {
 	delete(w.transforms, id)
+	delete(w.transformTweens, id)
 	delete(w.circleSprites, id)
+	delete(w.circleTweens, id)
 	delete(w.rectSprites, id)
 	delete(w.velocities, id)
 	delete(w.accelerations, id)
@@ -87,21 +95,112 @@ func (w *World) Despawn(id EntityID) {
 	delete(w.rectColliders, id)
 }
 
+func (w *World) Transform(id EntityID) (Transform, bool) {
+	transform, ok := w.transforms[id]
+	return transform, ok
+}
+
+// SetTransform applies an immediate transform and cancels any active transform tween.
 func (w *World) SetTransform(id EntityID, transform Transform) {
+	delete(w.transformTweens, id)
 	w.transforms[id] = transform
 }
 
+func (w *World) RemoveTransform(id EntityID) {
+	delete(w.transformTweens, id)
+	delete(w.transforms, id)
+}
+
+func (w *World) TransformTween(id EntityID) (TransformTween, bool) {
+	transformTween, ok := w.transformTweens[id]
+	return transformTween, ok
+}
+
+// SetTransformTween is a low-level API. Prefer TweenTransform unless you need
+// explicit From/Elapsed state, such as loading snapshots or tests.
+func (w *World) SetTransformTween(id EntityID, tw TransformTween) {
+	w.transformTweens[id] = tw
+}
+
+// TweenTransform animates an entity from its current Transform to target.
+// It returns false when the entity has no Transform to animate.
+func (w *World) TweenTransform(id EntityID, target Transform, opts TransformTweenOptions) bool {
+	from, ok := w.transforms[id]
+	if !ok {
+		return false
+	}
+	if opts.StopVelocity {
+		w.velocities[id] = Velocity{}
+	}
+	w.transformTweens[id] = TransformTween{
+		From:             from,
+		To:               target,
+		Duration:         opts.Duration,
+		Ease:             opts.Ease,
+		Loop:             opts.Loop,
+		RemoveOnComplete: opts.RemoveOnComplete,
+	}
+	return true
+}
+
+func (w *World) StopTransformTween(id EntityID) {
+	delete(w.transformTweens, id)
+}
+
+func (w *World) RemoveTransformTween(id EntityID) {
+	delete(w.transformTweens, id)
+}
+
 func (w *World) SetCircleSprite(id EntityID, sprite CircleSprite) {
+	delete(w.circleTweens, id)
 	w.circleSprites[id] = sprite
 }
 
 func (w *World) RemoveCircleSprite(id EntityID) {
+	delete(w.circleTweens, id)
 	delete(w.circleSprites, id)
 }
 
 func (w *World) CircleSprite(id EntityID) (CircleSprite, bool) {
 	sprite, ok := w.circleSprites[id]
 	return sprite, ok
+}
+
+func (w *World) CircleSpriteTween(id EntityID) (CircleSpriteTween, bool) {
+	tween, ok := w.circleTweens[id]
+	return tween, ok
+}
+
+// SetCircleSpriteTween is a low-level API. Prefer TweenCircleSprite unless you
+// need explicit From/Elapsed state, such as loading snapshots or tests.
+func (w *World) SetCircleSpriteTween(id EntityID, tw CircleSpriteTween) {
+	w.circleTweens[id] = tw
+}
+
+// TweenCircleSprite animates an entity from its current CircleSprite to target.
+// It returns false when the entity has no CircleSprite to animate.
+func (w *World) TweenCircleSprite(id EntityID, target CircleSprite, opts CircleSpriteTweenOptions) bool {
+	from, ok := w.circleSprites[id]
+	if !ok {
+		return false
+	}
+	w.circleTweens[id] = CircleSpriteTween{
+		From:             from,
+		To:               target,
+		Duration:         opts.Duration,
+		Ease:             opts.Ease,
+		Loop:             opts.Loop,
+		RemoveOnComplete: opts.RemoveOnComplete,
+	}
+	return true
+}
+
+func (w *World) StopCircleSpriteTween(id EntityID) {
+	delete(w.circleTweens, id)
+}
+
+func (w *World) RemoveCircleSpriteTween(id EntityID) {
+	delete(w.circleTweens, id)
 }
 
 func (w *World) SetRectSprite(id EntityID, sprite RectSprite) {
@@ -115,15 +214,6 @@ func (w *World) RemoveRectSprite(id EntityID) {
 func (w *World) RectSprite(id EntityID) (RectSprite, bool) {
 	sprite, ok := w.rectSprites[id]
 	return sprite, ok
-}
-
-func (w *World) Transform(id EntityID) (Transform, bool) {
-	transform, ok := w.transforms[id]
-	return transform, ok
-}
-
-func (w *World) RemoveTransform(id EntityID) {
-	delete(w.transforms, id)
 }
 
 func (w *World) SetVelocity(id EntityID, velocity Velocity) {
@@ -227,6 +317,9 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for id := range w.circleSprites {
+		ids[id] = struct{}{}
+	}
+	for id := range w.circleTweens {
 		ids[id] = struct{}{}
 	}
 	for id := range w.rectSprites {

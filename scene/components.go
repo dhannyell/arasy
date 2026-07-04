@@ -1,6 +1,7 @@
 package scene
 
 import (
+	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
@@ -54,7 +55,57 @@ type CircleCollider struct {
 }
 
 type RectCollider struct {
-	// HalfExtents are the half-dimensions of the rectangle, centered at
+	// HalfExtends are the half-dimensions of the rectangle, centered at
 	// Transform.Position. Transform.Rotation is ignored (AABB).
 	HalfExtends math2d.Vec2
+}
+
+type LoopMode uint8
+
+const (
+	LoopOnce LoopMode = iota
+	LoopRepeat
+	LoopPingPong
+)
+
+// TransformTween animates the Position/Rotation/Scale of a Transform.
+type TransformTween struct {
+	From, To         Transform
+	Elapsed          float64
+	Duration         float64
+	Ease             ease.Kind
+	Loop             LoopMode
+	RemoveOnComplete bool
+	Done             bool
+}
+
+// TransformTweenOptions configures World.TweenTransform, the high-level API
+// for animating from an entity's current Transform.
+type TransformTweenOptions struct {
+	Duration         float64
+	Ease             ease.Kind
+	Loop             LoopMode
+	RemoveOnComplete bool
+	// StopVelocity clears Velocity before installing the tween, avoiding the
+	// common mistake of driving the same Transform through physics and tweening.
+	StopVelocity bool
+}
+
+// CircleSpriteTween animates the visual radius/color of a CircleSprite.
+type CircleSpriteTween struct {
+	From, To         CircleSprite
+	Elapsed          float64
+	Duration         float64
+	Ease             ease.Kind
+	Loop             LoopMode
+	RemoveOnComplete bool
+	Done             bool
+}
+
+// CircleSpriteTweenOptions configures World.TweenCircleSprite.
+type CircleSpriteTweenOptions struct {
+	Duration         float64
+	Ease             ease.Kind
+	Loop             LoopMode
+	RemoveOnComplete bool
 }

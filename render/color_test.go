@@ -92,6 +92,69 @@ func TestRGBA(t *testing.T) {
 	}
 }
 
+func TestColorLerp(t *testing.T) {
+	scenarios := []struct {
+		name   string
+		c1, c2 render.Color
+		t      float64
+		want   render.Color
+	}{
+		{
+			name: "Full Black",
+			c1:   render.Color{A: 1},
+			c2:   render.Color{R: 1, G: 1, B: 1, A: 1},
+			t:    0.0,
+			want: render.Color{A: 1},
+		},
+		{
+			name: "Half Black",
+			c1:   render.Color{A: 1},
+			c2:   render.Color{R: 1, G: 1, B: 1, A: 1},
+			t:    0.5,
+			want: render.Color{R: 0.5, G: 0.5, B: 0.5, A: 1.0},
+		},
+		{
+			name: "Full White",
+			c1:   render.Color{A: 1},
+			c2:   render.Color{R: 1, G: 1, B: 1, A: 1},
+			t:    1.0,
+			want: render.Color{R: 1.0, G: 1.0, B: 1.0, A: 1.0},
+		},
+		{
+			name: "Transition One Channel",
+			c1:   render.Color{A: 1},
+			c2:   render.Color{R: 1, G: 0, B: 0, A: 1},
+			t:    0.25,
+			want: render.Color{R: 0.25, G: 0.0, B: 0.0, A: 1.0},
+		},
+		{
+			name: "Fade Out",
+			c1:   render.Color{R: 1, A: 1},
+			c2:   render.Color{R: 1},
+			t:    0.75,
+			want: render.Color{R: 1.0, G: 0.0, B: 0.0, A: 0.25},
+		},
+		{
+			name: "Invert",
+			c1:   render.Color{R: 1, A: 1},
+			c2:   render.Color{G: 1, A: 1},
+			t:    0.5,
+			want: render.Color{R: 0.5, G: 0.5, B: 0.0, A: 1.0},
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			got := s.c1.Lerp(s.c2, s.t)
+
+			if got != s.want {
+				t.Fatalf("got: %v, want: %v", got, s.want)
+			}
+		})
+	}
+
+}
+
 func assertColorNear(t *testing.T, got, want render.Color) {
 	t.Helper()
 

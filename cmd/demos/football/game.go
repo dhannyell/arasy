@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 
+	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -24,6 +25,9 @@ const (
 	shakeAmplitude     = 0.45
 	shakeSeed          = 0
 	shakeSimDt         = 1.0 / 60.0
+	goalBlinkDuration  = 1.5
+	goalBlinkPulseTime = 0.12
+	goalBlinkSimHz     = 60.0
 )
 
 type Football struct {
@@ -76,6 +80,7 @@ func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
 
 func (f *Football) resetMatch(world *scene.World) {
 	slog.Debug("Reset Button")
+	stopBallBlink(world, f.ball)
 	resetBall(world, f.ball)
 	f.State = MatchState{}
 }
@@ -133,6 +138,10 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	if ctx.UI.Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
 	}
+	if f.State.HasGoal && goalBlinkDone(ctx.Tick, f.State.LastGoalTick) {
+		stopBallBlink(ctx.World, f.ball)
+		f.State.HasGoal = false
+	}
 
 	previousBallTransform, _ := ctx.World.Transform(f.ball)
 	f.previousBallPos = previousBallTransform.Position
@@ -175,12 +184,14 @@ func (f *Football) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 		f.State.HasGoal = true
 		f.State.LastGoalTick = ctx.Tick
 		resetBall(ctx.World, f.ball)
+		startBallBlink(ctx.World, f.ball)
 	case rightGoalScored:
 		ctx.Log.Debug("goal", "side", "right")
 		f.State.ScoreRight++
 		f.State.HasGoal = true
 		f.State.LastGoalTick = ctx.Tick
 		resetBall(ctx.World, f.ball)
+		startBallBlink(ctx.World, f.ball)
 	}
 }
 
@@ -249,16 +260,53 @@ func movementBindings() []input.Binding {
 
 func resetBall(world *scene.World, ball scene.EntityID) {
 	ballTransform, ok := world.Transform(ball)
-	if ok {
-		ballTransform.Position = fieldCenter
-		world.SetTransform(ball, ballTransform)
+	if !ok {
+		return
 	}
 
-	ballVelocity, ok := world.Velocity(ball)
-	if ok {
-		ballVelocity.Linear = math2d.Vec2{}
-		world.SetVelocity(ball, ballVelocity)
+	world.TweenTransform(ball, scene.Transform{
+		Position: fieldCenter,
+		Rotation: ballTransform.Rotation,
+		Scale:    ballTransform.Scale,
+	}, scene.TransformTweenOptions{
+		Duration:         0.5,
+		Ease:             ease.OutCubic,
+		Loop:             scene.LoopOnce,
+		RemoveOnComplete: true,
+		StopVelocity:     true,
+	})
+}
+
+func startBallBlink(world *scene.World, ball scene.EntityID) {
+	sprite, ok := world.CircleSprite(ball)
+	if !ok {
+		return
 	}
+
+	target := sprite
+	target.Color = render.RGBA(1, 0.94, 0.2, 1)
+	target.Radius = ballVisualRadius * 1.35
+	world.TweenCircleSprite(ball, target, scene.CircleSpriteTweenOptions{
+		Duration: goalBlinkPulseTime,
+		Ease:     ease.Linear,
+		Loop:     scene.LoopPingPong,
+	})
+}
+
+func stopBallBlink(world *scene.World, ball scene.EntityID) {
+	sprite, ok := world.CircleSprite(ball)
+	if !ok {
+		return
+	}
+
+	world.StopCircleSpriteTween(ball)
+	sprite.Color = ballColor
+	sprite.Radius = ballVisualRadius
+	world.SetCircleSprite(ball, sprite)
+}
+
+func goalBlinkDone(tick, lastGoalTick uint64) bool {
+	return float64(tick-lastGoalTick) >= goalBlinkDuration*goalBlinkSimHz
 }
 
 func ballIntersectsGoal(center math2d.Vec2, radius float64, rect math2d.Rect) bool {
