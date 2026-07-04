@@ -37,11 +37,13 @@ const (
 	layerPlayers  = 10
 	layerBall     = 11
 
-	ballInvMass       = 1.0
-	playerInvMass     = 0.2
-	ballRestitution   = 0.8
-	playerRestitution = 0.35
-	physicsCellSize   = 8.0
+	ballVisualRadius   = 0.45
+	ballColliderRadius = 0.45
+	ballInvMass        = 1.0
+	playerInvMass      = 0.2
+	ballRestitution    = 0.8
+	playerRestitution  = 0.35
+	physicsCellSize    = 8.0
 )
 
 var (
@@ -103,8 +105,8 @@ func BuildPlayableDemoWorldIn(world *scene.World) DemoWorld {
 	ball := spawnCircleEntity(
 		world,
 		fieldCenter,
-		0.45,
-		0.45,
+		ballVisualRadius,
+		ballColliderRadius,
 		scene.Body{InvMass: ballInvMass, Restitution: ballRestitution},
 		ballColor,
 		layerBall,

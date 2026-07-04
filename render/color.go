@@ -11,6 +11,15 @@ type Color struct {
 	R, G, B, A float64
 }
 
+func (c *Color) Lerp(c2 Color, t float64) Color {
+	return Color{
+		R: c.R + (c2.R-c.R)*t,
+		G: c.G + (c2.G-c.G)*t,
+		B: c.B + (c2.B-c.B)*t,
+		A: c.A + (c2.A-c.A)*t,
+	}
+}
+
 // RGBA creates a color from normalized red, green, blue and alpha values.
 func RGBA(r, g, b, a float64) Color {
 	return Color{
