@@ -13,6 +13,6 @@ const (
 	MouseWheelY
 )
 
-func IsMouseCode(code SourceCode) bool {
+func isMouseCode(code SourceCode) bool {
 	return code >= MouseUnknown && code <= MouseWheelY
 }

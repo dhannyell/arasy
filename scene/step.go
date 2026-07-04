@@ -51,9 +51,9 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 
 	w.contacts = w.contacts[:0]
 
-	w.ApplyAcceleration(dt)
-	w.Integrate(dt)
-	w.BounceEntitiesInside(config.Bounds, config.Bounce)
+	w.applyAcceleration(dt)
+	w.integrate(dt)
+	w.bounceEntitiesInside(config.Bounds, config.Bounce)
 
 	collision := w.detectCircleOverlapsGridStats(cellSize)
 	w.resolveContacts(collision.contacts)
@@ -62,9 +62,9 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 	stats.Contacts = len(w.contacts)
 	stats.GridCells = collision.gridCells
 
-	w.ApplyDamping(dt)
+	w.applyDamping(dt)
 
-	w.AdvanceAnimations(dt)
+	w.advanceAnimations(dt)
 
 	w.stepTick++
 

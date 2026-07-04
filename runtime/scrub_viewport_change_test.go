@@ -98,8 +98,8 @@ func TestScrubReplaysViewportChangesForUIHitTesting(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 1})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != 1 {
-		t.Fatalf("tick after scrub = %d, want 1", driver.Tick())
+	if driver.State().Tick != 1 {
+		t.Fatalf("tick after scrub = %d, want 1", driver.State().Tick)
 	}
 	if !game.state {
 		t.Fatal("scrub to tick 1: game state = false — viewport change broke UI hit-testing during replay")
@@ -133,8 +133,8 @@ func TestScrubWithoutViewportChangeStillWorks(t *testing.T) {
 	for _, target := range []uint64{3, 1, 5, 0} {
 		driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
 		driver.AdvanceTime(0)
-		if driver.Tick() != target {
-			t.Fatalf("scrub to %d: tick = %d", target, driver.Tick())
+		if driver.State().Tick != target {
+			t.Fatalf("scrub to %d: tick = %d", target, driver.State().Tick)
 		}
 		if got, want := driver.Checksum(), checksums[target]; got != want {
 			t.Fatalf("scrub to %d: checksum = %d, want %d", target, got, want)
@@ -178,8 +178,8 @@ func TestScrubMultipleViewportChanges(t *testing.T) {
 	for _, target := range []uint64{1, 3, 5, 2, 0} {
 		driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
 		driver.AdvanceTime(0)
-		if driver.Tick() != target {
-			t.Fatalf("scrub to %d: tick = %d", target, driver.Tick())
+		if driver.State().Tick != target {
+			t.Fatalf("scrub to %d: tick = %d", target, driver.State().Tick)
 		}
 		if target >= 1 && !game.state {
 			t.Fatalf("scrub to %d: game not started — viewport changes not replayed", target)

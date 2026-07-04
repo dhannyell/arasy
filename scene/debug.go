@@ -143,7 +143,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	cmds := make([]render.Command, 0, 4)
 
 	if layers.Has(DebugGrid) {
-		cmds = append(cmds, DebugGridAreaCommands(
+		cmds = append(cmds, debugGridAreaCommands(
 			cfg.Bounds,
 			cfg.CellSize,
 			cfg.Style.Grid.GridColor,
@@ -153,7 +153,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 		)...)
 	}
 	if layers.Has(DebugActiveGrid) {
-		cmds = append(cmds, w.DebugActiveGridCommands(
+		cmds = append(cmds, w.debugActiveGridCommands(
 			cfg.Style.Grid.ActiveGridFill,
 			cfg.Style.Grid.ActiveGridStroke,
 			cfg.Style.Grid.ActiveGridStrokeWidth,
@@ -161,7 +161,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 		)...)
 	}
 	if layers.Has(DebugCandidateGrid) {
-		cmds = append(cmds, w.DebugCandidateGridCommands(
+		cmds = append(cmds, w.debugCandidateGridCommands(
 			cfg.Style.Grid.CandidateGridFill,
 			cfg.Style.Grid.CandidateGridStroke,
 			cfg.Style.Grid.CandidateGridStrokeWidth,
@@ -171,7 +171,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	if layers.Has(DebugColliders) {
 		cmds = append(
 			cmds,
-			w.DebugColliderCommands(
+			w.debugColliderCommands(
 				cfg.Style.Colliders.ColliderColor,
 				cfg.Style.Colliders.ColliderStrokeWidth,
 				cfg.Style.Colliders.ColliderLayer,
@@ -181,7 +181,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	if layers.Has(DebugContacts) {
 		cmds = append(
 			cmds,
-			w.DebugContactCommands(
+			w.debugContactCommands(
 				cfg.Style.Contacts.ContactColor,
 				cfg.Style.Contacts.ContactPointRadius,
 				cfg.Style.Contacts.ContactLineWidth,
@@ -193,14 +193,14 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	if layers.Has(DebugVelocities) {
 		cmds = append(
 			cmds,
-			w.DebugVelocityCommands(
+			w.debugVelocityCommands(
 				cfg.Style.Velocity.VelocityColor,
 				cfg.Style.Velocity.VelocityWidth,
 				cfg.Style.Velocity.VelocityScale,
 				cfg.Style.Velocity.VelocityLayer)...)
 	}
 	if layers.Has(DebugEntityIDs) {
-		cmds = append(cmds, w.DebugEntityIDCommands(
+		cmds = append(cmds, w.debugEntityIDCommands(
 			cfg.Style.EntityIDs.Color,
 			cfg.Style.EntityIDs.Size,
 			cfg.Style.EntityIDs.Offset,
@@ -211,7 +211,7 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	return cmds
 }
 
-func (w *World) DebugVelocityCommands(color render.Color, width, scale float64, layer int) []render.Command {
+func (w *World) debugVelocityCommands(color render.Color, width, scale float64, layer int) []render.Command {
 	if width <= 0 || scale == 0 {
 		return nil
 	}
@@ -252,7 +252,7 @@ func (w *World) DebugVelocityCommands(color render.Color, width, scale float64, 
 	return commands
 }
 
-func (w *World) DebugEntityIDCommands(color render.Color, size float64, offset math2d.Vec2, layer int) []render.Command {
+func (w *World) debugEntityIDCommands(color render.Color, size float64, offset math2d.Vec2, layer int) []render.Command {
 	if size <= 0 {
 		return nil
 	}

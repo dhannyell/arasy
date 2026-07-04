@@ -47,6 +47,6 @@ func Keyboard(code SourceCode) Source {
 	}
 }
 
-func IsKeyboardCode(code SourceCode) bool {
+func isKeyboardCode(code SourceCode) bool {
 	return code >= KeyA && code <= KeyArrowRight
 }

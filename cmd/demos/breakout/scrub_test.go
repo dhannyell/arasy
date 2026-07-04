@@ -102,8 +102,8 @@ func TestBreakoutScrubDeterministic(t *testing.T) {
 		driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: target})
 		driver.AdvanceTime(0)
 
-		if driver.Tick() != target {
-			t.Fatalf("scrub to %d: tick = %d, want %d", target, driver.Tick(), target)
+		if driver.State().Tick != target {
+			t.Fatalf("scrub to %d: tick = %d, want %d", target, driver.State().Tick, target)
 		}
 		if got, want := driver.Checksum(), checksums[target]; got != want {
 			t.Fatalf("scrub to %d: checksum = %d, want %d (divergent scrub)", target, got, want)
