@@ -28,14 +28,14 @@ func TestReplayReproducesChecksum(t *testing.T) {
 	if len(rec.Events) == 0 {
 		t.Fatal("recording captured no events")
 	}
-	if rec.Ticks != driver.Tick() {
-		t.Fatalf("recording.Ticks = %d, want %d", rec.Ticks, driver.Tick())
+	if rec.Ticks != driver.State().Tick {
+		t.Fatalf("recording.Ticks = %d, want %d", rec.Ticks, driver.State().Tick)
 	}
 
 	replay := Replay(&inputBackGame{}, slog.Default(), rec)
 
-	if replay.Tick() != driver.Tick() {
-		t.Fatalf("replay tick = %d, want %d", replay.Tick(), driver.Tick())
+	if replay.State().Tick != driver.State().Tick {
+		t.Fatalf("replay tick = %d, want %d", replay.State().Tick, driver.State().Tick)
 	}
 	if got, want := replay.Checksum(), driver.Checksum(); got != want {
 		t.Fatalf("replay checksum = %d, want %d", got, want)

@@ -33,8 +33,8 @@ func TestScrubCoalescesMultipleCommands(t *testing.T) {
 	driver.AdvanceTime(0)
 
 	// The driver should be at the LAST queued target (5), not any intermediate.
-	if driver.Tick() != 5 {
-		t.Fatalf("tick after coalesced scrub = %d, want 5 (last queued target)", driver.Tick())
+	if driver.State().Tick != 5 {
+		t.Fatalf("tick after coalesced scrub = %d, want 5 (last queued target)", driver.State().Tick)
 	}
 
 	// Scrub back to 50 and verify the original state is intact.
@@ -74,8 +74,8 @@ func TestScrubAfterForkStillFast(t *testing.T) {
 	// First scrub to 10.
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 10})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 10 {
-		t.Fatalf("first scrub: tick = %d, want 10", driver.Tick())
+	if driver.State().Tick != 10 {
+		t.Fatalf("first scrub: tick = %d, want 10", driver.State().Tick)
 	}
 	if got, want := driver.Checksum(), checksums[10]; got != want {
 		t.Fatalf("first scrub: checksum = %d, want %d", got, want)
@@ -88,8 +88,8 @@ func TestScrubAfterForkStillFast(t *testing.T) {
 		})
 		driver.Step()
 	}
-	if driver.Tick() != 30 {
-		t.Fatalf("after fork+advance: tick = %d, want 30", driver.Tick())
+	if driver.State().Tick != 30 {
+		t.Fatalf("after fork+advance: tick = %d, want 30", driver.State().Tick)
 	}
 	forkedTick30 := driver.Checksum()
 	if forkedTick30 == checksums[30] {
@@ -100,8 +100,8 @@ func TestScrubAfterForkStillFast(t *testing.T) {
 	// (the shared past before the fork point is intact).
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 10})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 10 {
-		t.Fatalf("second scrub: tick = %d, want 10", driver.Tick())
+	if driver.State().Tick != 10 {
+		t.Fatalf("second scrub: tick = %d, want 10", driver.State().Tick)
 	}
 	if got, want := driver.Checksum(), checksums[10]; got != want {
 		t.Fatalf("second scrub after fork: checksum = %d, want %d (shared past should be intact)", got, want)

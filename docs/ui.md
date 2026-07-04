@@ -211,9 +211,9 @@ ctx.UI.FX().ToastIn("pause", "Paused", rect, ui.SpaceScreen, ui.ToastOptions{Key
 limpa o gatilho retido; um novo valor nao-zero reinicia a animacao. Use um tick
 ou contador monotonicamente crescente do estado do jogo para disparar o efeito.
 
-`ToastOptions` tambem aceita ajustes de duracao, layer, cores, texto, posicao de
-entrada, fade e pulso. Mantenha esses ajustes pequenos. Se a receita comecar a
-pedir muitos campos customizados, prefira `Effect`.
+`ToastOptions` tambem aceita ajustes de duracao, layer e aparencia por
+`ToastStyle`. A receita de movimento e fixa por design; se precisar alterar
+entrada, fade ou pulso, prefira `Effect`.
 
 ### `Effect`: composicao sem boilerplate
 
@@ -252,18 +252,19 @@ hover/press via `Approach` e `ButtonTheme.HoverSpeed`/`PressSpeed`.
 ### Direcao de evolucao
 
 Novas receitas devem evitar crescer `ToastOptions` indefinidamente. Quando uma
-familia de efeitos amadurecer, prefira extrair presets e estilos reutilizaveis
-em vez de adicionar mais flags soltas:
+familia de efeitos amadurecer, prefira criar um novo metodo em `FX` com options
+minimas em vez de adicionar mais flags soltas:
 
 ```go
 ctx.UI.FX().Toast("goal", "GOL!", rect, ui.ToastOptions{
     Key: goalTick,
-    // Futuro desejado: Style: ui.ToastSuccessStyle, Motion: ui.MotionBanner.
+    Style: ui.ToastStyle{TextSize: 24},
 })
 ```
 
-O papel de `FX` e ser rapido e opinativo. O papel de `Effect` e ser componivel.
-O papel das primitivas e permitir ajuste fino sem forcar novas receitas.
+O papel de `FX` e ser rapido e opinativo. O papel de `Effect` e ser componivel,
+incluindo movimento customizado. O papel das primitivas e permitir ajuste fino
+sem forcar novas receitas.
 
 ## IDs
 

@@ -27,8 +27,8 @@ func TestDriverCharacterizationFractionalSpeedAccumulatesTicks(t *testing.T) {
 
 	for i, wantTick := range []uint64{0, 1, 1, 2} {
 		driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-		if driver.Tick() != wantTick {
-			t.Fatalf("tick after advance %d = %v, want %v", i+1, driver.Tick(), wantTick)
+		if driver.State().Tick != wantTick {
+			t.Fatalf("tick after advance %d = %v, want %v", i+1, driver.State().Tick, wantTick)
 		}
 	}
 }
@@ -39,8 +39,8 @@ func TestDriverCharacterizationAcceleratedSpeedRunsMultipleTicks(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 2.0})
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 
-	if driver.Tick() != 2 {
-		t.Fatalf("tick after 2x speed advance = %v, want 2", driver.Tick())
+	if driver.State().Tick != 2 {
+		t.Fatalf("tick after 2x speed advance = %v, want 2", driver.State().Tick)
 	}
 }
 
@@ -49,14 +49,14 @@ func TestDriverCharacterizationPauseAndManualStep(t *testing.T) {
 
 	driver.Control(ControlCommand{Kind: ControlPause})
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-	if driver.Tick() != 0 {
-		t.Fatalf("tick while paused = %v, want 0", driver.Tick())
+	if driver.State().Tick != 0 {
+		t.Fatalf("tick while paused = %v, want 0", driver.State().Tick)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlStep})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 1 {
-		t.Fatalf("tick after manual step = %v, want 1", driver.Tick())
+	if driver.State().Tick != 1 {
+		t.Fatalf("tick after manual step = %v, want 1", driver.State().Tick)
 	}
 }
 
@@ -65,22 +65,22 @@ func TestDriverCharacterizationResetConsumesAdvance(t *testing.T) {
 	driver := NewDriver(game, slog.Default())
 
 	driver.Step()
-	if driver.Tick() != 1 || game.updates != 1 {
-		t.Fatalf("before reset tick=%v updates=%v, want tick=1 updates=1", driver.Tick(), game.updates)
+	if driver.State().Tick != 1 || game.updates != 1 {
+		t.Fatalf("before reset tick=%v updates=%v, want tick=1 updates=1", driver.State().Tick, game.updates)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlReset})
 	driver.Step()
-	if driver.Tick() != 0 {
-		t.Fatalf("tick after reset advance = %v, want 0", driver.Tick())
+	if driver.State().Tick != 0 {
+		t.Fatalf("tick after reset advance = %v, want 0", driver.State().Tick)
 	}
 	if game.updates != 1 {
 		t.Fatalf("updates after reset advance = %v, want 1", game.updates)
 	}
 
 	driver.Step()
-	if driver.Tick() != 1 || game.updates != 2 {
-		t.Fatalf("after post-reset advance tick=%v updates=%v, want tick=1 updates=2", driver.Tick(), game.updates)
+	if driver.State().Tick != 1 || game.updates != 2 {
+		t.Fatalf("after post-reset advance tick=%v updates=%v, want tick=1 updates=2", driver.State().Tick, game.updates)
 	}
 }
 
@@ -96,12 +96,12 @@ func TestDriverCharacterizationBackRestoresTickAndChecksum(t *testing.T) {
 	})
 	driver.Step()
 
-	wantTick := driver.Tick()
+	wantTick := driver.State().Tick
 	wantChecksum := driver.world.Checksum()
 
 	driver.Step()
-	if driver.Tick() != 2 {
-		t.Fatalf("tick before back = %v, want 2", driver.Tick())
+	if driver.State().Tick != 2 {
+		t.Fatalf("tick before back = %v, want 2", driver.State().Tick)
 	}
 	if checksum := driver.world.Checksum(); checksum == wantChecksum {
 		t.Fatalf("checksum should change after second advance, still %v", checksum)
@@ -110,8 +110,8 @@ func TestDriverCharacterizationBackRestoresTickAndChecksum(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlBack})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != wantTick {
-		t.Fatalf("tick after back = %v, want %v", driver.Tick(), wantTick)
+	if driver.State().Tick != wantTick {
+		t.Fatalf("tick after back = %v, want %v", driver.State().Tick, wantTick)
 	}
 	if checksum := driver.world.Checksum(); checksum != wantChecksum {
 		t.Fatalf("checksum after back = %v, want %v", checksum, wantChecksum)

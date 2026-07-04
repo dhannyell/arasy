@@ -13,7 +13,7 @@ var (
 	benchmarkGridSizes   = []int{10, 25, 50, 75, 100, 1000}
 )
 
-func BenchmarkDetectCircleOverlaps(b *testing.B) {
+func BenchmarkCollisionOverlapsAllPairs(b *testing.B) {
 	for _, size := range benchmarkSpreadSizes {
 		b.Run(fmt.Sprintf("narrow/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)
@@ -28,7 +28,7 @@ func BenchmarkDetectCircleOverlaps(b *testing.B) {
 	}
 }
 
-func BenchmarkDetectCircleOverlapsGrid(b *testing.B) {
+func BenchmarkCollisionOverlapsGrid(b *testing.B) {
 	for _, size := range benchmarkSpreadSizes {
 		b.Run(fmt.Sprintf("grid/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)
@@ -43,7 +43,7 @@ func BenchmarkDetectCircleOverlapsGrid(b *testing.B) {
 	}
 }
 
-func BenchmarkDetectCircleOverlapsGridDense(b *testing.B) {
+func BenchmarkCollisionOverlapsGridDense(b *testing.B) {
 	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("grid/%d/dense", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 64, 64, 1)
@@ -58,7 +58,7 @@ func BenchmarkDetectCircleOverlapsGridDense(b *testing.B) {
 	}
 }
 
-func BenchmarkDetectCircleOverlapsGridLargeColliders(b *testing.B) {
+func BenchmarkCollisionOverlapsGridLargeColliders(b *testing.B) {
 	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("grid/%d/large-colliders", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 12)
@@ -73,10 +73,10 @@ func BenchmarkDetectCircleOverlapsGridLargeColliders(b *testing.B) {
 	}
 }
 
-// BenchmarkDetectCircleOverlapsGridMixed measures the grid broad-phase (the
+// BenchmarkCollisionOverlapsGridMixed measures the grid broad-phase (the
 // only detection path that sees rects) over a world where half the entities
 // carry a RectCollider instead of a CircleCollider.
-func BenchmarkDetectCircleOverlapsGridMixed(b *testing.B) {
+func BenchmarkCollisionOverlapsGridMixed(b *testing.B) {
 	for _, size := range benchmarkSpreadSizes {
 		b.Run(fmt.Sprintf("grid/%d/mixed", size), func(b *testing.B) {
 			world := benchmarkWorldSpreadMixed(size, 1000, 1000, 1, 2)
@@ -91,10 +91,10 @@ func BenchmarkDetectCircleOverlapsGridMixed(b *testing.B) {
 	}
 }
 
-// BenchmarkDetectCircleOverlapsGridBreakoutProfile profiles a "mostly static
+// BenchmarkCollisionOverlapsGridBreakoutProfile profiles a "mostly static
 // world" shape representative of the breakout demo: a fixed 8x9 grid of
 // static rects (bricks) plus one dynamic circle (the ball).
-func BenchmarkDetectCircleOverlapsGridBreakoutProfile(b *testing.B) {
+func BenchmarkCollisionOverlapsGridBreakoutProfile(b *testing.B) {
 	world := scene.NewWorld()
 
 	const cols, rows = 8, 9
@@ -136,7 +136,7 @@ func BenchmarkDetectCircleOverlapsGridBreakoutProfile(b *testing.B) {
 	}
 }
 
-func BenchmarkResolveCircleOverlapsGrid(b *testing.B) {
+func BenchmarkCollisionResolveGrid(b *testing.B) {
 	for _, size := range benchmarkGridSizes {
 		b.Run(fmt.Sprintf("resolve-grid/%d/spread", size), func(b *testing.B) {
 			world := benchmarkWorldSpread(size, 1000, 1000, 1)

@@ -18,6 +18,6 @@ const (
 	GamepadRightStickY
 )
 
-func IsGamepadCode(code SourceCode) bool {
+func isGamepadCode(code SourceCode) bool {
 	return code >= GamepadA && code <= GamepadRightStickY
 }

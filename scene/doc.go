@@ -9,7 +9,7 @@
 //		Produces backend-agnostic render commands.
 //
 //	Transform + Velocity
-//		Moves entities through Integrate.
+//		Moves entities during World.Step.
 //
 //	Velocity + Acceleration/Damping
 //		Changes velocity before/after integration.

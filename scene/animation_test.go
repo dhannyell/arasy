@@ -214,7 +214,7 @@ func TestSetTransformCancelsActiveTween(t *testing.T) {
 	assertVecNear(t, transform.Position, math2d.Vec2{X: 50})
 }
 
-func TestStopTransformTweenLeavesCurrentTransform(t *testing.T) {
+func TestRemoveTransformTweenLeavesCurrentTransform(t *testing.T) {
 	w := scene.NewWorld()
 	id := spawnAt(w, math2d.Vec2{})
 	w.SetTransformTween(id, scene.TransformTween{
@@ -226,11 +226,11 @@ func TestStopTransformTweenLeavesCurrentTransform(t *testing.T) {
 	})
 	w.Step(0.25, scene.StepConfig{})
 
-	w.StopTransformTween(id)
+	w.RemoveTransformTween(id)
 	w.Step(0.25, scene.StepConfig{})
 
 	if _, ok := w.TransformTween(id); ok {
-		t.Fatal("StopTransformTween did not remove the tween")
+		t.Fatal("RemoveTransformTween did not remove the tween")
 	}
 	transform, _ := w.Transform(id)
 	assertVecNear(t, transform.Position, math2d.Vec2{X: 2.5})
@@ -368,7 +368,7 @@ func TestSetCircleSpriteCancelsActiveTween(t *testing.T) {
 	assertColorNear(t, sprite.Color, render.RGBA(0.5, 0.5, 0.5, 1))
 }
 
-func TestStopCircleSpriteTweenLeavesCurrentSprite(t *testing.T) {
+func TestRemoveCircleSpriteTweenLeavesCurrentSprite(t *testing.T) {
 	w := scene.NewWorld()
 	id := spawnCircleSprite(w, scene.CircleSprite{
 		BaseSprite: scene.BaseSprite{Color: render.RGBA(0, 0, 0, 1)},
@@ -389,11 +389,11 @@ func TestStopCircleSpriteTweenLeavesCurrentSprite(t *testing.T) {
 	})
 	w.Step(0.25, scene.StepConfig{})
 
-	w.StopCircleSpriteTween(id)
+	w.RemoveCircleSpriteTween(id)
 	w.Step(0.25, scene.StepConfig{})
 
 	if _, ok := w.CircleSpriteTween(id); ok {
-		t.Fatal("StopCircleSpriteTween did not remove the tween")
+		t.Fatal("RemoveCircleSpriteTween did not remove the tween")
 	}
 	sprite, _ := w.CircleSprite(id)
 	assertNear(t, sprite.Radius, 3)

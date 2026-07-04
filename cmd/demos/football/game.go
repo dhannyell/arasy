@@ -344,7 +344,7 @@ func stopBallBlink(world *scene.World, ball scene.EntityID) {
 		return
 	}
 
-	world.StopCircleSpriteTween(ball)
+	world.RemoveCircleSpriteTween(ball)
 	sprite.Color = ballColor
 	sprite.Radius = ballVisualRadius
 	world.SetCircleSprite(ball, sprite)
