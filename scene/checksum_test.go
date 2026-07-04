@@ -77,6 +77,18 @@ func buildChecksumFixture(w *scene.World) (circle, rect scene.EntityID) {
 		BaseSprite: scene.BaseSprite{Layer: 1, Color: render.RGBA(0.1, 0.2, 0.3, 1)},
 		Radius:     2,
 	})
+	w.SetCircleSpriteTween(circle, scene.CircleSpriteTween{
+		From: scene.CircleSprite{
+			BaseSprite: scene.BaseSprite{Layer: 1, Color: render.RGBA(0.1, 0.2, 0.3, 1)},
+			Radius:     2,
+		},
+		To: scene.CircleSprite{
+			BaseSprite: scene.BaseSprite{Layer: 1, Color: render.RGBA(0.9, 0.8, 0.7, 1)},
+			Radius:     3,
+		},
+		Duration: 1,
+		Loop:     scene.LoopOnce,
+	})
 	w.SetVelocity(circle, scene.Velocity{Linear: math2d.Vec2{X: 1, Y: 0}})
 	w.SetAcceleration(circle, scene.Acceleration{Linear: math2d.Vec2{X: 0, Y: 1}})
 	w.SetDamping(circle, scene.Damping{Linear: 0.1})
@@ -123,6 +135,14 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 				sprite, _ := w.CircleSprite(circle)
 				sprite.Color = render.RGBA(0.9, 0.9, 0.9, 1)
 				w.SetCircleSprite(circle, sprite)
+			},
+		},
+		{
+			name: "circleSpriteTween.To.Radius",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				tween, _ := w.CircleSpriteTween(circle)
+				tween.To.Radius += 1
+				w.SetCircleSpriteTween(circle, tween)
 			},
 		},
 		{

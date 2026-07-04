@@ -12,7 +12,9 @@ import (
 const (
 	tagMeta byte = iota
 	tagTransform
+	tagTransformTween
 	tagCircleSprite
+	tagCircleSpriteTween
 	tagRectSprite
 	tagVelocity
 	tagAcceleration
@@ -22,7 +24,7 @@ const (
 	tagRectCollider
 )
 
-const ChecksumComponentMaps = 9
+const ChecksumComponentMaps = 11
 
 // Checksum returns a deterministic hash of all entity positions and velocities.
 // Two worlds with identical simulation state always produce the same value.
@@ -46,6 +48,24 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], t.Scale.X)
 		hashF64(h, buf[:], t.Scale.Y)
 	})
+	hashComponent(h, buf[:], tagTransformTween, w.transformTweens, func(tw TransformTween) {
+		hashF64(h, buf[:], tw.From.Rotation)
+		hashF64(h, buf[:], tw.From.Scale.X)
+		hashF64(h, buf[:], tw.From.Scale.Y)
+		hashF64(h, buf[:], tw.From.Position.X)
+		hashF64(h, buf[:], tw.From.Position.Y)
+		hashF64(h, buf[:], tw.To.Rotation)
+		hashF64(h, buf[:], tw.To.Scale.X)
+		hashF64(h, buf[:], tw.To.Scale.Y)
+		hashF64(h, buf[:], tw.To.Position.X)
+		hashF64(h, buf[:], tw.To.Position.Y)
+		hashF64(h, buf[:], tw.Duration)
+		hashF64(h, buf[:], tw.Elapsed)
+		hashU64(h, buf[:], uint64(tw.Ease))
+		hashU64(h, buf[:], uint64(tw.Loop))
+		hashF64(h, buf[:], boolToFloat(tw.Done))
+		hashF64(h, buf[:], boolToFloat(tw.RemoveOnComplete))
+	})
 	hashComponent(h, buf[:], tagCircleSprite, w.circleSprites, func(s CircleSprite) {
 		hashU64(h, buf[:], uint64(int64(s.Layer)))
 		hashF64(h, buf[:], s.Color.R)
@@ -53,6 +73,16 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], s.Color.B)
 		hashF64(h, buf[:], s.Color.A)
 		hashF64(h, buf[:], s.Radius)
+	})
+	hashComponent(h, buf[:], tagCircleSpriteTween, w.circleTweens, func(tw CircleSpriteTween) {
+		hashCircleSprite(h, buf[:], tw.From)
+		hashCircleSprite(h, buf[:], tw.To)
+		hashF64(h, buf[:], tw.Duration)
+		hashF64(h, buf[:], tw.Elapsed)
+		hashU64(h, buf[:], uint64(tw.Ease))
+		hashU64(h, buf[:], uint64(tw.Loop))
+		hashF64(h, buf[:], boolToFloat(tw.Done))
+		hashF64(h, buf[:], boolToFloat(tw.RemoveOnComplete))
 	})
 	hashComponent(h, buf[:], tagRectSprite, w.rectSprites, func(s RectSprite) {
 		hashU64(h, buf[:], uint64(int64(s.Layer)))
@@ -96,6 +126,15 @@ func (w *World) Checksum() uint64 {
 	return h.Sum64()
 }
 
+func hashCircleSprite(h hash.Hash64, buf []byte, s CircleSprite) {
+	hashU64(h, buf, uint64(int64(s.Layer)))
+	hashF64(h, buf, s.Color.R)
+	hashF64(h, buf, s.Color.G)
+	hashF64(h, buf, s.Color.B)
+	hashF64(h, buf, s.Color.A)
+	hashF64(h, buf, s.Radius)
+}
+
 func hashComponent[T any](h hash.Hash64, buf []byte, tag byte,
 	m map[EntityID]T, write func(T)) {
 	ids := make([]EntityID, 0, len(m))
@@ -137,4 +176,12 @@ func hashU64(h hash.Hash64, buf []byte, v uint64) {
 		slog.Error("failed to write hash", "err", err)
 		return
 	}
+}
+
+func boolToFloat(b bool) float64 {
+	if b {
+		return 1.0
+	}
+
+	return 0.0
 }

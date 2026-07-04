@@ -8,6 +8,7 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/frameforge/scene"
 )
 
 func TestFootballControlledPlayerRewindsWithWorld(t *testing.T) {
@@ -61,6 +62,87 @@ func TestHUDLayoutKeepsWidgetsInsideViewport(t *testing.T) {
 	}
 	if !viewport.Contains(reset.Min) || !viewport.Contains(math2d.Vec2{X: reset.Max.X - 1, Y: reset.Max.Y - 1}) {
 		t.Fatalf("reset rect %+v should fit inside viewport %+v", reset, viewport)
+	}
+}
+
+func TestResetBallInstallsTweenFromCurrentPosition(t *testing.T) {
+	demo := BuildPlayableDemoWorld()
+	start := math2d.Vec2{X: fieldLeft, Y: fieldCenter.Y}
+	demo.World.SetTransform(demo.Ball, scene.Transform{
+		Position: start,
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	demo.World.SetVelocity(demo.Ball, scene.Velocity{Linear: math2d.Vec2{X: 10}})
+
+	resetBall(demo.World, demo.Ball)
+
+	transform, _ := demo.World.Transform(demo.Ball)
+	if transform.Position != start {
+		t.Fatalf("resetBall teleported ball to %v, want it to stay at %v until the tween advances", transform.Position, start)
+	}
+	velocity, _ := demo.World.Velocity(demo.Ball)
+	if velocity.Linear != (math2d.Vec2{}) {
+		t.Fatalf("resetBall velocity = %v, want zero", velocity.Linear)
+	}
+	tween, ok := demo.World.TransformTween(demo.Ball)
+	if !ok {
+		t.Fatal("resetBall did not install a transform tween")
+	}
+	if tween.From.Position != start {
+		t.Fatalf("tween starts at %v, want %v", tween.From.Position, start)
+	}
+	if tween.To.Position != fieldCenter {
+		t.Fatalf("tween ends at %v, want %v", tween.To.Position, fieldCenter)
+	}
+	if _, ok := demo.World.CircleSpriteTween(demo.Ball); ok {
+		t.Fatal("resetBall should not install the goal blink tween")
+	}
+}
+
+func TestBallBlinkTweensAndRestoresSprite(t *testing.T) {
+	demo := BuildPlayableDemoWorld()
+
+	startBallBlink(demo.World, demo.Ball)
+
+	tween, ok := demo.World.CircleSpriteTween(demo.Ball)
+	if !ok {
+		t.Fatal("startBallBlink did not install a circle sprite tween")
+	}
+	if tween.From.Color != ballColor {
+		t.Fatalf("blink starts from %v, want %v", tween.From.Color, ballColor)
+	}
+	if tween.To.Color == ballColor {
+		t.Fatal("blink target color should differ from the ball color")
+	}
+	if tween.To.Radius <= ballVisualRadius {
+		t.Fatalf("blink target radius = %v, want > %v", tween.To.Radius, ballVisualRadius)
+	}
+
+	demo.World.Step(goalBlinkPulseTime/2, scene.StepConfig{})
+	stopBallBlink(demo.World, demo.Ball)
+
+	if _, ok := demo.World.CircleSpriteTween(demo.Ball); ok {
+		t.Fatal("stopBallBlink did not remove the circle sprite tween")
+	}
+	sprite, _ := demo.World.CircleSprite(demo.Ball)
+	if sprite.Color != ballColor {
+		t.Fatalf("ball color after stop = %v, want %v", sprite.Color, ballColor)
+	}
+	if sprite.Radius != ballVisualRadius {
+		t.Fatalf("ball radius after stop = %v, want %v", sprite.Radius, ballVisualRadius)
+	}
+}
+
+func TestGoalBlinkDoneUsesDurationSeconds(t *testing.T) {
+	lastGoalTick := uint64(10)
+	earlyTick := lastGoalTick + 36
+	doneTick := lastGoalTick + uint64(goalBlinkDuration*goalBlinkSimHz)
+
+	if goalBlinkDone(earlyTick, lastGoalTick) {
+		t.Fatalf("blink ended at tick %d, want it to last %.1fs", earlyTick, goalBlinkDuration)
+	}
+	if !goalBlinkDone(doneTick, lastGoalTick) {
+		t.Fatalf("blink still active at tick %d, want done after %.1fs", doneTick, goalBlinkDuration)
 	}
 }
 
