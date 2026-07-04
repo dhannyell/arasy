@@ -38,10 +38,14 @@ func (ctx *UpdateContext) HoldSimulation() { ctx.simulationHeld = true }
 type RenderContext struct {
 	World *scene.World
 	UI    ui.Drawer
-	Time  float64
-	Dt    float64
-	Log   *slog.Logger
-	Tick  uint64
+	// Time is the monotonic render-elapsed time in seconds. Not tied to
+	// simulation ticks — use it for visual oscillations and UI animations.
+	Time float64
+	// Dt is the render-frame delta in seconds. Zero when called via Commands().
+	// Use it for frame-rate-independent easing and UI animations.
+	Dt   float64
+	Log  *slog.Logger
+	Tick uint64
 
 	camera render.Camera
 }

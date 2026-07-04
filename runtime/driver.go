@@ -34,9 +34,12 @@ type Driver struct {
 	warnedManualStep bool
 
 	// UI
-	viewport math2d.Rect
-	uiState  ui.State
-	uiTheme  ui.Theme
+	viewport   math2d.Rect
+	uiState    ui.State
+	uiTheme    ui.Theme
+	renderTime float64
+	renderDt   float64
+	animStore  ui.AnimStore
 
 	pendingReset bool
 
@@ -311,14 +314,11 @@ func (d *Driver) warnManualStepOnce() {
 	d.log.Warn("game called World.Step inside Update; auto-step skipped; migrate to PostStep (AD-1)")
 }
 
+// Commands returns render commands without advancing the render clock.
+// Prefer Frame(elapsed) when elapsed is available; this helper is for
+// callers that do not track render-frame timing.
 func (d *Driver) Commands() []render.Command {
-	uiInst := d.newRenderUI()
-	ctx := d.makeRenderContext(uiInst)
-	gameCmds := d.game.Render(&ctx)
-	cmds := append([]render.Command(nil), gameCmds...)
-	cmds = append(cmds, d.debugCommands(gameCmds, ctx.Camera())...)
-	cmds = append(cmds, uiInst.Commands()...)
-	return cmds
+	return d.Frame(0).Commands
 }
 
 func (d *Driver) State() DriveState {
@@ -355,7 +355,10 @@ func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 // the same value — use it to verify a Replay reproduced a recording exactly.
 func (d *Driver) Checksum() uint64 { return d.world.Checksum() }
 
-func (d *Driver) Frame() Frame {
+func (d *Driver) Frame(elapsed time.Duration) Frame {
+	d.renderDt = elapsed.Seconds()
+	d.renderTime += d.renderDt
+	d.animStore.AdvanceFrame()
 	uiInst := d.newRenderUI()
 	ctx := d.makeRenderContext(uiInst)
 	gameCmds := d.game.Render(&ctx)
@@ -403,6 +406,9 @@ func (d *Driver) newRenderUI() *ui.UI {
 		cam,
 		d.uiTheme,
 		d.cfg.Camera.Viewport,
+		&d.animStore,
+		d.renderDt,
+		d.renderTime,
 	)
 }
 
@@ -448,8 +454,8 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	return RenderContext{
 		World:  d.world,
 		UI:     uiInst,
-		Time:   float64(d.tick) * d.clock.DT(),
-		Dt:     d.clock.DT(),
+		Time:   d.renderTime,
+		Dt:     d.renderDt,
 		Log:    d.log.With("scope", "game"),
 		Tick:   d.tick,
 		camera: d.cameraForSurface(),
@@ -475,6 +481,9 @@ func (d *Driver) doReset() {
 	}
 	d.clock.Reset()
 	d.uiState = ui.State{}
+	d.animStore = ui.AnimStore{}
+	d.renderTime = 0
+	d.renderDt = 0
 	d.input.Reset()
 	if d.recorder != nil {
 		d.recorder.Clear()
