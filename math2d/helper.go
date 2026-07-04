@@ -23,3 +23,11 @@ func ClampRect(rect Rect, min, max float64) Rect {
 	}
 	return rect
 }
+
+func Frac(x float64) float64 {
+	return x - float64(int(x))
+}
+
+func Lerp(a, b, t float64) float64 {
+	return a + (b-a)*t
+}

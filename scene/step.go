@@ -64,6 +64,8 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 
 	w.ApplyDamping(dt)
 
+	w.AdvanceAnimations(dt)
+
 	w.stepTick++
 
 	return stats
