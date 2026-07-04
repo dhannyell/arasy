@@ -10,6 +10,17 @@ import (
 
 const defaultEffectDuration = 1.0
 
+const (
+	defaultToastDuration = 2.0
+	toastSlideStart      = 0.0
+	toastSlideEnd        = 0.25
+	toastExitDuration    = 0.25
+	toastPulseStart      = 0.0
+	toastPulseEnd        = 0.0
+	toastPulseAmount     = 0.0
+	toastPulseHz         = 0.0
+)
+
 // EffectOptions configures UI.Effect, the mid-level animation API.
 // Key follows SequenceKeyed semantics: key=0 means inactive and clears the
 // retained trigger, while a new non-zero key restarts the effect.
@@ -72,32 +83,25 @@ type FX struct {
 
 func (u *UI) FX() FX { return FX{ui: u} }
 
-type ToastOptions struct {
-	Key      uint64
-	Duration float64
-
-	Layer int
-
+// ToastStyle overrides the toast appearance. The zero value pulls every
+// field from the active Theme (Panel for the box, Label for the text).
+type ToastStyle struct {
 	Fill        render.Color
 	Border      render.Color
 	StrokeWidth float64
 	TextColor   render.Color
 	TextSize    float64
+}
 
-	FromY    float64
-	UseFromY bool
-
-	EnterStart float64
-	EnterEnd   float64
-	EnterEase  ease.Kind
-	ExitStart  float64
-	ExitEnd    float64
-	ExitEase   ease.Kind
-
-	PulseStart     float64
-	PulseEnd       float64
-	PulseAmount    float64
-	PulseFrequency float64
+// ToastOptions configures FX.Toast. Key follows SequenceKeyed semantics:
+// key=0 means inactive; a new non-zero key restarts the toast. The motion
+// recipe (slide-in, fade-out, pulse) is fixed by design; for custom motion,
+// drop down to UI.Effect and compose the primitives directly.
+type ToastOptions struct {
+	Key      uint64
+	Duration float64 // 0 = default (2s)
+	Layer    int     // 0 = auto (next UI layer)
+	Style    ToastStyle
 }
 
 // Toast renders a ready-made panel+text callout in reference-canvas space.
@@ -113,15 +117,21 @@ func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastO
 	if fx.ui == nil {
 		return false
 	}
-	opts = fx.toastDefaults(rect, opts)
+	opts = fx.toastDefaults(opts)
 	effect := fx.ui.Effect(id, EffectOptions{Key: opts.Key, Duration: opts.Duration})
 	if effect.Done() {
 		return false
 	}
 
-	drawRect := effect.SlideY(rect, opts.FromY, rect.Min.Y, opts.EnterStart, opts.EnterEnd, opts.EnterEase)
-	alpha := effect.FadeOut(opts.ExitStart, opts.ExitEnd, opts.ExitEase)
-	scale := effect.Pulse(opts.PulseStart, opts.PulseEnd, opts.PulseAmount, opts.PulseFrequency)
+	fromY := rect.Min.Y - rect.Height()*2
+	exitStart := opts.Duration - toastExitDuration
+	if exitStart < toastSlideEnd {
+		exitStart = toastSlideEnd
+	}
+
+	drawRect := effect.SlideY(rect, fromY, rect.Min.Y, toastSlideStart, toastSlideEnd, ease.Linear)
+	alpha := effect.FadeOut(exitStart, opts.Duration, ease.Linear)
+	scale := effect.Pulse(toastPulseStart, toastPulseEnd, toastPulseAmount, toastPulseHz)
 
 	layer := opts.Layer
 	if layer == 0 {
@@ -131,16 +141,16 @@ func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastO
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
 			Rect:        fx.ui.rectToWorld(drawRect, space),
-			Fill:        multiplyAlpha(opts.Fill, alpha),
-			Stroke:      multiplyAlpha(opts.Border, alpha),
-			StrokeWidth: fx.ui.sizeToWorld(opts.StrokeWidth, space),
+			Fill:        multiplyAlpha(opts.Style.Fill, alpha),
+			Stroke:      multiplyAlpha(opts.Style.Border, alpha),
+			StrokeWidth: fx.ui.sizeToWorld(opts.Style.StrokeWidth, space),
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
 			Position:    fx.ui.toWorld(drawRect.Center(), space),
 			Text:        text,
-			Color:       multiplyAlpha(opts.TextColor, alpha),
-			Size:        fx.ui.sizeToWorld(opts.TextSize*scale, space),
+			Color:       multiplyAlpha(opts.Style.TextColor, alpha),
+			Size:        fx.ui.sizeToWorld(opts.Style.TextSize*scale, space),
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		},
@@ -148,39 +158,24 @@ func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastO
 	return true
 }
 
-func (fx FX) toastDefaults(rect math2d.Rect, opts ToastOptions) ToastOptions {
+func (fx FX) toastDefaults(opts ToastOptions) ToastOptions {
 	if opts.Duration <= 0 {
-		opts.Duration = 2.0
+		opts.Duration = defaultToastDuration
 	}
-	if opts.EnterEnd <= 0 {
-		opts.EnterEnd = 0.25
+	if opts.Style.Fill == (render.Color{}) {
+		opts.Style.Fill = fx.ui.theme.Panel.Background
 	}
-	if opts.ExitEnd <= 0 {
-		opts.ExitEnd = opts.Duration
+	if opts.Style.Border == (render.Color{}) {
+		opts.Style.Border = fx.ui.theme.Panel.Border
 	}
-	if opts.ExitStart <= 0 {
-		opts.ExitStart = opts.Duration - 0.25
-		if opts.ExitStart < opts.EnterEnd {
-			opts.ExitStart = opts.EnterEnd
-		}
+	if opts.Style.StrokeWidth == 0 {
+		opts.Style.StrokeWidth = fx.ui.theme.Panel.BorderWidth
 	}
-	if !opts.UseFromY {
-		opts.FromY = rect.Min.Y - rect.Height()*2
+	if opts.Style.TextColor == (render.Color{}) {
+		opts.Style.TextColor = fx.ui.theme.Label.Color
 	}
-	if opts.Fill == (render.Color{}) {
-		opts.Fill = fx.ui.theme.Panel.Background
-	}
-	if opts.Border == (render.Color{}) {
-		opts.Border = fx.ui.theme.Panel.Border
-	}
-	if opts.StrokeWidth == 0 {
-		opts.StrokeWidth = fx.ui.theme.Panel.BorderWidth
-	}
-	if opts.TextColor == (render.Color{}) {
-		opts.TextColor = fx.ui.theme.Label.Color
-	}
-	if opts.TextSize == 0 {
-		opts.TextSize = fx.ui.theme.Label.Size
+	if opts.Style.TextSize == 0 {
+		opts.Style.TextSize = fx.ui.theme.Label.Size
 	}
 	return opts
 }

@@ -50,7 +50,7 @@ func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 	}
 }
 
-func (w *World) BounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
+func (w *World) bounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
 	for id, velocity := range w.velocities {
 		if velocity.Linear.X == 0 && velocity.Linear.Y == 0 {
 			continue
@@ -139,7 +139,7 @@ func wallRestitutionFactor(w *World, id EntityID, cfg BounceConfig) float64 {
 	return body.Restitution
 }
 
-func (w *World) DetectCircleOverlaps() []Contact {
+func (w *World) detectCircleOverlaps() []Contact {
 	entities := w.circleColliderEntities()
 	pairs := make([]entityPair, 0, len(entities))
 
@@ -152,10 +152,10 @@ func (w *World) DetectCircleOverlaps() []Contact {
 	return w.detectOverlapsForPairs(pairs)
 }
 
-func (w *World) DetectCircleOverlapsGrid(cellSize float64) []Contact {
+func (w *World) detectCircleOverlapsGrid(cellSize float64) []Contact {
 	if cellSize <= 0 {
 		w.debugGridCells = nil
-		return w.DetectCircleOverlaps()
+		return w.detectCircleOverlaps()
 	}
 
 	grid := newSpatialHashGrid(cellSize)
@@ -166,25 +166,6 @@ func (w *World) DetectCircleOverlapsGrid(cellSize float64) []Contact {
 }
 
 func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
-	if cellSize <= 0 {
-		entities := w.circleColliderEntities()
-		pairs := make([]entityPair, 0, len(entities))
-
-		for i := range entities {
-			for j := i + 1; j < len(entities); j++ {
-				pairs = append(pairs, makeEntityPair(entities[i], entities[j]))
-			}
-		}
-
-		w.debugGridCells = nil
-
-		return collisionStats{
-			contacts:        w.detectOverlapsForPairs(pairs),
-			broadPhasePairs: len(pairs),
-			gridCells:       0,
-		}
-	}
-
 	grid := newSpatialHashGrid(cellSize)
 	grid.populate(w)
 
@@ -426,13 +407,13 @@ func (w *World) rectVsRect(pair entityPair, colliderA, colliderB RectCollider) (
 	}, true
 }
 
-func (w *World) ResolveCircleOverlaps() {
-	contacts := w.DetectCircleOverlaps()
+func (w *World) resolveCircleOverlaps() {
+	contacts := w.detectCircleOverlaps()
 	w.resolveContacts(contacts)
 }
 
-func (w *World) ResolveCircleOverlapsGrid(cellSize float64) {
-	contacts := w.DetectCircleOverlapsGrid(cellSize)
+func (w *World) resolveCircleOverlapsGrid(cellSize float64) {
+	contacts := w.detectCircleOverlapsGrid(cellSize)
 	w.resolveContacts(contacts)
 }
 

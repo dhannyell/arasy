@@ -314,20 +314,13 @@ func (d *Driver) warnManualStepOnce() {
 	d.log.Warn("game called World.Step inside Update; auto-step skipped; migrate to PostStep (AD-1)")
 }
 
-// Commands returns render commands without advancing the render clock.
-// Prefer Frame(elapsed) when elapsed is available; this helper is for
-// callers that do not track render-frame timing.
-func (d *Driver) Commands() []render.Command {
-	return d.Frame(0).Commands
-}
-
 func (d *Driver) State() DriveState {
 	state := DriveState{
 		Tick:            d.tick,
 		Paused:          d.controls.paused,
 		Speed:           d.controls.speed,
 		DebugLayers:     d.controls.debugLayers,
-		HistoryLen:      d.HistoryLen(),
+		HistoryLen:      d.historyLen(),
 		MaxRecordedTick: d.maxTick,
 	}
 	if d.recorder != nil {
@@ -341,14 +334,12 @@ func (d *Driver) State() DriveState {
 }
 
 func (d *Driver) Config() Config { return d.cfg }
-func (d *Driver) Tick() uint64   { return d.tick }
-func (d *Driver) HistoryLen() int {
+func (d *Driver) historyLen() int {
 	if d.recorder == nil {
 		return 0
 	}
 	return d.recorder.Len()
 }
-func (d *Driver) CurrentSpeed() float64 { return d.controls.speed }
 
 // Checksum returns a deterministic hash of the current world state. Two
 // driver runs that reach the same tick via the same inputs always produce

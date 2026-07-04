@@ -74,8 +74,8 @@ func TestHoldSimulationSkipsStep(t *testing.T) {
 
 	driver.Step()
 
-	if driver.Tick() != 1 {
-		t.Fatalf("driver tick = %d, want 1", driver.Tick())
+	if driver.State().Tick != 1 {
+		t.Fatalf("driver tick = %d, want 1", driver.State().Tick)
 	}
 	if driver.world.StepTick() != 0 {
 		t.Fatalf("world StepTick = %d, want 0", driver.world.StepTick())

@@ -29,11 +29,11 @@ func BenchmarkBreakoutScrub(b *testing.B) {
 	driver.Step()
 
 	// Run to tick 2000.
-	for driver.Tick() < 2000 {
+	for driver.State().Tick < 2000 {
 		driver.Step()
 	}
 
-	fromTick := driver.Tick()
+	fromTick := driver.State().Tick
 	target := uint64(1000)
 
 	b.ResetTimer()
