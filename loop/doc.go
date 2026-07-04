@@ -1,22 +1,8 @@
-// Package loop provides helpers for deterministic update loops.
+// Package loop provides fixed-step planning helpers used by the runtime.
 //
-// The package is focused on fixed timestep simulation. A fixed timestep lets
-// simulation code advance in stable increments, while rendering can happen at a
-// different rate.
-//
-// Basic usage:
-//
-//	fixed := loop.NewFixedStep(time.Second / 60)
-//
-//	fixed.Add(elapsed)
-//
-//	for fixed.ShouldUpdate() {
-//		update(fixed.Step())
-//		fixed.Consume()
-//	}
-//
-//	render(fixed.Alpha())
-//
-// The interpolation alpha returned by FixedStep.Alpha can be used by renderers
-// to draw a state between the previous and next simulation snapshots.
+// Steps converts elapsed render time into a number of fixed simulation steps,
+// preserving leftover time in an accumulator and optionally clamping catch-up
+// work. Hosts that use runtime.Driver should report elapsed time through
+// Driver.AdvanceTime or call Driver.Step for deterministic tick-driven flows
+// instead of consuming this package directly.
 package loop

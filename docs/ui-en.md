@@ -210,9 +210,9 @@ ctx.UI.FX().ToastIn("pause", "Paused", rect, ui.SpaceScreen, ui.ToastOptions{Key
 clears the retained trigger; a new non-zero value restarts the animation. Use a
 tick or monotonically increasing counter from game state to trigger the effect.
 
-`ToastOptions` can also tune duration, layer, colors, text, enter position, fade,
-and pulse. Keep these adjustments small. If the recipe starts needing many
-custom fields, prefer `Effect`.
+`ToastOptions` can also tune duration, layer, and appearance through
+`ToastStyle`. The motion recipe is fixed by design; if you need to change enter
+motion, fade, or pulse, prefer `Effect`.
 
 ### `Effect`: Composition Without Boilerplate
 
@@ -252,18 +252,19 @@ hover/press through `Approach` and `ButtonTheme.HoverSpeed`/`PressSpeed`.
 ### Evolution Direction
 
 New recipes should avoid growing `ToastOptions` indefinitely. When a family of
-effects matures, prefer extracting reusable presets and styles instead of adding
-more loose flags:
+effects matures, prefer creating a new `FX` method with minimal options instead
+of adding more loose flags:
 
 ```go
 ctx.UI.FX().Toast("goal", "GOL!", rect, ui.ToastOptions{
     Key: goalTick,
-    // Desired future: Style: ui.ToastSuccessStyle, Motion: ui.MotionBanner.
+    Style: ui.ToastStyle{TextSize: 24},
 })
 ```
 
-`FX` should be quick and opinionated. `Effect` should be composable. The
-primitives should provide fine control without forcing new recipes.
+`FX` should be quick and opinionated. `Effect` should be composable, including
+custom motion. The primitives should provide fine control without forcing new
+recipes.
 
 ## IDs
 

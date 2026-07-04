@@ -74,7 +74,7 @@ func TestDriverFrameUsesRenderElapsedForContextTime(t *testing.T) {
 	driver.Step()
 	driver.Frame(100 * time.Millisecond)
 	driver.Frame(250 * time.Millisecond)
-	driver.Commands()
+	driver.Frame(0)
 
 	if len(game.values) != 3 {
 		t.Fatalf("render calls = %d, want 3", len(game.values))

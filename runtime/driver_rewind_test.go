@@ -108,8 +108,8 @@ func TestDriverBackToTickRestoresTargetSnapshot(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != 2 {
-		t.Fatalf("tick after back to tick = %v, want 2", driver.Tick())
+	if driver.State().Tick != 2 {
+		t.Fatalf("tick after back to tick = %v, want 2", driver.State().Tick)
 	}
 
 	transform, ok := driver.world.Transform(game.player)
@@ -152,8 +152,8 @@ func TestDriverBackToTickIsIdempotentForRepeatedTarget(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlBackToTick, Tick: 2})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != 2 {
-		t.Fatalf("tick after repeated back to tick = %v, want 2", driver.Tick())
+	if driver.State().Tick != 2 {
+		t.Fatalf("tick after repeated back to tick = %v, want 2", driver.State().Tick)
 	}
 
 	transform, ok := driver.world.Transform(game.player)
@@ -182,8 +182,8 @@ func TestDriverBackSecondsRestoresRelativeSnapshot(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlBackSeconds, Seconds: 2.0 / 60.0})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != 3 {
-		t.Fatalf("tick after back seconds = %v, want 3", driver.Tick())
+	if driver.State().Tick != 3 {
+		t.Fatalf("tick after back seconds = %v, want 3", driver.State().Tick)
 	}
 
 	transform, ok := driver.world.Transform(game.player)
@@ -214,8 +214,8 @@ func TestDriverPlayAfterBackToTickContinuesFromRestoredTick(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlPlay})
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
 
-	if driver.Tick() != 3 {
-		t.Fatalf("tick after play following back to tick = %v, want 3", driver.Tick())
+	if driver.State().Tick != 3 {
+		t.Fatalf("tick after play following back to tick = %v, want 3", driver.State().Tick)
 	}
 
 	transform, ok := driver.world.Transform(game.player)
@@ -232,23 +232,23 @@ func TestDriverSlowMotionSpeedAccumulatesFractionalTicks(t *testing.T) {
 
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.5})
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-	if driver.Tick() != 0 {
-		t.Fatalf("tick after first half-speed advance = %v, want 0", driver.Tick())
+	if driver.State().Tick != 0 {
+		t.Fatalf("tick after first half-speed advance = %v, want 0", driver.State().Tick)
 	}
 
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-	if driver.Tick() != 1 {
-		t.Fatalf("tick after second half-speed advance = %v, want 1", driver.Tick())
+	if driver.State().Tick != 1 {
+		t.Fatalf("tick after second half-speed advance = %v, want 1", driver.State().Tick)
 	}
 
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-	if driver.Tick() != 1 {
-		t.Fatalf("tick after third half-speed advance = %v, want 1", driver.Tick())
+	if driver.State().Tick != 1 {
+		t.Fatalf("tick after third half-speed advance = %v, want 1", driver.State().Tick)
 	}
 
 	driver.AdvanceTime(time.Second/60 + time.Nanosecond)
-	if driver.Tick() != 2 {
-		t.Fatalf("tick after fourth half-speed advance = %v, want 2", driver.Tick())
+	if driver.State().Tick != 2 {
+		t.Fatalf("tick after fourth half-speed advance = %v, want 2", driver.State().Tick)
 	}
 }
 
@@ -256,18 +256,18 @@ func TestDriverSetSpeedClampsFractionalRange(t *testing.T) {
 	driver := NewDriver(&inputBackGame{}, slog.Default())
 
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.5})
-	if driver.CurrentSpeed() != 0.5 {
-		t.Fatalf("speed = %v, want 0.5", driver.CurrentSpeed())
+	if driver.State().Speed != 0.5 {
+		t.Fatalf("speed = %v, want 0.5", driver.State().Speed)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 0.01})
-	if driver.CurrentSpeed() != 0.25 {
-		t.Fatalf("low clamped speed = %v, want 0.25", driver.CurrentSpeed())
+	if driver.State().Speed != 0.25 {
+		t.Fatalf("low clamped speed = %v, want 0.25", driver.State().Speed)
 	}
 
 	driver.Control(ControlCommand{Kind: ControlSetSpeed, Speed: 99})
-	if driver.CurrentSpeed() != 8 {
-		t.Fatalf("high clamped speed = %v, want 8", driver.CurrentSpeed())
+	if driver.State().Speed != 8 {
+		t.Fatalf("high clamped speed = %v, want 8", driver.State().Speed)
 	}
 }
 

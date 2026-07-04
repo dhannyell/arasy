@@ -5,7 +5,7 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 )
 
-func (w *World) AdvanceAnimations(dt float64) {
+func (w *World) advanceAnimations(dt float64) {
 	w.advanceTransformTweens(dt)
 	w.advanceCircleSpriteTweens(dt)
 }

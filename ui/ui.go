@@ -23,6 +23,8 @@ type UI struct {
 	time      float64
 }
 
+// New constructs the render face used by the runtime driver each Render/Init.
+// Games receive UI values through context and should not build them directly.
 func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, theme Theme, reference math2d.Rect, store *AnimStore, dt, time float64) *UI {
 	return &UI{
 		state:     state,
@@ -38,10 +40,10 @@ func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, th
 	}
 }
 
-// NewUpdate builds the interaction face used during Update: it carries the
-// coalesced PointerFrame for the tick so Clicked/Pressed can process events.
-// cursorPos/inside are seeded from the frame for hit-tests that don't depend on
-// the event list.
+// NewUpdate constructs the interaction face used by the runtime driver each
+// Update. Games receive UI values through context and should not build them
+// directly. It carries the coalesced PointerFrame for the tick so
+// Clicked/Pressed can process events.
 func NewUpdate(state *State, frame input.PointerFrame, cam render.Camera, theme Theme, reference math2d.Rect) *UI {
 	return &UI{
 		state:     state,

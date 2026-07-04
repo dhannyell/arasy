@@ -57,7 +57,7 @@ func (w *World) RenderCommands() []render.Command {
 	return commands
 }
 
-func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
+func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
 	ids := make([]EntityID, 0, len(w.circleColliders)+len(w.rectColliders))
 	for id := range w.circleColliders {
 		ids = append(ids, id)
@@ -112,7 +112,7 @@ func (w *World) DebugColliderCommands(color render.Color, strokeWidth float64, l
 	return commands
 }
 
-func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth, normalLength float64, layer int) []render.Command {
+func (w *World) debugContactCommands(color render.Color, pointRadius, lineWidth, normalLength float64, layer int) []render.Command {
 	contacts := w.Contacts()
 	commands := make([]render.Command, 0, len(contacts)*2)
 
@@ -154,7 +154,7 @@ func (w *World) DebugContactCommands(color render.Color, pointRadius, lineWidth,
 	return commands
 }
 
-func (w *World) DebugGridCommands(color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
+func (w *World) debugGridCommands(color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
 	if len(w.debugGridCells) == 0 {
 		return nil
 	}
@@ -184,7 +184,7 @@ func (w *World) DebugGridCommands(color render.Color, strokeWidth, dashLength fl
 	return commands
 }
 
-func (w *World) DebugActiveGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
+func (w *World) debugActiveGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
 	if len(w.debugGridCells) == 0 {
 		return nil
 	}
@@ -220,7 +220,7 @@ func (w *World) DebugActiveGridCommands(fill, stroke render.Color, strokeWidth f
 	return commands
 }
 
-func (w *World) DebugCandidateGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
+func (w *World) debugCandidateGridCommands(fill, stroke render.Color, strokeWidth float64, layer int) []render.Command {
 	if len(w.debugGridCells) == 0 {
 		return nil
 	}
@@ -260,7 +260,7 @@ func (w *World) DebugCandidateGridCommands(fill, stroke render.Color, strokeWidt
 	return commands
 }
 
-func DebugGridAreaCommands(bounds math2d.Rect, cellSize float64, color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
+func debugGridAreaCommands(bounds math2d.Rect, cellSize float64, color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
 	if cellSize <= 0 || bounds.Width() <= 0 || bounds.Height() <= 0 {
 		return nil
 	}

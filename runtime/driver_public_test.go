@@ -37,8 +37,8 @@ func TestDriverAdvanceTimeClampsAndDiscardsExcess(t *testing.T) {
 	if stats.Steps != 5 || !stats.Clamped {
 		t.Fatalf("stats = %+v, want 5 clamped steps", stats)
 	}
-	if driver.Tick() != 5 || game.updates != 5 {
-		t.Fatalf("tick=%d updates=%d, want 5/5", driver.Tick(), game.updates)
+	if driver.State().Tick != 5 || game.updates != 5 {
+		t.Fatalf("tick=%d updates=%d, want 5/5", driver.State().Tick, game.updates)
 	}
 
 	stats = driver.AdvanceTime(0)
@@ -60,8 +60,8 @@ func TestDriverAdvanceTimeAccumulatesFractionalElapsed(t *testing.T) {
 	if stats.Steps != 1 || stats.Alpha != 0 {
 		t.Fatalf("second stats = %+v, want 1 step alpha 0", stats)
 	}
-	if driver.Tick() != 1 || game.updates != 1 {
-		t.Fatalf("tick=%d updates=%d, want 1/1", driver.Tick(), game.updates)
+	if driver.State().Tick != 1 || game.updates != 1 {
+		t.Fatalf("tick=%d updates=%d, want 1/1", driver.State().Tick, game.updates)
 	}
 }
 
@@ -92,8 +92,8 @@ func TestDriverControlStepRunsWhenAdvanceTimeHasNoElapsed(t *testing.T) {
 	driver.Control(runtime.ControlCommand{Kind: runtime.ControlStep})
 	stats := driver.AdvanceTime(0)
 
-	if stats.Steps != 1 || driver.Tick() != 1 || game.updates != 1 {
-		t.Fatalf("stats=%+v tick=%d updates=%d, want one manual step", stats, driver.Tick(), game.updates)
+	if stats.Steps != 1 || driver.State().Tick != 1 || game.updates != 1 {
+		t.Fatalf("stats=%+v tick=%d updates=%d, want one manual step", stats, driver.State().Tick, game.updates)
 	}
 }
 
@@ -116,8 +116,8 @@ func TestDriverStepAndAdvanceTimeReachSameStateForSameSimulatedDuration(t *testi
 	if stepGame.totalDT != timeGame.totalDT {
 		t.Fatalf("total dt step=%v time=%v, want equal", stepGame.totalDT, timeGame.totalDT)
 	}
-	if stepDriver.Tick() != timeDriver.Tick() {
-		t.Fatalf("ticks step=%d time=%d, want equal", stepDriver.Tick(), timeDriver.Tick())
+	if stepDriver.State().Tick != timeDriver.State().Tick {
+		t.Fatalf("ticks step=%d time=%d, want equal", stepDriver.State().Tick, timeDriver.State().Tick)
 	}
 }
 

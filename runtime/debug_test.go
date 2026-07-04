@@ -180,7 +180,7 @@ func TestDebugRuntimeStatsLinesIncludesHistoryRangeWhenRecorderPresent(t *testin
 func TestDriverCommandsOmitsDebugOverlayWhenNoLayersEnabled(t *testing.T) {
 	driver := NewDriver(debugStatsGame{}, slog.Default())
 
-	commands := driver.Commands()
+	commands := driver.Frame(0).Commands
 	if len(commands) != 0 {
 		t.Fatalf("got %d commands, want 0 with no debug layers enabled", len(commands))
 	}
@@ -190,7 +190,7 @@ func TestDriverCommandsAppendsRuntimeStatsOverlayWhenLayerEnabled(t *testing.T) 
 	driver := NewDriver(debugStatsGame{}, slog.Default())
 	driver.Control(ControlCommand{Kind: ControlSetDebugLayers, DebugLayers: scene.DebugRuntimeStats})
 
-	commands := driver.Commands()
+	commands := driver.Frame(0).Commands
 	if len(commands) == 0 {
 		t.Fatalf("got 0 commands, want overlay text commands for DebugRuntimeStats")
 	}

@@ -32,8 +32,8 @@ func TestScrubToTickIsBidirectional(t *testing.T) {
 		driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
 		driver.AdvanceTime(0)
 
-		if driver.Tick() != target {
-			t.Fatalf("scrub to %d: tick = %d, want %d", target, driver.Tick(), target)
+		if driver.State().Tick != target {
+			t.Fatalf("scrub to %d: tick = %d, want %d", target, driver.State().Tick, target)
 		}
 		if got, want := driver.Checksum(), checksums[target]; got != want {
 			t.Fatalf("scrub to %d: checksum = %d, want %d", target, got, want)
@@ -52,8 +52,8 @@ func TestScrubToTickIgnoresOutOfRangeTick(t *testing.T) {
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 999})
 	driver.AdvanceTime(0)
 
-	if driver.Tick() != 10 {
-		t.Fatalf("tick after out-of-range scrub = %d, want unchanged 10", driver.Tick())
+	if driver.State().Tick != 10 {
+		t.Fatalf("tick after out-of-range scrub = %d, want unchanged 10", driver.State().Tick)
 	}
 }
 
@@ -71,8 +71,8 @@ func TestResumeAfterScrubForksTimeline(t *testing.T) {
 
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 10})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 10 {
-		t.Fatalf("tick after scrub = %d, want 10", driver.Tick())
+	if driver.State().Tick != 10 {
+		t.Fatalf("tick after scrub = %d, want 10", driver.State().Tick)
 	}
 
 	// Resume with different input than the original run had at these ticks.
@@ -82,8 +82,8 @@ func TestResumeAfterScrubForksTimeline(t *testing.T) {
 		})
 		driver.Step()
 	}
-	if driver.Tick() != 30 {
-		t.Fatalf("tick after resuming = %d, want 30", driver.Tick())
+	if driver.State().Tick != 30 {
+		t.Fatalf("tick after resuming = %d, want 30", driver.State().Tick)
 	}
 	if driver.Checksum() == originalTick30 {
 		t.Fatal("expected the forked future to diverge from the original timeline")
@@ -100,8 +100,8 @@ func TestResumeAfterScrubForksTimeline(t *testing.T) {
 	// The shared past before the fork point is still intact.
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 5})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 5 {
-		t.Fatalf("tick after scrub = %d, want 5", driver.Tick())
+	if driver.State().Tick != 5 {
+		t.Fatalf("tick after scrub = %d, want 5", driver.State().Tick)
 	}
 }
 
@@ -205,8 +205,8 @@ func TestStagedInputDiscardedByNextScrub(t *testing.T) {
 	for range 3 {
 		driver.Step()
 	}
-	if driver.Tick() != 15 {
-		t.Fatalf("tick after resume = %d, want 15", driver.Tick())
+	if driver.State().Tick != 15 {
+		t.Fatalf("tick after resume = %d, want 15", driver.State().Tick)
 	}
 	liveTick15 := driver.Checksum()
 
@@ -245,15 +245,15 @@ func TestResumeAfterScrubShrinksMaxTickOnPartialResume(t *testing.T) {
 		})
 		driver.Step()
 	}
-	if driver.Tick() != 15 {
-		t.Fatalf("tick after partial resume = %d, want 15", driver.Tick())
+	if driver.State().Tick != 15 {
+		t.Fatalf("tick after partial resume = %d, want 15", driver.State().Tick)
 	}
 
 	// The old future's tick 30 must no longer be reachable: it belonged to
 	// a timeline that no longer exists past the fork point.
 	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: 30})
 	driver.AdvanceTime(0)
-	if driver.Tick() != 15 {
-		t.Fatalf("scrub to stale tick 30 should be a no-op, but tick = %d", driver.Tick())
+	if driver.State().Tick != 15 {
+		t.Fatalf("scrub to stale tick 30 should be a no-op, but tick = %d", driver.State().Tick)
 	}
 }

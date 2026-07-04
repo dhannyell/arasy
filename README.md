@@ -245,7 +245,7 @@ benchmarks/
 Useful options:
 
 ```powershell
-go run ./cmd/benchsave -pkg ./scene -bench DetectCircleOverlaps -name scene-collision
+go run ./cmd/benchsave -pkg ./scene -bench WorldStep -name scene-step
 ```
 
 ### Benchmark suites

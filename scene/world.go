@@ -143,10 +143,6 @@ func (w *World) TweenTransform(id EntityID, target Transform, opts TransformTwee
 	return true
 }
 
-func (w *World) StopTransformTween(id EntityID) {
-	delete(w.transformTweens, id)
-}
-
 func (w *World) RemoveTransformTween(id EntityID) {
 	delete(w.transformTweens, id)
 }
@@ -193,10 +189,6 @@ func (w *World) TweenCircleSprite(id EntityID, target CircleSprite, opts CircleS
 		RemoveOnComplete: opts.RemoveOnComplete,
 	}
 	return true
-}
-
-func (w *World) StopCircleSpriteTween(id EntityID) {
-	delete(w.circleTweens, id)
 }
 
 func (w *World) RemoveCircleSpriteTween(id EntityID) {
@@ -294,7 +286,7 @@ func (w *World) RemoveRectCollider(id EntityID) {
 	delete(w.rectColliders, id)
 }
 
-func (w *World) DebugGridCells() []DebugGridCell {
+func (w *World) debugGridCellsSnapshot() []DebugGridCell {
 	return w.debugGridCells
 }
 

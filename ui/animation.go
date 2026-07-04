@@ -12,8 +12,8 @@ const animGCMaxAge = 120
 const springMaxDt = 1.0 / 30
 
 // AnimStore retains per-id animation state across render frames.
-// Owned by the Driver and passed as a pointer to each UI instance — off-snapshot,
-// so simulation rewind does not restore animation state.
+// It is owned by the runtime driver and lives outside rewind snapshots on
+// purpose, so simulation rewind does not restore cosmetic animation state.
 type AnimStore struct {
 	entries    map[string]animEntry
 	frameStamp uint64
@@ -40,8 +40,8 @@ func DefaultSpringConfig() SpringConfig {
 }
 
 // AdvanceFrame increments the frame counter and sweeps entries not accessed in
-// the last animGCMaxAge frames. Must be called exactly once at the start of each
-// render frame, before any Approach/Spring/Tween calls for that frame.
+// the last animGCMaxAge frames. The runtime driver calls it exactly once at the
+// start of each render frame, before any Approach/Spring/Tween calls.
 func (s *AnimStore) AdvanceFrame() {
 	s.frameStamp++
 	if s.entries == nil || s.frameStamp <= animGCMaxAge {
