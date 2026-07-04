@@ -177,6 +177,94 @@ Available widgets:
 
 `ProgressBar` clamps `value` to `[0, 1]`.
 
+## UI Animation
+
+UI animation is cosmetic: it runs in `Render`, uses the
+`Driver.Frame(elapsed)` clock, and is not stored in rewind snapshots. Simulation
+pause, speed, and rewind do not rewind these effects; only a trigger derived
+from deterministic game state can restart them.
+
+The API has three layers:
+
+- `ctx.UI.FX()` — ready-made recipes for common cases.
+- `ctx.UI.Effect(id, opts)` — a composable timeline for HUDs and custom events.
+- primitives (`Approach`, `Spring`, `Tween`, `Clock`, `Reset`, `SequenceKeyed`,
+  `Track`) — the escape hatch for fine control.
+
+### `FX`: Ready-Made Recipes
+
+Use `FX` when an effect already exists as a recipe and you want little
+configuration. `Toast` draws a panel + text in UI coordinates:
+
+```go
+ctx.UI.FX().Toast("save_notice", "Saved", rect, ui.ToastOptions{Key: saveKey})
+```
+
+`ToastIn` accepts an explicit `ui.Space`:
+
+```go
+ctx.UI.FX().ToastIn("pause", "Paused", rect, ui.SpaceScreen, ui.ToastOptions{Key: pauseKey})
+```
+
+`ToastOptions.Key` follows `SequenceKeyed` semantics: `0` means inactive and
+clears the retained trigger; a new non-zero value restarts the animation. Use a
+tick or monotonically increasing counter from game state to trigger the effect.
+
+`ToastOptions` can also tune duration, layer, colors, text, enter position, fade,
+and pulse. Keep these adjustments small. If the recipe starts needing many
+custom fields, prefer `Effect`.
+
+### `Effect`: Composition Without Boilerplate
+
+Use `Effect` when the animation is game-specific but still fits a simple
+timeline. It wraps `SequenceKeyed` and names common transforms:
+
+```go
+fx := ctx.UI.Effect("goal_banner", ui.EffectOptions{Key: lastGoalTick, Duration: 2})
+if !fx.Done() {
+    rect := fx.SlideY(finalRect, -60, 12, 0, 0.35, ease.OutBack)
+    alpha := fx.FadeOut(1.6, 2, ease.InQuad)
+    pulse := fx.Pulse(0.35, 1.6, 0.05, 8)
+
+    // Build game or UI commands using rect/alpha/pulse.
+    _ = rect
+    _ = alpha
+    _ = pulse
+}
+```
+
+`Effect` is the best choice for world-space effects: compute values with
+`Effect` and emit `render.Command` values in the game's `Render`, using the game
+camera.
+
+### Primitives: Fine Control
+
+Use primitives when you need direct control over numeric state:
+
+- `Approach`: value exponentially follows a target, independent of FPS.
+- `Spring`: damped spring motion.
+- `Tween`/`Clock`/`Reset`: time-based progress.
+- `SequenceKeyed`/`Track`: multi-step sequences.
+
+Internal widgets also use these primitives. For example, `Button` animates
+hover/press through `Approach` and `ButtonTheme.HoverSpeed`/`PressSpeed`.
+
+### Evolution Direction
+
+New recipes should avoid growing `ToastOptions` indefinitely. When a family of
+effects matures, prefer extracting reusable presets and styles instead of adding
+more loose flags:
+
+```go
+ctx.UI.FX().Toast("goal", "GOL!", rect, ui.ToastOptions{
+    Key: goalTick,
+    // Desired future: Style: ui.ToastSuccessStyle, Motion: ui.MotionBanner.
+})
+```
+
+`FX` should be quick and opinionated. `Effect` should be composable. The
+primitives should provide fine control without forcing new recipes.
+
 ## IDs
 
 Interactive widgets use stable IDs:

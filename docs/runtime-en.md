@@ -226,7 +226,7 @@ cam.World = shiftedWorld
 ctx.SetCamera(cam)
 ```
 
-`Driver.Frame()` returns the resulting camera together with the commands.
+`Driver.Frame(elapsed)` returns the resulting camera together with the commands.
 
 ### StepConfig
 
@@ -312,16 +312,22 @@ If the game is paused, `Advance` respects the development controls.
 A render frame:
 
 ```text
-platform calls driver.Frame()
+platform calls driver.Frame(elapsed)
 
 driver:
-  builds RenderContext
+  accumulates renderTime += elapsed; renderDt = elapsed
+  builds RenderContext (ctx.Time/Dt reflect render-time, not sim-time)
   calls game.Render(ctx)
   returns Frame{Camera, Commands}
 
 platform:
   converts Commands to its output
 ```
+
+`elapsed` is the real time since the previous render frame, measured by the host.
+While the simulation is paused or running at a different speed, `ctx.Time`/`ctx.Dt`
+keep advancing at render-rate — correct for cosmetic UI animations.
+`Commands()` is a helper that calls `Frame(0)` without advancing the render clock.
 
 On canvas, the platform serializes commands to JSON.
 

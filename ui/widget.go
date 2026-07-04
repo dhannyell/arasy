@@ -11,13 +11,25 @@ func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 	wid := HashID(id)
 	hot := rect.Contains(u.cursorIn(space)) && u.inside
 
-	style := u.theme.Button.Normal
-	switch {
-	case u.state.activeID == wid:
-		style = u.theme.Button.Active
-	case hot:
-		style = u.theme.Button.Hovered
+	hoverTarget := 0.0
+	if hot {
+		hoverTarget = 1.0
 	}
+	pressTarget := 0.0
+	if u.state.activeID == wid {
+		pressTarget = 1.0
+	}
+
+	// Approach blends: Normal(0)↔Hovered(1) and normal(0)↔Active(1).
+	// speed=0 or dt=0 (Frame(0)/Commands) produces an instant jump.
+	hoverBlend := u.Approach(id+"_h", hoverTarget, u.theme.Button.HoverSpeed)
+	pressBlend := u.Approach(id+"_p", pressTarget, u.theme.Button.PressSpeed)
+
+	style := lerpButtonStyle(
+		lerpButtonStyle(u.theme.Button.Normal, u.theme.Button.Hovered, hoverBlend),
+		u.theme.Button.Active,
+		pressBlend,
+	)
 
 	layer := u.nextLayer()
 	u.commands = append(u.commands,
@@ -37,6 +49,17 @@ func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		})
+}
+
+func lerpButtonStyle(a, b ButtonStyle, t float64) ButtonStyle {
+	lerp := func(x, y float64) float64 { return x + (y-x)*t }
+	return ButtonStyle{
+		Background:  a.Background.Lerp(b.Background, t),
+		Border:      a.Border.Lerp(b.Border, t),
+		BorderWidth: lerp(a.BorderWidth, b.BorderWidth),
+		TextColor:   a.TextColor.Lerp(b.TextColor, t),
+		TextSize:    lerp(a.TextSize, b.TextSize),
+	}
 }
 
 func (u *UI) Panel(rect math2d.Rect) { u.PanelIn(rect, SpaceRef) }

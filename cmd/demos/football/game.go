@@ -12,12 +12,18 @@ import (
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/frameforge/ui"
 )
 
 const (
 	playerSpeed = 18.0
 	goalWidth   = 7.32
 	goalDepth   = 1.0
+)
+
+const (
+	goalBannerWidth  = 60.0
+	goalBannerHeight = 16.0
 )
 
 const (
@@ -55,27 +61,34 @@ func shakeOffset(elapsedTicks uint64) (math2d.Vec2, bool) {
 	}, true
 }
 
-func menuLayout(vp math2d.Rect) (panel, play math2d.Rect) {
+func menuLayout() (panel, play math2d.Rect) {
 	panel = math2d.NewRect(
-		math2d.Vec2{X: vp.Width()/2 - 160, Y: vp.Height()/2 - 100},
+		math2d.Vec2{X: viewportWidth/2 - 160, Y: viewportHeight/2 - 100},
 		math2d.Vec2{X: 320, Y: 200},
 	)
 	play = math2d.NewRect(
-		math2d.Vec2{X: vp.Width()/2 - 60, Y: vp.Height()/2 + 10},
+		math2d.Vec2{X: viewportWidth/2 - 60, Y: viewportHeight/2 + 10},
 		math2d.Vec2{X: 120, Y: 36},
 	)
 	return
 }
 
-func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
+func hudLayout() (score, reset math2d.Rect) {
 	score = math2d.NewRect(
-		math2d.Vec2{X: vp.Width()/2 - 60, Y: 8},
+		math2d.Vec2{X: viewportWidth/2 - 60, Y: 8},
 		math2d.Vec2{X: 120, Y: 28},
 	)
 	reset = math2d.NewRect(
-		math2d.Vec2{X: vp.Width() - 100, Y: 8},
+		math2d.Vec2{X: viewportWidth - 100, Y: 8},
 		math2d.Vec2{X: 92, Y: 28})
 	return
+}
+
+func goalBannerRect(y float64) math2d.Rect {
+	return math2d.NewRect(
+		math2d.Vec2{X: fieldCenter.X - goalBannerWidth/2, Y: y},
+		math2d.Vec2{X: goalBannerWidth, Y: goalBannerHeight},
+	)
 }
 
 func (f *Football) resetMatch(world *scene.World) {
@@ -126,7 +139,7 @@ func (f *Football) Init(ctx *runtime.UpdateContext) {
 func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	if !f.State.Started {
 		ctx.HoldSimulation()
-		_, play := menuLayout(ctx.Camera().Viewport)
+		_, play := menuLayout()
 		if ctx.UI.Clicked("btn_play", play) {
 			f.State.Started = true
 		}
@@ -134,7 +147,7 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 		return
 	}
 
-	_, reset := hudLayout(ctx.Camera().Viewport)
+	_, reset := hudLayout()
 	if ctx.UI.Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
 	}
@@ -197,7 +210,7 @@ func (f *Football) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 
 func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 	if !f.State.Started {
-		panel, play := menuLayout(ctx.Camera().Viewport)
+		panel, play := menuLayout()
 		ctx.UI.Panel(panel)
 		ctx.UI.Label("Football", panel.Center())
 		ctx.UI.Button("btn_play", "Play", play)
@@ -215,11 +228,43 @@ func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds := BuildFieldCommands()
 	cmds = append(cmds, ctx.World.RenderCommands()...)
 
-	score, reset := hudLayout(ctx.Camera().Viewport)
+	score, reset := hudLayout()
 
 	ctx.UI.Panel(score)
 	ctx.UI.Label(fmt.Sprintf("%d — %d", f.State.ScoreLeft, f.State.ScoreRight), score.Center())
 	ctx.UI.Button("btn_reset", "Reset", reset)
+
+	goalKey := uint64(0)
+	if f.State.HasGoal {
+		goalKey = f.State.LastGoalTick
+	}
+	goalBanner := ctx.UI.Effect("goal_banner", ui.EffectOptions{Key: goalKey, Duration: 2.0})
+	if f.State.HasGoal {
+		if goalBanner.Done() {
+			return cmds
+		}
+
+		bannerRect := goalBanner.SlideY(goalBannerRect(12), -60, 12, 0.0, 0.35, ease.OutBack)
+		alpha := goalBanner.FadeOut(1.6, 2.0, ease.InQuad)
+		pulse := goalBanner.Pulse(0.35, 1.6, 0.05, 8)
+		cmds = append(cmds,
+			render.DrawRect{
+				BaseCommand: render.BaseCommand{LayerValue: 100},
+				Rect:        bannerRect,
+				Fill:        render.Color{R: 0.1, G: 0.7, B: 0.1, A: alpha},
+			},
+			render.DrawText{
+				BaseCommand: render.BaseCommand{LayerValue: 101},
+				Position:    bannerRect.Center(),
+				Text:        "GOL!",
+				Color:       render.Color{R: 1, G: 1, B: 1, A: alpha},
+				Size:        14 * pulse,
+				Align:       render.AlignCenter,
+				Baseline:    render.BaselineMiddle,
+			},
+		)
+		return cmds
+	}
 
 	return cmds
 }

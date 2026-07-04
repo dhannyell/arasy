@@ -9,6 +9,9 @@ import (
 )
 
 const (
+	viewportWidth  = 1920
+	viewportHeight = 1080
+
 	worldWidth  = 115.5
 	worldHeight = 74.8
 

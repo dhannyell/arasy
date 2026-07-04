@@ -50,7 +50,7 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	if opts.PNG != "" {
-		img := r.Render(driver.Frame().Commands)
+		img := r.Render(driver.Frame(0).Commands)
 		if err := writeFile(opts.PNG, func(f *os.File) error {
 			return png.Encode(f, img)
 		}); err != nil {
@@ -70,8 +70,9 @@ func Run(game runtime.Game, opts Options) error {
 				Delay: make([]int, 0, opts.Frames),
 			}
 		}
+		frameDur := time.Duration(opts.FrameDT * float64(time.Second))
 		for frame := range opts.Frames {
-			img := r.Render(driver.Frame().Commands)
+			img := r.Render(driver.Frame(frameDur).Commands)
 			if opts.FramesDir != "" {
 				if err := writeFramePNG(opts.FramesDir, frame, img); err != nil {
 					return err

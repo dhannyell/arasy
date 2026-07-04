@@ -2,7 +2,9 @@ package runtime
 
 import (
 	"log/slog"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -32,7 +34,7 @@ func (cameraGame) Render(ctx *RenderContext) []render.Command {
 func TestDriverFrameReturnsCameraModifiedByRender(t *testing.T) {
 	driver := NewDriver(cameraGame{}, slog.Default())
 
-	frame := driver.Frame()
+	frame := driver.Frame(0)
 	want := math2d.NewRect(math2d.Vec2{X: 2, Y: 3}, math2d.Vec2{X: 10, Y: 10})
 
 	if frame.Camera.World != want {
@@ -41,6 +43,57 @@ func TestDriverFrameReturnsCameraModifiedByRender(t *testing.T) {
 }
 
 var _ Game = cameraGame{}
+
+type renderClockGame struct {
+	values []struct {
+		time float64
+		dt   float64
+		tick uint64
+	}
+}
+
+func (g *renderClockGame) Setup() Config { return cameraGame{}.Setup() }
+
+func (g *renderClockGame) Init(ctx *UpdateContext) {}
+
+func (g *renderClockGame) Update(ctx *UpdateContext, dt float64) {}
+
+func (g *renderClockGame) Render(ctx *RenderContext) []render.Command {
+	g.values = append(g.values, struct {
+		time float64
+		dt   float64
+		tick uint64
+	}{time: ctx.Time, dt: ctx.Dt, tick: ctx.Tick})
+	return nil
+}
+
+func TestDriverFrameUsesRenderElapsedForContextTime(t *testing.T) {
+	game := &renderClockGame{}
+	driver := NewDriver(game, slog.Default())
+
+	driver.Step()
+	driver.Frame(100 * time.Millisecond)
+	driver.Frame(250 * time.Millisecond)
+	driver.Commands()
+
+	if len(game.values) != 3 {
+		t.Fatalf("render calls = %d, want 3", len(game.values))
+	}
+	if math.Abs(game.values[0].time-0.1) > 1e-9 || math.Abs(game.values[0].dt-0.1) > 1e-9 {
+		t.Fatalf("first render time/dt = %+v, want 0.1/0.1", game.values[0])
+	}
+	if math.Abs(game.values[1].time-0.35) > 1e-9 || math.Abs(game.values[1].dt-0.25) > 1e-9 {
+		t.Fatalf("second render time/dt = %+v, want 0.35/0.25", game.values[1])
+	}
+	if math.Abs(game.values[2].time-0.35) > 1e-9 || game.values[2].dt != 0 {
+		t.Fatalf("Commands render time/dt = %+v, want 0.35/0", game.values[2])
+	}
+	for _, v := range game.values {
+		if v.tick != 1 {
+			t.Fatalf("render tick = %d, want simulation tick 1", v.tick)
+		}
+	}
+}
 
 type updateCameraGame struct {
 	viewport math2d.Rect
