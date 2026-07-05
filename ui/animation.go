@@ -24,13 +24,14 @@ type animEntry struct {
 	velocity  float64 // Spring: current velocity
 	startTime float64 // Tween/Clock/SequenceKeyed: render-time at trigger
 	key       uint64  // SequenceKeyed: last seen trigger key
+	prevKey   uint64  // ScreenTransition: active before the last change
 	lastFrame uint64
 }
 
 // SpringConfig controls the spring simulation parameters.
 type SpringConfig struct {
-	Stiffness float64 // spring constant (force per unit displacement)
-	Damping   float64 // damping coefficient (force per unit velocity)
+	Stiffness float64 // Spring constant (force per unit displacement)
+	Damping   float64 // Damping coefficient (force per unit velocity)
 }
 
 // DefaultSpringConfig returns a critically-damped spring (no overshoot).

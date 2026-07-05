@@ -21,8 +21,10 @@ const (
 	paddleY      = 108.0
 	paddleSpeed  = 90.0
 
-	ballRadius = 2.0
-	ballSpeed  = 72.0
+	ballRadius          = 2.0
+	ballSpeed           = 72.0
+	ballSpeedUpPerBrick = 1.015
+	ballMaxSpeed        = 110.0
 
 	brickRows    = 6
 	brickColumns = 12
