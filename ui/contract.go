@@ -6,8 +6,8 @@ import (
 )
 
 // Interactor is the interface for Update: deterministic queries that read the
-// tick's PointerFrame and can mutate State.activeID. Implemented by *UI
-// (constructed via NewUpdate).
+// tick's input.PointerFrame and can mutate ui.State. Implemented by *UI
+// (constructed via ui.NewUpdate).
 type Interactor interface {
 	Clicked(id string, rect math2d.Rect) bool
 	ClickedIn(id string, rect math2d.Rect, space Space) bool
@@ -25,19 +25,32 @@ type Drawer interface {
 	LabelIn(text string, pos math2d.Vec2, space Space)
 	ProgressBarIn(rect math2d.Rect, value float64, space Space)
 
-	// Animation primitives — state-driven
+	// -- Animation primitives — state-driven ---
+
 	Approach(id string, target, speed float64) float64
 	Spring(id string, target float64, cfg SpringConfig) float64
 
 	// Animation primitives — time-driven
+
 	Tween(id string, dur float64, k ease.Kind) float64
 	Clock(id string) float64
 	Reset(id string)
 
-	// Sequence — multi-step scripted animation
+	// Sequence — multistep scripted animation
+
 	SequenceKeyed(id string, key uint64) Sequence
 
 	// Mid/high-level animation helpers
+
 	Effect(id string, opts EffectOptions) Effect
 	FX() FX
+
+	// Command groups — render-only container transforms
+
+	BeginGroup(opts GroupOptions)
+	EndGroup()
+
+	// Screen transitions — keyed screen-change animation
+
+	ScreenTransition(id string, key uint64, opts TransitionOptions) ScreenTransition
 }
