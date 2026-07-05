@@ -61,13 +61,17 @@ func assertGoldenBytes(t *testing.T, name string, got []byte) {
 		t.Fatalf("read golden %s: %v (run go test ./internal/render/adapter/web -run TestGolden -update)", path, err)
 	}
 
-	if bytes.Equal(want, got) {
+	if bytes.Equal(normalizeLineEndings(want), normalizeLineEndings(got)) {
 		return
 	}
 
 	failurePath := filepath.Join("testdata", "failures", name+".json")
 	writeBytes(t, failurePath, got)
 	t.Fatalf("%s differs from golden; got JSON saved to %s", name, failurePath)
+}
+
+func normalizeLineEndings(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
 }
 
 func writeBytes(t *testing.T, path string, data []byte) {
