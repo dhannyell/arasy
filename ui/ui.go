@@ -19,6 +19,7 @@ type UI struct {
 	cursorPos math2d.Vec2
 	commands  []render.Command
 	store     *AnimStore
+	groups    []groupFrame
 	dt        float64
 	time      float64
 }

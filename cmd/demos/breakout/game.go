@@ -3,6 +3,7 @@ package breakout
 import (
 	"fmt"
 
+	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -53,7 +54,7 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 			},
 		},
 		CircleCollider: &scene.CircleCollider{Radius: ballRadius},
-		Body:           &scene.Body{InvMass: 1.0, Restitution: 0.8},
+		Body:           &scene.Body{InvMass: 1.0, Restitution: 1.0},
 	})
 
 	b.State.paddle.id = ctx.World.SpawnBundle(scene.Bundle{
@@ -143,25 +144,6 @@ func (b *Breakout) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 }
 
 func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
-	if b.State.state == StateWon {
-		panel, label, play := menuLayout()
-		ctx.UI.Panel(panel)
-		ctx.UI.Label("You Win!", label)
-		ctx.UI.Button("btn_play", "Play Again", play)
-	}
-	if b.State.state == StateGameOver {
-		panel, label, play := menuLayout()
-		ctx.UI.Panel(panel)
-		ctx.UI.Label("Game Over!", label)
-		ctx.UI.Button("btn_play", "Play Again", play)
-	}
-	if b.State.state == StateMenu {
-		panel, label, play := menuLayout()
-		ctx.UI.Panel(panel)
-		ctx.UI.Label("Breakout", label)
-		ctx.UI.Button("btn_play", "Play", play)
-	}
-
 	cmds := make([]render.Command, 0)
 
 	for _, brick := range b.State.bricks {
@@ -183,10 +165,58 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	ctx.UI.PanelIn(score, ui.SpacePlayfield)
 	ctx.UI.LabelIn(fmt.Sprintf("Score: %v  Lives: %v", b.State.score, b.State.lives), score.Center(), ui.SpacePlayfield)
 	ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
+	b.renderScreenOverlay(ctx)
 
 	cmds = append(cmds, ctx.World.RenderCommands()...)
 
 	return cmds
+}
+
+func (b *Breakout) renderScreenOverlay(ctx *runtime.RenderContext) {
+	tr := ctx.UI.ScreenTransition("breakout_screen", stateScreenKey(b.State.state), ui.TransitionOptions{
+		Kind:     ui.TransitionSlideLeft,
+		Duration: 0.32,
+		Ease:     ease.OutCubic,
+	})
+
+	if outgoing, ok := tr.Outgoing(); ok {
+		ctx.UI.BeginGroup(tr.OutgoingGroup())
+		drawScreenOverlay(ctx.UI, screenKeyState(outgoing))
+		ctx.UI.EndGroup()
+	}
+
+	ctx.UI.BeginGroup(tr.IncomingGroup())
+	drawScreenOverlay(ctx.UI, b.State.state)
+	ctx.UI.EndGroup()
+}
+
+func drawScreenOverlay(drawer ui.Drawer, state State) {
+	panel, label, play := menuLayout()
+	switch state {
+	case StateWon:
+		drawer.Panel(panel)
+		drawer.Label("You Win!", label)
+		drawer.Button("btn_play", "Play Again", play)
+	case StateGameOver:
+		drawer.Panel(panel)
+		drawer.Label("Game Over!", label)
+		drawer.Button("btn_play", "Play Again", play)
+	case StateMenu:
+		drawer.Panel(panel)
+		drawer.Label("Breakout", label)
+		drawer.Button("btn_play", "Play", play)
+	}
+}
+
+func stateScreenKey(state State) uint64 {
+	return uint64(state) + 1
+}
+
+func screenKeyState(key uint64) State {
+	if key == 0 {
+		return StateMenu
+	}
+	return State(key - 1)
 }
 
 func hudLayout() (score, reset math2d.Rect) {
@@ -284,9 +314,20 @@ func (b *Breakout) resolveGameContacts(world *scene.World) {
 				world.Despawn(other)
 				b.State.score += 10
 				b.State.bricksLeft--
+				b.speedUpBallAfterBrick()
+				world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 			}
 		}
 	}
+}
+
+func (b *Breakout) speedUpBallAfterBrick() {
+	speed := b.State.ball.Velocity.Len()
+	if speed == 0 {
+		return
+	}
+	nextSpeed := math2d.Clamp(speed*ballSpeedUpPerBrick, ballSpeed, ballMaxSpeed)
+	b.State.ball.Velocity = b.State.ball.Velocity.Normalize().Mul(nextSpeed)
 }
 
 // respawnBricks clears any live brick entities and rebuilds the wall, keeping
