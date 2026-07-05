@@ -184,13 +184,17 @@ Animacao de UI e cosmetica: roda em `Render`, usa o clock de
 rewind da simulacao nao rebobinam esses efeitos; apenas o gatilho vindo do
 estado deterministico do jogo pode reinicia-los.
 
-A API tem tres camadas:
+A API principal e organizada em camadas:
 
 - `ctx.UI.FX()` — receitas prontas para casos comuns.
 - `ctx.UI.Effect(id, opts)` — timeline componivel, boa para HUDs e eventos
   customizados.
 - primitivas (`Approach`, `Spring`, `Tween`, `Clock`, `Reset`,
   `SequenceKeyed`, `Track`) — escape hatch para ajuste fino.
+
+`ScreenTransition` complementa essas camadas para trocas de tela inteiras: ele
+usa `BeginGroup`/`EndGroup` por baixo para mover ou aplicar fade a todos os
+comandos emitidos por uma tela.
 
 ### `FX`: receitas prontas
 
@@ -236,6 +240,55 @@ if !fx.Done() {
 
 `Effect` e a melhor escolha para efeitos em world-space: calcule valores com
 `Effect` e emita `render.Command` no `Render` do jogo, usando a camera do jogo.
+
+### Transicoes de tela
+
+Use `ScreenTransition` quando o estado deterministico do jogo escolhe qual tela
+de UI esta ativa e voce quer animar a troca visualmente. A chave (`key`) deve
+identificar a tela atual: `0` limpa o estado retido; a primeira chave nao-zero
+aparece sem animar; uma mudanca de chave inicia a transicao.
+
+```go
+tr := ctx.UI.ScreenTransition("main_screen", screenKey, ui.TransitionOptions{
+    Kind:     ui.TransitionSlideLeft,
+    Duration: 0.32,
+    Ease:     ease.OutCubic,
+})
+
+if outgoing, ok := tr.Outgoing(); ok {
+    ctx.UI.BeginGroup(tr.OutgoingGroup())
+    drawScreen(ctx.UI, outgoing)
+    ctx.UI.EndGroup()
+}
+
+ctx.UI.BeginGroup(tr.IncomingGroup())
+drawScreen(ctx.UI, tr.Incoming())
+ctx.UI.EndGroup()
+```
+
+As receitas prontas sao `TransitionFade`, `TransitionSlideLeft` e
+`TransitionSlideRight`. Elas sao render-only: usam o `AnimStore` e o clock de
+render, nao entram no checksum e nao alteram a simulacao.
+
+`BeginGroup`/`EndGroup` tambem podem ser usados diretamente. Tudo que for
+desenhado entre os dois recebe um `GroupOptions` com `Offset`, `Fade` e
+`Space`. O valor zero e no-op: sem deslocamento e totalmente opaco.
+
+```go
+ctx.UI.BeginGroup(ui.GroupOptions{
+    Offset: math2d.Vec2{X: 24},
+    Fade:   0.25,
+    Space:  ui.SpaceRef,
+})
+ctx.UI.Panel(panel)
+ctx.UI.Label("Settings", panel.Center())
+ctx.UI.EndGroup()
+```
+
+Input nao e suprimido automaticamente durante a transicao. `Clicked` ainda roda
+em `Update`, enquanto a transicao roda em `Render`; se uma tela precisar
+bloquear cliques por alguns ticks apos navegar, guarde esse bloqueio no estado
+do jogo.
 
 ### Primitivas: ajuste fino
 

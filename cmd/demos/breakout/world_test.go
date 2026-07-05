@@ -2,6 +2,7 @@ package breakout
 
 import (
 	"log/slog"
+	"math"
 	"testing"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -76,5 +77,69 @@ func TestBallFallsThroughOpenBottomAndCostsALife(t *testing.T) {
 	}
 	if game.State.state != StateReady {
 		t.Fatalf("state = %v, want StateReady", game.State.state)
+	}
+}
+
+func TestBallUsesFullRestitution(t *testing.T) {
+	game := &Breakout{}
+	world := scene.NewWorld()
+	ctx := runtime.UpdateContext{World: world}
+	game.Init(&ctx)
+
+	body, ok := world.Body(game.State.ball.id)
+	if !ok {
+		t.Fatal("ball should have a body")
+	}
+	if body.Restitution != 1 {
+		t.Fatalf("ball restitution = %v, want 1 to avoid speed loss on brick hits", body.Restitution)
+	}
+}
+
+func TestBrickHitIncreasesBallSpeed(t *testing.T) {
+	game := &Breakout{}
+	cfg := game.Setup()
+	world := scene.NewWorld()
+	ctx := runtime.UpdateContext{World: world}
+	game.Init(&ctx)
+
+	game.State.state = StatePlaying
+	brick := game.State.bricks[0]
+	transform, ok := world.Transform(brick.ID)
+	if !ok {
+		t.Fatal("brick should have a transform")
+	}
+
+	startVelocity := math2d.Vec2{X: 0, Y: -ballSpeed}
+	game.State.ball.Position = math2d.Vec2{
+		X: transform.Position.X,
+		Y: transform.Position.Y + brickHeight/2 + ballRadius - 0.1,
+	}
+	game.State.ball.Velocity = startVelocity
+	world.SetTransform(game.State.ball.id, scene.Transform{Position: game.State.ball.Position})
+	world.SetVelocity(game.State.ball.id, scene.Velocity{Linear: game.State.ball.Velocity})
+
+	world.Step(1.0/60.0, scene.StepConfig{
+		Bounds:  cfg.Bounds,
+		Bounce:  cfg.Bounce,
+		Physics: cfg.Physics,
+	})
+	game.PostStep(&ctx, scene.StepStats{})
+
+	if game.State.bricks[0].Alive {
+		t.Fatal("brick should be destroyed by the hit")
+	}
+	if got := game.State.ball.Velocity.Len(); got <= startVelocity.Len() {
+		t.Fatalf("ball speed = %v, want greater than starting speed %v", got, startVelocity.Len())
+	}
+}
+
+func TestBallSpeedUpCapsAtMaxSpeed(t *testing.T) {
+	game := &Breakout{}
+	game.State.ball.Velocity = math2d.Vec2{X: ballMaxSpeed, Y: 0}
+
+	game.speedUpBallAfterBrick()
+
+	if got := game.State.ball.Velocity.Len(); math.Abs(got-ballMaxSpeed) > 1e-9 {
+		t.Fatalf("ball speed = %v, want cap %v", got, ballMaxSpeed)
 	}
 }
