@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"log/slog"
 	"math"
 	"time"
@@ -259,7 +260,11 @@ func (d *Driver) runSteps(steps int) {
 		d.stepOnce(d.clock.DT())
 	}
 
-	d.log.Debug("advance", "tick", d.tick, "checksum", d.world.Checksum())
+	// Checksum is O(entities); slog evaluates arguments even when the debug
+	// handler is disabled, so gate the call explicitly.
+	if d.log.Enabled(context.Background(), slog.LevelDebug) {
+		d.log.Debug("advance", "tick", d.tick, "checksum", d.world.Checksum())
+	}
 }
 
 func (d *Driver) stepOnce(dt float64) {
@@ -495,7 +500,9 @@ func (d *Driver) doBack() {
 	}
 	d.restoreSnapshot(snap)
 
-	d.log.Debug("back", "tick", d.tick, "checksum", d.world.Checksum())
+	if d.log.Enabled(context.Background(), slog.LevelDebug) {
+		d.log.Debug("back", "tick", d.tick, "checksum", d.world.Checksum())
+	}
 }
 
 func (d *Driver) doBackToTick(target uint64) {

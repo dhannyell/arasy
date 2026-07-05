@@ -57,7 +57,15 @@ go run ./cmd/demos/football/raster
 # Browser demos (WebSocket canvas at http://localhost:8080)
 go run ./cmd/demos/football/webCanvas
 go run ./cmd/demos/breakout/canvas
+
+# Regenerate golden images/JSON after an intentional visual change
+go test ./platform/raster -run TestGolden -update
+go test ./internal/render/adapter/web -run TestGolden -update
 ```
+
+PRs that regenerate golden files must explain why the visual or DTO change is
+intentional; an unexplained golden diff should be treated as a regression until
+shown otherwise.
 
 ## Architecture
 
