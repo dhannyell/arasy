@@ -7,6 +7,7 @@ import {
     drawLine,
     drawArc,
     drawText,
+    drawPolygon,
 } from "./primitives.js";
 
 export function createCanvasRenderer(canvas, options = {}) {
@@ -76,6 +77,9 @@ export function createCanvasRenderer(canvas, options = {}) {
                 break;
             case "text":
                 drawText(ctx, command);
+                break;
+            case "polygon":
+                drawPolygon(ctx, command);
                 break;
         }
     }
