@@ -61,6 +61,7 @@
         "height": 28
       },
       "strokeWidth": 2,
+      "cornerRadius": 4,
       "fill": {
         "r": 0.12,
         "g": 0.62,
@@ -92,7 +93,13 @@
         "b": 1,
         "a": 0.78
       },
-      "layer": 3
+      "layer": 3,
+      "clip": {
+        "x": 12,
+        "y": 12,
+        "width": 64,
+        "height": 40
+      }
     },
     {
       "type": "point",
@@ -143,6 +150,7 @@
       "size": 6.5,
       "align": "center",
       "baseline": "middle",
+      "rotation": 0.25,
       "layer": 6
     },
     {

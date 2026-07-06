@@ -46,6 +46,47 @@ func TestRendererClipsRectToImageBounds(t *testing.T) {
 	assertPixel(t, img.At(3, 3), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 }
 
+func TestRendererClipsRectToCommandClip(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			BaseCommand: render.BaseCommand{
+				Clip: math2d.NewRect(
+					math2d.Vec2{X: 2, Y: 2},
+					math2d.Vec2{X: 3, Y: 3},
+				),
+			},
+			Rect: math2d.NewRect(
+				math2d.Vec2{X: 0, Y: 0},
+				math2d.Vec2{X: 10, Y: 10},
+			),
+			Fill: render.RGBA(1, 1, 1, 1),
+		},
+	})
+
+	assertPixel(t, img.At(1, 1), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+	assertPixel(t, img.At(2, 2), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(4, 4), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
+func TestRendererDrawsRoundedRect(t *testing.T) {
+	renderer := newTestRenderer()
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			Rect:         math2d.NewRect(math2d.Vec2{X: 2, Y: 2}, math2d.Vec2{X: 6, Y: 6}),
+			Fill:         render.RGBA(1, 1, 1, 1),
+			CornerRadius: 2,
+		},
+	})
+
+	assertPixel(t, img.At(2, 2), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+	assertPixel(t, img.At(3, 2), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(5, 5), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+}
+
 func TestRendererDrawsRectWithStroke(t *testing.T) {
 	renderer := newTestRenderer()
 
