@@ -36,10 +36,11 @@ func (b BaseCommand) Layer() int {
 // DrawRect describes a filled rectangle draw command.
 type DrawRect struct {
 	BaseCommand
-	Rect        math2d.Rect
-	Fill        Color
-	Stroke      Color
-	StrokeWidth float64
+	Rect         math2d.Rect
+	Fill         Color
+	Stroke       Color
+	StrokeWidth  float64
+	CornerRadius float64
 }
 
 // DrawCircle describes a filled circle draw command.
@@ -78,6 +79,9 @@ type DrawText struct {
 	Size     float64
 	Align    TextAlign
 	Baseline TextBaseline
+
+	// 90 degrees rotation
+	Quarters int
 }
 
 // DrawArc describes an arc stroke draw command.
@@ -91,9 +95,19 @@ type DrawArc struct {
 	Color      Color
 }
 
-func (DrawRect) isRenderCommand()   {}
-func (DrawCircle) isRenderCommand() {}
-func (DrawPoint) isRenderCommand()  {}
-func (DrawLine) isRenderCommand()   {}
-func (DrawText) isRenderCommand()   {}
-func (DrawArc) isRenderCommand()    {}
+// DrawPolygon describes a polygon draw command
+type DrawPolygon struct {
+	BaseCommand
+	Points      []math2d.Vec2
+	Fill        Color
+	Stroke      Color
+	StrokeWidth float64
+}
+
+func (DrawRect) isRenderCommand()    {}
+func (DrawCircle) isRenderCommand()  {}
+func (DrawPoint) isRenderCommand()   {}
+func (DrawLine) isRenderCommand()    {}
+func (DrawText) isRenderCommand()    {}
+func (DrawArc) isRenderCommand()     {}
+func (DrawPolygon) isRenderCommand() {}

@@ -91,3 +91,28 @@ export function drawText(ctx, command) {
     ctx.textAlign    = "left";        // reset para não vazar em outros draws
     ctx.textBaseline = "alphabetic";
 }
+
+export function drawPolygon(ctx, command) {
+    if (!command.points || command.points.length < 3) {
+        return;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(command.points[0].x, command.points[0].y);
+    for (let i = 1; i < command.points.length; i++) {
+        ctx.lineTo(command.points[i].x, command.points[i].y);
+    }
+
+    ctx.closePath();
+
+    if (hasAlpha(command.fill)) {
+        ctx.fillStyle = colorToCSS(command.fill);
+        ctx.fill()
+    }
+
+    if (hasAlpha(command.stroke) && command.strokeWidth > 0) {
+        ctx.strokeStyle = colorToCSS(command.stroke)
+        ctx.lineWidth = command.strokeWidth;
+        ctx.stroke()
+    }
+}
