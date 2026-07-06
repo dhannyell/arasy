@@ -20,6 +20,7 @@ const (
 
 type Manager struct {
 	runtime.StateSlot[ManagerState]
+	UIState ManagerUIState
 }
 
 func (g *Manager) Setup() runtime.Config {
@@ -50,21 +51,38 @@ func (g *Manager) Init(ctx *runtime.UpdateContext) {
 		Fixtures:       fixtures,
 		SelectedPlayer: -1,
 	}
+	initSquadOrder(g.State.Clubs[0].Squad)
 }
 
 func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	ctx.HoldSimulation()
+
 	for i, item := range navItems {
 		if ctx.UI.ClickedIn(item.id, item.rect, ui.SpaceRef) {
-			g.State.PreviousScreen = g.State.Screen
-			g.State.Screen = Screen(i)
+			if g.State.Screen != Screen(i) {
+				g.State.PreviousScreen = g.State.Screen
+				g.State.Screen = Screen(i)
+				g.UIState.SelectedNavItem = i
+				g.UIState.NavPulseTick = ctx.Tick
+			}
 		}
 	}
+
+	if ctx.Tick-g.UIState.NavPulseTick > 30 {
+		g.UIState.SelectedNavItem = -1
+	}
+
 	if ctx.UI.ClickedIn("btn_sim_dashboard", simButtonRect(), ui.SpaceRef) {
 		SimulateRound(&g.State)
 	}
 	if g.State.Screen == ScreenTable {
-		ctx.UI.ScrollOffsetIn("tbl_standings", standingsBodyRect(), float64(len(g.State.Clubs))*standingsRowH, ui.SpaceRef)
+		ctx.UI.ScrollOffsetIn("tbl_standings", standingsBodyRect(ctx.UI), float64(len(g.State.Clubs))*ctx.UI.RowHeight(), ui.SpaceRef)
+	}
+	if g.State.Screen == ScreenSquad {
+		g.updateSquad(ctx)
+	}
+	if g.State.Screen == ScreenCalendar {
+		g.updateCalendar(ctx)
 	}
 
 	g.checkPressedButtons(ctx)
@@ -74,11 +92,18 @@ func (g *Manager) checkPressedButtons(ctx *runtime.UpdateContext) {
 	if ctx.Input.JustPressed(input.ActionMoveX) && ctx.Input.Value(input.ActionMoveX) < 0 {
 		g.State.PreviousScreen = g.State.Screen
 		g.State.Screen = Screen(math2d.Clamp(float64(g.State.Screen-1), 0, 3))
+		g.UIState.SelectedNavItem = int(g.State.Screen)
+		g.UIState.NavPulseTick = ctx.Tick
 	}
 	if ctx.Input.JustPressed(input.ActionMoveX) && ctx.Input.Value(input.ActionMoveX) > 0 {
 		g.State.PreviousScreen = g.State.Screen
-
-		g.State.Screen = Screen(math2d.Clamp(float64(g.State.Screen+1), 0, 3))
+		newScreen := math2d.Clamp(float64(g.State.Screen+1), 0, 4)
+		if newScreen > 3 {
+			newScreen = 0
+		}
+		g.State.Screen = Screen(newScreen)
+		g.UIState.SelectedNavItem = int(g.State.Screen)
+		g.UIState.NavPulseTick = ctx.Tick
 	}
 }
 
@@ -86,7 +111,7 @@ func (g *Manager) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds := make([]render.Command, 0)
 	cmds = append(cmds, rectCmd(0, rect(0, 0, viewW, viewH), bgDeep)...)
 	cmds = append(cmds, drawTacticalMotif()...)
-	cmds = append(cmds, drawNav(g.State.Screen)...)
+	cmds = append(cmds, g.drawNavAnimated(g.State.Screen, ctx)...)
 	cmds = append(cmds, drawScreenTitle(screenStateToName(g.State.Screen), g.State.Clubs[0].Name)...)
 
 	transitionKind := ui.TransitionSlideLeft
@@ -96,7 +121,7 @@ func (g *Manager) Render(ctx *runtime.RenderContext) []render.Command {
 
 	tr := ctx.UI.ScreenTransition("manager_screen", stateScreenKey(g.State.Screen), ui.TransitionOptions{
 		Kind:     transitionKind,
-		Duration: 0.1,
+		Duration: 0.2,
 		Ease:     ease.OutCubic,
 	})
 
@@ -122,11 +147,13 @@ func (g *Manager) drawScreenUIForScreen(ctx *runtime.RenderContext, screen Scree
 	cmds := make([]render.Command, 0)
 	switch screen {
 	case ScreenDashboard:
-		cmds = append(cmds, g.drawDashboard()...)
+		cmds = append(cmds, g.drawDashboard(ctx)...)
 	case ScreenTable:
 		cmds = append(cmds, g.drawLeagueTable(ctx)...)
-	default:
-		cmds = append(cmds, drawPlaceholder(screen)...)
+	case ScreenSquad:
+		cmds = append(cmds, g.drawSquad(ctx)...)
+	case ScreenCalendar:
+		cmds = append(cmds, g.drawCalendar(ctx)...)
 	}
 	return cmds
 }
@@ -152,16 +179,7 @@ func screenStateToName(screen Screen) string {
 
 func (g *Manager) PostStep(_ *runtime.UpdateContext, _ scene.StepStats) {}
 
-func drawPlaceholder(screen Screen) []render.Command {
-	names := map[Screen]string{ScreenTable: "TABELA", ScreenSquad: "ELENCO", ScreenCalendar: "CALENDARIO"}
-	panel := rect(360, 280, 1200, 470)
-	cmds := slantedPanel(panel, bgPanel, line, 1, 24, 8)
-	cmds = append(cmds, text(names[screen], panel.Center().Add(v(0, -22)), gold, 44, render.AlignCenter, render.BaselineMiddle, 12)...)
-	cmds = append(cmds, text("placeholder visual - plano 021 continua depois", panel.Center().Add(v(0, 42)), muted, 18, render.AlignCenter, render.BaselineMiddle, 12)...)
-	return cmds
-}
-
-func drawNav(active Screen) []render.Command {
+func (g *Manager) drawNavAnimated(active Screen, ctx *runtime.RenderContext) []render.Command {
 	cmds := make([]render.Command, 0, 20)
 	cmds = append(cmds, rectCmd(3, rect(0, 0, viewW, 92), render.RGBA(0, 0, 0, 0.18))...)
 	cmds = append(cmds, text("MATCHDAY", v(72, 46), textColor, 28, render.AlignLeft, render.BaselineMiddle, 12)...)
@@ -172,8 +190,22 @@ func drawNav(active Screen) []render.Command {
 			col = gold
 			txt = bgDeep
 		}
-		cmds = append(cmds, slantedPanel(item.rect, col, render.RGBA(0, 0, 0, 0), 0, 12, 9)...)
-		cmds = append(cmds, text(item.label, item.rect.Center(), txt, 15, render.AlignCenter, render.BaselineMiddle, 10)...)
+
+		target := 1.0
+		if ctx.UI.Hovered(item.rect) {
+			target = 1.08
+		}
+
+		// Pulse animation quando selecionado
+		if g.UIState.SelectedNavItem == i {
+			pulseTime := float64(ctx.Tick - g.UIState.NavPulseTick) / 60.0
+			target = 1.0 + 0.15*math.Sin(pulseTime*6.28)
+		}
+
+		scaledRect := ctx.UI.SpringScale("nav_"+item.id, target, ui.SpringConfig{Stiffness: 200, Damping: 12}, item.rect)
+
+		cmds = append(cmds, slantedPanel(scaledRect, col, render.RGBA(0, 0, 0, 0), 0, 12, 9)...)
+		cmds = append(cmds, text(item.label, scaledRect.Center(), txt, 15, render.AlignCenter, render.BaselineMiddle, 10)...)
 		if i < len(navItems)-1 {
 			cmds = append(cmds, text("/", v(item.rect.Max.X+18, item.rect.Center().Y), muted, 22, render.AlignCenter, render.BaselineMiddle, 10)...)
 		}
@@ -247,23 +279,6 @@ func slantedPanel(r math2d.Rect, fill, stroke render.Color, strokeWidth, cut flo
 	return []render.Command{poly(layer, fill, &strokeSpec{color: stroke, width: strokeWidth}, points...)}
 }
 
-func drawSegmentBar(r math2d.Rect, value float64, col render.Color, layer int) []render.Command {
-	value = math.Max(0, math.Min(1, value))
-	cmds := rectCmd(layer, r, render.RGBA(1, 1, 1, 0.08))
-	segments := 10
-	gap := 5.0
-	w := (r.Width() - gap*float64(segments-1)) / float64(segments)
-	active := int(math.Round(value * float64(segments)))
-	for i := range segments {
-		fill := render.RGBA(1, 1, 1, 0.12)
-		if i < active {
-			fill = col
-		}
-		cmds = append(cmds, rectCmd(layer+1, rect(r.Min.X+float64(i)*(w+gap), r.Min.Y, w, r.Height()), fill)...)
-	}
-	return cmds
-}
-
 func lastFiveLetters(s ManagerState, club int) []string {
 	letters := []string{"-", "-", "-", "-", "-"}
 	idx := len(letters) - 1
@@ -272,20 +287,24 @@ func lastFiveLetters(s ManagerState, club int) []string {
 		if result.Home != club && result.Away != club {
 			continue
 		}
-		letter := "D"
-		if result.HomeGoals != result.AwayGoals {
-			clubWon := (result.Home == club && result.HomeGoals > result.AwayGoals) ||
-				(result.Away == club && result.AwayGoals > result.HomeGoals)
-			if clubWon {
-				letter = "W"
-			} else {
-				letter = "L"
-			}
-		}
-		letters[idx] = letter
+		letters[idx] = resultLetter(result, club)
 		idx--
 	}
 	return letters
+}
+
+// resultLetter reports the outcome of result from club's perspective: "W"
+// (win), "D" (draw) or "L" (loss).
+func resultLetter(result Result, club int) string {
+	if result.HomeGoals == result.AwayGoals {
+		return "D"
+	}
+	clubWon := (result.Home == club && result.HomeGoals > result.AwayGoals) ||
+		(result.Away == club && result.AwayGoals > result.HomeGoals)
+	if clubWon {
+		return "W"
+	}
+	return "L"
 }
 
 func formScore(letters []string) float64 {
@@ -318,32 +337,10 @@ var navItems = []navItem{
 	{"nav_dashboard", "DASHBOARD", rect(1215, 26, 150, 40)},
 	{"nav_table", "TABLE", rect(1395, 26, 120, 40)},
 	{"nav_squad", "SQUAD", rect(1545, 26, 120, 40)},
-	{"nav_calendar", "FIXTURES", rect(1695, 26, 150, 40)},
+	{"nav_calendar", "CALENDAR", rect(1695, 26, 150, 40)},
 }
 
 func simButtonRect() math2d.Rect { return rect(720, 425, 238, 56) }
-
-func matchdayTheme() ui.Theme {
-	t := ui.DefaultTheme()
-	t.Button.Normal.Background = gold
-	t.Button.Normal.TextColor = bgDeep
-	t.Text.Color = textColor
-	t.Text.Muted = muted
-	t.Header.Background = bgPanel
-	t.Header.TextColor = textColor
-	t.Header.Border = line
-	t.Row.TextColor = textColor
-	t.Row.Normal = render.Color{}
-	t.Row.Zebra = zebra
-	t.Row.Hovered = render.RGBA(1, 1, 1, 0.06)
-	t.Row.Selected = render.RGBA(0.941, 0.725, 0.231, 0.16)
-	return t
-}
-
-type strokeSpec struct {
-	color render.Color
-	width float64
-}
 
 func rectCmd(layer int, r math2d.Rect, fill render.Color) []render.Command {
 	return []render.Command{render.DrawRect{BaseCommand: render.BaseCommand{LayerValue: layer}, Rect: r, Fill: fill}}
@@ -395,17 +392,37 @@ func badge(label string, center math2d.Vec2, fill render.Color, layer int) []ren
 	return cmds
 }
 
-// standingsRowH and standingsHeaderH must match the theme Row.Height and Header.Height
-// (both left at defaults by matchdayTheme).
-const (
-	standingsRowH    = 32.0
-	standingsHeaderH = 36.0
-)
+func drawSegmentBar(r math2d.Rect, value float64, col render.Color, layer int) []render.Command {
+	value = math.Max(0, math.Min(1, value))
+	segments := 10
+	gap := 6.0
+	cmds := rectCmd(layer, r, render.RGBA(1, 1, 1, 0.06))
+	w := (r.Width() - gap*float64(segments-1)) / float64(segments)
+	active := int(math.Round(value * float64(segments)))
+	for i := range segments {
+		fill := render.RGBA(1, 1, 1, 0.10)
+		if i < active {
+			fill = col
+		}
+		cmds = append(cmds, rectCmd(layer+1, rect(r.Min.X+float64(i)*(w+gap), r.Min.Y, w, r.Height()), fill)...)
+	}
+	return cmds
+}
 
-func standingsBodyRect() math2d.Rect {
+// tableGeometry is satisfied by both ui.Interactor (Update) and ui.Drawer
+// (Render) — it lets screen code ask the theme for row/header sizing instead
+// of duplicating those constants locally, where they can silently drift out
+// of sync with matchdayTheme.
+type tableGeometry interface {
+	RowHeight() float64
+	HeaderHeight() float64
+	TableBodyRect(rect math2d.Rect) math2d.Rect
+}
+
+func standingsBodyRect(g tableGeometry) math2d.Rect {
 	panel := rect(190, 170, 820, 690)
 	tableRect := rect(panel.Min.X+20, panel.Min.Y+52, panel.Width()-40, panel.Height()-72)
-	return rect(tableRect.Min.X, tableRect.Min.Y+standingsHeaderH, tableRect.Width(), tableRect.Height()-standingsHeaderH)
+	return g.TableBodyRect(tableRect)
 }
 
 func rect(x, y, w, h float64) math2d.Rect {
@@ -426,27 +443,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-var (
-	bgDeep    = render.RGBA(0.039, 0.071, 0.110, 1)
-	bgPanel   = render.RGBA(0.078, 0.129, 0.184, 0.96)
-	bgRaised  = render.RGBA(0.106, 0.173, 0.243, 1)
-	grass     = render.RGBA(0.184, 0.749, 0.443, 1)
-	gold      = render.RGBA(0.941, 0.725, 0.231, 1)
-	loss      = render.RGBA(0.898, 0.282, 0.302, 1)
-	drawColor = render.RGBA(0.541, 0.608, 0.667, 1)
-	textColor = render.RGBA(0.949, 0.961, 0.969, 1)
-	muted     = render.RGBA(0.494, 0.561, 0.627, 1)
-	line      = render.RGBA(1, 1, 1, 0.08)
-	zebra     = render.RGBA(1, 1, 1, 0.035)
-)
-
-func uiManagerBindings() []input.Binding {
-	return []input.Binding{
-		{Source: input.Keyboard(input.KeyEscape), Action: input.ActionPause, Scale: -1},
-		{Source: input.Keyboard(input.KeyArrowLeft), Action: input.ActionMoveX, Scale: -1},
-		{Source: input.Keyboard(input.KeyArrowRight), Action: input.ActionMoveX, Scale: 1},
-		{Source: input.Keyboard(input.KeyEnter), Action: input.ActionConfirm, Scale: -1},
-	}
 }

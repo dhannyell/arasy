@@ -29,14 +29,15 @@ func drawStandingsPanel(s ManagerState) []render.Command {
 func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Command {
 	panel := rect(190, 170, 820, 690)
 	cols := []ui.TableColumn{
-		{Title: "#", Width: 48, Align: render.AlignRight},
+		{Title: "#", Width: 32, Align: render.AlignRight},
+		{Title: "", Width: 54, Align: render.AlignLeft},
 		{Title: "CLUB", Width: 0, Align: render.AlignLeft}, // flex
-		{Title: "PTS", Width: 78, Align: render.AlignRight},
-		{Title: "G", Width: 60, Align: render.AlignRight},
-		{Title: "W", Width: 60, Align: render.AlignRight},
-		{Title: "D", Width: 60, Align: render.AlignRight},
-		{Title: "L", Width: 60, Align: render.AlignRight},
-		{Title: "GD", Width: 78, Align: render.AlignRight},
+		{Title: "PTS", Width: 64, Align: render.AlignRight},
+		{Title: "G", Width: 48, Align: render.AlignRight},
+		{Title: "W", Width: 48, Align: render.AlignRight},
+		{Title: "D", Width: 48, Align: render.AlignRight},
+		{Title: "L", Width: 48, Align: render.AlignRight},
+		{Title: "GD", Width: 64, Align: render.AlignRight},
 	}
 
 	rows := Standings(s.Clubs, s.Results)
@@ -51,20 +52,25 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 	}
 
 	tableRect := rect(panel.Min.X+20, panel.Min.Y+52, panel.Width()-40, panel.Height()-72)
-	tableBodyRect := rect(tableRect.Min.X, tableRect.Min.Y+36, tableRect.Width(), tableRect.Height()-36)
+	bodyRect := standingsBodyRect(ctx.UI)
+	rowH := ctx.UI.RowHeight()
+	contentH := float64(len(rows)) * rowH
+
+	// Get the current scroll offset and clip rect (same ID used in Update).
+	offset, clip := ctx.UI.ScrollAreaIn("tbl_standings", bodyRect, contentH, ui.SpaceRef)
 
 	style := func(row, col int) ui.TableCellStyle {
 		r := rows[row]
 		switch col {
-		case 2: // PTS
+		case 3: // PTS
 			if r.Club == userClub {
 				return ui.TableCellStyle{Color: gold}
 			}
-		case 4: // W
+		case 5: // W
 			if r.Wins > 0 {
 				return ui.TableCellStyle{Color: grass}
 			}
-		case 6: // L
+		case 7: // L
 			if r.Loss > 0 {
 				return ui.TableCellStyle{Color: loss}
 			}
@@ -73,35 +79,65 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 	}
 
 	cell := func(row, col int) string {
-		if col == 0 {
+		r := rows[row]
+		switch col {
+		case 0:
 			return fmt.Sprintf("%d", row+1)
+		case 1:
+			return ""
+		case 2:
+			return s.Clubs[r.Club].Name
+		case 3:
+			return fmt.Sprintf("%d", r.Points)
+		case 4:
+			return fmt.Sprintf("%d", r.Played)
+		case 5:
+			return fmt.Sprintf("%d", r.Wins)
+		case 6:
+			return fmt.Sprintf("%d", r.Draws)
+		case 7:
+			return fmt.Sprintf("%d", r.Loss)
+		case 8:
+			gd := r.GoalDiff()
+			if gd > 0 {
+				return fmt.Sprintf("+%d", gd)
+			}
+			return fmt.Sprintf("%d", gd)
+		default:
+			return ""
 		}
-		return rows[row].Cell(col, s.Clubs)
 	}
 
 	_ = ctx.UI.TableStyledIn("tbl_standings", tableRect, cols, len(rows), selected, cell, style, ui.SpaceRef)
 
-	cmds := make([]render.Command, 0, len(rows))
-	cmds = append(cmds, lineCmd(20, tableBodyRect.Min, v(tableBodyRect.Max.X, tableBodyRect.Min.Y), 2, render.RGBA(1, 0, 0, 0.5)))
-	cmds = append(cmds, lineCmd(20, v(tableBodyRect.Max.X, tableBodyRect.Min.Y), tableBodyRect.Max, 2, render.RGBA(1, 0, 0, 0.5)))
-	cmds = append(cmds, lineCmd(20, tableBodyRect.Max, v(tableBodyRect.Min.X, tableBodyRect.Max.Y), 2, render.RGBA(1, 0, 0, 0.5)))
-	cmds = append(cmds, lineCmd(20, v(tableBodyRect.Min.X, tableBodyRect.Max.Y), tableBodyRect.Min, 2, render.RGBA(1, 0, 0, 0.5)))
+	const badgeW = 46.0
 	const barW = 3.0
-	headerH := 36.0
-	rowH := 32.0
-	barX := tableRect.Min.X
-	for i := range rows {
-		y := tableRect.Min.Y + headerH + float64(i)*rowH
-		var col render.Color
-		switch i {
-		case 0, 1:
-			col = grass
-		case len(rows) - 2, len(rows) - 1:
-			col = loss
-		default:
+
+	cmds := make([]render.Command, 0, len(rows)*2)
+	for i, r := range rows {
+		y := bodyRect.Min.Y + float64(i)*rowH - offset
+
+		// Culling: skip rows outside the visible clip area.
+		if y+rowH < clip.Min.Y || y > clip.Max.Y {
 			continue
 		}
-		cmds = append(cmds, rectCmd(15, rect(barX, y+2, barW, rowH-4), col)...)
+
+		// ── position bar (promotion/relegation) ──
+		if i < 2 || i >= len(rows)-2 {
+			col := grass
+			if i >= len(rows)-2 {
+				col = loss
+			}
+			barR := rect(tableRect.Min.X+1, y+2, barW, rowH-4)
+			cmds = append(cmds, rectCmd(15, barR, col)...)
+		}
+
+		// ── club abbreviation badge ──
+		club := s.Clubs[r.Club]
+		bx := tableRect.Min.X + 32
+		badgeR := rect(bx+4, y+4, badgeW, rowH-8)
+		cmds = append(cmds, slantedPanel(badgeR, club.Accent, render.Color{}, 0, 4, 13)...)
+		cmds = append(cmds, text(club.Short, badgeR.Center(), bgDeep, 11, render.AlignCenter, render.BaselineMiddle, 13)...)
 	}
 
 	return cmds
