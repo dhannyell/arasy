@@ -147,6 +147,15 @@ func (i *driverInput) accumulatePointer(e input.Event) {
 			}
 		}
 		i.pointer.SetInside(false)
+	case input.EventAxisChanged:
+		switch e.Source.Code {
+		case input.MouseWheelX:
+			i.frame.Wheel.X += e.Value
+		case input.MouseWheelY:
+			i.frame.Wheel.Y += e.Value
+		default:
+			i.frame.Inside = false
+		}
 	default:
 		i.frame.Inside = false
 	}
