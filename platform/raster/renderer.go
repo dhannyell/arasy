@@ -188,8 +188,11 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	if size <= 0 {
 		size = nativeHeight
 	}
-	scale := r.Camera.WorldScalarToScreen(size) / nativeHeight
-	if scale <= 0 {
+
+	measured := render.MeasureText(command.Text, size)
+	destWidth := r.Camera.WorldScalarToScreen(measured.X)
+	destHeight := r.Camera.WorldScalarToScreen(measured.Y)
+	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
 
@@ -201,9 +204,6 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 		Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
 	}
 	drawer.DrawString(command.Text)
-
-	destWidth := nativeWidth * scale
-	destHeight := nativeHeight * scale
 
 	screenPos := r.Camera.WorldToScreen(command.Position)
 
@@ -224,7 +224,7 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	case render.BaselineBottom:
 		offsetY = -destHeight
 	default: // BaselineAlphabetic
-		offsetY = -nativeAscent * scale
+		offsetY = -(nativeAscent / nativeHeight) * destHeight
 	}
 
 	destX := screenPos.X + offsetX

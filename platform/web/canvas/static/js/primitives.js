@@ -110,7 +110,7 @@ export function drawText(ctx, command) {
     }
 
     ctx.fillStyle = colorToCSS(command.color);
-    ctx.font = `${command.size}px system-ui, sans-serif`;
+    ctx.font = `${command.size}px "IBM Plex Mono", Consolas, monospace`;
     ctx.textAlign = command.align ?? "left";
     ctx.textBaseline = command.baseline ?? "alphabetic";
     ctx.fillText(command.text, 0, 0);
