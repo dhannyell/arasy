@@ -25,20 +25,6 @@ func GenerateLeague(seed uint64) ([]Club, []Fixture) {
 	return clubs, roundRobin(len(clubs))
 }
 
-func SimulateRound(s *ManagerState) {
-	if s.Round > len(s.Clubs)*2-2 {
-		return
-	}
-	for _, fx := range fixturesOfRound(s.Fixtures, s.Round) {
-		rng := rand.New(rand.NewPCG(s.Seed, uint64(fx.Round)<<18|uint64(fx.Home)<<10|uint64(fx.Away)))
-		home := s.Clubs[fx.Home]
-		away := s.Clubs[fx.Away]
-		homeGoals := poissonSample(rng, 1.25*home.Strength*formFactor(home)+0.35)
-		awayGoals := poissonSample(rng, 1.2*away.Strength*formFactor(away))
-		s.Results = append(s.Results, Result{Fixture: fx, HomeGoals: homeGoals, AwayGoals: awayGoals})
-	}
-	s.Round++
-}
 
 func Standings(clubs []Club, results []Result) []TableRow {
 	rows := make([]TableRow, len(clubs))
@@ -130,6 +116,29 @@ func Morale(c Club) string {
 	}
 }
 
+var weekdays = []string{"MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"}
+var seasonMonths = []string{"APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "JAN", "FEB", "MAR"}
+var weatherKinds = []string{"CLEAR", "CLOUDY", "RAIN", "WINDY"}
+
+// MatchInfo derives the fictional "match details" shown on the versus panel:
+// a fixture date/time from a fixed season start plus one week per round, the
+// home club's stadium, and a weather condition drawn from rng(Seed, round) —
+// same seed ⇒ same weather, always. Display-only, no calendar semantics.
+func MatchInfo(s *ManagerState, fx Fixture) (date, hour, stadium, weather string) {
+	const seasonStartDay = 2 // days into the season's first month, 0-based
+	totalDays := seasonStartDay + (fx.Round-1)*7
+	month := seasonMonths[(totalDays/28)%len(seasonMonths)]
+	day := totalDays%28 + 1
+	weekday := weekdays[(fx.Round-1)%len(weekdays)]
+	date = fmt.Sprintf("%s %d %s", weekday, day, month)
+	hour = "19:30"
+	stadium = s.Clubs[fx.Home].Stadium
+
+	rng := rand.New(rand.NewPCG(s.Seed, uint64(fx.Round)<<8|uint64(fx.Home)<<4|uint64(fx.Away)))
+	weather = weatherKinds[rng.IntN(len(weatherKinds))]
+	return date, hour, stadium, weather
+}
+
 func Cash(clubs []Club, results []Result, clubIdx int) string {
 	points, losses := 0, 0
 	for _, result := range results {
@@ -153,15 +162,7 @@ func Cash(clubs []Club, results []Result, clubIdx int) string {
 	return fmt.Sprintf("$ %.1fM", value)
 }
 
-func fixturesOfRound(fixtures []Fixture, round int) []Fixture {
-	var out []Fixture
-	for _, fx := range fixtures {
-		if fx.Round == round {
-			out = append(out, fx)
-		}
-	}
-	return out
-}
+
 
 func roundRobin(count int) []Fixture {
 	teams := make([]int, count)
@@ -215,27 +216,7 @@ func generateSquad(rng *rand.Rand) []Player {
 	return squad
 }
 
-func formFactor(c Club) float64 {
-	total := 0.0
-	for _, p := range c.Squad {
-		total += p.Form
-	}
-	if len(c.Squad) == 0 {
-		return 1
-	}
-	return 0.75 + total/float64(len(c.Squad))*0.5
-}
 
-func poissonSample(rng *rand.Rand, lambda float64) int {
-	limit := math.Exp(-lambda)
-	k := 0
-	p := 1.0
-	for p > limit {
-		k++
-		p *= rng.Float64()
-	}
-	return k - 1
-}
 
 func rating(rng *rand.Rand, mean, spread int) int {
 	return clampInt(mean-spread+rng.IntN(spread*2+1), 30, 95)

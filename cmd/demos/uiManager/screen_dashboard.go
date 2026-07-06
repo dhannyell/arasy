@@ -2,16 +2,20 @@ package uiManager
 
 import (
 	"fmt"
+	"math"
 
+	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/frameforge/ui"
 )
 
-func (g *Manager) drawDashboard() []render.Command {
+func (g *Manager) drawDashboard(ctx *runtime.RenderContext) []render.Command {
 	s := g.State
 	cmds := make([]render.Command, 0, 130)
 	next, hasNext := NextFixture(s, 0)
 
-	cmds = append(cmds, drawVersusCard(s, next, hasNext)...)
+	cmds = append(cmds, drawVersusCard(s, next, hasNext, ctx)...)
 	cmds = append(cmds, drawPositionCard(s)...)
 	cmds = append(cmds, drawFormCard(s)...)
 	cmds = append(cmds, drawLastResultCard(s)...)
@@ -20,8 +24,22 @@ func (g *Manager) drawDashboard() []render.Command {
 	return cmds
 }
 
-func drawVersusCard(s ManagerState, fx Fixture, ok bool) []render.Command {
-	panel := rect(190, 170, 820, 360)
+func drawVersusCard(s ManagerState, fx Fixture, ok bool, ctx *runtime.RenderContext) []render.Command {
+	return drawVersusPanel("dash", rect(190, 170, 820, 360), s, fx, ok, ctx, simButtonRect())
+}
+
+// drawVersusPanel draws the split-diagonal "NEXT MATCH" panel + SIMULATE
+// ROUND button shared by the dashboard and the calendar screen. idPrefix
+// keys the panel's own animation state (pulse/hover spring) so two panels
+// drawn in the same frame (e.g. mid screen-transition) don't fight over the
+// same spring entry. simBtnRect only drives the visual hover/scale here —
+// each screen wires its own CTA id to SimulateRound in Update.
+//
+// Internal vertical spacing (split, badges, arena line) is expressed as
+// fractions of panel.Height() rather than pixels from the dashboard's
+// original 360-tall panel, so the layout still fits — without overlapping —
+// when reused at the calendar screen's shorter panel height.
+func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixture, ok bool, ctx *runtime.RenderContext, simBtnRect math2d.Rect) []render.Command {
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab("NEXT MATCH", panel.Min.X+28, panel.Min.Y-16, 280, grass)...)
 	if !ok {
@@ -35,13 +53,17 @@ func drawVersusCard(s ManagerState, fx Fixture, ok bool) []render.Command {
 	homeAway := "HOME"
 	if fx.Away == 0 {
 		homeAway = "AWAY"
-		arena = home.Stadium
 	}
 
-	split := rect(panel.Min.X+42, panel.Min.Y+68, panel.Width()-84, 150)
+	split := rect(panel.Min.X+42, panel.Min.Y+panel.Height()*0.189, panel.Width()-84, panel.Height()*0.417)
 	offset := 70.0
 	topRight := v(split.Center().X+offset, split.Min.Y)
 	bottomLeft := v(split.Center().X-offset, split.Max.Y)
+
+	pulseTarget := 1.0 + 0.35*math.Sin(ctx.Time*1.5)
+	pulseScale := ctx.UI.Spring(idPrefix+"_vs_pulse", pulseTarget, ui.SpringConfig{Stiffness: 80, Damping: 10})
+	glowAlpha := 0.6 * (pulseScale - 1)
+
 	cmds = append(cmds,
 		poly(9, home.Accent, nil,
 			v(split.Min.X, split.Min.Y),
@@ -55,16 +77,25 @@ func drawVersusCard(s ManagerState, fx Fixture, ok bool) []render.Command {
 			v(split.Max.X, split.Max.Y),
 			bottomLeft,
 		),
+		circle(11, split.Center(), 54*pulseScale, render.Color{}, render.RGBA(textColor.R, textColor.G, textColor.B, glowAlpha), 6),
 		circle(11, split.Center(), 54, bgDeep, textColor, 2),
 	)
 	cmds = append(cmds, text(home.Short, v(split.Min.X+150, split.Center().Y), textColor, 48, render.AlignCenter, render.BaselineMiddle, 12)...)
 	cmds = append(cmds, text("VS", split.Center(), gold, 30, render.AlignCenter, render.BaselineMiddle, 12)...)
 	cmds = append(cmds, text(away.Short, v(split.Max.X-150, split.Center().Y), textColor, 48, render.AlignCenter, render.BaselineMiddle, 12)...)
-	cmds = append(cmds, badge(fmt.Sprintf("ROUND %02d", fx.Round), v(panel.Min.X+120, panel.Max.Y-90), grass, 12)...)
-	cmds = append(cmds, badge(homeAway, v(panel.Min.X+285, panel.Max.Y-90), bgRaised, 12)...)
-	cmds = append(cmds, text(arena, v(panel.Min.X+56, panel.Max.Y-46), muted, 16, render.AlignLeft, render.BaselineMiddle, 12)...)
-	cmds = append(cmds, slantedPanel(simButtonRect(), gold, render.RGBA(0, 0, 0, 0), 0, 16, 12)...)
-	cmds = append(cmds, text("SIMULATE ROUND", simButtonRect().Center(), bgDeep, 18, render.AlignCenter, render.BaselineMiddle, 13)...)
+	badgeY := panel.Max.Y - panel.Height()*0.25
+	cmds = append(cmds, badge(fmt.Sprintf("ROUND %02d", fx.Round), v(panel.Min.X+120, badgeY), grass, 12)...)
+	cmds = append(cmds, badge(homeAway, v(panel.Min.X+285, badgeY), bgRaised, 12)...)
+	cmds = append(cmds, text(arena, v(panel.Min.X+56, panel.Max.Y-panel.Height()*0.128), muted, 16, render.AlignLeft, render.BaselineMiddle, 12)...)
+
+	btnTarget := 1.0
+	if ctx.UI.Hovered(simBtnRect) {
+		btnTarget = 1.08
+	}
+	scaledBtnRect := ctx.UI.SpringScale(idPrefix+"_btn_sim", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, simBtnRect)
+
+	cmds = append(cmds, slantedPanel(scaledBtnRect, gold, render.RGBA(0, 0, 0, 0), 0, 16, 12)...)
+	cmds = append(cmds, text("SIMULATE ROUND", scaledBtnRect.Center(), bgDeep, 18, render.AlignCenter, render.BaselineMiddle, 13)...)
 	return cmds
 }
 

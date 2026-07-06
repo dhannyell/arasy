@@ -27,6 +27,11 @@ type ManagerState struct {
 	SelectedPlayer int
 }
 
+type ManagerUIState struct {
+	SelectedNavItem int
+	NavPulseTick    uint64
+}
+
 func (s ManagerState) Clone() ManagerState {
 	s.Clubs = slices.Clone(s.Clubs)
 	for i := range s.Clubs {
