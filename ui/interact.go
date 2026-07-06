@@ -5,6 +5,15 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 )
 
+// Hovered reports whether the cursor is currently over rect. Unlike
+// Clicked/Activated it carries no persisted state — it is safe to call from
+// Render as well as Update.
+func (u *UI) Hovered(rect math2d.Rect) bool { return u.HoveredIn(rect, SpaceRef) }
+
+func (u *UI) HoveredIn(rect math2d.Rect, space Space) bool {
+	return u.inside && rect.Contains(u.cursorIn(space))
+}
+
 func (u *UI) Clicked(id string, rect math2d.Rect) bool { return u.ClickedIn(id, rect, SpaceRef) }
 
 func (u *UI) Activated(id string, rect math2d.Rect) bool { return u.ActivatedIn(id, rect, SpaceRef) }

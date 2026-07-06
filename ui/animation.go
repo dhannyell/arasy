@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/dhannyell/frameforge/ease"
+	"github.com/dhannyell/frameforge/math2d"
 )
 
 const animGCMaxAge = 120
@@ -110,6 +111,15 @@ func (u *UI) Spring(id string, target float64, cfg SpringConfig) float64 {
 	e.value += e.velocity * dt
 	u.store.set(id, e)
 	return e.value
+}
+
+// SpringScale springs the scale factor for id toward target and returns rect
+// resized by the settled value around its own center (see math2d.Rect.Scaled).
+// Consolidates the hover/press/pulse "spring a scale, rebuild the rect around
+// center" pattern used by animated buttons and cards.
+func (u *UI) SpringScale(id string, target float64, cfg SpringConfig, rect math2d.Rect) math2d.Rect {
+	scale := u.Spring(id, target, cfg)
+	return rect.Scaled(scale)
 }
 
 // Tween returns the ease-shaped progress from 0 to 1 over dur seconds,
