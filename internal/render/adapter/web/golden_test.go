@@ -88,11 +88,12 @@ func writeBytes(t *testing.T, path string, data []byte) {
 func goldenCommands() []render.Command {
 	return []render.Command{
 		render.DrawRect{
-			BaseCommand: render.BaseCommand{LayerValue: 2},
-			Rect:        math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 48, Y: 28}),
-			Fill:        render.RGBA(0.12, 0.62, 0.78, 0.55),
-			Stroke:      render.RGBA(1, 1, 1, 0.42),
-			StrokeWidth: 2,
+			BaseCommand:  render.BaseCommand{LayerValue: 2},
+			Rect:         math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 48, Y: 28}),
+			Fill:         render.RGBA(0.12, 0.62, 0.78, 0.55),
+			Stroke:       render.RGBA(1, 1, 1, 0.42),
+			StrokeWidth:  2,
+			CornerRadius: 4,
 		},
 		render.DrawCircle{
 			BaseCommand: render.BaseCommand{LayerValue: 1},
@@ -109,11 +110,14 @@ func goldenCommands() []render.Command {
 			Color:       render.RGBA(0.4, 0.75, 1, 1),
 		},
 		render.DrawLine{
-			BaseCommand: render.BaseCommand{LayerValue: 3},
-			From:        math2d.Vec2{X: 8, Y: 63},
-			To:          math2d.Vec2{X: 92, Y: 12},
-			Width:       1.4,
-			Color:       render.RGBA(0.82, 0.72, 1, 0.78),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 3,
+				Clip:       math2d.NewRect(math2d.Vec2{X: 12, Y: 12}, math2d.Vec2{X: 64, Y: 40}),
+			},
+			From:  math2d.Vec2{X: 8, Y: 63},
+			To:    math2d.Vec2{X: 92, Y: 12},
+			Width: 1.4,
+			Color: render.RGBA(0.82, 0.72, 1, 0.78),
 		},
 		render.DrawArc{
 			BaseCommand: render.BaseCommand{LayerValue: 5},
@@ -132,6 +136,7 @@ func goldenCommands() []render.Command {
 			Size:        6.5,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
+			Rotation:    0.25,
 		},
 		render.DrawPolygon{
 			BaseCommand: render.BaseCommand{LayerValue: 7},

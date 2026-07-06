@@ -56,6 +56,9 @@ const inputCodes = new Set([
     "ArrowDown",
     "ArrowLeft",
     "ArrowRight",
+    "Tab",
+    "Enter",
+    "Escape",
     "Space"
 ]);
 const pressedCodes = new Set();
@@ -277,11 +280,41 @@ function pointerPayload(e, kind, code) {
 canvas.addEventListener("mousemove", e => connection?.send(pointerPayload(e, "move", "Position")));
 canvas.addEventListener("mousedown", e => connection?.send(pointerPayload(e, "down", mouseButtonCode(e.button))));
 canvas.addEventListener("mouseup",   e => connection?.send(pointerPayload(e, "up",   mouseButtonCode(e.button))));
+canvas.addEventListener("wheel", e => {
+    e.preventDefault();
+
+    const scale = wheelLineScale(e);
+    const deltaX = e.deltaX * scale;
+    const deltaY = e.deltaY * scale;
+
+    if (deltaX !== 0) {
+        connection?.send({
+            ...pointerPayload(e, "axis", "WheelX"),
+            value: deltaX,
+        });
+    }
+    if (deltaY !== 0) {
+        connection?.send({
+            ...pointerPayload(e, "axis", "WheelY"),
+            value: deltaY,
+        });
+    }
+}, { passive: false });
 canvas.addEventListener("mouseleave", () =>
     connection?.send({ type: "input", device: "mouse", code: "Leave", kind: "leave" }));
 
 function mouseButtonCode(button) {
     return ["Left", "Middle", "Right"][button] ?? "Left";
+}
+
+function wheelLineScale(event) {
+    if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
+        return 1;
+    }
+    if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
+        return canvas.height / 100;
+    }
+    return 1 / 100;
 }
 
 // requestScrubTick sends at most one scrubToTick at a time. If a replay is

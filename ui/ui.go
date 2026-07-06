@@ -17,6 +17,9 @@ type UI struct {
 	layer     int
 	inside    bool
 	cursorPos math2d.Vec2
+	input     input.State
+	activated ID
+	focusable []ID
 	commands  []render.Command
 	store     *AnimStore
 	groups    []groupFrame
@@ -56,6 +59,37 @@ func NewUpdate(state *State, frame input.PointerFrame, cam render.Camera, theme 
 		reference: reference,
 		layer:     LayerBase,
 	}
+}
+
+func NewUpdateWithInput(state *State, frame input.PointerFrame, inputState input.State, cam render.Camera, theme Theme, reference math2d.Rect) *UI {
+	u := NewUpdate(state, frame, cam, theme, reference)
+	u.input = inputState
+	if inputState.JustPressed(input.ActionConfirm) && state.focusID != noID {
+		u.activated = state.focusID
+	}
+	return u
+}
+
+func (u *UI) EndFrame() {
+	if u.state == nil {
+		return
+	}
+	if u.input.JustPressed(input.ActionCancel) {
+		u.state.focusID = noID
+		return
+	}
+	if !u.input.JustPressed(input.ActionFocusNext) || len(u.focusable) == 0 {
+		return
+	}
+
+	next := u.focusable[0]
+	for idx, id := range u.focusable {
+		if id == u.state.focusID {
+			next = u.focusable[(idx+1)%len(u.focusable)]
+			break
+		}
+	}
+	u.state.focusID = next
 }
 
 func (u *UI) Commands() []render.Command {

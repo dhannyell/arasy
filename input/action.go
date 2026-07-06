@@ -8,6 +8,7 @@ const (
 	ActionMoveY
 	ActionConfirm
 	ActionCancel
+	ActionFocusNext
 	ActionPause
 	ActionJump
 )

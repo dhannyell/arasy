@@ -59,6 +59,14 @@ export function createCanvasRenderer(canvas, options = {}) {
     }
 
     function drawCommand(ctx, command) {
+        const clipped = command.clip && command.clip.width > 0 && command.clip.height > 0;
+        if (clipped) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(command.clip.x, command.clip.y, command.clip.width, command.clip.height);
+            ctx.clip();
+        }
+
         switch (command.type) {
             case "rect":
                 drawRect(ctx, command);
@@ -81,6 +89,10 @@ export function createCanvasRenderer(canvas, options = {}) {
             case "polygon":
                 drawPolygon(ctx, command);
                 break;
+        }
+
+        if (clipped) {
+            ctx.restore();
         }
     }
 

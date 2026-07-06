@@ -40,6 +40,27 @@ func TestDriverInputBeginTickMapsInputState(t *testing.T) {
 	}
 }
 
+func TestDriverInputIncludesDefaultUIBindings(t *testing.T) {
+	driverInput := newDriverInput(nil)
+
+	driverInput.Apply([]input.Event{
+		{Source: input.Keyboard(input.KeyTab), Kind: input.EventButtonDown},
+		{Source: input.Keyboard(input.KeyEnter), Kind: input.EventButtonDown},
+		{Source: input.Keyboard(input.KeyEscape), Kind: input.EventButtonDown},
+	}, 0)
+
+	state := driverInput.BeginTick()
+	if !state.JustPressed(input.ActionFocusNext) {
+		t.Fatal("focus next should be just pressed from Tab")
+	}
+	if !state.JustPressed(input.ActionConfirm) {
+		t.Fatal("confirm should be just pressed from Enter")
+	}
+	if !state.JustPressed(input.ActionCancel) {
+		t.Fatal("cancel should be just pressed from Escape")
+	}
+}
+
 func TestDriverInputPointerFrameSeedsFromPersistentPointerAfterEndTick(t *testing.T) {
 	driverInput := newDriverInput(nil)
 
@@ -129,6 +150,40 @@ func TestDriverInputPointerMoveDoesNotAffectMappedActions(t *testing.T) {
 	pointer := driverInput.Pointer()
 	if pointer.Pos() != (math2d.Vec2{X: 40, Y: 50}) {
 		t.Fatalf("pointer pos = %+v, want 40,50", pointer.Pos())
+	}
+}
+
+func TestDriverInputMouseWheelAccumulatesForOneTick(t *testing.T) {
+	driverInput := newDriverInput(nil)
+
+	driverInput.Apply([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
+			Kind:   input.EventAxisChanged,
+			Value:  1.5,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
+			Kind:   input.EventAxisChanged,
+			Value:  -0.5,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelX},
+			Kind:   input.EventAxisChanged,
+			Value:  2,
+		},
+	}, 0)
+
+	frame := driverInput.PointerFrame()
+	if frame.Wheel != (math2d.Vec2{X: 2, Y: 1}) {
+		t.Fatalf("frame wheel = %+v, want 2,1", frame.Wheel)
+	}
+
+	driverInput.EndTick(1)
+
+	frame = driverInput.PointerFrame()
+	if frame.Wheel != (math2d.Vec2{}) {
+		t.Fatalf("frame wheel after EndTick = %+v, want zero", frame.Wheel)
 	}
 }
 
