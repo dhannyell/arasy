@@ -279,6 +279,74 @@ func TestGoldenText(t *testing.T) {
 	assertGolden(t, "text", img)
 }
 
+func TestGoldenPolygons(t *testing.T) {
+	img := goldenRenderer().Render([]render.Command{
+		render.DrawPolygon{
+			Points: []math2d.Vec2{
+				{X: 16.67, Y: 6.75},
+				{X: 27.06, Y: 24.75},
+				{X: 6.28, Y: 24.75},
+			},
+			Fill:        render.RGBA(0.95, 0.95, 0.35, 1),
+			Stroke:      render.Color{R: 0.1, G: 0.7, B: 0.1, A: 1.0},
+			StrokeWidth: 1.0,
+		},
+		render.DrawPolygon{
+			Points: []math2d.Vec2{
+				{X: 50.00, Y: 6.75},
+				{X: 62.00, Y: 18.75},
+				{X: 50.00, Y: 30.75},
+				{X: 38.00, Y: 18.75},
+			},
+			Fill:        render.RGBA(0.23, 0.54, 0.82, 1),
+			Stroke:      render.RGBA(0.43, 0.15, 0.95, 1),
+			StrokeWidth: 2.0,
+		},
+		render.DrawPolygon{
+			Points: []math2d.Vec2{
+				{X: 83.33, Y: 6.75},
+				{X: 94.74, Y: 15.04},
+				{X: 90.38, Y: 28.46},
+				{X: 76.28, Y: 28.46},
+				{X: 71.92, Y: 15.04},
+			},
+			Fill:        render.RGBA(1, 0.35, 0.7, 1),
+			Stroke:      render.RGBA(0.88, 0.95, 1, 1),
+			StrokeWidth: 3,
+		},
+		render.DrawPolygon{
+			Points: []math2d.Vec2{
+				{X: 25.00, Y: 44.25},
+				{X: 35.39, Y: 50.25},
+				{X: 35.39, Y: 62.25},
+				{X: 25.00, Y: 68.25},
+				{X: 14.61, Y: 62.25},
+				{X: 14.61, Y: 50.25},
+			},
+			Fill:        render.RGBA(0.4, 0.75, 1, 1),
+			Stroke:      render.RGBA(1, 0.85, 0.25, 0.85),
+			StrokeWidth: 4,
+		},
+		render.DrawPolygon{
+			Points: []math2d.Vec2{
+				{X: 75.00, Y: 44.25},
+				{X: 83.49, Y: 47.76},
+				{X: 87.00, Y: 56.25},
+				{X: 83.49, Y: 64.74},
+				{X: 75.00, Y: 68.25},
+				{X: 66.51, Y: 64.74},
+				{X: 63.00, Y: 56.25},
+				{X: 66.51, Y: 47.76},
+			},
+			Fill:        render.RGBA(1, 0.55, 0.2, 0.7),
+			Stroke:      render.RGBA(1, 0, 1, 1),
+			StrokeWidth: 5,
+		},
+	})
+
+	assertGolden(t, "polygons", img)
+}
+
 func TestGoldenAlpha(t *testing.T) {
 	img := goldenRenderer().Render([]render.Command{
 		render.DrawRect{

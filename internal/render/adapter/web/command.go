@@ -25,11 +25,12 @@ type CommandDTO struct {
 	Stroke *ColorDTO `json:"stroke,omitempty"`
 	Color  *ColorDTO `json:"color,omitempty"`
 
-	Text     string  `json:"text,omitempty"`
-	Size     float64 `json:"size,omitempty"`
-	Align    string  `json:"align,omitempty"`
-	Baseline string  `json:"baseline,omitempty"`
-	Layer    int     `json:"layer"`
+	Text     string     `json:"text,omitempty"`
+	Size     float64    `json:"size,omitempty"`
+	Align    string     `json:"align,omitempty"`
+	Baseline string     `json:"baseline,omitempty"`
+	Layer    int        `json:"layer"`
+	Points   []*Vec2DTO `json:"points,omitempty"`
 }
 
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
@@ -104,6 +105,16 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Align:    textAlignToString(command.Align),
 				Baseline: textBaselineToString(command.Baseline),
 				Layer:    command.Layer(),
+			}
+		case render.DrawPolygon:
+			commandDTO = CommandDTO{
+				Type: "polygon",
+
+				Points:      NewVec2SliceDTO(command.Points),
+				Fill:        new(NewColorDTO(command.Fill)),
+				Stroke:      new(NewColorDTO(command.Stroke)),
+				StrokeWidth: command.StrokeWidth,
+				Layer:       command.Layer(),
 			}
 		default:
 			continue

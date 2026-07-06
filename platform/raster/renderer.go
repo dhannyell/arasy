@@ -47,6 +47,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawArc(img, command)
 		case render.DrawText:
 			r.drawText(img, command)
+		case render.DrawPolygon:
+			r.drawPolygon(img, command)
 		}
 	}
 
@@ -222,6 +224,90 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	destY := screenPos.Y + offsetY
 
 	blitScaled(img, glyphs, destX, destY, destWidth, destHeight)
+}
+
+func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
+	if len(command.Points) < 3 {
+		return
+	}
+
+	points := make([]math2d.Vec2, len(command.Points))
+	for i, point := range command.Points {
+		points[i] = r.Camera.WorldToScreen(point)
+	}
+
+	if command.Fill.A > 0 {
+		fillPolygon(img, points, toRGBA(command.Fill))
+	}
+
+	strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
+	if command.Stroke.A <= 0 || strokeWidth <= 0 {
+		return
+	}
+
+	for i := range points {
+		from := points[i]
+		to := points[(i+1)%len(points)]
+		drawLine(img, from, to, strokeWidth, toRGBA(command.Stroke))
+	}
+}
+
+func fillPolygon(img *image.RGBA, points []math2d.Vec2, c color.RGBA) {
+	if len(points) < 3 {
+		return
+	}
+
+	minY := points[0].Y
+	maxY := points[0].Y
+	for _, point := range points[1:] {
+		minY = min(minY, point.Y)
+		maxY = max(maxY, point.Y)
+	}
+
+	bounds := image.Rect(
+		img.Bounds().Min.X,
+		int(math.Floor(minY)),
+		img.Bounds().Max.X,
+		int(math.Ceil(maxY))+1,
+	).Intersect(img.Bounds())
+
+	intersections := make([]float64, 0, len(points))
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		scanY := float64(y) + 0.5
+		intersections = intersections[:0]
+
+		for i := range points {
+			from := points[i]
+			to := points[(i+1)%len(points)]
+			if from.Y == to.Y {
+				continue
+			}
+
+			edgeMinY := min(from.Y, to.Y)
+			edgeMaxY := max(from.Y, to.Y)
+			if scanY < edgeMinY || scanY >= edgeMaxY {
+				continue
+			}
+
+			t := (scanY - from.Y) / (to.Y - from.Y)
+			intersections = append(intersections, from.X+t*(to.X-from.X))
+		}
+
+		sort.Float64s(intersections)
+		for i := 0; i+1 < len(intersections); i += 2 {
+			startX := int(math.Ceil(intersections[i] - 0.5))
+			endX := int(math.Ceil(intersections[i+1] - 0.5))
+			if startX < bounds.Min.X {
+				startX = bounds.Min.X
+			}
+			if endX > bounds.Max.X {
+				endX = bounds.Max.X
+			}
+			for x := startX; x < endX; x++ {
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+			}
+		}
+	}
 }
 
 // blitScaled nearest-neighbor scales src into dst at the given destination
