@@ -40,6 +40,27 @@ func TestDriverInputBeginTickMapsInputState(t *testing.T) {
 	}
 }
 
+func TestDriverInputIncludesDefaultUIBindings(t *testing.T) {
+	driverInput := newDriverInput(nil)
+
+	driverInput.Apply([]input.Event{
+		{Source: input.Keyboard(input.KeyTab), Kind: input.EventButtonDown},
+		{Source: input.Keyboard(input.KeyEnter), Kind: input.EventButtonDown},
+		{Source: input.Keyboard(input.KeyEscape), Kind: input.EventButtonDown},
+	}, 0)
+
+	state := driverInput.BeginTick()
+	if !state.JustPressed(input.ActionFocusNext) {
+		t.Fatal("focus next should be just pressed from Tab")
+	}
+	if !state.JustPressed(input.ActionConfirm) {
+		t.Fatal("confirm should be just pressed from Enter")
+	}
+	if !state.JustPressed(input.ActionCancel) {
+		t.Fatal("cancel should be just pressed from Escape")
+	}
+}
+
 func TestDriverInputPointerFrameSeedsFromPersistentPointerAfterEndTick(t *testing.T) {
 	driverInput := newDriverInput(nil)
 

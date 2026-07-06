@@ -11,6 +11,10 @@ import (
 type Interactor interface {
 	Clicked(id string, rect math2d.Rect) bool
 	ClickedIn(id string, rect math2d.Rect, space Space) bool
+	Activated(id string, rect math2d.Rect) bool
+	ActivatedIn(id string, rect math2d.Rect, space Space) bool
+	Focusable(id string, rect math2d.Rect)
+	FocusableIn(id string, rect math2d.Rect, space Space)
 }
 
 // Drawer emits UI render commands and exposes animation primitives.

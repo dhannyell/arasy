@@ -58,6 +58,8 @@ func BrowserKeyboardCode(code string) (input.SourceCode, bool) {
 		return input.KeyZ, true
 	case "Space":
 		return input.KeySpace, true
+	case "Tab":
+		return input.KeyTab, true
 	case "Enter":
 		return input.KeyEnter, true
 	case "Escape":

@@ -289,9 +289,11 @@ func (d *Driver) stepOnce(dt float64) {
 	}
 
 	d.input.BeginTick()
-	ctx := d.makeUpdateContext(d.newUpdateUI())
+	uiInst := d.newUpdateUI()
+	ctx := d.makeUpdateContext(uiInst)
 	stepsBefore := d.world.StepTick()
 	d.game.Update(&ctx, dt)
+	uiInst.EndFrame()
 
 	switch {
 	case ctx.simulationHeld:
@@ -411,7 +413,7 @@ func (d *Driver) newRenderUI() *ui.UI {
 // newUpdateUI builds the interaction face of the UI, used in Update.
 func (d *Driver) newUpdateUI() *ui.UI {
 	cam := d.cameraForSurface()
-	return ui.NewUpdate(&d.uiState, d.input.PointerFrame(), cam, d.uiTheme, d.cfg.Camera.Viewport)
+	return ui.NewUpdateWithInput(&d.uiState, d.input.PointerFrame(), d.input.LastInput(), cam, d.uiTheme, d.cfg.Camera.Viewport)
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.
