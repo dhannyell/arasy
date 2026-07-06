@@ -141,7 +141,6 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 	if cell == nil {
 		cell = func(row, col int) string { return "" }
 	}
-	clicked := -1
 	if len(cols) == 0 || rowCount < 0 {
 		rowCount = max(rowCount, 0)
 	}
@@ -225,7 +224,7 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 		}
 	}
 
-	if clicked = u.TableHitIn(id, rect, cols, rowCount, selected, space); clicked >= 0 {
+	if clicked := u.TableHitIn(id, rect, cols, rowCount, selected, space); clicked >= 0 {
 		return clicked
 	}
 	return -1
