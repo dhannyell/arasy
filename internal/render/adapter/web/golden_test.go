@@ -133,5 +133,17 @@ func goldenCommands() []render.Command {
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		},
+		render.DrawPolygon{
+			BaseCommand: render.BaseCommand{LayerValue: 7},
+			Points: []math2d.Vec2{
+				{X: 36, Y: 46},
+				{X: 52, Y: 40},
+				{X: 66, Y: 54},
+				{X: 48, Y: 64},
+			},
+			Fill:        render.RGBA(0.23, 0.54, 0.82, 0.7),
+			Stroke:      render.RGBA(1, 0.85, 0.25, 1),
+			StrokeWidth: 1.5,
+		},
 	}
 }
