@@ -16,6 +16,9 @@ func TestBrowserKeyboardCodeMapsMovementKeys(t *testing.T) {
 		"ArrowDown":  input.KeyArrowDown,
 		"ArrowLeft":  input.KeyArrowLeft,
 		"ArrowRight": input.KeyArrowRight,
+		"Tab":        input.KeyTab,
+		"Enter":      input.KeyEnter,
+		"Escape":     input.KeyEscape,
 	}
 
 	for browserCode, want := range tests {
