@@ -132,6 +132,40 @@ func TestDriverInputPointerMoveDoesNotAffectMappedActions(t *testing.T) {
 	}
 }
 
+func TestDriverInputMouseWheelAccumulatesForOneTick(t *testing.T) {
+	driverInput := newDriverInput(nil)
+
+	driverInput.Apply([]input.Event{
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
+			Kind:   input.EventAxisChanged,
+			Value:  1.5,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
+			Kind:   input.EventAxisChanged,
+			Value:  -0.5,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelX},
+			Kind:   input.EventAxisChanged,
+			Value:  2,
+		},
+	}, 0)
+
+	frame := driverInput.PointerFrame()
+	if frame.Wheel != (math2d.Vec2{X: 2, Y: 1}) {
+		t.Fatalf("frame wheel = %+v, want 2,1", frame.Wheel)
+	}
+
+	driverInput.EndTick(1)
+
+	frame = driverInput.PointerFrame()
+	if frame.Wheel != (math2d.Vec2{}) {
+		t.Fatalf("frame wheel after EndTick = %+v, want zero", frame.Wheel)
+	}
+}
+
 func TestDriverInputSnapshotRestoreRoundTrip(t *testing.T) {
 	driverInput := newDriverInput([]input.Binding{
 		{

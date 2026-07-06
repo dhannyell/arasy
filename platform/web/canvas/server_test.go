@@ -101,6 +101,36 @@ func TestInputEventFromClientMessageMapsMouseLeave(t *testing.T) {
 	}
 }
 
+func TestInputEventFromClientMessageMapsMouseWheel(t *testing.T) {
+	event, ok := inputEventFromClientMessage(clientMessage{
+		Device: "mouse",
+		Code:   "WheelY",
+		Kind:   "axis",
+		Value:  -1.25,
+		X:      12,
+		Y:      34,
+	})
+	if !ok {
+		t.Fatal("inputEventFromClientMessage ok = false, want true")
+	}
+
+	if event.Source.Device != input.DeviceMouse || event.Source.Code != input.MouseWheelY {
+		t.Fatalf("source = %#v, want mouse MouseWheelY", event.Source)
+	}
+	if event.Kind != input.EventAxisChanged {
+		t.Fatalf("kind = %v, want EventAxisChanged", event.Kind)
+	}
+	if event.Value != -1.25 {
+		t.Fatalf("value = %v, want -1.25", event.Value)
+	}
+	if event.X != 12 || event.Y != 34 {
+		t.Fatalf("position = (%v, %v), want (12, 34)", event.X, event.Y)
+	}
+	if !event.Valid() {
+		t.Fatal("event.Valid() = false, want true")
+	}
+}
+
 func TestInputEventFromClientMessageRejectsUnknownInput(t *testing.T) {
 	if _, ok := inputEventFromClientMessage(clientMessage{
 		Device: "mouse",

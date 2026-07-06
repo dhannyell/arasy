@@ -335,6 +335,18 @@ func mouseEventFromMessage(msg clientMessage) (input.Event, bool) {
 			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
 			Kind:   input.EventPointerLeave,
 		}, true
+	case "WheelX", "WheelY":
+		code, ok := browserMouseCode(msg.Code)
+		if !ok {
+			return input.Event{}, false
+		}
+		event := input.Event{
+			Source: input.Source{Device: input.DeviceMouse, Code: code},
+			Kind:   input.EventAxisChanged,
+			Value:  msg.Value,
+			X:      msg.X, Y: msg.Y,
+		}
+		return event, event.Valid()
 	default:
 		code, ok := browserMouseCode(msg.Code)
 		if !ok {
@@ -360,6 +372,10 @@ func browserMouseCode(code string) (input.SourceCode, bool) {
 		return input.MouseRight, true
 	case "Middle":
 		return input.MouseMiddle, true
+	case "WheelX":
+		return input.MouseWheelX, true
+	case "WheelY":
+		return input.MouseWheelY, true
 	}
 	return 0, false
 }

@@ -26,6 +26,7 @@ type PointerFrame struct {
 	Pos     math2d.Vec2
 	Inside  bool
 	Buttons [3]bool
+	Wheel   math2d.Vec2
 	Events  []PointerEvent
 }
 
