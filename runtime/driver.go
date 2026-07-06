@@ -106,10 +106,7 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 		clock:    newClock(cfg.SimulationHz),
 		controls: devControls{speed: 1},
 	}
-	d.uiTheme = cfg.UITheme
-	if d.uiTheme == (ui.Theme{}) {
-		d.uiTheme = ui.DefaultTheme()
-	}
+	d.uiTheme = ui.WithDefaults(cfg.UITheme)
 	if cfg.HistoryLen > 0 {
 		d.recorder = newRecorder(cfg.HistoryLen)
 	}
