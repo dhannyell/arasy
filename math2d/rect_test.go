@@ -78,6 +78,37 @@ func TestRectCenter(t *testing.T) {
 	}
 }
 
+func TestRectScaled(t *testing.T) {
+	rect := math2d.Rect{
+		Min: math2d.Vec2{X: 10, Y: 20},
+		Max: math2d.Vec2{X: 30, Y: 60},
+	}
+
+	got := rect.Scaled(2)
+	want := math2d.Rect{
+		Min: math2d.Vec2{X: 0, Y: 0},
+		Max: math2d.Vec2{X: 40, Y: 80},
+	}
+
+	if got != want {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if got.Center() != rect.Center() {
+		t.Fatalf("center moved: got %v, want %v", got.Center(), rect.Center())
+	}
+}
+
+func TestRectScaledIdentity(t *testing.T) {
+	rect := math2d.Rect{
+		Min: math2d.Vec2{X: 10, Y: 20},
+		Max: math2d.Vec2{X: 30, Y: 60},
+	}
+
+	if got := rect.Scaled(1); got != rect {
+		t.Fatalf("got %v, want unchanged %v", got, rect)
+	}
+}
+
 func TestRectContains(t *testing.T) {
 	rect := math2d.Rect{
 		Min: math2d.Vec2{X: 10, Y: 20},

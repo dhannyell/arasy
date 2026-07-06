@@ -55,6 +55,19 @@ func (r Rect) Center() Vec2 {
 	}
 }
 
+// Scaled returns r resized by factor around its own center, keeping the
+// center fixed. A factor of 1 returns an equal rect; e.g. used for hover/press
+// scale effects on buttons and cards.
+func (r Rect) Scaled(factor float64) Rect {
+	c := r.Center()
+	hw := r.Width() / 2 * factor
+	hh := r.Height() / 2 * factor
+	return Rect{
+		Min: Vec2{X: c.X - hw, Y: c.Y - hh},
+		Max: Vec2{X: c.X + hw, Y: c.Y + hh},
+	}
+}
+
 // Contains reports whether p is inside r.
 // Min is inclusive and Max is exclusive.
 func (r Rect) Contains(p Vec2) bool {
