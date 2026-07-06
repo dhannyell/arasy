@@ -124,16 +124,27 @@ func TestGoldenRects(t *testing.T) {
 			StrokeWidth: 2,
 		},
 		render.DrawRect{
-			Rect:        math2d.NewRect(math2d.Vec2{X: 68, Y: 9}, math2d.Vec2{X: 22, Y: 18}),
-			Fill:        render.RGBA(0.12, 0.63, 0.72, 1),
-			Stroke:      render.RGBA(1, 0.85, 0.25, 0.85),
-			StrokeWidth: 3,
+			Rect:         math2d.NewRect(math2d.Vec2{X: 68, Y: 9}, math2d.Vec2{X: 22, Y: 18}),
+			Fill:         render.RGBA(0.12, 0.63, 0.72, 1),
+			Stroke:       render.RGBA(1, 0.85, 0.25, 0.85),
+			StrokeWidth:  3,
+			CornerRadius: 4,
 		},
 		render.DrawRect{
 			Rect:        math2d.NewRect(math2d.Vec2{X: 18, Y: 42}, math2d.Vec2{X: 0, Y: 20}),
 			Fill:        render.RGBA(1, 1, 1, 1),
 			Stroke:      render.RGBA(1, 0, 1, 1),
 			StrokeWidth: 1,
+		},
+		render.DrawRect{
+			BaseCommand: render.BaseCommand{
+				Clip: math2d.NewRect(math2d.Vec2{X: 56, Y: 42}, math2d.Vec2{X: 22, Y: 14}),
+			},
+			Rect:         math2d.NewRect(math2d.Vec2{X: 48, Y: 36}, math2d.Vec2{X: 40, Y: 26}),
+			Fill:         render.RGBA(0.35, 0.9, 1, 0.78),
+			Stroke:       render.RGBA(1, 1, 1, 1),
+			StrokeWidth:  1.4,
+			CornerRadius: 5,
 		},
 	})
 
@@ -274,6 +285,15 @@ func TestGoldenText(t *testing.T) {
 			Align:    render.AlignCenter,
 			Baseline: render.BaselineMiddle,
 		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 64, Y: 58},
+			Text:     "Tilt",
+			Color:    render.RGBA(1, 0.85, 0.25, 1),
+			Size:     7.5,
+			Align:    render.AlignCenter,
+			Baseline: render.BaselineMiddle,
+			Rotation: -math.Pi / 5,
+		},
 	})
 
 	assertGolden(t, "text", img)
@@ -341,6 +361,20 @@ func TestGoldenPolygons(t *testing.T) {
 			Fill:        render.RGBA(1, 0.55, 0.2, 0.7),
 			Stroke:      render.RGBA(1, 0, 1, 1),
 			StrokeWidth: 5,
+		},
+		render.DrawPolygon{
+			BaseCommand: render.BaseCommand{
+				Clip: math2d.NewRect(math2d.Vec2{X: 42, Y: 44}, math2d.Vec2{X: 16, Y: 24}),
+			},
+			Points: []math2d.Vec2{
+				{X: 39, Y: 42},
+				{X: 60, Y: 47},
+				{X: 56, Y: 70},
+				{X: 40, Y: 66},
+			},
+			Fill:        render.RGBA(0.55, 1, 0.38, 0.62),
+			Stroke:      render.RGBA(0.95, 0.95, 1, 0.9),
+			StrokeWidth: 1.2,
 		},
 	})
 

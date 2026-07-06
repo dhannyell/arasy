@@ -96,3 +96,72 @@ func TestClickedIgnoresNonPrimaryButton(t *testing.T) {
 		t.Fatalf("activeID = %v, want noID; secondary button must not capture", state.activeID)
 	}
 }
+
+func TestFocusableTabCyclesFocusAtEndFrame(t *testing.T) {
+	state := &State{focusID: HashID("one")}
+	cam := testInteractCamera()
+	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionFocusNext), cam, DefaultTheme(), cam.Viewport)
+
+	u.Focusable("one", btnRect())
+	u.Focusable("two", btnRect())
+	u.EndFrame()
+
+	if state.focusID != HashID("two") {
+		t.Fatalf("focusID = %v, want second focusable", state.focusID)
+	}
+}
+
+func TestFocusableTabSelectsFirstWhenNothingFocused(t *testing.T) {
+	state := &State{}
+	cam := testInteractCamera()
+	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionFocusNext), cam, DefaultTheme(), cam.Viewport)
+
+	u.Focusable("one", btnRect())
+	u.Focusable("two", btnRect())
+	u.EndFrame()
+
+	if state.focusID != HashID("one") {
+		t.Fatalf("focusID = %v, want first focusable", state.focusID)
+	}
+}
+
+func TestActivatedReturnsTrueForFocusedConfirm(t *testing.T) {
+	state := &State{focusID: HashID("btn")}
+	cam := testInteractCamera()
+	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionConfirm), cam, DefaultTheme(), cam.Viewport)
+
+	if !u.Activated("btn", btnRect()) {
+		t.Fatal("expected focused widget to activate on confirm")
+	}
+	if u.Activated("other", btnRect()) {
+		t.Fatal("did not expect unfocused widget to activate")
+	}
+}
+
+func TestCancelClearsFocusAtEndFrame(t *testing.T) {
+	state := &State{focusID: HashID("btn")}
+	cam := testInteractCamera()
+	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionCancel), cam, DefaultTheme(), cam.Viewport)
+
+	u.Focusable("btn", btnRect())
+	u.EndFrame()
+
+	if state.focusID != noID {
+		t.Fatalf("focusID = %v, want noID", state.focusID)
+	}
+}
+
+func inputStateJustPressed(action input.Action) input.State {
+	mapper := input.NewMapper([]input.Binding{
+		{
+			Source: input.Keyboard(input.KeyEnter),
+			Action: action,
+			Scale:  1,
+		},
+	})
+	mapper.Apply(input.Event{
+		Source: input.Keyboard(input.KeyEnter),
+		Kind:   input.EventButtonDown,
+	})
+	return mapper.State()
+}

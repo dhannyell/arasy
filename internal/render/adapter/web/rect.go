@@ -17,3 +17,11 @@ func NewRectDTO(rect math2d.Rect) RectDTO {
 		Height: rect.Height(),
 	}
 }
+
+func newOptionalRectDTO(rect math2d.Rect) *RectDTO {
+	if rect.Min == (math2d.Vec2{}) && rect.Max == (math2d.Vec2{}) {
+		return nil
+	}
+
+	return new(NewRectDTO(rect))
+}

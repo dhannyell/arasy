@@ -27,6 +27,10 @@ type Command interface {
 
 type BaseCommand struct {
 	LayerValue int
+
+	// Clip, when non-zero, restricts this command to the rectangle in world
+	// coordinates. Zero value = no clipping.
+	Clip math2d.Rect
 }
 
 func (b BaseCommand) Layer() int {
@@ -80,8 +84,9 @@ type DrawText struct {
 	Align    TextAlign
 	Baseline TextBaseline
 
-	// 90 degrees rotation
-	Quarters int
+	// Rotation is applied around Position, in radians. Zero keeps text
+	// unrotated.
+	Rotation float64
 }
 
 // DrawArc describes an arc stroke draw command.

@@ -31,6 +31,7 @@ const (
 	KeyZ
 
 	KeySpace
+	KeyTab
 	KeyEnter
 	KeyEscape
 

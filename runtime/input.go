@@ -23,12 +23,21 @@ type driverInputSnapshot struct {
 
 func newDriverInput(bindings []input.Binding) *driverInput {
 	i := &driverInput{
-		mapper:    input.NewMapper(bindings),
+		mapper:    input.NewMapper(withDefaultUIBindings(bindings)),
 		buffer:    input.NewBuffer(),
 		lastInput: input.NewState(),
 	}
 	i.resetFrame()
 	return i
+}
+
+func withDefaultUIBindings(bindings []input.Binding) []input.Binding {
+	defaults := []input.Binding{
+		{Source: input.Keyboard(input.KeyTab), Action: input.ActionFocusNext, Scale: 1},
+		{Source: input.Keyboard(input.KeyEnter), Action: input.ActionConfirm, Scale: 1},
+		{Source: input.Keyboard(input.KeyEscape), Action: input.ActionCancel, Scale: 1},
+	}
+	return append(append([]input.Binding(nil), bindings...), defaults...)
 }
 
 func (i *driverInput) Apply(events []input.Event, tick uint64) {
@@ -147,6 +156,15 @@ func (i *driverInput) accumulatePointer(e input.Event) {
 			}
 		}
 		i.pointer.SetInside(false)
+	case input.EventAxisChanged:
+		switch e.Source.Code {
+		case input.MouseWheelX:
+			i.frame.Wheel.X += e.Value
+		case input.MouseWheelY:
+			i.frame.Wheel.Y += e.Value
+		default:
+			i.frame.Inside = false
+		}
 	default:
 		i.frame.Inside = false
 	}

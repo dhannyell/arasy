@@ -15,11 +15,12 @@ type CommandDTO struct {
 	From     *Vec2DTO `json:"from,omitempty"`
 	To       *Vec2DTO `json:"to,omitempty"`
 
-	Radius      float64 `json:"radius,omitempty"`
-	StartAngle  float64 `json:"startAngle,omitempty"`
-	EndAngle    float64 `json:"endAngle,omitempty"`
-	Width       float64 `json:"width,omitempty"`
-	StrokeWidth float64 `json:"strokeWidth,omitempty"`
+	Radius       float64 `json:"radius,omitempty"`
+	StartAngle   float64 `json:"startAngle,omitempty"`
+	EndAngle     float64 `json:"endAngle,omitempty"`
+	Width        float64 `json:"width,omitempty"`
+	StrokeWidth  float64 `json:"strokeWidth,omitempty"`
+	CornerRadius float64 `json:"cornerRadius,omitempty"`
 
 	Fill   *ColorDTO `json:"fill,omitempty"`
 	Stroke *ColorDTO `json:"stroke,omitempty"`
@@ -29,8 +30,10 @@ type CommandDTO struct {
 	Size     float64    `json:"size,omitempty"`
 	Align    string     `json:"align,omitempty"`
 	Baseline string     `json:"baseline,omitempty"`
+	Rotation float64    `json:"rotation,omitempty"`
 	Layer    int        `json:"layer"`
 	Points   []*Vec2DTO `json:"points,omitempty"`
+	Clip     *RectDTO   `json:"clip,omitempty"`
 }
 
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
@@ -49,11 +52,13 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 			commandDTO = CommandDTO{
 				Type: "rect",
 
-				Rect:        new(NewRectDTO(command.Rect)),
-				Fill:        new(NewColorDTO(command.Fill)),
-				Stroke:      new(NewColorDTO(command.Stroke)),
-				StrokeWidth: command.StrokeWidth,
-				Layer:       command.Layer(),
+				Rect:         new(NewRectDTO(command.Rect)),
+				Fill:         new(NewColorDTO(command.Fill)),
+				Stroke:       new(NewColorDTO(command.Stroke)),
+				StrokeWidth:  command.StrokeWidth,
+				CornerRadius: command.CornerRadius,
+				Layer:        command.Layer(),
+				Clip:         newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawLine:
 			commandDTO = CommandDTO{
@@ -64,6 +69,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Width: command.Width,
 				Color: new(NewColorDTO(command.Color)),
 				Layer: command.Layer(),
+				Clip:  newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawCircle:
 			commandDTO = CommandDTO{
@@ -75,6 +81,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Stroke:      new(NewColorDTO(command.Stroke)),
 				StrokeWidth: command.StrokeWidth,
 				Layer:       command.Layer(),
+				Clip:        newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawPoint:
 			commandDTO = CommandDTO{
@@ -83,6 +90,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Radius: command.Radius,
 				Color:  new(NewColorDTO(command.Color)),
 				Layer:  command.Layer(),
+				Clip:   newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawArc:
 			commandDTO = CommandDTO{
@@ -94,6 +102,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Width:      command.Width,
 				Color:      new(NewColorDTO(command.Color)),
 				Layer:      command.Layer(),
+				Clip:       newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawText:
 			commandDTO = CommandDTO{
@@ -104,7 +113,9 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Size:     command.Size,
 				Align:    textAlignToString(command.Align),
 				Baseline: textBaselineToString(command.Baseline),
+				Rotation: command.Rotation,
 				Layer:    command.Layer(),
+				Clip:     newOptionalRectDTO(command.Clip),
 			}
 		case render.DrawPolygon:
 			commandDTO = CommandDTO{
@@ -115,6 +126,7 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Stroke:      new(NewColorDTO(command.Stroke)),
 				StrokeWidth: command.StrokeWidth,
 				Layer:       command.Layer(),
+				Clip:        newOptionalRectDTO(command.Clip),
 			}
 		default:
 			continue

@@ -34,11 +34,12 @@ func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 	layer := u.nextLayer()
 	u.commands = append(u.commands,
 		render.DrawRect{
-			BaseCommand: render.BaseCommand{LayerValue: layer},
-			Rect:        u.rectToWorld(rect, space),
-			Fill:        style.Background,
-			Stroke:      style.Border,
-			StrokeWidth: u.sizeToWorld(style.BorderWidth, space),
+			BaseCommand:  render.BaseCommand{LayerValue: layer},
+			Rect:         u.rectToWorld(rect, space),
+			Fill:         style.Background,
+			Stroke:       style.Border,
+			StrokeWidth:  u.sizeToWorld(style.BorderWidth, space),
+			CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
@@ -49,6 +50,23 @@ func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		})
+	if u.state.focusID == wid {
+		focusRect := insetRect(rect, -u.theme.Focus.Inset)
+		u.commands = append(u.commands, render.DrawRect{
+			BaseCommand:  render.BaseCommand{LayerValue: layer + 2},
+			Rect:         u.rectToWorld(focusRect, space),
+			Stroke:       u.theme.Focus.Color,
+			StrokeWidth:  u.sizeToWorld(u.theme.Focus.Width, space),
+			CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
+		})
+	}
+}
+
+func insetRect(rect math2d.Rect, inset float64) math2d.Rect {
+	return math2d.NewRectFromCorners(
+		math2d.Vec2{X: rect.Min.X + inset, Y: rect.Min.Y + inset},
+		math2d.Vec2{X: rect.Max.X - inset, Y: rect.Max.Y - inset},
+	)
 }
 
 func lerpButtonStyle(a, b ButtonStyle, t float64) ButtonStyle {
