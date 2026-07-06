@@ -143,6 +143,7 @@ The frame contains:
 - final pointer position for the tick;
 - whether the cursor is inside the surface;
 - final button states;
+- wheel accumulated during the tick, in line units;
 - button transitions with positions.
 
 Transitions preserve important cases:
@@ -163,19 +164,71 @@ Available widgets:
 
 - `Button(id, label, rect)`
 - `ButtonIn(id, label, rect, space)`
+- `Card(rect, accent)`
+- `CardIn(rect, accent, space)`
+- `Badge(text, center, bg)`
+- `BadgeIn(text, center, bg, space)`
 - `Label(text, pos)`
 - `LabelIn(text, pos, space)`
 - `Panel(rect)`
 - `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
 - `ProgressBarIn(rect, value, space)`
+- `Table(id, rect, cols, rowCount, selected, cell)`
+- `TableIn(id, rect, cols, rowCount, selected, cell, space)`
+- `TableStyledIn(id, rect, cols, rowCount, selected, cell, style, space)`
 - `Clicked(id, rect)`
 - `ClickedIn(id, rect, space)`
+- `Activated(id, rect)`
+- `ActivatedIn(id, rect, space)`
+- `Focusable(id, rect)`
+- `FocusableIn(id, rect, space)`
+- `ScrollOffset(id, view, contentH)`
+- `ScrollOffsetIn(id, view, contentH, space)`
+- `ScrollAreaIn(id, view, contentH, space)`
+- `TableHitIn(id, rect, cols, rowCount, selected, space)`
 
 `Button`, `Panel`, and `ProgressBar` draw rectangles. `Label` and button text use
 `render.DrawText` with centered alignment and middle baseline.
 
 `ProgressBar` clamps `value` to `[0, 1]`.
+
+`Card` draws a rounded panel with an optional accent bar. `Badge` draws a small
+chip sized by `render.MeasureText`.
+
+## Scroll, Tables, And Focus
+
+Scroll and tables follow the immediate-mode pattern in two phases:
+
+```go
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    if row := ctx.UI.TableHitIn("players", tableRect, cols, len(players), selected, ui.SpaceRef); row >= 0 {
+        selected = row
+    }
+    ctx.UI.ScrollOffset("players", bodyRect, float64(len(players))*32)
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    ctx.UI.Table("players", tableRect, cols, len(players), selected, func(row, col int) string {
+        return players[row].Cell(col)
+    })
+    return nil
+}
+```
+
+`ScrollOffset` belongs in `Update` because it consumes `PointerFrame.Wheel` and
+stores the offset in `ui.State`. `ScrollAreaIn` and `TableIn` draw the scrollbar
+and apply `render.BaseCommand.Clip` to body commands. The offset is part of the
+runtime snapshot, so rewind/scrub restores list position.
+
+`TableColumn.Width == 0` means flex column: remaining width is split across flex
+columns. Use `AlignRight` for numbers; text width comes from the canonical
+`render.MeasureText` metric.
+
+Keyboard focus is intentionally small: `Focusable` registers widgets in call
+order, Tab advances focus, Enter activates the focused widget, and Esc clears
+focus. `Activated` is the recommended click + Enter superset; `Clicked` remains
+available when a widget should respond only to pointer input.
 
 ## UI Animation
 
@@ -362,7 +415,12 @@ The theme defines styles for:
 - normal, hovered, and active buttons;
 - labels;
 - panels;
-- progress bars.
+- progress bars;
+- cards, rows, headers, badges, text, and focus.
+
+Partial themes are completed by `ui.WithDefaults`: zero-value slots inherit
+from `DefaultTheme()`. This lets older games customize only `Button` or `Panel`
+without filling the new slots used by scroll, tables, and focus.
 
 ## Web Canvas Platform
 

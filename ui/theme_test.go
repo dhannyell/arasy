@@ -24,3 +24,22 @@ func TestDefaultThemeProvidesManagerSlots(t *testing.T) {
 		t.Fatal("focus width should have a default")
 	}
 }
+
+func TestWithDefaultsFillsMissingThemeSlots(t *testing.T) {
+	theme := WithDefaults(Theme{
+		Label: LabelTheme{
+			Size:  20,
+			Color: DefaultTheme().Label.Color,
+		},
+	})
+
+	if theme.Label.Size != 20 {
+		t.Fatalf("label size = %v, want preserved custom value 20", theme.Label.Size)
+	}
+	if theme.Button == (ButtonTheme{}) {
+		t.Fatal("button theme should be defaulted")
+	}
+	if theme.Row.Height <= 0 {
+		t.Fatal("row theme should be defaulted")
+	}
+}

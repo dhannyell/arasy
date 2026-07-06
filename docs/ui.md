@@ -143,6 +143,7 @@ O frame contem:
 - posicao final do pointer no tick;
 - se o cursor esta dentro da superficie;
 - estado final dos botoes;
+- wheel acumulado no tick, em unidades de linha;
 - transicoes de botao com posicao.
 
 As transicoes preservam casos importantes:
@@ -163,19 +164,72 @@ Widgets disponiveis:
 
 - `Button(id, label, rect)`
 - `ButtonIn(id, label, rect, space)`
+- `Card(rect, accent)`
+- `CardIn(rect, accent, space)`
+- `Badge(text, center, bg)`
+- `BadgeIn(text, center, bg, space)`
 - `Label(text, pos)`
 - `LabelIn(text, pos, space)`
 - `Panel(rect)`
 - `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
 - `ProgressBarIn(rect, value, space)`
+- `Table(id, rect, cols, rowCount, selected, cell)`
+- `TableIn(id, rect, cols, rowCount, selected, cell, space)`
+- `TableStyledIn(id, rect, cols, rowCount, selected, cell, style, space)`
 - `Clicked(id, rect)`
 - `ClickedIn(id, rect, space)`
+- `Activated(id, rect)`
+- `ActivatedIn(id, rect, space)`
+- `Focusable(id, rect)`
+- `FocusableIn(id, rect, space)`
+- `ScrollOffset(id, view, contentH)`
+- `ScrollOffsetIn(id, view, contentH, space)`
+- `ScrollAreaIn(id, view, contentH, space)`
+- `TableHitIn(id, rect, cols, rowCount, selected, space)`
 
 `Button`, `Panel` e `ProgressBar` desenham retangulos. `Label` e o texto de
 `Button` usam `render.DrawText` com alinhamento central e baseline middle.
 
 `ProgressBar` faz clamp de `value` para `[0, 1]`.
+
+`Card` desenha um painel arredondado com uma barra de accent opcional. `Badge`
+desenha um chip pequeno dimensionado por `render.MeasureText`.
+
+## Scroll, tabelas e foco
+
+Scroll e tabelas seguem o padrao imediato em duas fases:
+
+```go
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    if row := ctx.UI.TableHitIn("players", tableRect, cols, len(players), selected, ui.SpaceRef); row >= 0 {
+        selected = row
+    }
+    ctx.UI.ScrollOffset("players", bodyRect, float64(len(players))*32)
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    ctx.UI.Table("players", tableRect, cols, len(players), selected, func(row, col int) string {
+        return players[row].Cell(col)
+    })
+    return nil
+}
+```
+
+`ScrollOffset` deve ser chamado no `Update`, porque consome
+`PointerFrame.Wheel` e grava o offset em `ui.State`. `ScrollAreaIn` e `TableIn`
+desenham a scrollbar e aplicam `render.BaseCommand.Clip` aos comandos do corpo.
+O offset vive no snapshot do runtime, entao rewind/scrub restauram a posicao da
+lista.
+
+`TableColumn.Width == 0` significa coluna flex: o espaco restante e dividido
+entre as colunas flex. Use `AlignRight` para numeros; a largura de texto vem da
+metrica canonica `render.MeasureText`.
+
+Foco de teclado e minimo: `Focusable` registra widgets na ordem de chamada,
+Tab avanca, Enter ativa o focado e Esc limpa o foco. `Activated` e o superset
+recomendado de clique + Enter; `Clicked` continua disponivel quando o widget
+deve responder somente ao pointer.
 
 ## Animacao de UI
 
@@ -363,7 +417,13 @@ O tema define estilos para:
 - botoes normais, hovered e active;
 - labels;
 - panels;
-- progress bars.
+- progress bars;
+- cards, rows, headers, badges, texto e foco.
+
+Temas parciais sao completados por `ui.WithDefaults`: slots zero value herdam
+os valores de `DefaultTheme()`. Isso permite que jogos antigos personalizem
+apenas `Button` ou `Panel` sem precisar preencher os slots novos usados por
+scroll, tabela e foco.
 
 ## Plataforma web/canvas
 

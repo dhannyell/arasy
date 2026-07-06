@@ -181,3 +181,38 @@ func DefaultTheme() Theme {
 		},
 	}
 }
+
+func WithDefaults(theme Theme) Theme {
+	defaults := DefaultTheme()
+	if theme.Button == (ButtonTheme{}) {
+		theme.Button = defaults.Button
+	}
+	if theme.Label == (LabelTheme{}) {
+		theme.Label = defaults.Label
+	}
+	if theme.Panel == (PanelTheme{}) {
+		theme.Panel = defaults.Panel
+	}
+	if theme.Progress == (ProgressBarTheme{}) {
+		theme.Progress = defaults.Progress
+	}
+	if theme.Card == (CardTheme{}) {
+		theme.Card = defaults.Card
+	}
+	if theme.Row == (RowTheme{}) {
+		theme.Row = defaults.Row
+	}
+	if theme.Header == (HeaderTheme{}) {
+		theme.Header = defaults.Header
+	}
+	if theme.Badge == (BadgeTheme{}) {
+		theme.Badge = defaults.Badge
+	}
+	if theme.Text == (TextTheme{}) {
+		theme.Text = defaults.Text
+	}
+	if theme.Focus == (FocusTheme{}) {
+		theme.Focus = defaults.Focus
+	}
+	return theme
+}
