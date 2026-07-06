@@ -63,6 +63,7 @@ type Drawer interface {
 
 	// Command groups — render-only container transforms
 
+	Emit(cmds ...render.Command)
 	BeginGroup(opts GroupOptions)
 	EndGroup()
 

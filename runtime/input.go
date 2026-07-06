@@ -160,8 +160,10 @@ func (i *driverInput) accumulatePointer(e input.Event) {
 		switch e.Source.Code {
 		case input.MouseWheelX:
 			i.frame.Wheel.X += e.Value
+			i.pointer.SetWheel(math2d.Vec2{X: i.frame.Wheel.X})
 		case input.MouseWheelY:
 			i.frame.Wheel.Y += e.Value
+			i.pointer.SetWheel(math2d.Vec2{Y: i.frame.Wheel.Y})
 		default:
 			i.frame.Inside = false
 		}

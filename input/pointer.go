@@ -33,6 +33,7 @@ type PointerFrame struct {
 type PointerState struct {
 	pos    math2d.Vec2
 	button [3]bool
+	wheel  math2d.Vec2
 	inside bool
 }
 
@@ -42,6 +43,13 @@ func (p *PointerState) Pos() math2d.Vec2 {
 
 func (p *PointerState) SetPos(pos math2d.Vec2) {
 	p.pos = pos
+}
+
+func (p *PointerState) Wheel() math2d.Vec2 {
+	return p.wheel
+}
+func (p *PointerState) SetWheel(wheel math2d.Vec2) {
+	p.wheel = wheel
 }
 
 func (p *PointerState) SetButton(button PointerButton, value bool) {
