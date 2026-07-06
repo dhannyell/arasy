@@ -119,7 +119,7 @@ Rules:
 - **`runtime/`** — The orchestration hub and the engine's public behavioral API. Owns the `Game` contract (`Setup`/`Init`/`Update`/`Render`), `Driver` (fixed timestep pump, input application order, dev controls: pause/step/speed/reset/back), the rewind recorder (stores complete driver snapshots composed from World+driverInput+UI+game state), `StateSlot[T]` for global game state, and the runtime debug HUD. It defines *what a tick is* — that semantic must not be duplicated in platforms.
 - **`loop/`** — Fixed timestep step planner (`Steps`). Runtime's `clock` uses `Steps` to convert elapsed wall time into N fixed simulation steps with a catch-up clamp. Platforms report elapsed time through `Driver.AdvanceTime(elapsed)` or use `Driver.Step()` for deterministic tick-driven flows; platforms must not choose simulation `dt` themselves.
 - **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (no DrawText support yet, no alpha blending yet). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
-- **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `plans/010-decisoes-arquiteturais.md`).
+- **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `plans/direcao/010-decisoes-arquiteturais.md`).
 - **`internal/render/adapter/web/`** — Converts `render.Command` values to JSON DTOs for the web canvas (handles all command types including DrawText).
 - **`cmd/`** — Runnable demos and tools. Game-specific code (e.g., `cmd/demos/football/`, `cmd/demos/breakout/`) lives here, not in engine packages.
 
@@ -152,7 +152,7 @@ maps, or pointers), otherwise rewind snapshots alias mutable state.
 3. Add `Set`, getter, and `Remove` methods to `World`.
 4. Clone the new map in `World.Clone()`.
 5. Clean up in `World.Despawn()`.
-6. Include it in `World.Checksum()` — the checksum must cover the full simulation state; equal checksums must mean equal states (AD-9 in `plans/010-decisoes-arquiteturais.md`).
+6. Include it in `World.Checksum()` — the checksum must cover the full simulation state; equal checksums must mean equal states (AD-9 in `plans/direcao/010-decisoes-arquiteturais.md`).
 
 ### Simulation Determinism
 
@@ -195,7 +195,7 @@ Benchmarks belong in dedicated `*_benchmark_test.go` files.
 - `docs/ui.md` / `docs/ui-en.md` — UI guide.
 - `docs/scrubbing.md` / `docs/scrubbing-en.md` — bidirectional time scrubbing guide (replay-based ScrubToTick, timeline forking, checksum verification).
 - `docs/testing.md` / `docs/testing-en.md` — test organization conventions for file naming, package choice, helpers, integration tests, and benchmarks.
-- `plans/009-revisao-tecnica.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
-- `plans/010-decisoes-arquiteturais.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
-- `plans/008-runtime-pump-decomposicao-driver.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.
-- `plans/011-visao-diferenciais.md` — strategic differentiators: "every bug is a replay file" thesis, headless mass simulation, observable-engine tooling, rollback netcode as long-term north star; explicit anti-bets (rendering as an end, visual editor).
+- `plans/direcao/009-revisao-tecnica.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
+- `plans/direcao/010-decisoes-arquiteturais.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
+- `plans/implementacao/008✓-runtime-pump-decomposicao-driver.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.
+- `plans/direcao/011-visao-diferenciais.md` — strategic differentiators: "every bug is a replay file" thesis, headless mass simulation, observable-engine tooling, rollback netcode as long-term north star; explicit anti-bets (rendering as an end, visual editor).
