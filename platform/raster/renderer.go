@@ -65,14 +65,23 @@ func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 		int(screenMax.X),
 		int(screenMax.Y),
 	)
+	bounds := r.clipBounds(img, rect, command.Clip)
 
 	if command.Fill.A > 0 {
-		fillRect(img, rect, toRGBA(command.Fill))
+		if command.CornerRadius > 0 {
+			fillRoundedRect(img, rect, r.Camera.WorldScalarToScreen(command.CornerRadius), bounds, toRGBA(command.Fill))
+		} else {
+			fillRect(img, rect.Intersect(bounds), toRGBA(command.Fill))
+		}
 	}
 
 	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
 		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
-		strokeRect(img, rect, int(math.Ceil(strokeWidth)), toRGBA(command.Stroke))
+		if command.CornerRadius > 0 {
+			strokeRoundedRect(img, rect, r.Camera.WorldScalarToScreen(command.CornerRadius), strokeWidth, bounds, toRGBA(command.Stroke))
+		} else {
+			strokeRect(img, rect, int(math.Ceil(strokeWidth)), bounds, toRGBA(command.Stroke))
+		}
 	}
 }
 
@@ -80,22 +89,24 @@ func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
+	bounds := r.clipBounds(img, circleBounds(center, radius), command.Clip)
 
 	if command.Fill.A > 0 {
-		fillCircle(img, center, radius, toRGBA(command.Fill))
+		fillCircle(img, center, radius, bounds, toRGBA(command.Fill))
 	}
 
 	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
 		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
-		strokeCircle(img, center, radius, strokeWidth, toRGBA(command.Stroke))
+		strokeCircle(img, center, radius, strokeWidth, bounds, toRGBA(command.Stroke))
 	}
 }
 
 func (r Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 	center := r.Camera.WorldToScreen(command.Center)
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
+	bounds := r.clipBounds(img, circleBounds(center, radius), command.Clip)
 
-	fillCircle(img, center, radius, toRGBA(command.Color))
+	fillCircle(img, center, radius, bounds, toRGBA(command.Color))
 }
 
 func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
@@ -103,11 +114,12 @@ func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 	to := r.Camera.WorldToScreen(command.To)
 
 	width := r.Camera.WorldScalarToScreen(command.Width)
+	bounds := r.clipBounds(img, lineBounds(from, to, width), command.Clip)
 
-	drawLine(img, from, to, width, toRGBA(command.Color))
+	drawLine(img, from, to, width, bounds, toRGBA(command.Color))
 }
 
-func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA) {
+func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, bounds image.Rectangle, c color.RGBA) {
 	if width <= 0 {
 		return
 	}
@@ -115,17 +127,11 @@ func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, c color.RGBA
 	line := to.Sub(from)
 	length := line.Len()
 	if length == 0 {
-		fillCircle(img, from, width*0.5, c)
+		fillCircle(img, from, width*0.5, bounds, c)
 		return
 	}
 
 	radius := width * 0.5
-	minX := int(min(from.X, to.X) - radius)
-	maxX := int(max(from.X, to.X) + radius)
-	minY := int(min(from.Y, to.Y) - radius)
-	maxY := int(max(from.Y, to.Y) + radius)
-
-	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
 	lengthSq := line.LenSq()
 	radiusSq := radius * radius
 
@@ -155,8 +161,9 @@ func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
 
 	width := r.Camera.WorldScalarToScreen(command.Width)
+	bounds := r.clipBounds(img, circleBounds(center, radius), command.Clip)
 
-	strokeArc(img, center, radius, width, command.StartAngle, command.EndAngle, toRGBA(command.Color))
+	strokeArc(img, center, radius, width, command.StartAngle, command.EndAngle, bounds, toRGBA(command.Color))
 }
 
 // textFace is the built-in bitmap font used to render DrawText commands.
@@ -222,8 +229,14 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 
 	destX := screenPos.X + offsetX
 	destY := screenPos.Y + offsetY
+	bounds := r.clipBounds(img, rotatedRectBounds(screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation), command.Clip)
 
-	blitScaled(img, glyphs, destX, destY, destWidth, destHeight)
+	if command.Rotation == 0 {
+		blitScaled(img, glyphs, destX, destY, destWidth, destHeight, bounds)
+		return
+	}
+
+	blitScaledRotated(img, glyphs, screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation, bounds)
 }
 
 func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
@@ -237,7 +250,7 @@ func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
 	}
 
 	if command.Fill.A > 0 {
-		fillPolygon(img, points, toRGBA(command.Fill))
+		fillPolygon(img, points, r.clipBounds(img, polygonBounds(points), command.Clip), toRGBA(command.Fill))
 	}
 
 	strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
@@ -248,11 +261,11 @@ func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
 	for i := range points {
 		from := points[i]
 		to := points[(i+1)%len(points)]
-		drawLine(img, from, to, strokeWidth, toRGBA(command.Stroke))
+		drawLine(img, from, to, strokeWidth, r.clipBounds(img, lineBounds(from, to, strokeWidth), command.Clip), toRGBA(command.Stroke))
 	}
 }
 
-func fillPolygon(img *image.RGBA, points []math2d.Vec2, c color.RGBA) {
+func fillPolygon(img *image.RGBA, points []math2d.Vec2, bounds image.Rectangle, c color.RGBA) {
 	if len(points) < 3 {
 		return
 	}
@@ -264,12 +277,12 @@ func fillPolygon(img *image.RGBA, points []math2d.Vec2, c color.RGBA) {
 		maxY = max(maxY, point.Y)
 	}
 
-	bounds := image.Rect(
-		img.Bounds().Min.X,
+	bounds = bounds.Intersect(image.Rect(
+		bounds.Min.X,
 		int(math.Floor(minY)),
-		img.Bounds().Max.X,
+		bounds.Max.X,
 		int(math.Ceil(maxY))+1,
-	).Intersect(img.Bounds())
+	))
 
 	intersections := make([]float64, 0, len(points))
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
@@ -312,17 +325,17 @@ func fillPolygon(img *image.RGBA, points []math2d.Vec2, c color.RGBA) {
 
 // blitScaled nearest-neighbor scales src into dst at the given destination
 // rect, alpha-blending each opaque source pixel over the destination.
-func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destHeight float64) {
+func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destHeight float64, bounds image.Rectangle) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
 
-	bounds := image.Rect(
+	bounds = bounds.Intersect(image.Rect(
 		int(math.Floor(destX)),
 		int(math.Floor(destY)),
 		int(math.Ceil(destX+destWidth)),
 		int(math.Ceil(destY+destHeight)),
-	).Intersect(dst.Bounds())
+	))
 
 	srcBounds := src.Bounds()
 	scaleX := float64(srcBounds.Dx()) / destWidth
@@ -348,18 +361,50 @@ func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destH
 	}
 }
 
+func blitScaledRotated(dst *image.RGBA, src *image.RGBA, anchor math2d.Vec2, offsetX, offsetY, destWidth, destHeight, angle float64, bounds image.Rectangle) {
+	if destWidth <= 0 || destHeight <= 0 {
+		return
+	}
+
+	cosAngle := math.Cos(angle)
+	sinAngle := math.Sin(angle)
+	srcBounds := src.Bounds()
+	scaleX := float64(srcBounds.Dx()) / destWidth
+	scaleY := float64(srcBounds.Dy()) / destHeight
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			dx := float64(x) + 0.5 - anchor.X
+			dy := float64(y) + 0.5 - anchor.Y
+
+			localX := dx*cosAngle + dy*sinAngle - offsetX
+			localY := -dx*sinAngle + dy*cosAngle - offsetY
+			if localX < 0 || localX >= destWidth || localY < 0 || localY >= destHeight {
+				continue
+			}
+
+			srcX := srcBounds.Min.X + int(localX*scaleX)
+			srcY := srcBounds.Min.Y + int(localY*scaleY)
+			if srcX < srcBounds.Min.X || srcX >= srcBounds.Max.X || srcY < srcBounds.Min.Y || srcY >= srcBounds.Max.Y {
+				continue
+			}
+
+			c := src.RGBAAt(srcX, srcY)
+			if c.A == 0 {
+				continue
+			}
+			dst.SetRGBA(x, y, blendRGBA(dst.RGBAAt(x, y), c))
+		}
+	}
+}
+
 func fillRect(img *image.RGBA, rect image.Rectangle, c color.RGBA) {
 	draw.Draw(img, rect, &image.Uniform{C: c}, image.Point{}, draw.Over)
 }
 
-func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGBA) {
-	minX := int(center.X - radius)
-	maxX := int(center.X + radius)
-	minY := int(center.Y - radius)
-	maxY := int(center.Y + radius)
-
+func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, bounds image.Rectangle, c color.RGBA) {
 	radiusSq := radius * radius
-	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
+	bounds = bounds.Intersect(circleBounds(center, radius))
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -373,7 +418,7 @@ func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, c color.RGB
 	}
 }
 
-func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) {
+func strokeRect(img *image.RGBA, rect image.Rectangle, width int, bounds image.Rectangle, c color.RGBA) {
 	if width <= 0 || rect.Empty() {
 		return
 	}
@@ -381,7 +426,7 @@ func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) 
 	// A stroke wide enough to cover the interior is a filled rect. Falling
 	// back also keeps the bands below from overlapping each other.
 	if width*2 >= rect.Dx() || width*2 >= rect.Dy() {
-		fillRect(img, rect, c)
+		fillRect(img, rect.Intersect(bounds), c)
 		return
 	}
 
@@ -394,31 +439,31 @@ func strokeRect(img *image.RGBA, rect image.Rectangle, width int, c color.RGBA) 
 		rect.Min.X,
 		rect.Min.Y,
 		rect.Max.X,
-		rect.Min.Y+width), c)
+		rect.Min.Y+width).Intersect(bounds), c)
 
 	// bottom
 	fillRect(img, image.Rect(
 		rect.Min.X,
 		rect.Max.Y-width,
 		rect.Max.X,
-		rect.Max.Y), c)
+		rect.Max.Y).Intersect(bounds), c)
 
 	// left (between the top and bottom bands)
 	fillRect(img, image.Rect(
 		rect.Min.X,
 		rect.Min.Y+width,
 		rect.Min.X+width,
-		rect.Max.Y-width), c)
+		rect.Max.Y-width).Intersect(bounds), c)
 
 	// right (between the top and bottom bands)
 	fillRect(img, image.Rect(
 		rect.Max.X-width,
 		rect.Min.Y+width,
 		rect.Max.X,
-		rect.Max.Y-width), c)
+		rect.Max.Y-width).Intersect(bounds), c)
 }
 
-func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width float64, c color.RGBA) {
+func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width float64, bounds image.Rectangle, c color.RGBA) {
 	if radius <= 0 || width <= 0 {
 		return
 	}
@@ -432,12 +477,7 @@ func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width flo
 	outerSq := outerRadius * outerRadius
 	innerSq := innerRadius * innerRadius
 
-	minX := int(center.X - outerRadius)
-	maxX := int(center.X + outerRadius)
-	minY := int(center.Y - outerRadius)
-	maxY := int(center.Y + outerRadius)
-
-	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
+	bounds = bounds.Intersect(circleBounds(center, outerRadius))
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -452,7 +492,7 @@ func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width flo
 	}
 }
 
-func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, endAngle float64, c color.RGBA) {
+func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, endAngle float64, bounds image.Rectangle, c color.RGBA) {
 	if radius <= 0 || width <= 0 {
 		return
 	}
@@ -466,12 +506,7 @@ func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, e
 	outerSq := outerRadius * outerRadius
 	innerSq := innerRadius * innerRadius
 
-	minX := int(center.X - outerRadius)
-	maxX := int(center.X + outerRadius)
-	minY := int(center.Y - outerRadius)
-	maxY := int(center.Y + outerRadius)
-
-	bounds := image.Rect(minX, minY, maxX+1, maxY+1).Intersect(img.Bounds())
+	bounds = bounds.Intersect(circleBounds(center, outerRadius))
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -493,6 +528,194 @@ func strokeArc(img *image.RGBA, center math2d.Vec2, radius, width, startAngle, e
 			}
 		}
 	}
+}
+
+func fillRoundedRect(img *image.RGBA, rect image.Rectangle, radius float64, bounds image.Rectangle, c color.RGBA) {
+	if rect.Empty() {
+		return
+	}
+
+	radius = clampRoundedRectRadius(rect, radius)
+	if radius <= 0 {
+		fillRect(img, rect.Intersect(bounds), c)
+		return
+	}
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			if pointInRoundedRect(float64(x)+0.5, float64(y)+0.5, rect, radius) {
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+			}
+		}
+	}
+}
+
+func strokeRoundedRect(img *image.RGBA, rect image.Rectangle, radius, width float64, bounds image.Rectangle, c color.RGBA) {
+	if rect.Empty() || width <= 0 {
+		return
+	}
+
+	radius = clampRoundedRectRadius(rect, radius)
+	if radius <= 0 {
+		strokeRect(img, rect, int(math.Ceil(width)), bounds, c)
+		return
+	}
+
+	inner := rect.Inset(int(math.Ceil(width)))
+	innerRadius := radius - width
+	if innerRadius < 0 {
+		innerRadius = 0
+	}
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			px := float64(x) + 0.5
+			py := float64(y) + 0.5
+			if !pointInRoundedRect(px, py, rect, radius) {
+				continue
+			}
+			if !inner.Empty() && pointInRoundedRect(px, py, inner, innerRadius) {
+				continue
+			}
+			img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+		}
+	}
+}
+
+func pointInRoundedRect(x, y float64, rect image.Rectangle, radius float64) bool {
+	if x < float64(rect.Min.X) || x >= float64(rect.Max.X) || y < float64(rect.Min.Y) || y >= float64(rect.Max.Y) {
+		return false
+	}
+	if radius <= 0 {
+		return true
+	}
+
+	left := float64(rect.Min.X) + radius
+	right := float64(rect.Max.X) - radius
+	top := float64(rect.Min.Y) + radius
+	bottom := float64(rect.Max.Y) - radius
+
+	closestX := min(max(x, left), right)
+	closestY := min(max(y, top), bottom)
+	dx := x - closestX
+	dy := y - closestY
+	return dx*dx+dy*dy <= radius*radius
+}
+
+func clampRoundedRectRadius(rect image.Rectangle, radius float64) float64 {
+	if radius <= 0 {
+		return 0
+	}
+
+	maxRadius := float64(min(rect.Dx(), rect.Dy())) * 0.5
+	if radius > maxRadius {
+		return maxRadius
+	}
+	return radius
+}
+
+func (r Renderer) clipBounds(img *image.RGBA, bounds image.Rectangle, clip math2d.Rect) image.Rectangle {
+	bounds = bounds.Intersect(img.Bounds())
+	if isZeroRect(clip) {
+		return bounds
+	}
+
+	screenMin := r.Camera.WorldToScreen(clip.Min)
+	screenMax := r.Camera.WorldToScreen(clip.Max)
+	clipRect := image.Rect(
+		int(math.Floor(min(screenMin.X, screenMax.X))),
+		int(math.Floor(min(screenMin.Y, screenMax.Y))),
+		int(math.Ceil(max(screenMin.X, screenMax.X))),
+		int(math.Ceil(max(screenMin.Y, screenMax.Y))),
+	)
+	return bounds.Intersect(clipRect)
+}
+
+func circleBounds(center math2d.Vec2, radius float64) image.Rectangle {
+	return image.Rect(
+		int(math.Floor(center.X-radius)),
+		int(math.Floor(center.Y-radius)),
+		int(math.Ceil(center.X+radius))+1,
+		int(math.Ceil(center.Y+radius))+1,
+	)
+}
+
+func lineBounds(from, to math2d.Vec2, width float64) image.Rectangle {
+	radius := width * 0.5
+	return image.Rect(
+		int(math.Floor(min(from.X, to.X)-radius)),
+		int(math.Floor(min(from.Y, to.Y)-radius)),
+		int(math.Ceil(max(from.X, to.X)+radius))+1,
+		int(math.Ceil(max(from.Y, to.Y)+radius))+1,
+	)
+}
+
+func polygonBounds(points []math2d.Vec2) image.Rectangle {
+	if len(points) == 0 {
+		return image.Rectangle{}
+	}
+
+	minX := points[0].X
+	maxX := points[0].X
+	minY := points[0].Y
+	maxY := points[0].Y
+	for _, point := range points[1:] {
+		minX = min(minX, point.X)
+		maxX = max(maxX, point.X)
+		minY = min(minY, point.Y)
+		maxY = max(maxY, point.Y)
+	}
+
+	return image.Rect(
+		int(math.Floor(minX)),
+		int(math.Floor(minY)),
+		int(math.Ceil(maxX))+1,
+		int(math.Ceil(maxY))+1,
+	)
+}
+
+func rotatedRectBounds(anchor math2d.Vec2, offsetX, offsetY, width, height, angle float64) image.Rectangle {
+	if angle == 0 {
+		return image.Rect(
+			int(math.Floor(anchor.X+offsetX)),
+			int(math.Floor(anchor.Y+offsetY)),
+			int(math.Ceil(anchor.X+offsetX+width)),
+			int(math.Ceil(anchor.Y+offsetY+height)),
+		)
+	}
+
+	cosAngle := math.Cos(angle)
+	sinAngle := math.Sin(angle)
+	corners := [4]math2d.Vec2{
+		{X: offsetX, Y: offsetY},
+		{X: offsetX + width, Y: offsetY},
+		{X: offsetX + width, Y: offsetY + height},
+		{X: offsetX, Y: offsetY + height},
+	}
+
+	minX := math.Inf(1)
+	maxX := math.Inf(-1)
+	minY := math.Inf(1)
+	maxY := math.Inf(-1)
+	for _, corner := range corners {
+		x := anchor.X + corner.X*cosAngle - corner.Y*sinAngle
+		y := anchor.Y + corner.X*sinAngle + corner.Y*cosAngle
+		minX = min(minX, x)
+		maxX = max(maxX, x)
+		minY = min(minY, y)
+		maxY = max(maxY, y)
+	}
+
+	return image.Rect(
+		int(math.Floor(minX)),
+		int(math.Floor(minY)),
+		int(math.Ceil(maxX)),
+		int(math.Ceil(maxY)),
+	)
+}
+
+func isZeroRect(rect math2d.Rect) bool {
+	return rect.Min == (math2d.Vec2{}) && rect.Max == (math2d.Vec2{})
 }
 
 func angleBetween(angle float64, start, end float64) bool {
