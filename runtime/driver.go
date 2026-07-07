@@ -29,6 +29,7 @@ type Driver struct {
 	input    *driverInput
 	clock    *clock
 	controls devControls
+	rng      Rand
 	tick     uint64
 	log      *slog.Logger
 
@@ -90,7 +91,14 @@ type AdvanceStats struct {
 }
 
 func NewDriver(game Game, log *slog.Logger) *Driver {
+	return newDriver(game, log, nil)
+}
+
+func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	cfg := game.Setup()
+	if seedOverride != nil {
+		cfg.Seed = *seedOverride
+	}
 	if cfg.SimulationHz <= 0 {
 		cfg.SimulationHz = defaultSimulationHz
 	}
@@ -110,6 +118,7 @@ func NewDriver(game Game, log *slog.Logger) *Driver {
 	if cfg.HistoryLen > 0 {
 		d.recorder = newRecorder(cfg.HistoryLen)
 	}
+	d.rng = NewRand(cfg.Seed)
 	d.doReset()
 	return d
 }
@@ -439,6 +448,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Pointer:    d.input.PointerFrame(),
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
+		Rand:       &d.rng,
 		UI:         uiInst,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
 		camera:     d.cameraForSurface(),
@@ -484,6 +494,7 @@ func (d *Driver) doReset() {
 		d.recorder.Clear()
 	}
 	ctx := d.makeUpdateContext(d.newRenderUI())
+	d.rng = NewRand(d.cfg.Seed)
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }
@@ -531,7 +542,7 @@ func (d *Driver) doScrubToTick(target uint64) {
 	// viewport-dependent Update logic (UI hit-testing above all) reconstructs
 	// identically — the viewport at each tick during replay matches what was
 	// active when the pointer events were originally recorded.
-	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target}, d.viewport, d.viewportLog)
+	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target, Seed: d.cfg.Seed}, d.viewport, d.viewportLog)
 
 	d.world = replayed.world
 	d.uiState = replayed.uiState
@@ -576,6 +587,7 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.world = snap.world
 	d.uiState = snap.uiState
 	d.input.Restore(snap.input)
+	d.rng = snap.rng
 	d.tick = snap.tick
 	// Restoring replaces the mapper wholesale, dropping the effect of any
 	// staged input — drop the staged events and staged viewport with it
@@ -594,6 +606,7 @@ func (d *Driver) captureSnapshot() driverSnapshot {
 		input:     d.input.Snapshot(),
 		uiState:   d.uiState.Clone(),
 		gameState: d.captureGameState(),
+		rng:       d.rng,
 		tick:      d.tick,
 	}
 }

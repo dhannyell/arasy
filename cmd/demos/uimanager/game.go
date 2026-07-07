@@ -24,6 +24,9 @@ const (
 	viewH = 1080
 )
 
+const initialSeasonSeed = 20260706
+const initialSeasonYear = 2026
+
 type Manager struct {
 	runtime.StateSlot[ManagerState]
 	UIState ManagerUIState
@@ -48,10 +51,11 @@ func (g *Manager) Setup() runtime.Config {
 
 func (g *Manager) Init(ctx *runtime.UpdateContext) {
 	_ = ctx
-	clubs, fixtures := GenerateLeague(20260706)
+	clubs, fixtures := GenerateLeague(initialSeasonSeed)
 	g.State = ManagerState{
 		Screen:         ScreenDashboard,
-		Seed:           20260706,
+		Seed:           initialSeasonSeed,
+		SeasonYear:     initialSeasonYear,
 		Round:          1,
 		Clubs:          clubs,
 		Fixtures:       fixtures,
@@ -81,8 +85,14 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	if ctx.UI.ClickedIn("btn_sim_dashboard", simButtonRect(), ui.SpaceRef) {
 		SimulateRound(&g.State)
 	}
+	if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_dash", simButtonRect(), ui.SpaceRef) {
+		g.startNewSeason()
+	}
 	if g.State.Screen == ScreenTable {
 		ctx.UI.ScrollOffsetIn("tbl_standings", standingsBodyRect(ctx.UI), float64(len(g.State.Clubs))*ctx.UI.RowHeight(), ui.SpaceRef)
+		if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_table", tableNewSeasonButtonRect(), ui.SpaceRef) {
+			g.startNewSeason()
+		}
 	}
 	if g.State.Screen == ScreenSquad {
 		g.updateSquad(ctx)
@@ -92,6 +102,26 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	}
 
 	g.checkPressedButtons(ctx)
+}
+
+func (g *Manager) startNewSeason() {
+	seasonRNG := runtime.NewRand(g.State.Seed).Derive("next-season")
+	nextSeed := seasonRNG.Uint64()
+	nextYear := g.State.SeasonYear + 1
+	screen := g.State.Screen
+	previous := g.State.PreviousScreen
+	clubs, fixtures := GenerateLeague(nextSeed)
+	g.State = ManagerState{
+		Screen:         screen,
+		PreviousScreen: previous,
+		Seed:           nextSeed,
+		SeasonYear:     nextYear,
+		Round:          1,
+		Clubs:          clubs,
+		Fixtures:       fixtures,
+		SelectedPlayer: -1,
+	}
+	initSquadOrder(g.State.Clubs[0].Squad)
 }
 
 func (g *Manager) checkPressedButtons(ctx *runtime.UpdateContext) {
@@ -237,7 +267,7 @@ func drawStatusRail(s ManagerState) []render.Command {
 		value string
 		col   render.Color
 	}{
-		{"SEASON", "2026", bgRaised},
+		{"SEASON", fmt.Sprintf("%d", s.SeasonYear), bgRaised},
 		{"ROUND", fmt.Sprintf("%02d/%v", min(s.Round, len(s.Clubs)*2-2), len(s.Clubs)*2-2), gold},
 		{"LEAGUE", "AURORA", bgRaised},
 		{"MORALE", Morale(s.Clubs[0]), bgRaised},
@@ -380,6 +410,21 @@ func buildNavItems(entries []struct {
 }
 
 func simButtonRect() math2d.Rect { return rect(720, 425, 238, 56) }
+
+func drawSeasonEndedButton(idPrefix string, button math2d.Rect, ctx *runtime.RenderContext) []render.Command {
+	btnTarget := 1.0
+	if ctx.UI.Hovered(button) {
+		btnTarget = 1.08
+	}
+	scaled := ctx.UI.SpringScale(idPrefix+"_btn_new_season", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, button)
+	cmds := slantedPanel(scaled, gold, render.RGBA(0, 0, 0, 0), 0, 16, 12)
+	cmds = append(cmds, text("START NEW SEASON", scaled.Center(), bgDeep, 17, render.AlignCenter, render.BaselineMiddle, 13)...)
+	return cmds
+}
+
+func seasonEnded(s ManagerState) bool {
+	return len(s.Clubs) > 0 && s.Round > totalRounds(len(s.Clubs))
+}
 
 func rectCmd(layer int, r math2d.Rect, fill render.Color) []render.Command {
 	return []render.Command{render.DrawRect{BaseCommand: render.BaseCommand{LayerValue: layer}, Rect: r, Fill: fill}}

@@ -17,6 +17,7 @@ type driverSnapshot struct {
 	input     driverInputSnapshot
 	uiState   ui.State
 	gameState GameState
+	rng       Rand
 	tick      uint64
 }
 
