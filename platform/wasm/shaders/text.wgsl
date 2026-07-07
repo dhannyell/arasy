@@ -22,6 +22,6 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOut) -> @location(0) vec4f {
-  let mask = textureSample(atlasTexture, atlasSampler, in.uv).a;
+  let mask = textureSample(atlasTexture, atlasSampler, in.uv).r;
   return vec4f(in.color.rgb, in.color.a * mask);
 }
