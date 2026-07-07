@@ -73,3 +73,28 @@ jobs:
           go-version-file: go.mod
       - name: test
         run: go test ./...
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test (js/wasm, sim path)
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          export PATH="$PATH:$(go env GOROOT)/lib/wasm"
+          go test ./scene/... ./runtime/... ./math2d/... ./ease/...
+
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test ./...
