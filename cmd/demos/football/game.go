@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand"
 
 	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/input"
@@ -168,7 +167,7 @@ func (f *Football) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 		if c.A == f.ball && c.B == f.controlledPlayer {
 			playerSprite, ok := ctx.World.CircleSprite(f.controlledPlayer)
 			if ok {
-				playerSprite.Color = render.RGBA(rand.Float64(), rand.Float64(), rand.Float64(), 1)
+				playerSprite.Color = render.RGBA(ctx.Rand.Float64(), ctx.Rand.Float64(), ctx.Rand.Float64(), 1)
 				ctx.World.SetCircleSprite(f.controlledPlayer, playerSprite)
 			}
 		}

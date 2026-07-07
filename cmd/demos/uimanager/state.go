@@ -19,6 +19,7 @@ type ManagerState struct {
 	Screen         Screen
 	PreviousScreen Screen
 	Seed           uint64
+	SeasonYear     int
 	Round          int
 	Clubs          []Club
 	Fixtures       []Fixture
