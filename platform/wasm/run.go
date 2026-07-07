@@ -9,13 +9,18 @@ import (
 
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )
 
+// Options configures the browser WASM host.
 type Options struct {
-	// CanvasID is the canvas element <canvas> in DOM. Default "ff-canvas"
+	// CanvasID is the DOM canvas element id. Default "ff-canvas".
 	CanvasID string
-	Log      *slog.Logger
+	// Log receives host diagnostics. Default slog.Default().
+	Log *slog.Logger
+	// ForceCanvas2D skips WebGPU initialization and uses the Canvas2D fallback.
+	ForceCanvas2D bool
 }
 
 type host struct {
@@ -29,13 +34,14 @@ type host struct {
 
 	lastTimestamp float64
 	hasTimestamp  bool
-	renderer      *Canvas2D
+	renderer      renderer
 
 	loopCb   js.Func
 	resizeCb js.Func
 	inputCbs []js.Func
 }
 
+// Run starts the browser WASM host for game and blocks forever.
 func Run(game runtime.Game, opts Options) error {
 	log := opts.Log
 	if log == nil {
@@ -60,9 +66,25 @@ func Run(game runtime.Game, opts Options) error {
 	h.resize()
 	h.registerResizeListener()
 	h.registerInputListeners()
-	h.renderer = newCanvas2D(canvas, cfg.Clear)
+	h.renderer = selectRenderer(canvas, cfg.Clear, opts.ForceCanvas2D, log)
 	h.startLoop()
 	select {}
+}
+
+func selectRenderer(canvas js.Value, clear render.Color, forceCanvas2D bool, log *slog.Logger) renderer {
+	if forceCanvas2D {
+		log.Info("using canvas2d renderer")
+		return newCanvas2D(canvas, clear)
+	}
+
+	r, err := newWebGPU(canvas, clear)
+	if err == nil {
+		log.Info("using webgpu renderer")
+		return r
+	}
+
+	log.Warn("webgpu unavailable, falling back to canvas2d", "error", err)
+	return newCanvas2D(canvas, clear)
 }
 
 func (h *host) resize() {

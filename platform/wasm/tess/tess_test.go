@@ -155,7 +155,7 @@ func TestColorsRemainStraightAlpha(t *testing.T) {
 func TestBuildPreservesInputOrderForSolidCommands(t *testing.T) {
 	first := render.RGBA(1, 0, 0, 1)
 	second := render.RGBA(0, 0, 1, 1)
-	mesh, texts := Build(runtime.Frame{
+	mesh, textMesh := Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawRect{
@@ -169,10 +169,10 @@ func TestBuildPreservesInputOrderForSolidCommands(t *testing.T) {
 				Fill:        second,
 			},
 		},
-	}, 100, 100)
+	}, 100, 100, nil)
 
-	if len(texts) != 0 {
-		t.Fatalf("len(texts) = %d, want 0", len(texts))
+	if len(textMesh.Vertices) != 0 {
+		t.Fatalf("len(text vertices) = %d, want 0", len(textMesh.Vertices))
 	}
 	if len(mesh.Vertices) != 12 {
 		t.Fatalf("len(vertices) = %d, want 12", len(mesh.Vertices))
