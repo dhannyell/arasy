@@ -271,3 +271,45 @@ func TestTweenClampsAndResets(t *testing.T) {
 		t.Fatalf("Tween after Reset = %v, want near 0", v)
 	}
 }
+
+func TestSpringScaleSettlesAtTarget1(t *testing.T) {
+	store := AnimStore{}
+	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 20, Y: 20})
+
+	renderTime := 0.0
+	var got math2d.Rect
+	for range 300 {
+		store.AdvanceFrame()
+		renderTime += 1.0 / 60
+		u := New(&State{}, math2d.Vec2{}, true, testCam(), DefaultTheme(), testCam().Viewport, &store, 1.0/60, renderTime)
+		got = u.SpringScale("s", 1, DefaultSpringConfig(), rect)
+	}
+
+	if math.Abs(got.Width()-rect.Width()) > 0.01 {
+		t.Fatalf("SpringScale settled width = %v, want ~= original %v", got.Width(), rect.Width())
+	}
+	if got.Center() != rect.Center() {
+		t.Fatalf("SpringScale center = %v, want unchanged %v", got.Center(), rect.Center())
+	}
+}
+
+func TestSpringScaleGrowsTowardTarget(t *testing.T) {
+	store := AnimStore{}
+	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 20, Y: 20})
+
+	renderTime := 0.0
+	var got math2d.Rect
+	for range 60 {
+		store.AdvanceFrame()
+		renderTime += 1.0 / 60
+		u := New(&State{}, math2d.Vec2{}, true, testCam(), DefaultTheme(), testCam().Viewport, &store, 1.0/60, renderTime)
+		got = u.SpringScale("s", 1.5, DefaultSpringConfig(), rect)
+	}
+
+	if got.Width() <= rect.Width() {
+		t.Fatalf("SpringScale width = %v, want > original %v after springing toward 1.5", got.Width(), rect.Width())
+	}
+	if got.Center() != rect.Center() {
+		t.Fatalf("SpringScale center = %v, want unchanged %v", got.Center(), rect.Center())
+	}
+}
