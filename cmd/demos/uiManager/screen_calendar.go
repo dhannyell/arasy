@@ -11,14 +11,14 @@ import (
 
 const calendarRowH = 44.0
 
-func calendarRoundsPanel() math2d.Rect { return rect(190, 170, 820, 690) }
+func calendarRoundsPanel() math2d.Rect { return rect(190, 170, 820, 700) }
 func calendarRoundsBodyRect() math2d.Rect {
 	p := calendarRoundsPanel()
 	return rect(p.Min.X+20, p.Min.Y+52, p.Width()-40, p.Height()-72)
 }
 
 func calendarNextPanel() math2d.Rect   { return rect(1050, 170, 680, 300) }
-func calendarDetailPanel() math2d.Rect { return rect(1050, 490, 680, 370) }
+func calendarDetailPanel() math2d.Rect { return rect(1030, 500, 680, 370) }
 
 func calendarSimButtonRect() math2d.Rect {
 	p := calendarDetailPanel()
