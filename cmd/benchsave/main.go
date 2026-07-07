@@ -44,7 +44,11 @@ func main() {
 	if *listSuites {
 		fmt.Println("registered benchmark suites:")
 		for _, s := range benchSuites {
-			fmt.Printf("  %-12s pkg=%-12s bench=%s\n", s.Name, s.Pkg, s.Bench)
+			benchtime := s.Benchtime
+			if benchtime == "" {
+				benchtime = "-"
+			}
+			fmt.Printf("  %-18s pkg=%-12s bench=%-48s benchtime=%s\n", s.Name, s.Pkg, s.Bench, benchtime)
 		}
 		fmt.Println(`use -suite <name> to run one, or -suite all to run every suite`)
 		return
@@ -88,6 +92,10 @@ func main() {
 			opts := baseOpts
 			opts.Pkg = s.Pkg
 			opts.Bench = s.Bench
+			opts.Family = s.Name
+			if opts.Benchtime == "" {
+				opts.Benchtime = s.Benchtime
+			}
 			if _, err := runOnce(opts); err != nil {
 				fmt.Fprintf(os.Stderr, "suite %q failed: %v\n", s.Name, err)
 				failed = true
@@ -115,6 +123,10 @@ func main() {
 		}
 		opts.Pkg = s.Pkg
 		opts.Bench = s.Bench
+		opts.Family = s.Name
+		if opts.Benchtime == "" {
+			opts.Benchtime = s.Benchtime
+		}
 	}
 
 	if _, err := runOnce(opts); err != nil {
@@ -124,11 +136,11 @@ func main() {
 }
 
 type runOptions struct {
-	Pkg, Bench, Run, OutDir, Name string
-	Count                         int
-	Benchmem                      bool
-	Benchtime, Timeout            string
-	Compare, ComparisonOut        string
+	Pkg, Bench, Run, OutDir, Name, Family string
+	Count                                 int
+	Benchmem                              bool
+	Benchtime, Timeout                    string
+	Compare, ComparisonOut                string
 }
 
 // runOnce runs one benchmark suite (a single go test -bench invocation),
@@ -163,7 +175,11 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 
 	reportName := opts.Name
 	if reportName == "" {
-		reportName = "bench-" + sanitizeName(opts.Pkg) + "-" + start.Format(timestampLayout)
+		family := opts.Family
+		if family == "" {
+			family = opts.Pkg
+		}
+		reportName = "bench-" + sanitizeName(family) + "-" + start.Format(timestampLayout)
 	}
 
 	reportPath = filepath.Join(opts.OutDir, reportName+".md")
@@ -171,8 +187,12 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 
 	var comparison string
 	if opts.Compare != "" {
+		family := opts.Family
+		if family == "" {
+			family = opts.Pkg
+		}
 		var compareErr error
-		comparison, compareErr = compareAgainstPrevious(opts.Compare, opts.OutDir, opts.Pkg, reportName+".md", output.String())
+		comparison, compareErr = compareAgainstPrevious(opts.Compare, opts.OutDir, family, reportName+".md", output.String())
 		if compareErr != nil {
 			fmt.Fprintf(os.Stderr, "comparison skipped: %v\n", compareErr)
 			comparison = ""
