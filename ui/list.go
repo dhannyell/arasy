@@ -99,55 +99,8 @@ func (u *UI) ListIn(id string, rect math2d.Rect, rowH float64, rowCount, selecte
 			draw(row, rowRect)
 		}
 
-		clipCommands(u.commands[start:], clip)
+		render.ClipCommands(u.commands[start:], clip)
 	}
 
 	return u.ListHitIn(id, rect, rowH, rowCount, space)
-}
-
-// clipCommands sets clip as the Clip rect on each command in cmds that
-// doesn't already carry one of its own. Mirrors group.go's retroactive
-// transformCommand pattern: it patches commands already appended to
-// u.commands rather than requiring every draw call site to thread Clip
-// through by hand.
-func clipCommands(cmds []render.Command, clip math2d.Rect) {
-	for i, cmd := range cmds {
-		switch c := cmd.(type) {
-		case render.DrawRect:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawCircle:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawPoint:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawLine:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawText:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawArc:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		case render.DrawPolygon:
-			if c.Clip == (math2d.Rect{}) {
-				c.Clip = clip
-				cmds[i] = c
-			}
-		}
-	}
 }
