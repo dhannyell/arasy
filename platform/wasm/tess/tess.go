@@ -1,7 +1,6 @@
 package tess
 
 import (
-	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -32,11 +31,6 @@ func vertex(pos [2]float32, col render.Color) Vertex {
 		B: float32(col.B),
 		A: float32(col.A),
 	}
-}
-
-func (c ctx) toClip(world math2d.Vec2) (x, y float32) {
-	s := c.cam.WorldToScreen(world)
-	return float32(2*s.X/c.w - 1), float32(1 - 2*s.Y/c.h)
 }
 
 func pushTri(m *Mesh, a, b, c [2]float32, col render.Color) {
