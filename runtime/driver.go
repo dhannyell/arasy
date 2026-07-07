@@ -525,7 +525,9 @@ func (d *Driver) doBackToTick(target uint64) {
 	}
 	d.restoreSnapshot(snap)
 
-	d.log.Debug("backToTick", "tick", d.tick, "target", target)
+	if d.log.Enabled(context.Background(), slog.LevelDebug) {
+		d.log.Debug("backToTick", "tick", d.tick, "target", target)
+	}
 }
 
 // doScrubToTick moves the driver to target by deterministically replaying
@@ -563,7 +565,9 @@ func (d *Driver) doScrubToTick(target uint64) {
 		d.recorder.Capture(d.captureSnapshot())
 	}
 
-	d.log.Debug("scrubToTick", "tick", d.tick, "target", target)
+	if d.log.Enabled(context.Background(), slog.LevelDebug) {
+		d.log.Debug("scrubToTick", "tick", d.tick, "target", target)
+	}
 }
 
 func (d *Driver) doBackSeconds(seconds float64) {
