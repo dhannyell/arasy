@@ -177,8 +177,6 @@ func buildGoldenWorld() *scene.World {
 		})
 	}
 
-
-
 	// ---- Rect entities (6) ----
 	rectData := []struct {
 		pos         math2d.Vec2
@@ -314,4 +312,3 @@ func buildGoldenWorld() *scene.World {
 
 	return w
 }
-
