@@ -27,7 +27,7 @@ linters:
         # Only + - * / sqrt allowed in the simulation path.  Transcendentals
         # produce arch-specific bits and break cross-arch determinism.  The
         # ease/ and ui/ packages, platform backends, and demos are exempt.
-        - p: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10|Mod|Modf)$
+        - pattern: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10|Mod|Modf)$
           msg: "forbidden in simulation path: use only + - * / and math.Sqrt"
 
   exclusions:
