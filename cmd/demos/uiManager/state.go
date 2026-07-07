@@ -1,7 +1,6 @@
 package uiManager
 
 import (
-	"fmt"
 	"slices"
 
 	"github.com/dhannyell/frameforge/render"
@@ -93,31 +92,3 @@ type TableRow struct {
 }
 
 func (r TableRow) GoalDiff() int { return r.GoalsFor - r.GoalsAgainst }
-func (r TableRow) Cell(c int, clubs []Club) string {
-	switch c {
-	case 0:
-		return ""
-	case 1:
-		return clubs[r.Club].Name
-	case 2:
-		return fmt.Sprintf("%d", r.Points)
-	case 3:
-		return fmt.Sprintf("%d", r.Played)
-	case 4:
-		return fmt.Sprintf("%d", r.Wins)
-	case 5:
-		return fmt.Sprintf("%d", r.Draws)
-	case 6:
-		return fmt.Sprintf("%d", r.Loss)
-	case 7:
-		gd := r.GoalDiff()
-		switch {
-		case gd > 0:
-			return fmt.Sprintf("+%d", gd)
-		default:
-			return fmt.Sprintf("%d", gd)
-		}
-	default:
-		return ""
-	}
-}
