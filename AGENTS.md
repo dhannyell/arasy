@@ -58,6 +58,11 @@ go run ./cmd/demos/football/raster
 go run ./cmd/demos/football/webCanvas
 go run ./cmd/demos/breakout/canvas
 
+# WASM breakout demo (serve at http://127.0.0.1:8090)
+$env:GOOS='js'; $env:GOARCH='wasm'; go build -o cmd/demos/breakout/wasm/web/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
+Copy-Item "$(go env GOROOT)\lib\wasm\wasm_exec.js" cmd\demos\breakout\wasm\web\
+go run ./cmd/wasmserve -dir cmd/demos/breakout/wasm/web -addr 127.0.0.1:8090
+
 # Regenerate golden images/JSON after an intentional visual change
 go test ./platform/raster -run TestGolden -update
 go test ./internal/render/adapter/web -run TestGolden -update
@@ -118,8 +123,9 @@ Rules:
 - **`ui/`** — Immediate-mode UI: `Button`, `Panel`, `Label`, `ProgressBar`, `Card`, `Badge`, `Table`, scroll areas, click/activation/focus interaction, and themes. Three coordinate spaces (`SpaceRef` reference canvas, `SpacePlayfield`, `SpaceScreen`). Interaction state (`ui.State`: active, focus, scroll offsets) is owned by the runtime driver and captured in rewind snapshots.
 - **`runtime/`** — The orchestration hub and the engine's public behavioral API. Owns the `Game` contract (`Setup`/`Init`/`Update`/`Render`), `Driver` (fixed timestep pump, input application order, dev controls: pause/step/speed/reset/back), the rewind recorder (stores complete driver snapshots composed from World+driverInput+UI+game state), `StateSlot[T]` for global game state, and the runtime debug HUD. It defines *what a tick is* — that semantic must not be duplicated in platforms.
 - **`loop/`** — Fixed timestep step planner (`Steps`). Runtime's `clock` uses `Steps` to convert elapsed wall time into N fixed simulation steps with a catch-up clamp. Platforms report elapsed time through `Driver.AdvanceTime(elapsed)` or use `Driver.Step()` for deterministic tick-driven flows; platforms must not choose simulation `dt` themselves.
-- **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (no DrawText support yet, no alpha blending yet). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
+- **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (including DrawText and alpha blending). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
 - **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `plans/direcao/010-decisoes-arquiteturais.md`).
+- **`platform/wasm/`** — Browser distribution host compiled with `GOOS=js GOARCH=wasm`: drives `runtime.Driver` via `requestAnimationFrame`, translates DOM input through `input.Event`, and renders locally with WebGPU by default (CPU tessellation in `platform/wasm/tess`, embedded WGSL shaders) plus Canvas2D fallback.
 - **`internal/render/adapter/web/`** — Converts `render.Command` values to JSON DTOs for the web canvas (handles all command types including DrawText).
 - **`cmd/`** — Runnable demos and tools. Game-specific code (e.g., `cmd/demos/football/`, `cmd/demos/breakout/`) lives here, not in engine packages.
 

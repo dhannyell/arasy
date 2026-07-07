@@ -19,14 +19,14 @@ Current capabilities:
 - Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
 - Runtime package with a portable `Game` contract, automatic fixed-timestep world stepping, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
 - Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
-- Raster renderer using Go's standard `image` packages (text rendering not supported yet on this backend).
+- Raster renderer using Go's standard `image` packages, including text rendering and alpha blending.
 - Scene world with entities and components: transform, circle/rect sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle/rect collider.
 - Physics step pipeline: acceleration → integration → bounds bounce (per-side open mask + optional wall restitution) → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
 - Deterministic simulation: sorted broad-phase pairs and a per-tick world checksum for sync verification.
 - Debug overlays: colliders, contacts, spatial grid, velocities, entity IDs, input state, and a runtime stats HUD.
 - WebSocket canvas platform with live simulation, browser input, and dev controls including rewind (back, back-to-tick, back-seconds).
 - Offline raster platform producing PNG, animated GIF, and frame-by-frame sequences.
-- Two playable demos: football and breakout.
+- Playable demos: football, breakout, and the UI-focused manager demo.
 
 ## Project Structure
 
@@ -81,6 +81,10 @@ cmd/demos/football/webCanvas/
 cmd/demos/breakout/
   Breakout demo: paddle input, brick collisions, menu/game-over states, and
   UI overlays, playable in the browser via cmd/demos/breakout/canvas/.
+
+cmd/demos/uimanager/
+  "Matchday" football manager demo: dashboard, league table, squad, and
+  calendar screens driven by deterministic data and immediate-mode UI.
 
 cmd/benchsave/
   Cross-platform helper that runs Go benchmarks and saves a Markdown report.
