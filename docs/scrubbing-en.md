@@ -97,7 +97,8 @@ recording restarts the capture, because ticks restart from zero.
 
 Scrubbing inherits the replay requirements. Inside `Update`:
 
-- no global RNG (unseeded `math/rand`) — derive randomness from `ctx.Tick`;
+- no global RNG (unseeded `math/rand`) — use `ctx.Rand`
+  (`UpdateContext.Rand`);
 - no wall-clock time, I/O, or state outside the World/`StateSlot`;
 - a `StateSlot[T]` whose `T` has slice/map/pointer fields must implement
   `Clone() T` (see `runtime.Cloneable`).
