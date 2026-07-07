@@ -3,6 +3,7 @@ package uiManager
 import (
 	"fmt"
 
+	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/dhannyell/frameforge/ui"
@@ -13,21 +14,27 @@ func (g *Manager) drawLeagueTable(ctx *runtime.RenderContext) []render.Command {
 	cmds := make([]render.Command, 0, 130)
 	cmds = append(cmds, drawStandingsPanel(s)...)
 	cmds = append(cmds, drawStandingsTable(s, ctx)...)
-	// cmds = append(cmds, drawRoundCard(s)...)
-	// cmds = append(cmds, drawNextMatchCard(s)...)
-	// cmds = append(cmds, drawLegendCard()...)
 	return cmds
 }
 
+// standingsPanel + standingsTableRect are the single source of geometry for
+// the league table screen, shared by Update (standingsBodyRect in game.go)
+// and both Render helpers below — duplicating these rects per function let
+// them silently drift out of sync with each other.
+func standingsPanel() math2d.Rect { return rect(190, 170, 820, 690) }
+func standingsTableRect() math2d.Rect {
+	p := standingsPanel()
+	return rect(p.Min.X+20, p.Min.Y+52, p.Width()-40, p.Height()-72)
+}
+
 func drawStandingsPanel(s ManagerState) []render.Command {
-	panel := rect(190, 170, 820, 690)
+	panel := standingsPanel()
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab("LEAGUE TABLE", panel.Min.X+24, panel.Min.Y-16, 230, grass)...)
 	return cmds
 }
 
 func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Command {
-	panel := rect(190, 170, 820, 690)
 	cols := []ui.TableColumn{
 		{Title: "#", Width: 32, Align: render.AlignRight},
 		{Title: "", Width: 54, Align: render.AlignLeft},
@@ -51,7 +58,7 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 		}
 	}
 
-	tableRect := rect(panel.Min.X+20, panel.Min.Y+52, panel.Width()-40, panel.Height()-72)
+	tableRect := standingsTableRect()
 	bodyRect := standingsBodyRect(ctx.UI)
 	rowH := ctx.UI.RowHeight()
 	contentH := float64(len(rows)) * rowH
@@ -139,14 +146,6 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 		cmds = append(cmds, slantedPanel(badgeR, club.Accent, render.Color{}, 0, 4, 13)...)
 		cmds = append(cmds, text(club.Short, badgeR.Center(), bgDeep, 11, render.AlignCenter, render.BaselineMiddle, 13)...)
 	}
-
-	return cmds
-}
-
-func drawRound(s ManagerState) []render.Command {
-	panel := rect(190, 170, 820, 360)
-	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
-	cmds = append(cmds, titleTab("ROUND", panel.Min.X+24, panel.Min.Y-16, 180, gold)...)
 
 	return cmds
 }

@@ -89,22 +89,24 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 }
 
 func (g *Manager) checkPressedButtons(ctx *runtime.UpdateContext) {
-	if ctx.Input.JustPressed(input.ActionMoveX) && ctx.Input.Value(input.ActionMoveX) < 0 {
-		g.State.PreviousScreen = g.State.Screen
-		g.State.Screen = Screen(math2d.Clamp(float64(g.State.Screen-1), 0, 3))
-		g.UIState.SelectedNavItem = int(g.State.Screen)
-		g.UIState.NavPulseTick = ctx.Tick
+	if !ctx.Input.JustPressed(input.ActionMoveX) {
+		return
 	}
-	if ctx.Input.JustPressed(input.ActionMoveX) && ctx.Input.Value(input.ActionMoveX) > 0 {
-		g.State.PreviousScreen = g.State.Screen
-		newScreen := math2d.Clamp(float64(g.State.Screen+1), 0, 4)
-		if newScreen > 3 {
-			newScreen = 0
-		}
-		g.State.Screen = Screen(newScreen)
-		g.UIState.SelectedNavItem = int(g.State.Screen)
-		g.UIState.NavPulseTick = ctx.Tick
+	switch {
+	case ctx.Input.Value(input.ActionMoveX) < 0:
+		g.cycleScreen(-1, ctx.Tick)
+	case ctx.Input.Value(input.ActionMoveX) > 0:
+		g.cycleScreen(1, ctx.Tick)
 	}
+}
+
+// cycleScreen moves the active screen by delta, wrapping around len(navItems)
+// in either direction.
+func (g *Manager) cycleScreen(delta int, tick uint64) {
+	g.State.PreviousScreen = g.State.Screen
+	g.State.Screen = Screen((int(g.State.Screen) + delta + len(navItems)) % len(navItems))
+	g.UIState.SelectedNavItem = int(g.State.Screen)
+	g.UIState.NavPulseTick = tick
 }
 
 func (g *Manager) Render(ctx *runtime.RenderContext) []render.Command {
@@ -230,7 +232,7 @@ func drawStatusRail(s ManagerState) []render.Command {
 		col   render.Color
 	}{
 		{"SEASON", "2026", bgRaised},
-		{"ROUND", fmt.Sprintf("%02d/%v", minInt(s.Round, len(s.Clubs)*2-2), len(s.Clubs)*2-2), gold},
+		{"ROUND", fmt.Sprintf("%02d/%v", min(s.Round, len(s.Clubs)*2-2), len(s.Clubs)*2-2), gold},
 		{"LEAGUE", "AURORA", bgRaised},
 		{"MORALE", Morale(s.Clubs[0]), bgRaised},
 		{"FUNDS", Cash(s.Clubs, s.Results, 0), bgRaised},
@@ -333,11 +335,42 @@ type navItem struct {
 	rect      math2d.Rect
 }
 
-var navItems = []navItem{
-	{"nav_dashboard", "DASHBOARD", rect(1215, 26, 150, 40)},
-	{"nav_table", "TABLE", rect(1395, 26, 120, 40)},
-	{"nav_squad", "SQUAD", rect(1545, 26, 120, 40)},
-	{"nav_calendar", "CALENDAR", rect(1695, 26, 150, 40)},
+const (
+	navItemY      = 26.0
+	navItemH      = 40.0
+	navItemGap    = 30.0
+	navItemsRight = 1845.0 // right edge the nav row is anchored to
+)
+
+// navItems lays its entries out right-to-left from navItemsRight so adding,
+// removing, or renaming a tab only requires editing its width here — no
+// entry needs its x position hand-computed against its neighbors.
+var navItems = buildNavItems([]struct {
+	id, label string
+	width     float64
+}{
+	{"nav_dashboard", "DASHBOARD", 150},
+	{"nav_table", "TABLE", 120},
+	{"nav_squad", "SQUAD", 120},
+	{"nav_calendar", "CALENDAR", 150},
+})
+
+func buildNavItems(entries []struct {
+	id, label string
+	width     float64
+}) []navItem {
+	totalW := -navItemGap
+	for _, e := range entries {
+		totalW += e.width + navItemGap
+	}
+
+	items := make([]navItem, len(entries))
+	x := navItemsRight - totalW
+	for i, e := range entries {
+		items[i] = navItem{id: e.id, label: e.label, rect: rect(x, navItemY, e.width, navItemH)}
+		x += e.width + navItemGap
+	}
+	return items
 }
 
 func simButtonRect() math2d.Rect { return rect(720, 425, 238, 56) }
@@ -420,9 +453,7 @@ type tableGeometry interface {
 }
 
 func standingsBodyRect(g tableGeometry) math2d.Rect {
-	panel := rect(190, 170, 820, 690)
-	tableRect := rect(panel.Min.X+20, panel.Min.Y+52, panel.Width()-40, panel.Height()-72)
-	return g.TableBodyRect(tableRect)
+	return g.TableBodyRect(standingsTableRect())
 }
 
 func rect(x, y, w, h float64) math2d.Rect {
@@ -430,17 +461,3 @@ func rect(x, y, w, h float64) math2d.Rect {
 }
 
 func v(x, y float64) math2d.Vec2 { return math2d.Vec2{X: x, Y: y} }
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}

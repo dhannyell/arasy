@@ -114,7 +114,7 @@ func drawPositionCard(s ManagerState) []render.Command {
 	cmds = append(cmds, text(fmt.Sprintf("%d°", pos), v(panel.Min.X+64, panel.Min.Y+132), gold, 72, render.AlignLeft, render.BaselineMiddle, 12)...)
 	cmds = append(cmds, text(fmt.Sprintf("%d PTS", row.Points), v(panel.Min.X+194, panel.Min.Y+114), textColor, 28, render.AlignLeft, render.BaselineMiddle, 12)...)
 	cmds = append(cmds, text(fmt.Sprintf("GD %+d", row.GoalDiff()), v(panel.Min.X+196, panel.Min.Y+156), muted, 18, render.AlignLeft, render.BaselineMiddle, 12)...)
-	cmds = append(cmds, drawSegmentBar(rect(panel.Min.X+42, panel.Max.Y-92, 230, 18), float64(maxInt(row.Points, 1))/42, grass, 10)...)
+	cmds = append(cmds, drawSegmentBar(rect(panel.Min.X+42, panel.Max.Y-92, 230, 18), float64(max(row.Points, 1))/42, grass, 10)...)
 	cmds = append(cmds, text("META: TOP 2", v(panel.Min.X+42, panel.Max.Y-48), muted, 13, render.AlignLeft, render.BaselineMiddle, 12)...)
 	return cmds
 }
@@ -125,14 +125,12 @@ func drawFormCard(s ManagerState) []render.Command {
 	cmds = append(cmds, titleTab("PERFORMANCE", panel.Min.X+24, panel.Min.Y-16, 160, grass)...)
 	letters := lastFiveLetters(s, 0)
 	for i, letter := range letters {
-		col := drawColor
+		col := drawColor // "D" (draw) and "-" (not yet played) both fall through here
 		switch letter {
 		case "W":
 			col = grass
 		case "L":
 			col = loss
-		case "D":
-			col = drawColor
 		}
 		cmds = append(cmds, circle(10, v(panel.Min.X+62+float64(i)*54, panel.Min.Y+112), 21, col, render.Color{}, 0))
 		cmds = append(cmds, text(letter, v(panel.Min.X+62+float64(i)*54, panel.Min.Y+112), bgDeep, 16, render.AlignCenter, render.BaselineMiddle, 11)...)
