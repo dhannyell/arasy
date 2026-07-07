@@ -25,7 +25,6 @@ func GenerateLeague(seed uint64) ([]Club, []Fixture) {
 	return clubs, roundRobin(len(clubs))
 }
 
-
 func Standings(clubs []Club, results []Result) []TableRow {
 	rows := make([]TableRow, len(clubs))
 	for i := range rows {
@@ -162,8 +161,6 @@ func Cash(clubs []Club, results []Result, clubIdx int) string {
 	return fmt.Sprintf("$ %.1fM", value)
 }
 
-
-
 func roundRobin(count int) []Fixture {
 	teams := make([]int, count)
 	for i := range teams {
@@ -215,8 +212,6 @@ func generateSquad(rng *rand.Rand) []Player {
 	}
 	return squad
 }
-
-
 
 func rating(rng *rand.Rand, mean, spread int) int {
 	return clampInt(mean-spread+rng.IntN(spread*2+1), 30, 95)
