@@ -257,7 +257,8 @@ go run ./cmd/benchsave -pkg ./scene -bench WorldStep -name scene-step
 `benchsave` is the hub for every benchmark family in the repo — it does not
 just run `./scene`. Named suites are registered in
 [`cmd/benchsave/suites.go`](cmd/benchsave/suites.go) (currently `scene` and
-`runtime`) so you never need to remember which package a benchmark lives in:
+`runtime`, plus focused runtime seek suites) so you never need to remember
+which package a benchmark lives in:
 
 ```powershell
 # List the registered suites
@@ -265,6 +266,10 @@ go run ./cmd/benchsave -list-suites
 
 # Run one suite by name instead of passing -pkg/-bench by hand
 go run ./cmd/benchsave -suite runtime
+
+# Run the focused runtime seek baseline suites from plan 023
+go run ./cmd/benchsave -suite runtime-seek
+go run ./cmd/benchsave -suite runtime-seek-back
 
 # Run every registered suite, saving one report per suite
 go run ./cmd/benchsave -suite all
