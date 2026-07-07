@@ -453,7 +453,7 @@ func (w *World) resolveContacts(contacts []Contact) {
 		velocityB, hasVelocityB := w.Velocity(contact.B)
 
 		vRel := velocityA.Linear.Sub(velocityB.Linear)
-		vRelNormal := (vRel.X * contact.Normal.X) + (vRel.Y * contact.Normal.Y)
+		vRelNormal := float64(vRel.X*contact.Normal.X) + float64(vRel.Y*contact.Normal.Y)
 
 		// Positive relative velocity means the shapes are approaching.
 		if vRelNormal > 0 {
@@ -464,8 +464,14 @@ func (w *World) resolveContacts(contacts []Contact) {
 				Y: impulseMagnitude * contact.Normal.Y,
 			}
 
-			velocityA.Linear = velocityA.Linear.Sub(impulse.Mul(bodyA.InvMass))
-			velocityB.Linear = velocityB.Linear.Add(impulse.Mul(bodyB.InvMass))
+			velocityA.Linear = math2d.Vec2{
+				X: velocityA.Linear.X - float64(impulse.X*bodyA.InvMass),
+				Y: velocityA.Linear.Y - float64(impulse.Y*bodyA.InvMass),
+			}
+			velocityB.Linear = math2d.Vec2{
+				X: velocityB.Linear.X + float64(impulse.X*bodyB.InvMass),
+				Y: velocityB.Linear.Y + float64(impulse.Y*bodyB.InvMass),
+			}
 
 			if hasVelocityA {
 				w.velocities[contact.A] = velocityA
