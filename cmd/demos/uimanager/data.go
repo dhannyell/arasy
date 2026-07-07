@@ -3,14 +3,14 @@ package uimanager
 import (
 	"fmt"
 	"math"
-	"math/rand/v2"
 	"slices"
 
 	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 func GenerateLeague(seed uint64) ([]Club, []Fixture) {
-	rng := rand.New(rand.NewPCG(seed, 0))
+	rng := runtime.NewRand(seed)
 	clubs := make([]Club, len(clubNames))
 	for i := range clubs {
 		clubs[i] = Club{
@@ -19,7 +19,7 @@ func GenerateLeague(seed uint64) ([]Club, []Fixture) {
 			Stadium:  clubStadiums[i],
 			Accent:   clubColors[i],
 			Strength: 0.5 + rng.Float64()*0.4,
-			Squad:    generateSquad(rng),
+			Squad:    generateSquad(&rng),
 		}
 	}
 	return clubs, roundRobin(len(clubs))
@@ -133,7 +133,7 @@ func MatchInfo(s *ManagerState, fx Fixture) (date, hour, stadium, weather string
 	hour = "19:30"
 	stadium = s.Clubs[fx.Home].Stadium
 
-	rng := rand.New(rand.NewPCG(s.Seed, uint64(fx.Round)<<8|uint64(fx.Home)<<4|uint64(fx.Away)))
+	rng := runtime.NewRand(s.Seed).Derive(fmt.Sprintf("weather:%d:%d:%d", fx.Round, fx.Home, fx.Away))
 	weather = weatherKinds[rng.IntN(len(weatherKinds))]
 	return date, hour, stadium, weather
 }
@@ -185,7 +185,7 @@ func roundRobin(count int) []Fixture {
 	return fixtures
 }
 
-func generateSquad(rng *rand.Rand) []Player {
+func generateSquad(rng *runtime.Rand) []Player {
 	positions := []Position{GK, GK, CB, CB, CB, LB, RB, DMF, DMF, CMF, CMF, AMF, LMF, RMF, LMF, CF, LWF, RWF, SS}
 	squad := make([]Player, len(positions))
 	for i, pos := range positions {
@@ -213,7 +213,7 @@ func generateSquad(rng *rand.Rand) []Player {
 	return squad
 }
 
-func rating(rng *rand.Rand, mean, spread int) int {
+func rating(rng *runtime.Rand, mean, spread int) int {
 	return clampInt(mean-spread+rng.IntN(spread*2+1), 30, 95)
 }
 

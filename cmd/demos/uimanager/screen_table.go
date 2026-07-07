@@ -16,7 +16,7 @@ func (g *Manager) drawLeagueTable(ctx *runtime.RenderContext) []render.Command {
 	cmds = append(cmds, drawStandingsPanel(s)...)
 	cmds = append(cmds, drawStandingsTable(s, ctx)...)
 	cmds = append(cmds, drawRoundCard(s)...)
-	cmds = append(cmds, drawNextMatchCard(s)...)
+	cmds = append(cmds, drawNextMatchCard(s, ctx)...)
 	cmds = append(cmds, drawLegendCard()...)
 	return cmds
 }
@@ -37,6 +37,10 @@ func standingsTableRect() math2d.Rect {
 func tableRoundPanel() math2d.Rect     { return rect(970, 170, 770, 200) }
 func tableNextMatchPanel() math2d.Rect { return rect(970, 390, 770, 300) }
 func tableLegendPanel() math2d.Rect    { return rect(970, 710, 770, 150) }
+func tableNewSeasonButtonRect() math2d.Rect {
+	p := tableNextMatchPanel()
+	return rect(p.Min.X+180, p.Max.Y-88, p.Width()-360, 56)
+}
 
 func drawRoundCard(s ManagerState) []render.Command {
 	panel := tableRoundPanel()
@@ -47,14 +51,15 @@ func drawRoundCard(s ManagerState) []render.Command {
 	return cmds
 }
 
-func drawNextMatchCard(s ManagerState) []render.Command {
+func drawNextMatchCard(s ManagerState, ctx *runtime.RenderContext) []render.Command {
 	panel := tableNextMatchPanel()
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab("NEXT MATCH", panel.Min.X+24, panel.Min.Y-16, 190, grass)...)
 
 	fx, ok := NextFixture(s, 0)
 	if !ok {
-		cmds = append(cmds, text("SEASON ENDED", panel.Center(), muted, 20, render.AlignCenter, render.BaselineMiddle, 12)...)
+		cmds = append(cmds, text("SEASON ENDED", panel.Center().Add(v(0, -34)), muted, 20, render.AlignCenter, render.BaselineMiddle, 12)...)
+		cmds = append(cmds, drawSeasonEndedButton("table", tableNewSeasonButtonRect(), ctx)...)
 		return cmds
 	}
 
