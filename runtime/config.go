@@ -20,6 +20,10 @@ type Config struct {
 
 	// Max ticks recorded.
 	HistoryLen int
+	// Seed initializes the driver's deterministic RNG (UpdateContext.Rand).
+	// Zero is a valid, deterministic seed. The seed must be stable for the
+	// lifetime of a game instance: rewind/scrub re-derive the stream from it.
+	Seed uint64
 
 	UITheme ui.Theme
 
