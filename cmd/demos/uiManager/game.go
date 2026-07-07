@@ -1,3 +1,9 @@
+// Package uiManager is the "Matchday" football manager demo: a dashboard,
+// league table, squad, and calendar screen driven entirely by deterministic,
+// headless data (see data.go and sim.go) — no scene simulation, no physics.
+// It exists to stress the engine's UI/runtime axis (dense data screens,
+// navigation, scroll, selection, rewind of UI state) the way football and
+// breakout never do.
 package uiManager
 
 import (
@@ -200,7 +206,7 @@ func (g *Manager) drawNavAnimated(active Screen, ctx *runtime.RenderContext) []r
 
 		// Pulse animation quando selecionado
 		if g.UIState.SelectedNavItem == i {
-			pulseTime := float64(ctx.Tick - g.UIState.NavPulseTick) / 60.0
+			pulseTime := float64(ctx.Tick-g.UIState.NavPulseTick) / 60.0
 			target = 1.0 + 0.15*math.Sin(pulseTime*6.28)
 		}
 

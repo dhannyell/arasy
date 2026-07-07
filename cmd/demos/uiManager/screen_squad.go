@@ -102,7 +102,6 @@ func drawSquadListBody(s ManagerState, ctx *runtime.RenderContext) []render.Comm
 	return cmds
 }
 
-
 // ─── squad detail (right panel) ─────────────────────────────────────────────
 
 func drawSquadDetail(s ManagerState) []render.Command {
@@ -199,8 +198,6 @@ func drawPlayerDetail(panel math2d.Rect, p Player) []render.Command {
 
 	return cmds
 }
-
-
 
 // ─── arrow helpers ──────────────────────────────────────────────────────────
 
