@@ -59,6 +59,9 @@ func (g *Manager) updateCalendar(ctx *runtime.UpdateContext) {
 	if ctx.UI.ClickedIn("btn_sim_cal", calendarSimButtonRect(), ui.SpaceRef) {
 		SimulateRound(&g.State)
 	}
+	if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_cal", calendarSimButtonRect(), ui.SpaceRef) {
+		g.startNewSeason()
+	}
 }
 
 func (g *Manager) drawCalendar(ctx *runtime.RenderContext) []render.Command {

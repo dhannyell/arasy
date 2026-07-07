@@ -1,8 +1,10 @@
 package uimanager
 
 import (
+	"fmt"
 	"math"
-	"math/rand/v2"
+
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 // SimulateRound runs all fixtures for the current round and advances Round by 1.
@@ -12,11 +14,11 @@ func SimulateRound(s *ManagerState) {
 		return
 	}
 	for _, fx := range fixturesOfRound(s.Fixtures, s.Round) {
-		rng := rand.New(rand.NewPCG(s.Seed, uint64(fx.Round)<<16|uint64(fx.Home)<<10|uint64(fx.Away)))
+		rng := runtime.NewRand(s.Seed).Derive(fmt.Sprintf("result:%d:%d:%d", fx.Round, fx.Home, fx.Away))
 		home := s.Clubs[fx.Home]
 		away := s.Clubs[fx.Away]
-		homeGoals := poissonSample(rng, 1.25*home.Strength*formFactor(home)+0.35)
-		awayGoals := poissonSample(rng, 1.2*away.Strength*formFactor(away))
+		homeGoals := poissonSample(&rng, 1.25*home.Strength*formFactor(home)+0.35)
+		awayGoals := poissonSample(&rng, 1.2*away.Strength*formFactor(away))
 		s.Results = append(s.Results, Result{Fixture: fx, HomeGoals: homeGoals, AwayGoals: awayGoals})
 	}
 	s.Round++
@@ -46,7 +48,7 @@ func formFactor(c Club) float64 {
 }
 
 // poissonSample draws a Poisson-distributed integer via Knuth's method.
-func poissonSample(rng *rand.Rand, lambda float64) int {
+func poissonSample(rng *runtime.Rand, lambda float64) int {
 	limit := math.Exp(-lambda)
 	k := 0
 	p := 1.0

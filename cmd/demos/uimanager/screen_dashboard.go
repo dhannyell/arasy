@@ -43,7 +43,8 @@ func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixt
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab("NEXT MATCH", panel.Min.X+28, panel.Min.Y-16, 280, grass)...)
 	if !ok {
-		cmds = append(cmds, text("SEASON ENDED", panel.Center(), textColor, 34, render.AlignCenter, render.BaselineMiddle, 12)...)
+		cmds = append(cmds, text("SEASON ENDED", panel.Center().Add(v(0, -28)), textColor, 34, render.AlignCenter, render.BaselineMiddle, 12)...)
+		cmds = append(cmds, drawSeasonEndedButton(idPrefix, simBtnRect, ctx)...)
 		return cmds
 	}
 
