@@ -59,9 +59,9 @@ go run ./cmd/demos/football/webCanvas
 go run ./cmd/demos/breakout/canvas
 
 # WASM breakout demo (serve at http://127.0.0.1:8090)
-$env:GOOS='js'; $env:GOARCH='wasm'; go build -o cmd/demos/breakout/wasm/web/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
-Copy-Item "$(go env GOROOT)\lib\wasm\wasm_exec.js" cmd\demos\breakout\wasm\web\
-go run ./cmd/wasmserve -dir cmd/demos/breakout/wasm/web -addr 127.0.0.1:8090
+New-Item -ItemType Directory -Force output\wasm\breakout | Out-Null
+$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/breakout/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
+go run ./cmd/wasmserve -dir output/wasm/breakout -title "frameforge breakout wasm" -addr 127.0.0.1:8090
 
 # Regenerate golden images/JSON after an intentional visual change
 go test ./platform/raster -run TestGolden -update

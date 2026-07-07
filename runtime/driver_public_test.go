@@ -1,8 +1,10 @@
 package runtime_test
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +96,23 @@ func TestDriverControlStepRunsWhenAdvanceTimeHasNoElapsed(t *testing.T) {
 
 	if stats.Steps != 1 || driver.State().Tick != 1 || game.updates != 1 {
 		t.Fatalf("stats=%+v tick=%d updates=%d, want one manual step", stats, driver.State().Tick, game.updates)
+	}
+}
+
+func TestDriverRespectsErrorLevelLogger(t *testing.T) {
+	var logs bytes.Buffer
+	log := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
+	driver := runtime.NewDriver(&pumpGame{simulationHz: 60}, log)
+
+	driver.Step()
+	driver.Step()
+	driver.Control(runtime.ControlCommand{Kind: runtime.ControlBackToTick, Tick: 0})
+	driver.AdvanceTime(0)
+	driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: 1})
+	driver.AdvanceTime(0)
+
+	if got := logs.String(); strings.TrimSpace(got) != "" {
+		t.Fatalf("logs with LevelError = %q, want none", got)
 	}
 }
 
