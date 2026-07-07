@@ -152,6 +152,7 @@ type UpdateContext struct {
     UI         ui.Interactor
     Log        *slog.Logger
     Tick       uint64
+    Rand       *Rand
     StepConfig scene.StepConfig
 }
 
@@ -168,6 +169,15 @@ type RenderContext struct {
 
 Both contexts expose `Camera()`. The render context can also adjust the current
 frame camera with `SetCamera(cam)`.
+
+### Deterministic RNG
+
+Use `ctx.Rand` inside `Init`, `Update`, or `PostStep` for simulation
+randomness. The stream is seeded by `Config.Seed`, is part of the driver
+snapshot, and is restored by rewind, scrub, and replay.
+
+`RenderContext` does not expose an RNG. Render runs per frame, not per tick;
+drawing random values during render would break determinism.
 
 ### World
 

@@ -167,9 +167,11 @@ slices or spatial grids. The grid broad-phase (`collision.go`: sorted cells,
 sorted per-cell entities, sorted pair list) is the reference implementation.
 The per-entity systems in `movement.go` iterate maps directly and are safe only
 because each iteration touches nothing but its own entity — keep that invariant
-or switch to sorted slices. Never use unseeded/global RNG inside `Update`;
-derive randomness from the tick if needed. `World.Checksum()` + the driver's
-per-tick debug log exist to verify simulations stay in sync.
+or switch to sorted slices. Never use unseeded/global RNG inside `Update`; use
+`ctx.Rand` (`UpdateContext.Rand`) for simulation randomness. Render must never
+draw random values: frames are not ticks, and render-only randomness breaks
+determinism. `World.Checksum()` + the driver's per-tick debug log exist to
+verify simulations stay in sync.
 
 ### Test Structure
 
