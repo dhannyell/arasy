@@ -52,39 +52,41 @@ func pushQuad(m *Mesh, a, b, c, d [2]float32, col render.Color) {
 	pushTri(m, a, c, d, col)
 }
 
-// Build tessellates every non-text command in draw order and returns the solid
-// mesh plus the text commands for the text pipeline.
+// Build tessellates frame commands into solid-color and text meshes.
 //
-// Text is not tessellated here because it needs the font atlas, which belongs
-// to the WebGPU renderer setup.
-func Build(frame runtime.Frame, w, h int) (Mesh, []render.DrawText) {
+// Solid commands are appended to the solid mesh in input order. Text commands
+// are tessellated into the text mesh when atlas is non-nil; text is therefore
+// drawn after all solids by the WebGPU v1 renderer.
+func Build(frame runtime.Frame, w, h int, atlas *Atlas) (Mesh, TextMesh) {
 	c := ctx{
 		cam: frame.Camera,
 		w:   float64(w),
 		h:   float64(h),
 	}
 
-	var mesh Mesh
-	var texts []render.DrawText
+	var solid Mesh
+	var text TextMesh
 
 	for _, cmd := range frame.Commands {
 		switch cmd := cmd.(type) {
 		case render.DrawRect:
-			AppendRect(&mesh, c, cmd)
+			AppendRect(&solid, c, cmd)
 		case render.DrawCircle:
-			AppendCircle(&mesh, c, cmd)
+			AppendCircle(&solid, c, cmd)
 		case render.DrawPoint:
-			AppendPoint(&mesh, c, cmd)
+			AppendPoint(&solid, c, cmd)
 		case render.DrawLine:
-			AppendLine(&mesh, c, cmd)
+			AppendLine(&solid, c, cmd)
 		case render.DrawArc:
-			AppendArc(&mesh, c, cmd)
+			AppendArc(&solid, c, cmd)
 		case render.DrawPolygon:
-			AppendPolygon(&mesh, c, cmd)
+			AppendPolygon(&solid, c, cmd)
 		case render.DrawText:
-			texts = append(texts, cmd)
+			if atlas != nil {
+				AppendText(&text, c, cmd, atlas)
+			}
 		}
 	}
 
-	return mesh, texts
+	return solid, text
 }
