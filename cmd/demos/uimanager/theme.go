@@ -1,4 +1,4 @@
-package uiManager
+package uimanager
 
 import (
 	"github.com/dhannyell/frameforge/input"
@@ -51,7 +51,7 @@ func matchdayTheme() ui.Theme {
 
 // ─── input bindings ───────────────────────────────────────────────────────────
 
-func uiManagerBindings() []input.Binding {
+func matchdayBindings() []input.Binding {
 	return []input.Binding{
 		{Source: input.Keyboard(input.KeyEscape), Action: input.ActionPause, Scale: -1},
 		{Source: input.Keyboard(input.KeyArrowLeft), Action: input.ActionMoveX, Scale: -1},

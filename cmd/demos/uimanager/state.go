@@ -1,4 +1,4 @@
-package uiManager
+package uimanager
 
 import (
 	"slices"
