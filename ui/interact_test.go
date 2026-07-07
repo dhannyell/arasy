@@ -151,6 +151,33 @@ func TestCancelClearsFocusAtEndFrame(t *testing.T) {
 	}
 }
 
+func TestHoveredTrueWhenCursorInsideRect(t *testing.T) {
+	cam := testInteractCamera()
+	u := New(&State{}, math2d.Vec2{X: 150, Y: 120}, true, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
+
+	if !u.Hovered(btnRect()) {
+		t.Fatal("expected Hovered to be true when cursor is inside the rect")
+	}
+}
+
+func TestHoveredFalseWhenCursorOutsideRect(t *testing.T) {
+	cam := testInteractCamera()
+	u := New(&State{}, math2d.Vec2{X: 10, Y: 10}, true, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
+
+	if u.Hovered(btnRect()) {
+		t.Fatal("expected Hovered to be false when cursor is outside the rect")
+	}
+}
+
+func TestHoveredFalseWhenCursorNotInside(t *testing.T) {
+	cam := testInteractCamera()
+	u := New(&State{}, math2d.Vec2{X: 150, Y: 120}, false, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
+
+	if u.Hovered(btnRect()) {
+		t.Fatal("expected Hovered to be false when pointer is not inside the viewport")
+	}
+}
+
 func inputStateJustPressed(action input.Action) input.State {
 	mapper := input.NewMapper([]input.Binding{
 		{

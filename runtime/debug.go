@@ -103,7 +103,7 @@ func debugInputStateLines(r debugRenderer, _ debugContext) []string {
 	pos := pointer.Pos()
 	buttons := pointer.Buttons()
 	lines = append(lines,
-		fmt.Sprintf("pointer: %.0f, %.0f inside=%v", pos.X, pos.Y, pointer.Inside()),
+		fmt.Sprintf("pointer: %.0f, %.0f wheel: %.0f, %.0f inside=%v", pos.X, pos.Y, pointer.Wheel().X, pointer.Wheel().Y, pointer.Inside()),
 		fmt.Sprintf("mouse: primary=%v secondary=%v middle=%v", buttons[0], buttons[1], buttons[2]),
 	)
 

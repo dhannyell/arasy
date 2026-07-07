@@ -96,6 +96,10 @@ func (u *UI) Commands() []render.Command {
 	return u.commands
 }
 
+func (u *UI) Emit(cmds ...render.Command) {
+	u.commands = append(u.commands, cmds...)
+}
+
 func (u *UI) refCamera() render.Camera {
 	return render.Camera{
 		World:    u.reference,

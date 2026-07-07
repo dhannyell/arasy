@@ -95,6 +95,20 @@ func (u *UI) Table(id string, rect math2d.Rect, cols []TableColumn, rowCount int
 	return u.TableIn(id, rect, cols, rowCount, selected, cell, SpaceRef)
 }
 
+// RowHeight returns the theme's table/list row height, so games computing
+// scroll content height or row geometry don't have to duplicate the value
+// as a local constant that can silently drift from the theme.
+func (u *UI) RowHeight() float64 { return u.theme.Row.Height }
+
+// HeaderHeight returns the theme's table header height.
+func (u *UI) HeaderHeight() float64 { return u.theme.Header.Height }
+
+// TableBodyRect returns the scrollable row area of a table occupying rect
+// (i.e. rect minus the header band), using the theme's header height.
+func (u *UI) TableBodyRect(rect math2d.Rect) math2d.Rect {
+	return tableBodyRect(rect, u.theme.Header.Height)
+}
+
 func (u *UI) TableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, space Space) int {
 	_ = cols
 	_ = selected
