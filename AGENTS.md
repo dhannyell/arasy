@@ -194,6 +194,45 @@ Benchmarks belong in dedicated `*_benchmark_test.go` files.
 - The Go standard library is preferred; the only external dependency is `github.com/coder/websocket`.
 - Tests document behavior, especially for math, camera, loop, raster, scene, runtime, and ui.
 
+
+## Float Discipline
+
+The simulation path (`scene/`, `runtime/`, and core `math2d/`) uses only
+`+ - * /` and `math.Sqrt`. Transcendentals (`math.Sin`, `Cos`, `Tan`, `Asin`,
+`Acos`, `Atan`, `Atan2`, `Exp`, `Pow`, `Log`, `Log2`, `Log10`, `Mod`, `Modf`)
+are forbidden by `forbidigo` in the linter — see `.golangci.yml`.
+
+**FMA (fused multiply-add):** On arm64, the Go compiler automatically fuses
+`a*b + c` into a single FMA instruction, producing different low bits than
+amd64.  The canonical mitigation is `float64(a*b) + c`, which forces
+intermediate rounding.  Examples from `math2d/vec2.go`:
+
+```go
+// Dot: explicit float64 prevents FMA fusion on arm64.
+func (v Vec2) Dot(o Vec2) float64 {
+    return float64(v.X*o.X) + float64(v.Y*o.Y)
+}
+```
+
+When reviewing sum-of-product expressions (`a*b + c`, `a + b*c`) in the sim
+path, verify that the product operand has an explicit `float64()` conversion.
+
+## CI Gates
+
+| Job | Image | What it guarantees |
+|-----|-------|--------------------|
+| `quality` | ubuntu-latest | actionlint, golangci-lint (incl. forbidigo), govulncheck |
+| `test` | ubuntu-latest | `gofmt`, `go vet`, `go test ./...` (x86-64) |
+| `race` | ubuntu-latest | `go test -race ./...` (data-race free) |
+| `windows` | windows-latest | `go test ./...` (Windows compat) |
+| `wasm` | ubuntu-latest + GOOS=js GOARCH=wasm | `go test ./scene/... ./runtime/... ./math2d/... ./ease/...` via `go_js_wasm_exec` (cross-arch determinism) |
+| `arm64` | ubuntu-24.04-arm | `go test ./...` (native arm64 — cross-arch determinism) |
+
+The `wasm` and `arm64` jobs form the cross-arch determinism safety net: the
+golden checksum fixture (`scene/testdata/checksum_golden.json`) must produce
+identical values on x86-64, arm64, and wasm.  Regenerate it only when the
+checksum format changes (new components, new fields), in a dedicated commit
+on x86-64.
 ## Reference Docs
 
 - `README.md` — current capabilities, quick start (`runtime.Game` example), demo instructions.

@@ -453,7 +453,7 @@ func (w *World) resolveContacts(contacts []Contact) {
 		velocityB, hasVelocityB := w.Velocity(contact.B)
 
 		vRel := velocityA.Linear.Sub(velocityB.Linear)
-		vRelNormal := (vRel.X * contact.Normal.X) + (vRel.Y * contact.Normal.Y)
+		vRelNormal := float64(vRel.X*contact.Normal.X) + float64(vRel.Y*contact.Normal.Y)
 
 		// Positive relative velocity means the shapes are approaching.
 		if vRelNormal > 0 {

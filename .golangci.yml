@@ -12,6 +12,7 @@ linters:
     - misspell
     - staticcheck
     - unused
+    - forbidigo
 
   settings:
     staticcheck:
@@ -20,8 +21,22 @@ linters:
         - -QF1001
         - -QF1012
 
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # Only + - * / sqrt allowed in the simulation path.  Transcendentals
+        # produce arch-specific bits and break cross-arch determinism.  The
+        # ease/ and ui/ packages, platform backends, and demos are exempt.
+        - p: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10|Mod|Modf)$
+          msg: "forbidden in simulation path: use only + - * / and math.Sqrt"
+
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
+
+      # forbidigo only guards the simulation path
+      - path-except: '^(scene|runtime)/'
+        linters:
+          - forbidigo
