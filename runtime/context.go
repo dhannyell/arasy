@@ -18,6 +18,7 @@ type UpdateContext struct {
 	UI      ui.Interactor
 	Log     *slog.Logger
 	Tick    uint64
+	Rand    *Rand
 
 	StepConfig scene.StepConfig
 

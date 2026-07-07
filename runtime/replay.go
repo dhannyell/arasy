@@ -11,6 +11,7 @@ import (
 type Recording struct {
 	Events []input.Event
 	Ticks  uint64
+	Seed   uint64
 }
 
 // StartRecording begins capturing every event passed to ApplyInput.
@@ -28,7 +29,7 @@ func (d *Driver) StopRecording() Recording {
 	d.recordingEnabled = false
 	events := d.recording
 	d.recording = nil
-	return Recording{Events: events, Ticks: d.tick}
+	return Recording{Events: events, Ticks: d.tick, Seed: d.cfg.Seed}
 }
 
 // Replay reconstructs a recording on a fresh Driver.
@@ -41,7 +42,7 @@ func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
 // replayWithViewport also replays viewport changes for UI hit-testing.
 // Each viewport entry is applied before input events at the same tick.
 func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry) *Driver {
-	driver := NewDriver(game, log)
+	driver := newDriver(game, log, &rec.Seed)
 
 	// Replay only needs the final state; snapshot capture would clone the
 	// whole World every tick.
