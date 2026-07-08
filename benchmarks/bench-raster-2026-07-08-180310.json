@@ -1,0 +1,22 @@
+{
+  "status": "pass",
+  "created_at": "2026-07-08T18:03:10-03:00",
+  "duration": "2.723s",
+  "os": "windows",
+  "arch": "amd64",
+  "cpu_count": 16,
+  "commit_sha": "e5e39e8",
+  "go_version": "go1.26.4",
+  "gomaxprocs": 16,
+  "command": "go test ./platform/raster -run ^$ -bench . -count 1 -benchmem",
+  "results": [
+    {
+      "name": "BenchmarkRendererRender-16",
+      "runs": "2443",
+      "ns_per_op": "433518",
+      "bytes_op": "3704774",
+      "allocs_op": "1008"
+    }
+  ],
+  "raw_output": "goos: windows\ngoarch: amd64\npkg: github.com/dhannyell/frameforge/platform/raster\ncpu: AMD Ryzen 7 5800X3D 8-Core Processor           \nBenchmarkRendererRender-16    \t    2443\t    433518 ns/op\t 3704774 B/op\t    1008 allocs/op\nPASS\nok  \tgithub.com/dhannyell/frameforge/platform/raster\t1.495s\n"
+}

@@ -1,0 +1,7 @@
+goos: windows
+goarch: amd64
+pkg: github.com/dhannyell/frameforge/platform/raster
+cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
+BenchmarkRendererRender-16    	    2443	    433518 ns/op	 3704774 B/op	    1008 allocs/op
+PASS
+ok  	github.com/dhannyell/frameforge/platform/raster	1.495s

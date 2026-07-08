@@ -1,190 +1,114 @@
-# AGENTS.md
+﻿# AGENTS.md
 
-This file provides guidance for IA Agents when working with code in this repository.
+Instructions for IA agents working in this repository.
 
 ## Commands
 
 ```powershell
-# Run all tests
-go test ./...
+# Tests
+go test ./...                          # all tests
+go test ./scene -run TestStep          # single test
+go test ./scene -run="^$" -bench=. -benchmem  # benchmarks
 
-# Run tests for a single package
-go test ./scene
-
-# Run a specific test
-go test ./scene -run TestStep
-
-# Run benchmarks
-go test ./scene -run="^$" -bench="." -benchmem
-
-# Save benchmark report to benchmarks/ (defaults to -pkg ./scene)
-go run ./cmd/benchsave
-
-# List registered benchmark suites (cmd/benchsave/suites.go is the hub's
-# suite registry — add new families there, not via one-off -pkg flags)
+# Benchmarks (suite registry: cmd/benchsave/suites.go)
 go run ./cmd/benchsave -list-suites
+go run ./cmd/benchsave -suite <name>                   # run one suite
+go run ./cmd/benchsave -suite all                      # run all suites
+go run ./cmd/benchsave -suite <name> -compare baseline # vs explicit baseline
+go run ./cmd/benchsave -suite <name> -compare auto     # vs previous report
+go run ./cmd/benchsave -suite <name> -update-baseline  # set new baseline
+go run ./cmd/benchsave -diff <old> <new>               # diff reports
+go run ./cmd/benchsave -compare-all                    # diff all families
 
-# Run one named suite instead of passing -pkg/-bench manually
-go run ./cmd/benchsave -suite runtime
+# Demos
+go run ./cmd/demos/football/raster               # offline PNG/GIF
+go run ./cmd/demos/football/webCanvas             # browser WS :8080
+go run ./cmd/demos/breakout/canvas                # browser WS :8080
+# WASM build then serve:
+go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
-# Run every registered suite (one report per suite)
-go run ./cmd/benchsave -suite all
-
-# Save a report and print/append a % comparison against the most recent
-# previous report for the same -pkg (ns/op, B/op, allocs/op; negative % = faster/smaller)
-go run ./cmd/benchsave -compare auto
-
-# Compare against a specific previous report instead of auto-detecting one
-go run ./cmd/benchsave -compare benchmarks/bench-scene-2026-06-28-211550.md
-
-# Compare two already-saved reports without running any benchmarks
-# (flags must come before the two report paths — stdlib `flag` stops parsing at the first non-flag arg)
-go run ./cmd/benchsave -diff benchmarks/old-report.md benchmarks/new-report.md
-
-# Same as above, but also save the comparison as its own markdown file
-go run ./cmd/benchsave -diff -comparison-out benchmarks/compare.md benchmarks/old-report.md benchmarks/new-report.md
-
-# Compare every report family in benchmarks/ at once (bench-scene, bench-runtime-seek, etc.),
-# diffing each family's two most recent reports — no benchmarks are run
-go run ./cmd/benchsave -compare-all
-
-# Same as above, saved to a file too
-go run ./cmd/benchsave -compare-all -comparison-out benchmarks/compare.md
-
-# Offline render demo (PNG + frame-by-frame sequence in output/)
-go run ./cmd/demos/football/raster
-
-# Browser demos (WebSocket canvas at http://localhost:8080)
-go run ./cmd/demos/football/webCanvas
-go run ./cmd/demos/breakout/canvas
-
-# WASM breakout demo (serve at http://127.0.0.1:8090)
-New-Item -ItemType Directory -Force output\wasm\breakout | Out-Null
-$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/breakout/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
-go run ./cmd/wasmserve -dir output/wasm/breakout -title "frameforge breakout wasm" -addr 127.0.0.1:8090
-
-# Regenerate golden images/JSON after an intentional visual change
+# Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
 go test ./internal/render/adapter/web -run TestGolden -update
 ```
 
-PRs that regenerate golden files must explain why the visual or DTO change is
-intentional; an unexplained golden diff should be treated as a regression until
-shown otherwise.
+Golden PRs must explain the visual/DTO change; unexplained diffs are regressions.
 
 ## Architecture
 
-The core data flow is:
-
 ```
-Driver.Step/AdvanceTime → Game.Update → World.Step/PostStep → render commands → platform renderer
+Driver.Step/AdvanceTime -> Game.Update -> World.Step/PostStep -> render commands -> platform renderer
 ```
 
 ### Layers
 
 ```
 foundation:     math2d
-vocabulary:     render, input, ui          (passive types + pure helpers)
+vocabulary:     render, input, ui
 simulation:     scene
-orchestration:  runtime                    (Game contract, Driver, tick semantics, rewind)
-hosts:          platform/raster, platform/web/canvas
+orchestration:  runtime
+hosts:          platform/raster, platform/web/canvas, platform/wasm
 adapters:       internal/render/adapter/web
 apps:           cmd/
 ```
 
-**Dependency direction** (never reverse these):
-
+**Dependency direction** (never reverse):
 ```
-cmd/demos → platform/* → runtime → {scene, input, ui, render} → math2d
-scene → render → math2d
-internal/render/adapter/web → render
+cmd/demos -> platform/* -> runtime -> {scene, input, ui, render} -> math2d
 ```
 
-Rules:
-
-- `math2d`, `render`, `input`, `ui`, `scene`, and `runtime` must never import `platform` packages.
-- `runtime` is the only *behavioral* API for platforms and games. Platforms may
-  import vocabulary types (`render.Command`, `input.Event`, `math2d`), but all
-  behavior goes through `runtime.Driver` (`ApplyInput`, `Control`,
-  `AdvanceTime`, `Step`, `Frame`) — platforms must not call `scene.World`
-  methods directly.
-- `runtime` must stay free of backend knowledge: no JSON, HTTP, image encoding,
-  or browser concepts. Web-specific translation lives in `platform/web/canvas`
-  and `internal/render/adapter/web`.
-- Games implement `runtime.Game` and receive the `World` through
-  `UpdateContext` — the World is never hidden from the game.
+### Rules
+- `math2d`, `render`, `input`, `ui`, `scene`, `runtime` never import `platform/*`.
+- `runtime` is the sole behavioral API for platforms/games. Platforms call `runtime.Driver` methods only; never `scene.World` directly.
+- `runtime` is backend-free: no JSON, HTTP, images, browser concepts.
+- Games implement `runtime.Game`; World arrives via `UpdateContext`.
 
 ### Package Responsibilities
 
-- **`math2d/`** — Pure 2D math primitives (`Vec2`, `Rect`). No dependencies on other engine packages.
-- **`render/`** — Backend-agnostic render commands (`DrawRect`, `DrawCircle`, `DrawLine`, `DrawText`, `DrawArc`, `DrawPoint`, `DrawPolygon`), normalized `Color` (channels 0–1), canonical monospace text metrics (`MeasureText`), and `Camera` with aspect modes (Stretch/Fit/Expand). Commands carry a `Layer()` int for draw ordering and may carry per-command `Clip`; `DrawRect` supports `CornerRadius`.
-- **`scene/`** — Entity/component world and simulation systems. Entities are `EntityID` (uint32). Components are plain structs stored in per-type maps on `World`. `World.Step(dt, config)` runs the full simulation tick: acceleration → integrate → bounce inside bounds (per-side open mask + optional wall restitution via `StepConfig.Bounce`) → grid broad-phase → contact resolution (positional correction + restitution impulse) → damping. Contacts resolved in the last step are exposed via `World.Contacts()`. Also provides debug overlay command builders (`DebugCommands` with colliders/contacts/grid/velocities/IDs layers) and a deterministic `Checksum()` of positions+velocities.
-- **`input/`** — Typed input system: `Source` (device+code), `Action` (semantic), `Binding` (source→action mapping with scale), `Mapper` (applies events to produce `State`), `Buffer` (per-tick event log), pointer types (`PointerState`, `PointerFrame`). `PointerFrame.Wheel` is per-tick accumulated scroll in line units and clears at tick end. `Mapper.EndFrame()` runs at the end of each tick (the runtime driver handles this).
-- **`ui/`** — Immediate-mode UI: `Button`, `Panel`, `Label`, `ProgressBar`, `Card`, `Badge`, `Table`, scroll areas, click/activation/focus interaction, and themes. Three coordinate spaces (`SpaceRef` reference canvas, `SpacePlayfield`, `SpaceScreen`). Interaction state (`ui.State`: active, focus, scroll offsets) is owned by the runtime driver and captured in rewind snapshots.
-- **`runtime/`** — The orchestration hub and the engine's public behavioral API. Owns the `Game` contract (`Setup`/`Init`/`Update`/`Render`), `Driver` (fixed timestep pump, input application order, dev controls: pause/step/speed/reset/back), the rewind recorder (stores complete driver snapshots composed from World+driverInput+UI+game state), `StateSlot[T]` for global game state, and the runtime debug HUD. It defines *what a tick is* — that semantic must not be duplicated in platforms.
-- **`loop/`** — Fixed timestep step planner (`Steps`). Runtime's `clock` uses `Steps` to convert elapsed wall time into N fixed simulation steps with a catch-up clamp. Platforms report elapsed time through `Driver.AdvanceTime(elapsed)` or use `Driver.Step()` for deterministic tick-driven flows; platforms must not choose simulation `dt` themselves.
-- **`platform/raster/`** — `Renderer`: software renderer consuming `render.Command` slices into `image.RGBA` (including DrawText and alpha blending). `Run`: offline driver host producing PNG/GIF/frame sequences via `runtime.Driver`.
-- **`platform/web/canvas/`** — HTTP + WebSocket host: streams JSON frames to a browser canvas, translates browser input/control messages into `input.Event`/`runtime.ControlCommand`, drives the `runtime.Driver` under a lock. **Positioning:** this is a development/visualization tool, not a distribution target — the official platform roadmap is WebAssembly first, then native Windows/Linux/macOS (see AD-4 in `plans/direcao/010-decisoes-arquiteturais.md`).
-- **`platform/wasm/`** — Browser distribution host compiled with `GOOS=js GOARCH=wasm`: drives `runtime.Driver` via `requestAnimationFrame`, translates DOM input through `input.Event`, and renders locally with WebGPU by default (CPU tessellation in `platform/wasm/tess`, embedded WGSL shaders) plus Canvas2D fallback. The optional in-browser tooling panel is gated by `Options.DevTools` and/or `Options.RecordReplay`; it starts hidden and toggles with the Backquote/`~` key. Debug controls drive `runtime.Driver.Control`/`State` in-process, recording/replay buttons live in the same panel, and debug render layers still come from `driver.Frame`.
-- **`internal/render/adapter/web/`** — Converts `render.Command` values to JSON DTOs for the web canvas (handles all command types including DrawText).
-- **`cmd/`** — Runnable demos and tools. Game-specific code (e.g., `cmd/demos/football/`, `cmd/demos/breakout/`) lives here, not in engine packages.
+| Package | Role |
+|---|---|
+| `math2d/` | Pure 2D math (`Vec2`, `Rect`). Zero engine deps. |
+| `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`. |
+| `scene/` | ECS world + simulation tick. `EntityID` (uint32). Step pipeline: acceleration -> integrate -> bounce -> grid broad-phase -> contact resolution -> damping. `World.Checksum()` for determinism. |
+| `input/` | `Source`/`Action`/`Binding`/`Mapper`/`Buffer` + pointer types. `Mapper.EndFrame()` called by driver at tick end. |
+| `ui/` | Immediate-mode: Button, Panel, Label, etc. Three coord spaces. `ui.State` owned by driver (captured in rewind). |
+| `runtime/` | Orchestration hub. Owns `Game` contract, `Driver` (fixed timestep, dev controls, rewind), `StateSlot[T]`. Defines *what a tick is* -- platforms must not duplicate. |
+| `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
+| `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
+| `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas. Not a distribution target. |
+| `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. Dev panel (backtick key) for debug controls. |
+| `internal/render/adapter/web/` | Converts `render.Command` -> JSON DTOs for web canvas. |
+| `cmd/` | Demos and tools. Game code lives here, not in engine packages. |
 
 ### Runtime Tick Semantics
 
-Platforms drive time with `Driver.AdvanceTime(elapsed)`. The Driver owns the
-simulation `dt`: every simulation tick uses `1/SimulationHz`, regardless of the
-host frame rate. `AdvanceTime` consumes dev controls, applies pending
-reset/rewind commands, converts elapsed wall time × speed into fixed steps with
-a catch-up clamp, then runs each step. Deterministic tests and future replay
-code should use `Driver.Step()`, which executes exactly one fixed tick and does
-not touch the wall-time accumulator.
+- Platforms drive time via `Driver.AdvanceTime(elapsed)`. Driver owns `dt` = `1/SimulationHz`.
+- `AdvanceTime`: consume dev controls -> apply reset/rewind -> convert wall time x speed -> fixed steps with catch-up clamp -> run each step.
+- `Driver.Step()`: exactly one fixed tick, no wall clock (for tests/replay).
+- Per step: capture rewind snapshot -> snapshot input -> `Game.Update` -> auto `World.Step` (unless `ctx.HoldSimulation()`) -> optional `PostStep` -> advance tick -> clear pointer frame -> `mapper.EndFrame()` -> prune input buffer.
+- Input applied *before* `AdvanceTime`/`Step` via `ApplyInput`, stamped with current tick.
+- **Do not reorder.** Determinism and rewind depend on this pipeline.
+- `StateSlot[T]` snapshots by value: T must be a pure value type (no slices/maps/pointers).
 
-Per step, the Driver captures a rewind snapshot, snapshots input state, calls
-`Game.Update`, automatically calls `World.Step` unless the game called
-`ctx.HoldSimulation()`, optionally calls `PostStep`, advances the tick, clears
-the pointer frame, runs `mapper.EndFrame()`, and prunes the input buffer. Input
-events are applied *before* `AdvanceTime`/`Step` via `ApplyInput` and stamped
-with the current tick. Do not reorder this pipeline; determinism and rewind
-depend on it.
+### ECS Pattern -- Adding a Component
 
-`StateSlot[T]` snapshots by value: `T` must be a pure value type (no slices,
-maps, or pointers), otherwise rewind snapshots alias mutable state.
-
-### World / ECS Pattern
-
-`World` holds component stores. To add a new component type:
-1. Define the struct in `scene/components.go`.
-2. Add a `store[ComponentType]` field to `World`.
-3. Add `Set`, getter, and `Remove` methods delegating to the store.
-4. Clone the store in `World.Clone()`.
-5. Remove it in `World.Despawn()`.
-6. Include it in `World.Checksum()` and bump `ChecksumComponentStores` — the structural guard test fails if you forget.
+1. Define struct in `scene/components.go`
+2. Add `store[ComponentType]` field to `World`
+3. Add `Set`/getter/`Remove` methods delegating to store
+4. Clone in `World.Clone()`
+5. Remove in `World.Despawn()`
+6. Include in `World.Checksum()` + bump `ChecksumComponentStores` (structural guard test fails if you forget)
 
 ### Simulation Determinism
-
-Avoid `map` iteration order effects in simulation systems. Component stores are
-dense and ordered by `EntityID`, so system iteration is deterministic by
-construction; never add a `map` iterated in the simulation path. The grid
-broad-phase (`collision.go`: sorted cells, sorted per-cell entities, sorted
-pair list) is the reference implementation for auxiliary structures. Never use
-unseeded/global RNG inside `Update`; use `ctx.Rand` (`UpdateContext.Rand`) for
-simulation randomness. Render must never draw random values: frames are not
-ticks, and render-only randomness breaks determinism. `World.Checksum()` + the
-driver's per-tick debug log exist to verify simulations stay in sync.
+- No `map` iteration in sim path. Component stores are ordered by EntityID. Grid broad-phase (`collision.go`) is reference pattern for deterministic aux structures.
+- Use `ctx.Rand` (not global RNG) in `Update`. Render never draws random values (frames != ticks).
+- `World.Checksum()` + driver debug log verify sync.
 
 ### Test Structure
-
-When creating or reorganizing tests, follow `docs/testing.md` /
-`docs/testing-en.md`. Keep Go tests next to the package they exercise, but name
-test files by behavior or responsibility instead of accumulating broad files
-like `collision_test.go`, `driver_test.go`, or `renderer_test.go` once they mix
-multiple behavior families.
-
-Use `package foo_test` by default for public API coverage. Use `package foo`
-only when the test intentionally needs package-internal state or characterizes
-internal runtime/platform behavior. Keep helpers small, call `t.Helper()`, and
-move shared helpers into `*_helpers_test.go` only when several files use them.
-Benchmarks belong in dedicated `*_benchmark_test.go` files.
+- Follow `docs/testing.md`. Name files by behavior, not one broad `*_test.go` per package.
+- `package foo_test` by default; `package foo` only when testing internals.
+- Helpers: call `t.Helper()`, move to shared file when used across several test files.
+- Benchmarks go in dedicated `*_benchmark_test.go` files.
 
 ## Render Interpolation
 
@@ -207,61 +131,38 @@ receive interpolation.
   in their Render method.
 
 ## Design Constraints
-
-- Keep engine packages independent from application-specific rules.
-- Prefer small, explicit APIs over large abstractions; add complexity only under real project pressure.
-- Rendering commands stay backend-agnostic.
-- Performance is measured (via benchmarks in `benchmarks/`) before optimizing.
-- The Go standard library is preferred; the only external dependency is `github.com/coder/websocket`.
-- Tests document behavior, especially for math, camera, loop, raster, scene, runtime, and ui.
-
+- Engine packages stay independent of app-specific rules.
+- Prefer small explicit APIs; add complexity under project pressure.
+- Render commands stay backend-agnostic. Measure before optimizing.
+- Stdlib preferred; only dep is `github.com/coder/websocket`.
 
 ## Float Discipline
 
-The simulation path (`scene/`, `runtime/`, and core `math2d/`) uses only
-`+ - * /` and `math.Sqrt`. Transcendentals (`math.Sin`, `Cos`, `Tan`, `Asin`,
-`Acos`, `Atan`, `Atan2`, `Exp`, `Pow`, `Log`, `Log2`, `Log10`, `Mod`, `Modf`)
-are forbidden by `forbidigo` in the linter — see `.golangci.yml`.
+Sim path (`scene/`, `runtime/`, `math2d/`): only `+ - * /` and `math.Sqrt`. Transcendentals forbidden by `forbidigo` (see `.golangci.yml`).
 
-**FMA (fused multiply-add):** On arm64, the Go compiler automatically fuses
-`a*b + c` into a single FMA instruction, producing different low bits than
-amd64.  The canonical mitigation is `float64(a*b) + c`, which forces
-intermediate rounding.  Examples from `math2d/vec2.go`:
-
+**FMA:** arm64 fuses `a*b + c`. Mitigation: `float64(a*b) + c`.
 ```go
-// Dot: explicit float64 prevents FMA fusion on arm64.
 func (v Vec2) Dot(o Vec2) float64 {
     return float64(v.X*o.X) + float64(v.Y*o.Y)
 }
 ```
-
-When reviewing sum-of-product expressions (`a*b + c`, `a + b*c`) in the sim
-path, verify that the product operand has an explicit `float64()` conversion.
-
+Review sum-of-product expressions for explicit `float64()` on the product operand.
 ## CI Gates
 
-| Job | Image | What it guarantees |
-|-----|-------|--------------------|
-| `quality` | ubuntu-latest | actionlint, golangci-lint (incl. forbidigo), govulncheck |
-| `test` | ubuntu-latest | `gofmt`, `go vet`, `go test ./...` (x86-64) |
-| `race` | ubuntu-latest | `go test -race ./...` (data-race free) |
-| `windows` | windows-latest | `go test ./...` (Windows compat) |
-| `wasm` | ubuntu-latest + GOOS=js GOARCH=wasm | `go test ./scene/... ./runtime/... ./math2d/... ./ease/...` via `go_js_wasm_exec` (cross-arch determinism) |
-| `arm64` | ubuntu-24.04-arm | `go test ./...` (native arm64 — cross-arch determinism) |
+| Job | Checks |
+|---|---|
+| `quality` | actionlint, golangci-lint (forbidigo), govulncheck |
+| `test` | `gofmt`, `go vet`, `go test ./...` (x86-64) |
+| `race` | `go test -race ./...` |
+| `windows` | `go test ./...` (Windows compat) |
+| `wasm` | `GOOS=js go test ./scene/... ./runtime/... ./math2d/... ./ease/...` via `go_js_wasm_exec` |
+| `arm64` | `go test ./...` (native arm64) |
 
-The `wasm` and `arm64` jobs form the cross-arch determinism safety net: the
-golden checksum fixture (`scene/testdata/checksum_golden.json`) must produce
-identical values on x86-64, arm64, and wasm.  Regenerate it only when the
-checksum format changes (new components, new fields), in a dedicated commit
-on x86-64.
+`wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes.
+
 ## Reference Docs
-
-- `README.md` — current capabilities, quick start (`runtime.Game` example), demo instructions.
-- `docs/runtime.md` / `docs/runtime-en.md` — runtime guide.
-- `docs/ui.md` / `docs/ui-en.md` — UI guide.
-- `docs/scrubbing.md` / `docs/scrubbing-en.md` — bidirectional time scrubbing guide (replay-based ScrubToTick, timeline forking, checksum verification).
-- `docs/testing.md` / `docs/testing-en.md` — test organization conventions for file naming, package choice, helpers, integration tests, and benchmarks.
-- `plans/direcao/009-revisao-tecnica.md` — full technical review: known bugs, architectural risks, and prioritized roadmap.
-- `plans/direcao/010-decisoes-arquiteturais.md` — architectural decision record (AD-1…AD-9): auto-Step, input-log replay, platform roadmap, checksum contract, and more.
-- `plans/implementacao/008✓-runtime-pump-decomposicao-driver.md` — approved implementation plan: Driver owns time (`AdvanceTime`/`Step`) + Driver decomposition into collaborators.
-- `plans/direcao/011-visao-diferenciais.md` — strategic differentiators: "every bug is a replay file" thesis, headless mass simulation, observable-engine tooling, rollback netcode as long-term north star; explicit anti-bets (rendering as an end, visual editor).
+- `README.md` -- capabilities, quick start, demo instructions
+- `docs/runtime.md` -- runtime guide (tick semantics, Driver API, rewind)
+- `docs/ui.md` -- UI guide (themes, coord spaces, interaction)
+- `docs/scrubbing.md` -- bidirectional time scrubbing (replay, timeline forking, checksum)
+- `docs/testing.md` -- test organization conventions

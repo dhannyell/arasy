@@ -47,7 +47,7 @@ func TestApplyRunProfile(t *testing.T) {
 		{name: "empty", count: 1, wantCount: 1},
 		{name: "quick", profile: "quick", count: 1, wantCount: 1},
 		{name: "ci", profile: "ci", count: 1, wantCount: 3, wantBenchtime: "1s"},
-		{name: "decision", profile: "decision", count: 1, wantCount: 5, wantBenchtime: "2s"},
+		{name: "decision", profile: "decision", count: 1, wantCount: 10, wantBenchtime: "2s"},
 		{name: "explicit values win", profile: "decision", count: 7, countSet: true, benchtime: "300x", benchtimeSet: true, wantCount: 7, wantBenchtime: "300x"},
 		{name: "explicit count one wins", profile: "decision", count: 1, countSet: true, wantCount: 1, wantBenchtime: "2s"},
 		{name: "unknown", profile: "slow", count: 1, wantErr: true},
