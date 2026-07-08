@@ -297,6 +297,10 @@ func (d *Driver) stepOnce(dt float64) {
 		d.recordingAnchors = append(d.recordingAnchors, Anchor{Tick: d.tick, Checksum: d.world.Checksum()})
 	}
 
+	// Capture render pose before the simulation step so the next frame
+	// has a valid previous state for interpolation.
+	d.world.SyncRenderState()
+
 	d.stepCore(dt)
 
 	if d.tick > d.maxTick {
@@ -465,6 +469,10 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 }
 
 func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
+	alpha := 0.0
+	if d.cfg.RenderInterpolation {
+		alpha = d.clock.Alpha()
+	}
 	return RenderContext{
 		World:  d.world,
 		UI:     uiInst,
@@ -472,6 +480,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		Dt:     d.renderDt,
 		Log:    d.log.With("scope", "game"),
 		Tick:   d.tick,
+		Alpha:  alpha,
 		camera: d.cameraForSurface(),
 	}
 }
