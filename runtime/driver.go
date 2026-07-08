@@ -50,6 +50,10 @@ type Driver struct {
 	recordingEnabled bool
 	recording        []input.Event
 	recordingAnchors []Anchor
+	// recordingInitialViewport is the surface size captured at StartRecording
+	// (tick 0) so StopRecording can persist it; Replay must restore it or
+	// viewport-dependent logic (UI hit-tests) diverges from the live run.
+	recordingInitialViewport math2d.Rect
 
 	// scrubLog is the unbounded input log used by ScrubToTick.
 	// A step from an older tick forks the timeline and drops stale future input.
@@ -488,6 +492,9 @@ func (d *Driver) doReset() {
 		// capture so StopRecording returns a reproducible post-reset log.
 		d.recording = nil
 		d.recordingAnchors = nil
+		// The viewport survives a reset (doReset never clears d.viewport), so
+		// the post-reset recording's tick-0 viewport is the current surface.
+		d.recordingInitialViewport = d.viewport
 		d.log.Info("reset restarted the active input recording")
 	}
 	d.clock.Reset()

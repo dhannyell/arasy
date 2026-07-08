@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"log/slog"
 
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/math2d"
 )
 
 var (
@@ -37,16 +39,36 @@ func (r Recording) WriteTo(w io.Writer) (int64, error) {
 	if err := cw.write(r.Seed); err != nil {
 		return cw.n, err
 	}
+	// Viewport at tick 0 (4 float64 = 32 bytes). A zero rect signals "use the
+	// game's Config default" — recordings made before viewport capture.
+	if err := cw.write(r.Viewport.Min.X); err != nil {
+		return cw.n, err
+	}
+	if err := cw.write(r.Viewport.Min.Y); err != nil {
+		return cw.n, err
+	}
+	if err := cw.write(r.Viewport.Max.X); err != nil {
+		return cw.n, err
+	}
+	if err := cw.write(r.Viewport.Max.Y); err != nil {
+		return cw.n, err
+	}
 	if len(r.Anchors) > maxRecordingAnchors {
 		return cw.n, fmt.Errorf("recording has %d anchors, max %d", len(r.Anchors), maxRecordingAnchors)
 	}
 	if len(r.Events) > maxRecordingEvents {
 		return cw.n, fmt.Errorf("recording has %d events, max %d", len(r.Events), maxRecordingEvents)
 	}
+	if len(r.Viewports) > maxRecordingAnchors {
+		return cw.n, fmt.Errorf("recording has %d viewport changes, max %d", len(r.Viewports), maxRecordingAnchors)
+	}
 	if err := cw.write(uint32(len(r.Anchors))); err != nil {
 		return cw.n, err
 	}
 	if err := cw.write(uint32(len(r.Events))); err != nil {
+		return cw.n, err
+	}
+	if err := cw.write(uint32(len(r.Viewports))); err != nil {
 		return cw.n, err
 	}
 	for _, anchor := range r.Anchors {
@@ -80,6 +102,23 @@ func (r Recording) WriteTo(w io.Writer) (int64, error) {
 			return cw.n, err
 		}
 	}
+	for _, vc := range r.Viewports {
+		if err := cw.write(vc.Tick); err != nil {
+			return cw.n, err
+		}
+		if err := cw.write(vc.Viewport.Min.X); err != nil {
+			return cw.n, err
+		}
+		if err := cw.write(vc.Viewport.Min.Y); err != nil {
+			return cw.n, err
+		}
+		if err := cw.write(vc.Viewport.Max.X); err != nil {
+			return cw.n, err
+		}
+		if err := cw.write(vc.Viewport.Max.Y); err != nil {
+			return cw.n, err
+		}
+	}
 	return cw.n, nil
 }
 
@@ -109,6 +148,18 @@ func ReadRecording(r io.Reader) (Recording, error) {
 	if err := cr.read(&rec.Seed); err != nil {
 		return Recording{}, err
 	}
+	if err := cr.read(&rec.Viewport.Min.X); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.Viewport.Min.Y); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.Viewport.Max.X); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.Viewport.Max.Y); err != nil {
+		return Recording{}, err
+	}
 	var anchorCount uint32
 	if err := cr.read(&anchorCount); err != nil {
 		return Recording{}, err
@@ -122,6 +173,13 @@ func ReadRecording(r io.Reader) (Recording, error) {
 	}
 	if eventCount > maxRecordingEvents {
 		return Recording{}, fmt.Errorf("recording has %d events, max %d", eventCount, maxRecordingEvents)
+	}
+	var viewportCount uint32
+	if err := cr.read(&viewportCount); err != nil {
+		return Recording{}, err
+	}
+	if viewportCount > maxRecordingAnchors {
+		return Recording{}, fmt.Errorf("recording has %d viewport changes, max %d", viewportCount, maxRecordingAnchors)
 	}
 
 	rec.Anchors = make([]Anchor, anchorCount)
@@ -167,7 +225,45 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		}
 	}
 
+	rec.Viewports = make([]ViewportChange, viewportCount)
+	for i := range rec.Viewports {
+		if err := cr.read(&rec.Viewports[i].Tick); err != nil {
+			return Recording{}, err
+		}
+		if err := cr.read(&rec.Viewports[i].Viewport.Min.X); err != nil {
+			return Recording{}, err
+		}
+		if err := cr.read(&rec.Viewports[i].Viewport.Min.Y); err != nil {
+			return Recording{}, err
+		}
+		if err := cr.read(&rec.Viewports[i].Viewport.Max.X); err != nil {
+			return Recording{}, err
+		}
+		if err := cr.read(&rec.Viewports[i].Viewport.Max.Y); err != nil {
+			return Recording{}, err
+		}
+	}
+
 	return rec, nil
+}
+
+// MarshalBinary serializes the recording to its FFRP binary form as a byte
+// slice. It is the byte-oriented convenience over WriteTo for platforms that
+// obtain deliver bytes through a non-file channel (e.g. a browser File API
+// download). The format is identical to WriteTo; see WriteTo for the layout.
+func (r Recording) MarshalBinary() ([]byte, error) {
+	var buf bytes.Buffer
+	if _, err := r.WriteTo(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// ReadRecordingFromBytes parses an FFRP byte slice. It is the byte-oriented
+// convenience over ReadRecording for platforms that load bytes through a
+// non-file channel (e.g. a browser File API upload).
+func ReadRecordingFromBytes(data []byte) (Recording, error) {
+	return ReadRecording(bytes.NewReader(data))
 }
 
 // VerifyRecording replays a recording and checks each stored checksum anchor.
@@ -177,6 +273,22 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 	}
 	driver := newDriver(game, log, &rec.Seed)
 	driver.recorder = nil
+
+	// Restore the surface size active at tick 0 so viewport-dependent logic
+	// (e.g. a UI button hit-test) matches the live run. Without this, pointer
+	// coordinates captured in a different surface size map to the wrong
+	// reference-canvas position and a click that started the game live is
+	// missed during replay — the checksum freezes and anchors diverge.
+	if rec.Viewport.Width() > 0 && rec.Viewport.Height() > 0 {
+		driver.viewport = rec.Viewport
+	}
+
+	viewportByTick := make(map[uint64]math2d.Rect, len(rec.Viewports))
+	for _, vc := range rec.Viewports {
+		if vc.Tick < rec.Ticks {
+			viewportByTick[vc.Tick] = vc.Viewport
+		}
+	}
 
 	eventsByTick := make(map[uint64][]input.Event, len(rec.Events))
 	for _, event := range rec.Events {
@@ -191,6 +303,10 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 		nextAnchor++
 	}
 	for tick := uint64(0); tick < rec.Ticks; tick++ {
+		// Match live order: SetViewport, ApplyInput, Step.
+		if vp, ok := viewportByTick[tick]; ok {
+			driver.viewport = vp
+		}
 		if events := eventsByTick[tick]; len(events) > 0 {
 			driver.ApplyInput(events)
 		}
