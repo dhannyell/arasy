@@ -9,9 +9,15 @@ import (
 
 // Recording is the input log and tick count needed for Replay.
 type Recording struct {
-	Events []input.Event
-	Ticks  uint64
-	Seed   uint64
+	Events  []input.Event
+	Ticks   uint64
+	Seed    uint64
+	Anchors []Anchor
+}
+
+type Anchor struct {
+	Tick     uint64
+	Checksum uint64
 }
 
 // StartRecording begins capturing every event passed to ApplyInput.
@@ -22,14 +28,17 @@ func (d *Driver) StartRecording() {
 	}
 	d.recordingEnabled = true
 	d.recording = nil
+	d.recordingAnchors = nil
 }
 
 // StopRecording returns the captured input log and final tick.
 func (d *Driver) StopRecording() Recording {
 	d.recordingEnabled = false
 	events := d.recording
+	anchors := d.recordingAnchors
 	d.recording = nil
-	return Recording{Events: events, Ticks: d.tick, Seed: d.cfg.Seed}
+	d.recordingAnchors = nil
+	return Recording{Events: events, Ticks: d.tick, Seed: d.cfg.Seed, Anchors: anchors}
 }
 
 // Replay reconstructs a recording on a fresh Driver.
