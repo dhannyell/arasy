@@ -11,8 +11,11 @@ func (w *World) advanceAnimations(dt float64) {
 }
 
 func (w *World) advanceTransformTweens(dt float64) {
-	for id, tw := range w.transformTweens {
-		transform, ok := w.transforms[id]
+	var toRemove []EntityID
+
+	for i, id := range w.transformTweens.ids {
+		tw := w.transformTweens.dense[i]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
@@ -24,22 +27,29 @@ func (w *World) advanceTransformTweens(dt float64) {
 		transform.Position = tw.From.Position.Lerp(tw.To.Position, t)
 		transform.Rotation = math2d.Lerp(tw.From.Rotation, tw.To.Rotation, t)
 		transform.Scale = tw.From.Scale.Lerp(tw.To.Scale, t)
-		w.transforms[id] = transform
+		w.transforms.set(id, transform)
 
 		if finished {
 			tw.Done = true
 			if tw.RemoveOnComplete {
-				delete(w.transformTweens, id)
+				toRemove = append(toRemove, id)
 				continue
 			}
 		}
-		w.transformTweens[id] = tw
+		w.transformTweens.set(id, tw)
+	}
+
+	for _, id := range toRemove {
+		w.transformTweens.remove(id)
 	}
 }
 
 func (w *World) advanceCircleSpriteTweens(dt float64) {
-	for id, tw := range w.circleTweens {
-		sprite, ok := w.circleSprites[id]
+	var toRemove []EntityID
+
+	for i, id := range w.circleTweens.ids {
+		tw := w.circleTweens.dense[i]
+		sprite, ok := w.circleSprites.get(id)
 		if !ok {
 			continue
 		}
@@ -50,16 +60,20 @@ func (w *World) advanceCircleSpriteTweens(dt float64) {
 
 		sprite.Radius = math2d.Lerp(tw.From.Radius, tw.To.Radius, t)
 		sprite.Color = tw.From.Color.Lerp(tw.To.Color, t)
-		w.circleSprites[id] = sprite
+		w.circleSprites.set(id, sprite)
 
 		if finished {
 			tw.Done = true
 			if tw.RemoveOnComplete {
-				delete(w.circleTweens, id)
+				toRemove = append(toRemove, id)
 				continue
 			}
 		}
-		w.circleTweens[id] = tw
+		w.circleTweens.set(id, tw)
+	}
+
+	for _, id := range toRemove {
+		w.circleTweens.remove(id)
 	}
 }
 

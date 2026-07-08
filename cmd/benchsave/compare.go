@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,7 +102,7 @@ func runCompareAll(outDir, outPath string) error {
 
 	families := make(map[string][]string)
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+		if entry.IsDir() || !isBenchmarkReportName(entry.Name()) {
 			continue
 		}
 		base := strings.TrimSuffix(entry.Name(), ".md")
@@ -182,7 +183,8 @@ func findPreviousReport(outDir, family string) (string, error) {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, prefix) && strings.HasSuffix(name, ".md") {
+		if strings.HasPrefix(name, prefix) && isBenchmarkReportName(name) &&
+			reportFamily(strings.TrimSuffix(name, ".md")) == "bench-"+sanitizeName(family) {
 			candidates = append(candidates, name)
 		}
 	}
@@ -194,6 +196,10 @@ func findPreviousReport(outDir, family string) (string, error) {
 	// The timestamp layout (2006-01-02-150405) sorts correctly as a plain string.
 	sort.Strings(candidates)
 	return filepath.Join(outDir, candidates[len(candidates)-1]), nil
+}
+
+func isBenchmarkReportName(name string) bool {
+	return strings.HasPrefix(name, "bench-") && strings.HasSuffix(name, ".md")
 }
 
 // parseReportFile reads a benchmark report (or raw `go test -bench` output)
@@ -310,6 +316,7 @@ func renderComparisonTable(rows []comparisonRow) string {
 	var b strings.Builder
 
 	b.WriteString("Negative % = faster/smaller (improvement). Positive % = slower/bigger (regression).\n\n")
+	b.WriteString(renderComparisonSummary(rows))
 	b.WriteString("| Benchmark | ns/op (old → new) | Δ ns/op | B/op (old → new) | Δ B/op | allocs/op (old → new) | Δ allocs/op |\n")
 	b.WriteString("| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 
@@ -326,6 +333,71 @@ func renderComparisonTable(rows []comparisonRow) string {
 	}
 
 	return b.String()
+}
+
+type summaryItem struct {
+	Name  string
+	Delta float64
+}
+
+func renderComparisonSummary(rows []comparisonRow) string {
+	var regressions, improvements []summaryItem
+	added, removed := 0, 0
+
+	for _, row := range rows {
+		switch {
+		case !row.HasOld:
+			added++
+		case !row.HasNew:
+			removed++
+		case row.OldNs > 0:
+			pct := percentDelta(row.OldNs, row.NewNs)
+			if pct >= 10 {
+				regressions = append(regressions, summaryItem{Name: row.Name, Delta: pct})
+			} else if pct <= -10 {
+				improvements = append(improvements, summaryItem{Name: row.Name, Delta: pct})
+			}
+		}
+	}
+
+	sort.Slice(regressions, func(i, j int) bool {
+		return regressions[i].Delta > regressions[j].Delta
+	})
+	sort.Slice(improvements, func(i, j int) bool {
+		return math.Abs(improvements[i].Delta) > math.Abs(improvements[j].Delta)
+	})
+
+	var b strings.Builder
+	b.WriteString("### Summary\n\n")
+	fmt.Fprintf(&b, "- Benchmarks: `%d` compared, `%d` new, `%d` removed\n", len(rows)-added-removed, added, removed)
+	writeSummaryList(&b, "Regressions >= 10% ns/op", regressions)
+	writeSummaryList(&b, "Improvements >= 10% ns/op", improvements)
+	b.WriteString("\n")
+	return b.String()
+}
+
+func writeSummaryList(b *strings.Builder, label string, items []summaryItem) {
+	if len(items) == 0 {
+		fmt.Fprintf(b, "- %s: none\n", label)
+		return
+	}
+
+	limit := len(items)
+	if limit > 5 {
+		limit = 5
+	}
+	fmt.Fprintf(b, "- %s:", label)
+	for i := 0; i < limit; i++ {
+		item := items[i]
+		fmt.Fprintf(b, " `%s` (%s)", item.Name, formatPercent(item.Delta))
+		if i < limit-1 {
+			b.WriteString(",")
+		}
+	}
+	if len(items) > limit {
+		fmt.Fprintf(b, " and %d more", len(items)-limit)
+	}
+	b.WriteString("\n")
 }
 
 func pairString(hasOld, hasNew bool, oldV, newV float64, isCount bool) string {
@@ -352,7 +424,15 @@ func metricDelta(row comparisonRow, oldV, newV float64) string {
 	if oldV == 0 {
 		return "n/a"
 	}
-	pct := (newV - oldV) / oldV * 100
+	pct := percentDelta(oldV, newV)
+	return formatPercent(pct)
+}
+
+func percentDelta(oldV, newV float64) float64 {
+	return (newV - oldV) / oldV * 100
+}
+
+func formatPercent(pct float64) string {
 	sign := ""
 	if pct >= 0 {
 		sign = "+"

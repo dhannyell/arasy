@@ -21,6 +21,7 @@ type benchSuite struct {
 var benchSuites = []benchSuite{
 	{Name: "scene", Pkg: "./scene", Bench: "."},
 	{Name: "runtime", Pkg: "./runtime", Bench: "."},
+	{Name: "raster", Pkg: "./platform/raster", Bench: "."},
 	{
 		Name:  "runtime-seek",
 		Pkg:   "./runtime",

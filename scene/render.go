@@ -18,48 +18,42 @@ func (w *World) RenderCommands() []render.Command {
 // between previous and current. Debug colliders/grid/velocity are always
 // rendered at the current simulation state, not interpolated.
 //
-// Interpolation is a presentation cache — it never enters Checksum,
-// rewind snapshots, or recorded replays.
+// Interpolation is a presentation cache: it never enters Checksum or recorded
+// replays, though World.Clone preserves it so restored frames avoid smear.
 func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
-	totalSprites := len(w.circleSprites) + len(w.rectSprites)
+	totalSprites := w.circleSprites.len() + w.rectSprites.len()
 	ids := make([]EntityID, 0, totalSprites)
 
-	for id := range w.circleSprites {
-		ids = append(ids, id)
-	}
-	for id := range w.rectSprites {
-		ids = append(ids, id)
-	}
-
+	ids = append(ids, w.circleSprites.ids...)
+	ids = append(ids, w.rectSprites.ids...)
 	slices.Sort(ids)
 
 	commands := make([]render.Command, 0, totalSprites)
+	// Clamp/sanitize alpha: NaN, negative, zero -> no interpolation.
+	useAlpha := alpha
+	if useAlpha <= 0 || useAlpha != useAlpha {
+		useAlpha = 0
+	} else if useAlpha >= 1 {
+		useAlpha = math.Nextafter(1, 0)
+	}
 
 	for _, id := range ids {
-		transform, ok := w.transforms[id]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
-		}
-
-		// Clamp/sanitize alpha: NaN, negative, zero → no interpolation.
-		useAlpha := alpha
-		if useAlpha <= 0 || useAlpha != useAlpha {
-			useAlpha = 0
-		} else if useAlpha >= 1 {
-			useAlpha = math.Nextafter(1, 0)
 		}
 
 		// Interpolate position from previous render transform if available.
 		interpolated := transform
 		if useAlpha > 0 {
-			if prev, hasPrev := w.renderTransforms[id]; hasPrev {
+			if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
 				interpolated.Position = prev.Position.Lerp(transform.Position, useAlpha)
 				interpolated.Rotation = math2d.Lerp(prev.Rotation, transform.Rotation, useAlpha)
 				interpolated.Scale = prev.Scale.Lerp(transform.Scale, useAlpha)
 			}
 		}
 
-		if circle, hasCircle := w.circleSprites[id]; hasCircle {
+		if circle, hasCircle := w.circleSprites.get(id); hasCircle {
 			commands = append(commands, render.DrawCircle{
 				Center: interpolated.Position,
 				Radius: circle.Radius,
@@ -71,7 +65,7 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 			continue
 		}
 
-		if rect, hasRect := w.rectSprites[id]; hasRect {
+		if rect, hasRect := w.rectSprites.get(id); hasRect {
 			commands = append(commands, render.DrawRect{
 				Rect:        rect.Rect,
 				Fill:        rect.Color,
@@ -92,15 +86,14 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 // has a valid previous pose for interpolation. Call after reset, teleport,
 // or restore to prevent visual smear.
 func (w *World) SyncRenderState() {
-	w.renderTransforms = cloneMap(w.transforms)
+	w.renderTransforms = w.transforms.clone()
 }
+
 func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
-	ids := make([]EntityID, 0, len(w.circleColliders)+len(w.rectColliders))
-	for id := range w.circleColliders {
-		ids = append(ids, id)
-	}
-	for id := range w.rectColliders {
-		if _, isCircle := w.circleColliders[id]; isCircle {
+	ids := make([]EntityID, 0, w.circleColliders.len()+w.rectColliders.len())
+	ids = append(ids, w.circleColliders.ids...)
+	for _, id := range w.rectColliders.ids {
+		if _, isCircle := w.circleColliders.get(id); isCircle {
 			// circle collider takes precedence on the same entity (see
 			// detectOverlapPair); don't draw the ignored rect.
 			continue
@@ -112,12 +105,12 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 	commands := make([]render.Command, 0, len(ids))
 
 	for _, id := range ids {
-		transform, ok := w.transforms[id]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
 
-		if collider, isCircle := w.circleColliders[id]; isCircle {
+		if collider, isCircle := w.circleColliders.get(id); isCircle {
 			commands = append(commands, render.DrawCircle{
 				Center:      transform.Position,
 				Radius:      collider.Radius,
@@ -130,7 +123,7 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 			continue
 		}
 
-		if collider, isRect := w.rectColliders[id]; isRect {
+		if collider, isRect := w.rectColliders.get(id); isRect {
 			half := collider.HalfExtends
 			commands = append(commands, render.DrawRect{
 				Rect: math2d.NewRectFromCorners(
@@ -154,12 +147,12 @@ func (w *World) debugContactCommands(color render.Color, pointRadius, lineWidth,
 	commands := make([]render.Command, 0, len(contacts)*2)
 
 	for _, contact := range contacts {
-		transformA, ok := w.transforms[contact.A]
+		transformA, ok := w.transforms.get(contact.A)
 		if !ok {
 			continue
 		}
 
-		transformB, ok := w.transforms[contact.B]
+		transformB, ok := w.transforms.get(contact.B)
 		if !ok {
 			continue
 		}

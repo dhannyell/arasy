@@ -152,26 +152,25 @@ maps, or pointers), otherwise rewind snapshots alias mutable state.
 
 ### World / ECS Pattern
 
-`World` holds all component maps. To add a new component type:
+`World` holds component stores. To add a new component type:
 1. Define the struct in `scene/components.go`.
-2. Add a `map[EntityID]ComponentType` field to `World`.
-3. Add `Set`, getter, and `Remove` methods to `World`.
-4. Clone the new map in `World.Clone()`.
-5. Clean up in `World.Despawn()`.
-6. Include it in `World.Checksum()` — the checksum must cover the full simulation state; equal checksums must mean equal states (AD-9 in `plans/direcao/010-decisoes-arquiteturais.md`).
+2. Add a `store[ComponentType]` field to `World`.
+3. Add `Set`, getter, and `Remove` methods delegating to the store.
+4. Clone the store in `World.Clone()`.
+5. Remove it in `World.Despawn()`.
+6. Include it in `World.Checksum()` and bump `ChecksumComponentStores` — the structural guard test fails if you forget.
 
 ### Simulation Determinism
 
-Avoid `map` iteration order effects in simulation systems — use sorted entity
-slices or spatial grids. The grid broad-phase (`collision.go`: sorted cells,
-sorted per-cell entities, sorted pair list) is the reference implementation.
-The per-entity systems in `movement.go` iterate maps directly and are safe only
-because each iteration touches nothing but its own entity — keep that invariant
-or switch to sorted slices. Never use unseeded/global RNG inside `Update`; use
-`ctx.Rand` (`UpdateContext.Rand`) for simulation randomness. Render must never
-draw random values: frames are not ticks, and render-only randomness breaks
-determinism. `World.Checksum()` + the driver's per-tick debug log exist to
-verify simulations stay in sync.
+Avoid `map` iteration order effects in simulation systems. Component stores are
+dense and ordered by `EntityID`, so system iteration is deterministic by
+construction; never add a `map` iterated in the simulation path. The grid
+broad-phase (`collision.go`: sorted cells, sorted per-cell entities, sorted
+pair list) is the reference implementation for auxiliary structures. Never use
+unseeded/global RNG inside `Update`; use `ctx.Rand` (`UpdateContext.Rand`) for
+simulation randomness. Render must never draw random values: frames are not
+ticks, and render-only randomness breaks determinism. `World.Checksum()` + the
+driver's per-tick debug log exist to verify simulations stay in sync.
 
 ### Test Structure
 
