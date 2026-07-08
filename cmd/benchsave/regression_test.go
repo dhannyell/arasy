@@ -75,9 +75,9 @@ func TestRegressionGateWithBaseline(t *testing.T) {
 				t.Errorf("run parse error=%v, expected=%v: %s", err != nil, tt.expectError, tt.description)
 			}
 
-			if baseline != nil && run != nil && len(baseline) > 0 && len(run) > 0 {
-				// Successfully parsed both; gate would not fail on parse.
-			}
+			// Successfully parsed both; gate would not fail on parse.
+			_ = baseline
+			_ = run
 		})
 	}
 }
