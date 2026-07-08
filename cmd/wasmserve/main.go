@@ -8,8 +8,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"runtime"
+	"strings"
 )
 
 type serverOptions struct {
@@ -75,20 +76,42 @@ func serveIndex(w http.ResponseWriter, opts serverOptions) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, wasmShellHTML, html.EscapeString(opts.Title), wasmFile)
+	if _, err := fmt.Fprintf(w, wasmShellHTML, html.EscapeString(opts.Title), wasmFile); err != nil {
+		slog.Warn("failed to write index response", "err", err)
+	}
 }
 
 func defaultWASMExecPath() (string, error) {
+	goroot, err := findGOROOT()
+	if err != nil {
+		return "", err
+	}
 	candidates := []string{
-		filepath.Join(runtime.GOROOT(), "lib", "wasm", "wasm_exec.js"),
-		filepath.Join(runtime.GOROOT(), "misc", "wasm", "wasm_exec.js"),
+		filepath.Join(goroot, "lib", "wasm", "wasm_exec.js"),
+		filepath.Join(goroot, "misc", "wasm", "wasm_exec.js"),
 	}
 	for _, path := range candidates {
 		if _, err := os.Stat(path); err == nil {
 			return path, nil
 		}
 	}
-	return "", fmt.Errorf("checked %s", candidates)
+	return "", fmt.Errorf("wasm_exec.js not found under GOROOT=%s; checked %s", goroot, candidates)
+}
+
+// findGOROOT runs "go env GOROOT" instead of using runtime.GOROOT(),
+// which is deprecated since Go 1.24 (the baked-in root is meaningless
+// when the binary has been copied to another machine).
+func findGOROOT() (string, error) {
+	cmd := exec.Command("go", "env", "GOROOT")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("go env GOROOT failed: %w", err)
+	}
+	root := strings.TrimSpace(string(out))
+	if root == "" {
+		return "", fmt.Errorf("go env GOROOT returned empty")
+	}
+	return root, nil
 }
 
 const wasmShellHTML = `<!doctype html>
