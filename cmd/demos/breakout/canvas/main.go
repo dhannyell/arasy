@@ -71,14 +71,9 @@ func main() {
 }
 
 func writeRecording(path string, rec runtime.Recording) error {
-	file, err := os.Create(path)
+	data, err := rec.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	_, writeErr := rec.WriteTo(file)
-	closeErr := file.Close()
-	if writeErr != nil {
-		return writeErr
-	}
-	return closeErr
+	return os.WriteFile(path, data, 0o644)
 }

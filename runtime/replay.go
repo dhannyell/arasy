@@ -13,6 +13,31 @@ type Recording struct {
 	Ticks   uint64
 	Seed    uint64
 	Anchors []Anchor
+
+	// Viewport is the surface size active at tick 0 of the recording. A zero
+	// value (Width/Height <= 0) means "use the game's Config default", which is
+	// the behavior of recordings made before viewport capture existed. Replay
+	// applies it before the first tick so viewport-dependent logic (e.g. a UI
+	// button hit-test) matches the live run — without it, pointer coordinates
+	// captured in a different surface size map to the wrong reference-canvas
+	// position and a click that started the game live is missed during replay.
+	Viewport math2d.Rect
+
+	// Viewports records SetViewport calls during the recording, each stamped
+	// with the tick it was applied. Replay applies them in tick order before
+	// the input events of the same tick, mirroring the live
+	// SetViewport → ApplyInput → Step order. Without this, pointer coordinates
+	// captured in a different surface size map to the wrong reference-canvas
+	// position and UI clicks that started the game live are missed during
+	// replay.
+	Viewports []ViewportChange
+}
+
+// ViewportChange is one SetViewport call captured in a Recording, stamped with
+// the tick it was applied.
+type ViewportChange struct {
+	Tick     uint64
+	Viewport math2d.Rect
 }
 
 type Anchor struct {
@@ -29,6 +54,11 @@ func (d *Driver) StartRecording() {
 	d.recordingEnabled = true
 	d.recording = nil
 	d.recordingAnchors = nil
+	// Capture the viewport active at tick 0 so Replay can restore it; without
+	// it, a platform surface different from the Config default (e.g. a
+	// responsive browser canvas) shifts pointer coordinates and breaks UI
+	// hit-tests during replay.
+	d.recordingInitialViewport = d.viewport
 }
 
 // StopRecording returns the captured input log and final tick.
@@ -36,16 +66,50 @@ func (d *Driver) StopRecording() Recording {
 	d.recordingEnabled = false
 	events := d.recording
 	anchors := d.recordingAnchors
+	initial := d.recordingInitialViewport
+	viewports := viewportLogToChanges(d.viewportLog, d.tick)
 	d.recording = nil
 	d.recordingAnchors = nil
-	return Recording{Events: events, Ticks: d.tick, Seed: d.cfg.Seed, Anchors: anchors}
+	d.recordingInitialViewport = math2d.Rect{}
+	return Recording{
+		Events:    events,
+		Ticks:     d.tick,
+		Seed:      d.cfg.Seed,
+		Anchors:   anchors,
+		Viewport:  initial,
+		Viewports: viewports,
+	}
+}
+
+// viewportLogToChanges copies the driver's viewport change log into the
+// exportable Recording form, dropping entries at or beyond the recording's
+// final tick (they belong to ticks Replay never reaches).
+func viewportLogToChanges(log []viewportEntry, ticks uint64) []ViewportChange {
+	var changes []ViewportChange
+	for _, ve := range log {
+		if ve.tick >= ticks {
+			continue
+		}
+		changes = append(changes, ViewportChange{Tick: ve.tick, Viewport: ve.viewport})
+	}
+	return changes
+}
+
+// viewportChangesToLog converts the exportable Recording viewport changes back
+// into the driver-internal viewportEntry form used by replayWithViewport.
+func viewportChangesToLog(changes []ViewportChange) []viewportEntry {
+	log := make([]viewportEntry, len(changes))
+	for i, c := range changes {
+		log[i] = viewportEntry{tick: c.Tick, viewport: c.Viewport}
+	}
+	return log
 }
 
 // Replay reconstructs a recording on a fresh Driver.
 // It mutates the game instance it receives; pass a fresh game unless the
 // caller intentionally wants replay to adopt the reconstructed state.
 func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
-	return replayWithViewport(game, log, rec, math2d.Rect{}, nil)
+	return replayWithViewport(game, log, rec, rec.Viewport, viewportChangesToLog(rec.Viewports))
 }
 
 // replayWithViewport also replays viewport changes for UI hit-testing.
