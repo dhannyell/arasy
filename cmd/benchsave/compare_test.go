@@ -50,6 +50,26 @@ func TestFindPreviousReportIgnoresComparisonReports(t *testing.T) {
 	}
 }
 
+func TestFindPreviousReportMatchesExactFamily(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"bench-runtime-seek-2026-07-08-110000.md",
+		"bench-runtime-seek-back-2026-07-08-120000.md",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(""), 0o644); err != nil {
+			t.Fatalf("failed to write %s: %v", name, err)
+		}
+	}
+
+	got, err := findPreviousReport(dir, "runtime-seek")
+	if err != nil {
+		t.Fatalf("findPreviousReport returned error: %v", err)
+	}
+	if filepath.Base(got) != "bench-runtime-seek-2026-07-08-110000.md" {
+		t.Fatalf("findPreviousReport = %s", got)
+	}
+}
+
 func TestBuildComparisonAggregatesRepeatedRuns(t *testing.T) {
 	oldResults := []benchmarkResult{
 		{Name: "BenchmarkA-16", NsPerOp: "100", BytesOp: "10", AllocsOp: "1"},

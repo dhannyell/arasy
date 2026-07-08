@@ -183,7 +183,8 @@ func findPreviousReport(outDir, family string) (string, error) {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasPrefix(name, prefix) && isBenchmarkReportName(name) {
+		if strings.HasPrefix(name, prefix) && isBenchmarkReportName(name) &&
+			reportFamily(strings.TrimSuffix(name, ".md")) == "bench-"+sanitizeName(family) {
 			candidates = append(candidates, name)
 		}
 	}
