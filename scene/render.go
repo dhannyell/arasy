@@ -12,12 +12,8 @@ func (w *World) RenderCommands() []render.Command {
 	totalSprites := w.circleSprites.len() + w.rectSprites.len()
 	ids := make([]EntityID, 0, totalSprites)
 
-	for _, id := range w.circleSprites.ids {
-		ids = append(ids, id)
-	}
-	for _, id := range w.rectSprites.ids {
-		ids = append(ids, id)
-	}
+	ids = append(ids, w.circleSprites.ids...)
+	ids = append(ids, w.rectSprites.ids...)
 	slices.Sort(ids)
 
 	commands := make([]render.Command, 0, totalSprites)
@@ -58,9 +54,7 @@ func (w *World) RenderCommands() []render.Command {
 
 func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
 	ids := make([]EntityID, 0, w.circleColliders.len()+w.rectColliders.len())
-	for _, id := range w.circleColliders.ids {
-		ids = append(ids, id)
-	}
+	ids = append(ids, w.circleColliders.ids...)
 	for _, id := range w.rectColliders.ids {
 		if _, isCircle := w.circleColliders.get(id); isCircle {
 			// circle collider takes precedence on the same entity (see
