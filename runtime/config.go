@@ -30,5 +30,12 @@ type Config struct {
 
 	UITheme ui.Theme
 
+	// RenderInterpolation enables smooth visual interpolation between fixed
+	// simulation ticks. When true, RenderContext.Alpha contains the accumulator
+	// fraction [0, 1) and World.RenderCommandsInterpolated should be used
+	// instead of World.RenderCommands. Default is false, preserving the
+	// discrete-step look of existing games.
+	RenderInterpolation bool
+
 	DebugOverlay scene.DebugOverlayConfig
 }

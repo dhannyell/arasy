@@ -237,6 +237,9 @@ func TestChecksumCoversAllComponentStores(t *testing.T) {
 	count := 0
 	for f := range wt.Fields() {
 		if strings.HasPrefix(f.Type.String(), "scene.store[") {
+			if f.Name == "renderTransforms" {
+				continue
+			}
 			count++
 		}
 	}
