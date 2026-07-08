@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -20,6 +21,10 @@ type Config struct {
 
 	// Max ticks recorded.
 	HistoryLen int
+	// Assets is the resolved asset manifest. Games load it with asset.Load
+	// (typically from an embed.FS) before constructing the game, and
+	// resolve handles via the Assets field on the contexts.
+	Assets asset.Manifest
 	// Seed initializes the driver's deterministic RNG (UpdateContext.Rand).
 	// Zero is a valid, deterministic seed. The seed must be stable for the
 	// lifetime of a game instance: rewind/scrub re-derive the stream from it.
