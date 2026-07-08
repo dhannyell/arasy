@@ -32,6 +32,10 @@ func (h *host) startLoop() {
 		frame := h.driver.Frame(elapsed)
 		h.renderer.Render(frame)
 
+		if h.panel != nil {
+			h.panel.sync(h.driver.State())
+		}
+
 		js.Global().Call("requestAnimationFrame", cb)
 		return nil
 	})
