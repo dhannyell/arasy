@@ -237,6 +237,11 @@ func TestChecksumCoversAllComponentMaps(t *testing.T) {
 	for f := range wt.Fields() {
 		if f.Type.Kind() == reflect.Map &&
 			f.Type.Key() == reflect.TypeFor[scene.EntityID]() {
+			// renderTransforms is a presentation cache, not a component map.
+			// It is intentionally excluded from Checksum().
+			if f.Name == "renderTransforms" {
+				continue
+			}
 			count++
 		}
 	}
