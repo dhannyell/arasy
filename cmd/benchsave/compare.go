@@ -51,10 +51,15 @@ func saveTempBenchmarkOutput(output string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer tmpfile.Close()
+	defer func(tmpfile *os.File) {
+		err := tmpfile.Close()
+		if err != nil {
+			_ = fmt.Errorf("failed to close temp file: %w", err)
+		}
+	}(tmpfile)
 
 	if _, err := tmpfile.WriteString(output); err != nil {
-		os.Remove(tmpfile.Name())
+		_ = os.Remove(tmpfile.Name())
 		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
 
@@ -126,7 +131,7 @@ func compareAgainstPrevious(compareFlag, outDir, family, newReportLabel, output 
 			rows := buildComparison(oldResults, newResults)
 			return renderComparison(filepath.Base(prevPath), newReportLabel, rows), nil
 		}
-		defer os.Remove(tempFile)
+		defer func() { _ = os.Remove(tempFile) }()
 
 		benchstatOutput, err := runBenchstat(prevPath, tempFile)
 		if err != nil {
