@@ -3,6 +3,7 @@ package runtime
 import (
 	"log/slog"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
@@ -12,7 +13,9 @@ import (
 // UpdateContext is passed to Game.Init and Game.Update.
 // World is mutable here; UI exposes deterministic interaction queries.
 type UpdateContext struct {
-	World   *scene.World
+	World *scene.World
+	// Assets resolves texture and sprite names to render handles.
+	Assets  asset.Manifest
 	Input   input.State
 	Pointer input.PointerFrame
 	UI      ui.Interactor
@@ -38,7 +41,9 @@ func (ctx *UpdateContext) HoldSimulation() { ctx.simulationHeld = true }
 // Camera is changed through SetCamera, and UI only emits render commands.
 type RenderContext struct {
 	World *scene.World
-	UI    ui.Drawer
+	// Assets resolves texture and sprite names to render handles.
+	Assets asset.Manifest
+	UI     ui.Drawer
 	// Time is the monotonic render-elapsed time in seconds. Not tied to
 	// simulation ticks — use it for visual oscillations and UI animations.
 	Time float64

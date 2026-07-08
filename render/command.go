@@ -25,6 +25,12 @@ type Command interface {
 	Layer() int
 }
 
+// TextureID identifies a texture declared in the game's asset manifest.
+// IDs are assigned deterministically for a given asset set, but only hold
+// for the current run - never persist a TextureID; always resolve it by
+// name through the manifest.
+type TextureID uint32
+
 type BaseCommand struct {
 	LayerValue int
 
@@ -109,6 +115,17 @@ type DrawPolygon struct {
 	StrokeWidth float64
 }
 
+// DrawImage draws a texture, or a sub-rectangle of it, into a destination
+// rectangle in world coordinates.
+type DrawImage struct {
+	BaseCommand
+	Texture  TextureID
+	Dest     math2d.Rect
+	Src      math2d.Rect
+	Tint     Color
+	Rotation float64
+}
+
 func (DrawRect) isRenderCommand()    {}
 func (DrawCircle) isRenderCommand()  {}
 func (DrawPoint) isRenderCommand()   {}
@@ -116,3 +133,4 @@ func (DrawLine) isRenderCommand()    {}
 func (DrawText) isRenderCommand()    {}
 func (DrawArc) isRenderCommand()     {}
 func (DrawPolygon) isRenderCommand() {}
+func (DrawImage) isRenderCommand()   {}

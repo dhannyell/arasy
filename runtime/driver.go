@@ -457,6 +457,7 @@ func (d *Driver) SetViewport(viewport math2d.Rect) {
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 	return UpdateContext{
 		World:      d.world,
+		Assets:     d.cfg.Assets,
 		Input:      d.input.LastInput(),
 		Pointer:    d.input.PointerFrame(),
 		Log:        d.log.With("scope", "game"),
@@ -475,6 +476,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	}
 	return RenderContext{
 		World:  d.world,
+		Assets: d.cfg.Assets,
 		UI:     uiInst,
 		Time:   d.renderTime,
 		Dt:     d.renderDt,
