@@ -51,12 +51,13 @@ func newSpatialHashGrid(cellSize float64) spatialHashGrid {
 }
 
 func (w *World) bounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
-	for id, velocity := range w.velocities {
+	for i, id := range w.velocities.ids {
+		velocity := w.velocities.dense[i]
 		if velocity.Linear.X == 0 && velocity.Linear.Y == 0 {
 			continue
 		}
 
-		transform, ok := w.transforms[id]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
@@ -65,10 +66,10 @@ func (w *World) bounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
 		// precedence: a circle collider on the same entity wins over a rect.
 		var extentX, extentY float64
 
-		if circle, isCircle := w.circleColliders[id]; isCircle {
+		if circle, isCircle := w.circleColliders.get(id); isCircle {
 			extentX = circle.Radius
 			extentY = circle.Radius
-		} else if rect, isRect := w.rectColliders[id]; isRect {
+		} else if rect, isRect := w.rectColliders.get(id); isRect {
 			extentX = rect.HalfExtends.X
 			extentY = rect.HalfExtends.Y
 		} else {
@@ -115,8 +116,8 @@ func (w *World) bounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
 			}
 		}
 
-		w.transforms[id] = transform
-		w.velocities[id] = velocity
+		w.transforms.set(id, transform)
+		w.velocities.set(id, velocity)
 	}
 }
 
@@ -125,7 +126,7 @@ func wallRestitutionFactor(w *World, id EntityID, cfg BounceConfig) float64 {
 		return 1
 	}
 
-	body, ok := w.bodies[id]
+	body, ok := w.bodies.get(id)
 	if !ok {
 		return 1
 	}
@@ -140,16 +141,19 @@ func wallRestitutionFactor(w *World, id EntityID, cfg BounceConfig) float64 {
 }
 
 func (w *World) detectCircleOverlaps() []Contact {
-	entities := w.circleColliderEntities()
-	pairs := make([]entityPair, 0, len(entities))
+	contacts := make([]Contact, 0)
+	entities := w.circleColliders.ids
 
-	for i := range entities {
+	for i, idA := range entities {
 		for j := i + 1; j < len(entities); j++ {
-			pairs = append(pairs, makeEntityPair(entities[i], entities[j]))
+			pair := makeEntityPair(idA, entities[j])
+			if contact, ok := w.circleVsCircle(pair, w.circleColliders.dense[i], w.circleColliders.dense[j]); ok {
+				contacts = append(contacts, contact)
+			}
 		}
 	}
 
-	return w.detectOverlapsForPairs(pairs)
+	return contacts
 }
 
 func (w *World) detectCircleOverlapsGrid(cellSize float64) []Contact {
@@ -192,10 +196,10 @@ func (w *World) detectOverlapsForPairs(pairs []entityPair) []Contact {
 }
 
 func (w *World) detectOverlapPair(pair entityPair) (Contact, bool) {
-	circleA, aIsCircle := w.circleColliders[pair.A]
-	circleB, bIsCircle := w.circleColliders[pair.B]
-	rectA, aIsRect := w.rectColliders[pair.A]
-	rectB, bIsRect := w.rectColliders[pair.B]
+	circleA, aIsCircle := w.circleColliders.get(pair.A)
+	circleB, bIsCircle := w.circleColliders.get(pair.B)
+	rectA, aIsRect := w.rectColliders.get(pair.A)
+	rectB, bIsRect := w.rectColliders.get(pair.B)
 
 	// circle collider override rect collider in same entity
 	aIsRect = aIsRect && !aIsCircle
@@ -218,12 +222,12 @@ func (w *World) detectOverlapPair(pair entityPair) (Contact, bool) {
 }
 
 func (w *World) circleVsCircle(pair entityPair, colliderA, colliderB CircleCollider) (Contact, bool) {
-	transformA, ok := w.transforms[pair.A]
+	transformA, ok := w.transforms.get(pair.A)
 	if !ok {
 		return Contact{}, false
 	}
 
-	transformB, ok := w.transforms[pair.B]
+	transformB, ok := w.transforms.get(pair.B)
 	if !ok {
 		return Contact{}, false
 	}
@@ -266,12 +270,12 @@ func (w *World) circleVsRect(
 	rectCollider RectCollider,
 	circleIsB bool,
 ) (Contact, bool) {
-	circleTransform, ok := w.transforms[circleID]
+	circleTransform, ok := w.transforms.get(circleID)
 	if !ok {
 		return Contact{}, false
 	}
 
-	rectTransform, ok := w.transforms[rectID]
+	rectTransform, ok := w.transforms.get(rectID)
 	if !ok {
 		return Contact{}, false
 	}
@@ -346,12 +350,12 @@ func (w *World) circleVsRect(
 }
 
 func (w *World) rectVsRect(pair entityPair, colliderA, colliderB RectCollider) (Contact, bool) {
-	transformA, ok := w.transforms[pair.A]
+	transformA, ok := w.transforms.get(pair.A)
 	if !ok {
 		return Contact{}, false
 	}
 
-	transformB, ok := w.transforms[pair.B]
+	transformB, ok := w.transforms.get(pair.B)
 	if !ok {
 		return Contact{}, false
 	}
@@ -421,12 +425,12 @@ func (w *World) resolveContacts(contacts []Contact) {
 	w.contacts = contacts
 
 	for _, contact := range contacts {
-		transformA, ok := w.transforms[contact.A]
+		transformA, ok := w.transforms.get(contact.A)
 		if !ok {
 			continue
 		}
 
-		transformB, ok := w.transforms[contact.B]
+		transformB, ok := w.transforms.get(contact.B)
 		if !ok {
 			continue
 		}
@@ -446,8 +450,8 @@ func (w *World) resolveContacts(contacts []Contact) {
 		transformB.Position.X += contact.Normal.X * correctionB
 		transformB.Position.Y += contact.Normal.Y * correctionB
 
-		w.transforms[contact.A] = transformA
-		w.transforms[contact.B] = transformB
+		w.transforms.set(contact.A, transformA)
+		w.transforms.set(contact.B, transformB)
 
 		velocityA, hasVelocityA := w.Velocity(contact.A)
 		velocityB, hasVelocityB := w.Velocity(contact.B)
@@ -474,10 +478,10 @@ func (w *World) resolveContacts(contacts []Contact) {
 			}
 
 			if hasVelocityA {
-				w.velocities[contact.A] = velocityA
+				w.velocities.set(contact.A, velocityA)
 			}
 			if hasVelocityB {
-				w.velocities[contact.B] = velocityB
+				w.velocities.set(contact.B, velocityB)
 			}
 		}
 	}
@@ -486,13 +490,13 @@ func (w *World) resolveContacts(contacts []Contact) {
 func (g *spatialHashGrid) populate(w *World) {
 	circleEntities := w.circleColliderEntities()
 
-	for _, id := range circleEntities {
-		transform, ok := w.transforms[id]
+	for i, id := range circleEntities {
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
 
-		collider := w.circleColliders[id]
+		collider := w.circleColliders.dense[i]
 
 		minCellX := cellCoord(transform.Position.X-collider.Radius, g.cellSize)
 		maxCellX := cellCoord(transform.Position.X+collider.Radius, g.cellSize)
@@ -508,20 +512,20 @@ func (g *spatialHashGrid) populate(w *World) {
 	}
 
 	rectEntities := w.rectColliderEntities()
-	for _, id := range rectEntities {
+	for i, id := range rectEntities {
 		// D1 precedence: a circle collider on the same entity wins, so the rect
 		// is ignored. Skipping it here also avoids inserting the entity twice
 		// (which would create a spurious self-pair in entityPairs).
-		if _, isCircle := w.circleColliders[id]; isCircle {
+		if _, isCircle := w.circleColliders.get(id); isCircle {
 			continue
 		}
 
-		transform, ok := w.transforms[id]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
 
-		collider := w.rectColliders[id]
+		collider := w.rectColliders.dense[i]
 
 		minCellX := cellCoord(transform.Position.X-collider.HalfExtends.X, g.cellSize)
 		maxCellX := cellCoord(transform.Position.X+collider.HalfExtends.X, g.cellSize)
@@ -633,31 +637,15 @@ func cellCoord(value, cellSize float64) int {
 }
 
 func (w *World) circleColliderEntities() []EntityID {
-	entities := make([]EntityID, 0, len(w.circleColliders))
-
-	for id := range w.circleColliders {
-		entities = append(entities, id)
-	}
-
-	slices.Sort(entities)
-
-	return entities
+	return slices.Clone(w.circleColliders.ids)
 }
 
 func (w *World) rectColliderEntities() []EntityID {
-	entities := make([]EntityID, 0, len(w.rectColliders))
-
-	for id := range w.rectColliders {
-		entities = append(entities, id)
-	}
-
-	slices.Sort(entities)
-
-	return entities
+	return slices.Clone(w.rectColliders.ids)
 }
 
 func (w *World) bodyOrDefault(id EntityID) Body {
-	body, ok := w.bodies[id]
+	body, ok := w.bodies.get(id)
 	if !ok {
 		return Body{
 			InvMass:     0,

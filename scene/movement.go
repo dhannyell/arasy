@@ -3,8 +3,9 @@ package scene
 import "github.com/dhannyell/frameforge/math2d"
 
 func (w *World) applyAcceleration(dt float64) {
-	for id, acceleration := range w.accelerations {
-		velocity, ok := w.velocities[id]
+	for i, id := range w.accelerations.ids {
+		acceleration := w.accelerations.dense[i]
+		velocity, ok := w.velocities.get(id)
 		if !ok {
 			continue
 		}
@@ -13,13 +14,14 @@ func (w *World) applyAcceleration(dt float64) {
 			X: velocity.Linear.X + float64(acceleration.Linear.X*dt),
 			Y: velocity.Linear.Y + float64(acceleration.Linear.Y*dt),
 		}
-		w.velocities[id] = velocity
+		w.velocities.set(id, velocity)
 	}
 }
 
 func (w *World) integrate(dt float64) {
-	for id, velocity := range w.velocities {
-		transform, ok := w.transforms[id]
+	for i, id := range w.velocities.ids {
+		velocity := w.velocities.dense[i]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
@@ -28,13 +30,14 @@ func (w *World) integrate(dt float64) {
 			X: transform.Position.X + float64(velocity.Linear.X*dt),
 			Y: transform.Position.Y + float64(velocity.Linear.Y*dt),
 		}
-		w.transforms[id] = transform
+		w.transforms.set(id, transform)
 	}
 }
 
 func (w *World) applyDamping(dt float64) {
-	for id, damping := range w.dampings {
-		velocity, ok := w.velocities[id]
+	for i, id := range w.dampings.ids {
+		damping := w.dampings.dense[i]
+		velocity, ok := w.velocities.get(id)
 		if !ok {
 			continue
 		}
@@ -45,6 +48,6 @@ func (w *World) applyDamping(dt float64) {
 		}
 
 		velocity.Linear = velocity.Linear.Mul(factor)
-		w.velocities[id] = velocity
+		w.velocities.set(id, velocity)
 	}
 }

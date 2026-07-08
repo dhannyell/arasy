@@ -1,7 +1,6 @@
 package scene
 
 import (
-	"slices"
 	"strconv"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -216,17 +215,13 @@ func (w *World) debugVelocityCommands(color render.Color, width, scale float64, 
 		return nil
 	}
 
-	ids := make([]EntityID, 0, len(w.velocities))
-	for id := range w.velocities {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
+	commands := make([]render.Command, 0, w.velocities.len())
 
-	commands := make([]render.Command, 0, len(ids))
-
-	for _, id := range ids {
-		velocity := w.velocities[id]
-		transform, ok := w.transforms[id]
+	// velocities.ids is already ascending, so iterate the store directly for
+	// deterministic order without a redundant copy and sort.
+	for i, id := range w.velocities.ids {
+		velocity := w.velocities.dense[i]
+		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
@@ -257,16 +252,12 @@ func (w *World) debugEntityIDCommands(color render.Color, size float64, offset m
 		return nil
 	}
 
-	ids := make([]EntityID, 0, len(w.transforms))
-	for id := range w.transforms {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
+	commands := make([]render.Command, 0, w.transforms.len())
 
-	commands := make([]render.Command, 0, len(ids))
-
-	for _, id := range ids {
-		transform := w.transforms[id]
+	// transforms.ids is already ascending, so iterate the store directly for
+	// deterministic order without a redundant copy and sort.
+	for i, id := range w.transforms.ids {
+		transform := w.transforms.dense[i]
 
 		commands = append(commands, render.DrawText{
 			Position: transform.Position.Add(offset),
