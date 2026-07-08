@@ -24,6 +24,10 @@ const (
 	tagRectCollider
 )
 
+// ChecksumComponentMaps is the number of map[EntityID]T fields on World that
+// represent simulation component storage. renderTransforms is excluded — it is
+// a presentation cache, not simulation state (see scene/render.go).
+// Increment this constant when adding a new component map (AD-9).
 const ChecksumComponentMaps = 11
 
 // Checksum returns a deterministic hash of all entity positions and velocities.
