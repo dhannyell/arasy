@@ -126,6 +126,9 @@ func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
 	if state.HistoryLen > 0 {
 		lines = append(lines, fmt.Sprintf("range: %d-%d", state.HistoryStartTick, state.HistoryEndTick))
 	}
+	if state.DeterminismViolated {
+		lines = append(lines, "determinism: violated")
+	}
 
 	return lines
 }
