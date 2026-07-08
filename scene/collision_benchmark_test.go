@@ -10,7 +10,7 @@ import (
 
 var (
 	benchmarkSpreadSizes = []int{10, 25, 50, 75, 100, 1000, 5000}
-	benchmarkGridSizes   = []int{10, 25, 50, 75, 100, 1000}
+	benchmarkGridSizes   = []int{10, 25, 50, 75, 100, 1000, 5000}
 )
 
 func BenchmarkCollisionOverlapsAllPairs(b *testing.B) {
