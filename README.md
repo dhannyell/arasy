@@ -226,106 +226,21 @@ the dev control bar: pause, single-step, speed, rewind, and debug overlay
 toggles (colliders, contacts, spatial grid, velocities, entity IDs, runtime
 stats).
 
-## Running Benchmarks
+## Measuring Performance
 
-Run benchmarks directly:
+For comprehensive documentation on benchmarking workflows, baselines, and interpreting results, see [`benchmarks/README.md`](benchmarks/README.md).
 
-```powershell
-go test ./scene -run="^$" -bench="." -benchmem
-```
-
-Save a structured Markdown report:
+Quick start:
 
 ```powershell
-go run ./cmd/benchsave
-```
-
-By default, reports are written to:
-
-```text
-benchmarks/
-```
-
-Useful options:
-
-```powershell
-go run ./cmd/benchsave -pkg ./scene -bench WorldStep -name scene-step
-```
-
-### Benchmark suites
-
-`benchsave` is the hub for every benchmark family in the repo — it does not
-just run `./scene`. Named suites are registered in
-[`cmd/benchsave/suites.go`](cmd/benchsave/suites.go) (currently `scene` and
-`runtime`, plus focused runtime seek suites) so you never need to remember
-which package a benchmark lives in:
-
-```powershell
-# List the registered suites
+# List benchmark suites
 go run ./cmd/benchsave -list-suites
 
-# Run one suite by name instead of passing -pkg/-bench by hand
-go run ./cmd/benchsave -suite runtime
-go run ./cmd/benchsave -suite raster
+# Run one suite and compare against the baseline
+go run ./cmd/benchsave -suite runtime -compare baseline
 
-# Run the focused runtime seek baseline suites from plan 023
-go run ./cmd/benchsave -suite runtime-seek
-go run ./cmd/benchsave -suite runtime-seek-back
-
-# Run every registered suite, saving one report per suite
-go run ./cmd/benchsave -suite all
-```
-
-For performance decisions, prefer a repeated, longer run instead of the quick
-default:
-
-```powershell
-go run ./cmd/benchsave -suite scene -profile decision -compare auto
-```
-
-Profiles are shortcuts for `go test` timing flags: `quick` keeps the default
-single run, `ci` uses `-count 3 -benchtime 1s`, and `decision` uses
-`-count 5 -benchtime 2s`. Explicit `-count` or `-benchtime` values still win.
-Each saved Markdown report also gets a same-name `.json` report by default so
-future tooling can read structured metrics without scraping Markdown; pass
-`-json=false` to disable that sidecar.
-
-Adding a future benchmark family (e.g. `render` or `ui`) only requires
-appending one entry to the `benchSuites` slice in `suites.go` — `-suite`,
-`-suite all`, and `-compare-all` all pick it up automatically since the
-report name is derived from the suite name.
-
-### Comparing benchmark runs
-
-Manually diffing Markdown reports gets old fast, so `benchsave` can compare
-runs for you and show the % change per benchmark (`ns/op`, `B/op`,
-`allocs/op` — negative % is faster/smaller, i.e. an improvement):
-
-```powershell
-# Run benchmarks, then compare against the most recent previous report
-# for the same -pkg, printing the diff and appending it to the new report
-go run ./cmd/benchsave -compare auto
-
-# Compare against one specific previous report instead of auto-detecting
-go run ./cmd/benchsave -compare benchmarks/bench-scene-2026-06-28-211550.md
-
-# Compare two already-saved reports without running any benchmarks
-# (flags must come before the two paths — the stdlib `flag` package stops
-# parsing flags at the first non-flag argument)
-go run ./cmd/benchsave -diff benchmarks/old-report.md benchmarks/new-report.md
-
-# Compare every report "family" in benchmarks/ at once (bench-scene,
-# bench-runtime-seek, ...), diffing each family's two most recent reports —
-# no benchmarks are run. Only bench-*.md files are considered, so aggregate
-# files such as compare.md are ignored. A family is the report name with its
-# trailing timestamp stripped, so custom -name reports (e.g.
-# bench-runtime-seek-*) get their own section too, not just the default
-# bench-<pkg>-* ones. Each comparison includes a short summary of new/removed
-# benchmarks and the largest >=10% ns/op changes before the full table.
-go run ./cmd/benchsave -compare-all
-
-# Any of the modes above can also save the comparison as its own file
-go run ./cmd/benchsave -compare-all -comparison-out benchmarks/compare.md
+# Update the baseline after an intentional change
+go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 ```
 
 ## Design Goals
