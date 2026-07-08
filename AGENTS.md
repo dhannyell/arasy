@@ -54,13 +54,15 @@ apps:           cmd/
 
 **Dependency direction** (never reverse):
 ```
-cmd/demos -> platform/* -> runtime -> {scene, input, ui, render} -> math2d
+cmd/demos -> platform/* -> runtime -> {scene, input, ui, render, asset} -> math2d
+asset -> render -> math2d
+platform/* -> asset/pixel -> asset
 ```
 
 ### Rules
 - `math2d`, `render`, `input`, `ui`, `scene`, `runtime` never import `platform/*`.
 - `runtime` is the sole behavioral API for platforms/games. Platforms call `runtime.Driver` methods only; never `scene.World` directly.
-- `runtime` is backend-free: no JSON, HTTP, images, browser concepts.
+- `runtime` is backend-free: no JSON, HTTP, images, browser concepts. Manifest parse lives in `asset`; `runtime` only transports the resolved `asset.Manifest`.
 - Games implement `runtime.Game`; World arrives via `UpdateContext`.
 
 ### Package Responsibilities
@@ -69,6 +71,7 @@ cmd/demos -> platform/* -> runtime -> {scene, input, ui, render} -> math2d
 |---|---|
 | `math2d/` | Pure 2D math (`Vec2`, `Rect`). Zero engine deps. |
 | `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`. |
+| `asset/` | Data-driven texture/sprite declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` stable per-run, resolved by name, never persisted. `asset/pixel` subpackage owns shared image decode for native backends; `runtime` carries only the resolved `asset.Manifest`. |
 | `scene/` | ECS world + simulation tick. `EntityID` (uint32). Step pipeline: acceleration -> integrate -> bounce -> grid broad-phase -> contact resolution -> damping. `World.Checksum()` for determinism. |
 | `input/` | `Source`/`Action`/`Binding`/`Mapper`/`Buffer` + pointer types. `Mapper.EndFrame()` called by driver at tick end. |
 | `ui/` | Immediate-mode: Button, Panel, Label, etc. Three coord spaces. `ui.State` owned by driver (captured in rewind). |
