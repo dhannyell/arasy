@@ -34,6 +34,13 @@ type recordingPanel struct {
 	// recording mirrors driver state so sync() can render an accurate label.
 	recording bool
 
+	// pendingRecord defers StartRecording until the reset-to-tick-0 completes.
+	// Replay always reconstructs from tick 0, so a recording started mid-run
+	// would capture only the tail and diverge on replay. When the user clicks
+	// Record, the panel queues ControlReset; on the next frame (tick == 0),
+	// sync() calls StartRecording — no "mid-run" warning, clean recording.
+	pendingRecord bool
+
 	// host points back at the running host so adoptDriver can swap its driver
 	// after a successful Load (the rAF loop reads h.driver each frame).
 	host *host
@@ -93,23 +100,38 @@ func (p *recordingPanel) retainChange(el js.Value, fn func(file js.Value)) {
 }
 
 // toggleRecording flips between StartRecording and StopRecording.
+// Starting a recording mid-run would capture only the tail (Replay always
+// reconstructs from tick 0), so the panel resets to tick 0 first and defers
+// StartRecording to sync() when the reset completes.
 func (p *recordingPanel) toggleRecording() {
 	if p.recording {
-		p.driver.StopRecording()
+		if p.pendingRecord {
+			// Reset was pending but recording hadn't started yet; just cancel.
+			p.pendingRecord = false
+		} else {
+			p.driver.StopRecording()
+		}
 		p.recording = false
 		p.recordEl.Set("textContent", "Record")
 		p.setStatus("recording stopped")
 		return
 	}
-	p.driver.StartRecording()
+	// Queue a reset; StartRecording is deferred to sync() at tick 0 so the
+	// recording starts from the initial state (no "mid-run" warning).
+	p.driver.Control(runtime.ControlCommand{Kind: runtime.ControlReset})
+	p.pendingRecord = true
 	p.recording = true
 	p.recordEl.Set("textContent", "Stop")
-	p.setStatus("recording…")
+	p.setStatus("resetting to tick 0…")
 }
 
 // saveRecording serializes the active recording and triggers a browser
 // download of the .ffrp bytes via a Blob URL.
 func (p *recordingPanel) saveRecording() {
+	if p.pendingRecord {
+		p.setStatus("recording hasn't started yet — wait for reset")
+		return
+	}
 	if !p.recording {
 		p.setStatus("nothing to save — no active recording")
 		return
@@ -207,7 +229,16 @@ func (p *recordingPanel) setStatus(s string) {
 }
 
 // sync updates the status line from the live DriveState each frame.
+// It also completes a pending recording start: after the user clicks Record,
+// the panel queues a reset; when the reset completes (tick == 0), sync calls
+// StartRecording so the recording begins from the initial state.
 func (p *recordingPanel) sync(state runtime.DriveState) {
+	if p.pendingRecord && state.Tick == 0 {
+		p.driver.StartRecording()
+		p.pendingRecord = false
+		p.setStatus("recording from tick 0")
+		return
+	}
 	if p.statusEl.IsNull() {
 		return
 	}
