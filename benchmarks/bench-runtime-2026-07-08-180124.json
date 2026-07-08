@@ -1,0 +1,169 @@
+{
+  "status": "pass",
+  "created_at": "2026-07-08T18:01:24-03:00",
+  "duration": "1m45.691s",
+  "os": "windows",
+  "arch": "amd64",
+  "cpu_count": 16,
+  "commit_sha": "e5e39e8",
+  "go_version": "go1.26.4",
+  "gomaxprocs": 16,
+  "command": "go test ./runtime -run ^$ -bench . -count 1 -benchmem",
+  "results": [
+    {
+      "name": "BenchmarkDriverStep/entities=100/history=0-16",
+      "runs": "28989",
+      "ns_per_op": "41652",
+      "bytes_op": "24390",
+      "allocs_op": "226"
+    },
+    {
+      "name": "BenchmarkDriverStep/entities=100/history=600-16",
+      "runs": "28046",
+      "ns_per_op": "44829",
+      "bytes_op": "24895",
+      "allocs_op": "228"
+    },
+    {
+      "name": "BenchmarkDriverStep/entities=1000/history=0-16",
+      "runs": "1606",
+      "ns_per_op": "764111",
+      "bytes_op": "246353",
+      "allocs_op": "902"
+    },
+    {
+      "name": "BenchmarkDriverStep/entities=1000/history=600-16",
+      "runs": "1454",
+      "ns_per_op": "774478",
+      "bytes_op": "250071",
+      "allocs_op": "903"
+    },
+    {
+      "name": "BenchmarkDriverBack/entities=100-16",
+      "runs": "38",
+      "ns_per_op": "30924305",
+      "bytes_op": "14836669",
+      "allocs_op": "143799"
+    },
+    {
+      "name": "BenchmarkDriverBack/entities=1000-16",
+      "runs": "3",
+      "ns_per_op": "450017167",
+      "bytes_op": "147850397",
+      "allocs_op": "539683"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=600/to-1-16",
+      "runs": "31921090",
+      "ns_per_op": "44.27",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=600/to-half-16",
+      "runs": "30447338",
+      "ns_per_op": "40.72",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=600/to-last-16",
+      "runs": "27909351",
+      "ns_per_op": "47.30",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-1-16",
+      "runs": "32901861",
+      "ns_per_op": "43.66",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-half-16",
+      "runs": "25080063",
+      "ns_per_op": "45.84",
+      "bytes_op": "25",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-last-16",
+      "runs": "22837286",
+      "ns_per_op": "47.98",
+      "bytes_op": "27",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-1-16",
+      "runs": "31040877",
+      "ns_per_op": "38.04",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-half-16",
+      "runs": "23799016",
+      "ns_per_op": "46.26",
+      "bytes_op": "27",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-last-16",
+      "runs": "18923684",
+      "ns_per_op": "58.75",
+      "bytes_op": "31",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-1-16",
+      "runs": "28435725",
+      "ns_per_op": "37.90",
+      "bytes_op": "24",
+      "allocs_op": "1"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-half-16",
+      "runs": "1",
+      "ns_per_op": "1300790100",
+      "bytes_op": "444141944",
+      "allocs_op": "1630088"
+    },
+    {
+      "name": "BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-last-16",
+      "runs": "1",
+      "ns_per_op": "2729692500",
+      "bytes_op": "887976536",
+      "allocs_op": "3269141"
+    },
+    {
+      "name": "BenchmarkDriverSeekForward/entities=100/delta=5-16",
+      "runs": "44",
+      "ns_per_op": "29373759",
+      "bytes_op": "14859542",
+      "allocs_op": "144016"
+    },
+    {
+      "name": "BenchmarkDriverSeekForward/entities=1000/delta=5-16",
+      "runs": "3",
+      "ns_per_op": "447218500",
+      "bytes_op": "148066288",
+      "allocs_op": "540581"
+    },
+    {
+      "name": "BenchmarkReplay/entities=100/ticks=600-16",
+      "runs": "39",
+      "ns_per_op": "27445628",
+      "bytes_op": "14873502",
+      "allocs_op": "144122"
+    },
+    {
+      "name": "BenchmarkReplay/entities=1000/ticks=600-16",
+      "runs": "3",
+      "ns_per_op": "417285067",
+      "bytes_op": "148091320",
+      "allocs_op": "540668"
+    }
+  ],
+  "raw_output": "goos: windows\ngoarch: amd64\npkg: github.com/dhannyell/frameforge/runtime\ncpu: AMD Ryzen 7 5800X3D 8-Core Processor           \nBenchmarkDriverStep/entities=100/history=0-16         \t   28989\t     41652 ns/op\t   24390 B/op\t     226 allocs/op\nBenchmarkDriverStep/entities=100/history=600-16       \t   28046\t     44829 ns/op\t   24895 B/op\t     228 allocs/op\nBenchmarkDriverStep/entities=1000/history=0-16        \t    1606\t    764111 ns/op\t  246353 B/op\t     902 allocs/op\nBenchmarkDriverStep/entities=1000/history=600-16      \t    1454\t    774478 ns/op\t  250071 B/op\t     903 allocs/op\nBenchmarkDriverBack/entities=100-16                   \t      38\t  30924305 ns/op\t14836669 B/op\t  143799 allocs/op\nBenchmarkDriverBack/entities=1000-16                  \t       3\t 450017167 ns/op\t147850397 B/op\t  539683 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=600/to-1-16         \t31921090\t        44.27 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=600/to-half-16      \t30447338\t        40.72 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=600/to-last-16      \t27909351\t        47.30 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=3600/to-1-16        \t32901861\t        43.66 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=3600/to-half-16     \t25080063\t        45.84 ns/op\t      25 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=100/timeline=3600/to-last-16     \t22837286\t        47.98 ns/op\t      27 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=600/to-1-16        \t31040877\t        38.04 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=600/to-half-16     \t23799016\t        46.26 ns/op\t      27 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=600/to-last-16     \t18923684\t        58.75 ns/op\t      31 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-1-16       \t28435725\t        37.90 ns/op\t      24 B/op\t       1 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-half-16    \t       1\t1300790100 ns/op\t444141944 B/op\t 1630088 allocs/op\nBenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-last-16    \t       1\t2729692500 ns/op\t887976536 B/op\t 3269141 allocs/op\nBenchmarkDriverSeekForward/entities=100/delta=5-16                   \t      44\t  29373759 ns/op\t14859542 B/op\t  144016 allocs/op\nBenchmarkDriverSeekForward/entities=1000/delta=5-16                  \t       3\t 447218500 ns/op\t148066288 B/op\t  540581 allocs/op\nBenchmarkReplay/entities=100/ticks=600-16                            \t      39\t  27445628 ns/op\t14873502 B/op\t  144122 allocs/op\nBenchmarkReplay/entities=1000/ticks=600-16                           \t       3\t 417285067 ns/op\t148091320 B/op\t  540668 allocs/op\nPASS\nok  \tgithub.com/dhannyell/frameforge/runtime\t104.485s\n"
+}

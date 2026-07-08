@@ -25,16 +25,19 @@ type benchmarkResult struct {
 }
 
 type benchmarkReport struct {
-	Status    string            `json:"status"`
-	CreatedAt string            `json:"created_at"`
-	Duration  string            `json:"duration"`
-	OS        string            `json:"os"`
-	Arch      string            `json:"arch"`
-	CPUCount  int               `json:"cpu_count"`
-	Command   string            `json:"command"`
-	Error     string            `json:"error,omitempty"`
-	Results   []benchmarkResult `json:"results"`
-	RawOutput string            `json:"raw_output"`
+	Status     string            `json:"status"`
+	CreatedAt  string            `json:"created_at"`
+	Duration   string            `json:"duration"`
+	OS         string            `json:"os"`
+	Arch       string            `json:"arch"`
+	CPUCount   int               `json:"cpu_count"`
+	CommitSHA  string            `json:"commit_sha,omitempty"`
+	GoVersion  string            `json:"go_version,omitempty"`
+	GOMAXPROCS int               `json:"gomaxprocs,omitempty"`
+	Command    string            `json:"command"`
+	Error      string            `json:"error,omitempty"`
+	Results    []benchmarkResult `json:"results"`
+	RawOutput  string            `json:"raw_output"`
 }
 
 func main() {
@@ -48,10 +51,11 @@ func main() {
 	benchmem := flag.Bool("benchmem", true, "include memory allocation metrics")
 	benchtime := flag.String("benchtime", "", "optional benchmark time passed to -benchtime (e.g. 2s or 300x)")
 	timeout := flag.String("timeout", "", "optional test timeout passed to -timeout (e.g. 30m)")
-	compare := flag.String("compare", "", `after saving the new report, compare it against a previous one and print the %% change per benchmark (ns/op, B/op, allocs/op). Use "auto" to pick the most recent report for -pkg in -out, or pass a path to a specific report.`)
+	compare := flag.String("compare", "", `after saving the new report, compare it against a previous one and print the %% change per benchmark (ns/op, B/op, allocs/op). Use "auto" to pick the most recent report for -pkg in -out, "baseline" to use the explicit baseline for this family, or pass a path to a specific report.`)
 	diff := flag.Bool("diff", false, "skip running benchmarks; compare two existing reports instead. Usage: -diff <old-report.md> <new-report.md>")
 	compareAll := flag.Bool("compare-all", false, "skip running benchmarks; compare every report family found in -out (e.g. bench-scene, bench-runtime), diffing each family's two most recent reports")
 	comparisonOut := flag.String("comparison-out", "", "optional path to also save the comparison report as its own markdown file (used with -diff, -compare or -compare-all)")
+	updateBaseline := flag.Bool("update-baseline", false, "save the current benchmark run as the baseline for this family (requires -suite or -pkg)")
 	jsonOut := flag.Bool("json", true, "also save a machine-readable JSON report next to each Markdown report")
 	suite := flag.String("suite", "", `named benchmark suite to run instead of -pkg/-bench (see -list-suites), or "all" to run every registered suite`)
 	listSuites := flag.Bool("list-suites", false, "print the registered benchmark suites and exit")
@@ -100,15 +104,16 @@ func main() {
 	}
 
 	baseOpts := runOptions{
-		Run:           *run,
-		OutDir:        *outDir,
-		Count:         selectedProfile.Count,
-		Benchmem:      *benchmem,
-		Benchtime:     selectedProfile.Benchtime,
-		Timeout:       *timeout,
-		Compare:       *compare,
-		ComparisonOut: *comparisonOut,
-		JSON:          *jsonOut,
+		Run:            *run,
+		OutDir:         *outDir,
+		Count:          selectedProfile.Count,
+		Benchmem:       *benchmem,
+		Benchtime:      selectedProfile.Benchtime,
+		Timeout:        *timeout,
+		Compare:        *compare,
+		ComparisonOut:  *comparisonOut,
+		UpdateBaseline: *updateBaseline,
+		JSON:           *jsonOut,
 	}
 
 	if *suite == "all" {
@@ -166,6 +171,7 @@ type runOptions struct {
 	Benchmem                              bool
 	Benchtime, Timeout                    string
 	Compare, ComparisonOut                string
+	UpdateBaseline                        bool
 	JSON                                  bool
 }
 
@@ -201,7 +207,7 @@ func applyRunProfile(profile string, count int, countSet bool, benchtime string,
 		}
 	case "decision":
 		if !countSet {
-			opts.Count = 5
+			opts.Count = 10
 		}
 		if !benchtimeSet {
 			opts.Benchtime = "2s"
@@ -218,6 +224,10 @@ func applyRunProfile(profile string, count int, countSet bool, benchtime string,
 // prints the results. It is the shared implementation behind the default
 // -pkg/-bench run, -suite <name>, and each iteration of -suite all.
 func runOnce(opts runOptions) (reportPath string, err error) {
+	if opts.Compare != "" && opts.Count < 6 {
+		fmt.Fprintf(os.Stderr, "warning: -count=%d is too low for statistical significance (recommend >= 6); results may be unreliable\n", opts.Count)
+	}
+
 	start := time.Now()
 	args := []string{"test", opts.Pkg, "-run", opts.Run, "-bench", opts.Bench, "-count", fmt.Sprint(opts.Count)}
 	if opts.Benchmem {
@@ -262,16 +272,30 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 		if family == "" {
 			family = opts.Pkg
 		}
-		var compareErr error
-		comparison, compareErr = compareAgainstPrevious(opts.Compare, opts.OutDir, family, reportName+".md", output.String())
-		if compareErr != nil {
-			fmt.Fprintf(os.Stderr, "comparison skipped: %v\n", compareErr)
-			comparison = ""
-		} else {
-			report += "\n" + comparison
-			if opts.ComparisonOut != "" {
-				if writeErr := os.WriteFile(opts.ComparisonOut, []byte(comparison), 0o644); writeErr != nil {
-					fmt.Fprintf(os.Stderr, "failed to write comparison report: %v\n", writeErr)
+
+		compareFlag := opts.Compare
+		if compareFlag == "baseline" {
+			baselinePath, err := resolveBaselinePath(opts.OutDir, family)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "comparison skipped: %v\n", err)
+				compareFlag = ""
+			} else {
+				compareFlag = baselinePath
+			}
+		}
+
+		if compareFlag != "" {
+			var compareErr error
+			comparison, compareErr = compareAgainstPrevious(compareFlag, opts.OutDir, family, reportName+".md", output.String())
+			if compareErr != nil {
+				fmt.Fprintf(os.Stderr, "comparison skipped: %v\n", compareErr)
+				comparison = ""
+			} else {
+				report += "\n" + comparison
+				if opts.ComparisonOut != "" {
+					if writeErr := os.WriteFile(opts.ComparisonOut, []byte(comparison), 0o644); writeErr != nil {
+						fmt.Fprintf(os.Stderr, "failed to write comparison report: %v\n", writeErr)
+					}
 				}
 			}
 		}
@@ -294,6 +318,22 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 	}
 	fmt.Printf("\nbenchmark report saved to %s\n", reportPath)
 
+	if opts.UpdateBaseline {
+		family := opts.Family
+		if family == "" {
+			family = opts.Pkg
+		}
+		if err := saveBaseline(opts.OutDir, family, output.String()); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to update baseline: %v\n", err)
+			if runErr != nil {
+				return reportPath, fmt.Errorf("%w", runErr)
+			}
+			return reportPath, err
+		}
+		baselinePath := filepath.Join(opts.OutDir, baselineDir, "bench-"+sanitizeName(family)+".txt")
+		fmt.Printf("baseline updated: %s\n", baselinePath)
+	}
+
 	if runErr != nil {
 		return reportPath, fmt.Errorf("%w", runErr)
 	}
@@ -309,17 +349,30 @@ func newBenchmarkReport(start time.Time, duration time.Duration, args []string, 
 	}
 
 	return benchmarkReport{
-		Status:    status,
-		CreatedAt: start.Format(time.RFC3339),
-		Duration:  duration.Round(time.Millisecond).String(),
-		OS:        runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		CPUCount:  runtime.NumCPU(),
-		Command:   commandString(args),
-		Error:     errText,
-		Results:   parseBenchmarkResults(output),
-		RawOutput: output,
+		Status:     status,
+		CreatedAt:  start.Format(time.RFC3339),
+		Duration:   duration.Round(time.Millisecond).String(),
+		OS:         runtime.GOOS,
+		Arch:       runtime.GOARCH,
+		CPUCount:   runtime.NumCPU(),
+		CommitSHA:  getCommitSHA(),
+		GoVersion:  runtime.Version(),
+		GOMAXPROCS: runtime.GOMAXPROCS(-1),
+		Command:    commandString(args),
+		Error:      errText,
+		Results:    parseBenchmarkResults(output),
+		RawOutput:  output,
 	}
+}
+
+func getCommitSHA() string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd.Stderr = nil
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func renderBenchmarkReport(report benchmarkReport) string {
@@ -332,6 +385,15 @@ func renderBenchmarkReport(report benchmarkReport) string {
 	b.WriteString(fmt.Sprintf("- OS: `%s`\n", report.OS))
 	b.WriteString(fmt.Sprintf("- Arch: `%s`\n", report.Arch))
 	b.WriteString(fmt.Sprintf("- CPU count: `%d`\n", report.CPUCount))
+	if report.CommitSHA != "" {
+		b.WriteString(fmt.Sprintf("- Commit SHA: `%s`\n", report.CommitSHA))
+	}
+	if report.GoVersion != "" {
+		b.WriteString(fmt.Sprintf("- Go version: `%s`\n", report.GoVersion))
+	}
+	if report.GOMAXPROCS > 0 {
+		b.WriteString(fmt.Sprintf("- GOMAXPROCS: `%d`\n", report.GOMAXPROCS))
+	}
 	b.WriteString(fmt.Sprintf("- Command: `%s`\n", report.Command))
 	if report.Error != "" {
 		b.WriteString(fmt.Sprintf("- Error: `%s`\n", report.Error))

@@ -1,0 +1,29 @@
+{
+  "status": "pass",
+  "created_at": "2026-07-08T18:07:02-03:00",
+  "duration": "4m22.919s",
+  "os": "windows",
+  "arch": "amd64",
+  "cpu_count": 16,
+  "commit_sha": "e5e39e8",
+  "go_version": "go1.26.4",
+  "gomaxprocs": 16,
+  "command": "go test ./runtime -run ^$ -bench BenchmarkDriverBack$ -count 1 -benchmem -benchtime 500x",
+  "results": [
+    {
+      "name": "BenchmarkDriverBack/entities=100-16",
+      "runs": "500",
+      "ns_per_op": "30721554",
+      "bytes_op": "14835465",
+      "allocs_op": "143796"
+    },
+    {
+      "name": "BenchmarkDriverBack/entities=1000-16",
+      "runs": "500",
+      "ns_per_op": "486709168",
+      "bytes_op": "147824282",
+      "allocs_op": "539665"
+    }
+  ],
+  "raw_output": "goos: windows\ngoarch: amd64\npkg: github.com/dhannyell/frameforge/runtime\ncpu: AMD Ryzen 7 5800X3D 8-Core Processor           \nBenchmarkDriverBack/entities=100-16         \t     500\t  30721554 ns/op\t14835465 B/op\t  143796 allocs/op\nBenchmarkDriverBack/entities=1000-16        \t     500\t 486709168 ns/op\t147824282 B/op\t  539665 allocs/op\nPASS\nok  \tgithub.com/dhannyell/frameforge/runtime\t262.202s\n"
+}
