@@ -1,0 +1,28 @@
+goos: windows
+goarch: amd64
+pkg: github.com/dhannyell/frameforge/runtime
+cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
+BenchmarkDriverStep/entities=100/history=0-16         	   28989	     41652 ns/op	   24390 B/op	     226 allocs/op
+BenchmarkDriverStep/entities=100/history=600-16       	   28046	     44829 ns/op	   24895 B/op	     228 allocs/op
+BenchmarkDriverStep/entities=1000/history=0-16        	    1606	    764111 ns/op	  246353 B/op	     902 allocs/op
+BenchmarkDriverStep/entities=1000/history=600-16      	    1454	    774478 ns/op	  250071 B/op	     903 allocs/op
+BenchmarkDriverBack/entities=100-16                   	      38	  30924305 ns/op	14836669 B/op	  143799 allocs/op
+BenchmarkDriverBack/entities=1000-16                  	       3	 450017167 ns/op	147850397 B/op	  539683 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=600/to-1-16         	31921090	        44.27 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=600/to-half-16      	30447338	        40.72 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=600/to-last-16      	27909351	        47.30 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-1-16        	32901861	        43.66 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-half-16     	25080063	        45.84 ns/op	      25 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-last-16     	22837286	        47.98 ns/op	      27 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-1-16        	31040877	        38.04 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-half-16     	23799016	        46.26 ns/op	      27 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-last-16     	18923684	        58.75 ns/op	      31 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-1-16       	28435725	        37.90 ns/op	      24 B/op	       1 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-half-16    	       1	1300790100 ns/op	444141944 B/op	 1630088 allocs/op
+BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-last-16    	       1	2729692500 ns/op	887976536 B/op	 3269141 allocs/op
+BenchmarkDriverSeekForward/entities=100/delta=5-16                   	      44	  29373759 ns/op	14859542 B/op	  144016 allocs/op
+BenchmarkDriverSeekForward/entities=1000/delta=5-16                  	       3	 447218500 ns/op	148066288 B/op	  540581 allocs/op
+BenchmarkReplay/entities=100/ticks=600-16                            	      39	  27445628 ns/op	14873502 B/op	  144122 allocs/op
+BenchmarkReplay/entities=1000/ticks=600-16                           	       3	 417285067 ns/op	148091320 B/op	  540668 allocs/op
+PASS
+ok  	github.com/dhannyell/frameforge/runtime	104.485s
