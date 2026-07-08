@@ -52,4 +52,4 @@ qodana.yaml
 # Benchmark runs (ad-hoc); only committed baselines are versioned.
 benchmarks/runs/
 
-
+CLAUDE.md
