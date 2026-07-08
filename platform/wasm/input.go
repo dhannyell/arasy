@@ -25,6 +25,12 @@ func (h *host) registerInputListeners() {
 
 	addWindowListener("keydown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		if h.handleOverlayToggleKey(event) {
+			return nil
+		}
+		if isEditableTarget(event.Get("target")) {
+			return nil
+		}
 		if event.Get("repeat").Bool() {
 			return nil
 		}
@@ -44,6 +50,9 @@ func (h *host) registerInputListeners() {
 
 	addWindowListener("keyup", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		if isEditableTarget(event.Get("target")) {
+			return nil
+		}
 
 		code, ok := browserinput.KeyboardCode(event.Get("code").String())
 		if !ok {
@@ -143,6 +152,49 @@ func (h *host) registerInputListeners() {
 
 		return nil
 	}))
+}
+
+func (h *host) handleOverlayToggleKey(event js.Value) bool {
+	if h.debugPanel == nil {
+		return false
+	}
+	if isEditableTarget(event.Get("target")) {
+		return false
+	}
+
+	code := event.Get("code").String()
+	key := event.Get("key").String()
+	if code != "Backquote" && key != "`" && key != "~" {
+		return false
+	}
+
+	event.Call("preventDefault")
+	event.Call("stopPropagation")
+	if event.Get("repeat").Bool() {
+		return true
+	}
+	h.debugPanel.setVisible(!h.debugPanel.visible)
+	return true
+}
+
+func isEditableTarget(target js.Value) bool {
+	if target.IsNull() || target.IsUndefined() {
+		return false
+	}
+	contentEditable := target.Get("isContentEditable")
+	if !contentEditable.IsNull() && !contentEditable.IsUndefined() && contentEditable.Bool() {
+		return true
+	}
+	tag := target.Get("tagName")
+	if tag.IsNull() || tag.IsUndefined() {
+		return false
+	}
+	switch tag.String() {
+	case "INPUT", "TEXTAREA", "SELECT":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *host) canvasXY(event js.Value) (float64, float64) {

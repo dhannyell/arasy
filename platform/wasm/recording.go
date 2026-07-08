@@ -9,9 +9,8 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// recordingPanel is an in-browser UI for the .ffrp recording/replay feature.
-// It is built entirely in Go via syscall/js (no separate JS bundle) and is
-// self-contained: the HTML shell of each game does not change. It exposes:
+// recordingPanel wires the .ffrp recording/replay controls embedded in the
+// unified debug panel. It exposes:
 //
 //   - Record / Stop: toggle driver.StartRecording/StopRecording.
 //   - Save: download the stopped recording as a .ffrp file via a Blob URL.
@@ -50,34 +49,28 @@ type recordingPanel struct {
 
 	statusEl js.Value
 	recordEl js.Value
+	fileEl   js.Value
 
 	// callbacks are retained so the Go GC does not release the js.Func while
 	// the DOM still references them (dead handlers silently stop firing).
 	cbs []js.Func
 }
 
-// newRecordingPanel builds and injects the panel DOM and wires its handlers.
-// The panel is appended to document.body; the canvas shell is untouched.
+// newRecordingPanel wires the recording controls inside the unified debug panel.
 func newRecordingPanel(h *host, newGame func() runtime.Game, log *slog.Logger) *recordingPanel {
 	p := &recordingPanel{driver: h.driver, newGame: newGame, log: log, host: h}
 	doc := js.Global().Get("document")
-
-	panel := doc.Call("createElement", "div")
-	panel.Get("style").Set("cssText", panelCSS)
-
-	panel.Set("innerHTML", panelHTML)
-	doc.Get("body").Call("appendChild", panel)
 
 	p.statusEl = doc.Call("getElementById", "ff-rec-status")
 	p.recordEl = doc.Call("getElementById", "ff-rec-record")
 	saveEl := doc.Call("getElementById", "ff-rec-save")
 	loadEl := doc.Call("getElementById", "ff-rec-load")
-	fileEl := doc.Call("getElementById", "ff-rec-file")
+	p.fileEl = doc.Call("getElementById", "ff-rec-file")
 
 	p.retainClick(p.recordEl, p.toggleRecording)
 	p.retainClick(saveEl, p.saveRecording)
-	p.retainClick(loadEl, func() { fileEl.Call("click") })
-	p.retainChange(fileEl, p.loadRecording)
+	p.retainClick(loadEl, func() { p.fileEl.Call("click") })
+	p.retainChange(p.fileEl, p.loadRecording)
 
 	return p
 }
@@ -255,14 +248,6 @@ func (p *recordingPanel) sync(state runtime.DriveState) {
 		p.setStatus("recording from tick 0")
 		return
 	}
-	if p.statusEl.IsNull() {
-		return
-	}
-	p.statusEl.Set("textContent",
-		"tick="+itoa(int(state.Tick))+
-			"  paused="+boolStr(state.Paused)+
-			"  speed="+ftoa(state.Speed)+
-			"  recording="+boolStr(p.recording))
 }
 
 func itoa(n int) string {
@@ -287,31 +272,9 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-func ftoa(f float64) string {
-	whole := int(f)
-	frac := int((f - float64(whole)) * 100)
-	if frac < 0 {
-		frac = -frac
-	}
-	return itoa(whole) + "." + itoa(frac)
-}
-
 func boolStr(b bool) string {
 	if b {
 		return "true"
 	}
 	return "false"
 }
-
-const panelCSS = "position:fixed;top:8px;left:8px;z-index:1000;" +
-	"background:rgba(0,0,0,0.78);color:#ddd;font:13px/1.4 monospace;" +
-	"padding:8px 10px;border-radius:6px;user-select:none;max-width:360px"
-
-const panelHTML = `
-<div id="ff-rec-status" style="margin-bottom:6px;opacity:0.85">tick=0</div>
-<div style="display:flex;gap:6px;flex-wrap:wrap">
-  <button id="ff-rec-record" type="button">Record</button>
-  <button id="ff-rec-save" type="button">Save .ffrp</button>
-  <button id="ff-rec-load" type="button">Load .ffrp</button>
-  <input id="ff-rec-file" type="file" accept=".ffrp" style="display:none">
-</div>`

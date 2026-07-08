@@ -13,6 +13,7 @@ import (
 func main() {
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
+		DevTools:     true,
 		Log:          log,
 		RecordReplay: true,
 		GameFactory:  func() runtime.Game { return &breakout.Breakout{} },
