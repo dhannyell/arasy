@@ -9,6 +9,18 @@ import (
 )
 
 func (w *World) RenderCommands() []render.Command {
+	return w.RenderCommandsInterpolated(0)
+}
+
+// RenderCommandsInterpolated returns render commands with transforms
+// interpolated by alpha between the previous and current simulation state.
+// alpha=0 produces the current (most recent) pose; alpha=0.5 is halfway
+// between previous and current. Debug colliders/grid/velocity are always
+// rendered at the current simulation state, not interpolated.
+//
+// Interpolation is a presentation cache: it never enters Checksum or recorded
+// replays, though World.Clone preserves it so restored frames avoid smear.
+func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 	totalSprites := w.circleSprites.len() + w.rectSprites.len()
 	ids := make([]EntityID, 0, totalSprites)
 
@@ -17,6 +29,13 @@ func (w *World) RenderCommands() []render.Command {
 	slices.Sort(ids)
 
 	commands := make([]render.Command, 0, totalSprites)
+	// Clamp/sanitize alpha: NaN, negative, zero -> no interpolation.
+	useAlpha := alpha
+	if useAlpha <= 0 || useAlpha != useAlpha {
+		useAlpha = 0
+	} else if useAlpha >= 1 {
+		useAlpha = math.Nextafter(1, 0)
+	}
 
 	for _, id := range ids {
 		transform, ok := w.transforms.get(id)
@@ -24,9 +43,19 @@ func (w *World) RenderCommands() []render.Command {
 			continue
 		}
 
+		// Interpolate position from previous render transform if available.
+		interpolated := transform
+		if useAlpha > 0 {
+			if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
+				interpolated.Position = prev.Position.Lerp(transform.Position, useAlpha)
+				interpolated.Rotation = math2d.Lerp(prev.Rotation, transform.Rotation, useAlpha)
+				interpolated.Scale = prev.Scale.Lerp(transform.Scale, useAlpha)
+			}
+		}
+
 		if circle, hasCircle := w.circleSprites.get(id); hasCircle {
 			commands = append(commands, render.DrawCircle{
-				Center: transform.Position,
+				Center: interpolated.Position,
 				Radius: circle.Radius,
 				Fill:   circle.Color,
 				BaseCommand: render.BaseCommand{
@@ -50,6 +79,14 @@ func (w *World) RenderCommands() []render.Command {
 	}
 
 	return commands
+}
+
+// SyncRenderState copies the current transforms into the render-pose cache.
+// Call before each simulation step that can move entities so the next frame
+// has a valid previous pose for interpolation. Call after reset, teleport,
+// or restore to prevent visual smear.
+func (w *World) SyncRenderState() {
+	w.renderTransforms = w.transforms.clone()
 }
 
 func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
