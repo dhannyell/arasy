@@ -40,4 +40,13 @@ internal/render/adapter/web/testdata/failures/
 
 .agents/
 .claude/
+CLAUDE.MD
+DEVELOPMENT.md
+ROADMAP.md
+skills-lock.json
+*.err
+qodana.yaml
+.harper*
 *.ffrp
+
+
