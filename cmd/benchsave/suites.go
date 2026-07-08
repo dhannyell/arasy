@@ -12,14 +12,26 @@ import "strings"
 type benchSuite struct {
 	// Name is both the -suite value and the report family suffix, so a
 	// suite named "runtime" produces reports named "bench-runtime-<ts>.md".
-	Name  string
-	Pkg   string
-	Bench string
+	Name      string
+	Pkg       string
+	Bench     string
+	Benchtime string
 }
 
 var benchSuites = []benchSuite{
 	{Name: "scene", Pkg: "./scene", Bench: "."},
 	{Name: "runtime", Pkg: "./runtime", Bench: "."},
+	{
+		Name:  "runtime-seek",
+		Pkg:   "./runtime",
+		Bench: "BenchmarkDriver(Step|ScrubToTick)$|BenchmarkReplay$",
+	},
+	{
+		Name:      "runtime-seek-back",
+		Pkg:       "./runtime",
+		Bench:     "BenchmarkDriverBack$",
+		Benchtime: "500x",
+	},
 }
 
 func findSuite(name string) (benchSuite, bool) {

@@ -3,6 +3,7 @@ package canvas
 import (
 	"context"
 	"embed"
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -30,12 +31,21 @@ func Run(game runtime.Game, opts Options) error {
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
+		opts.Log = log
+	}
+	driver := runtime.NewDriver(game, log)
+	return RunDriver(context.Background(), driver, opts)
+}
+
+func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error {
+	log := opts.Log
+	if log == nil {
+		log = slog.Default()
 	}
 
-	driver := runtime.NewDriver(game, log)
 	cfg := driver.Config()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	h := &hub{
@@ -63,7 +73,18 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	log.Info("canvas listening", "addr", opts.Addr)
-	return srv.ListenAndServe()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), time.Second)
+		defer shutdownCancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	err := srv.ListenAndServe()
+	if errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return err
 }
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {

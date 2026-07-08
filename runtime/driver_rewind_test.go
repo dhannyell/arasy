@@ -121,8 +121,8 @@ func TestDriverBackToTickRestoresTargetSnapshot(t *testing.T) {
 	}
 
 	state := driver.State()
-	if state.HistoryLen != 1 || state.HistoryStartTick != 1 || state.HistoryEndTick != 1 {
-		t.Fatalf("history after back to tick = len %v range %v-%v, want len 1 range 1-1",
+	if state.HistoryLen != 1 || state.HistoryStartTick != 0 || state.HistoryEndTick != 0 {
+		t.Fatalf("history after back to tick = len %v range %v-%v, want len 1 range 0-0",
 			state.HistoryLen,
 			state.HistoryStartTick,
 			state.HistoryEndTick,

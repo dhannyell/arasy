@@ -21,6 +21,15 @@ type Options struct {
 	Log *slog.Logger
 	// ForceCanvas2D skips WebGPU initialization and uses the Canvas2D fallback.
 	ForceCanvas2D bool
+	// RecordReplay enables an in-browser recording/replay panel: start/stop
+	// recording, download the .ffrp binary, and load a .ffrp to verify+replay.
+	// Default false; production builds leave it off. Requires GameFactory.
+	RecordReplay bool
+	// GameFactory builds a fresh game instance for Verify/Replay. Replay
+	// mutates its game argument, so each call needs a fresh one. Required when
+	// RecordReplay is true; ignored otherwise. The engine never clones
+	// arbitrary user types — the app owns construction.
+	GameFactory func() runtime.Game
 }
 
 type host struct {
@@ -36,6 +45,9 @@ type host struct {
 	hasTimestamp  bool
 	renderer      renderer
 
+	// panel is the optional recording/replay UI; nil when RecordReplay is off.
+	panel *recordingPanel
+
 	loopCb   js.Func
 	resizeCb js.Func
 	inputCbs []js.Func
@@ -43,6 +55,14 @@ type host struct {
 
 // Run starts the browser WASM host for game and blocks forever.
 func Run(game runtime.Game, opts Options) error {
+	driver := runtime.NewDriver(game, opts.Log)
+	return RunDriver(driver, game, opts)
+}
+
+// RunDriver starts the browser WASM host for an existing driver and blocks
+// forever. It mirrors platform/web/canvas.RunDriver so an app that built its
+// own driver (e.g. to load a .ffrp before serving) can still use the host.
+func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -53,7 +73,6 @@ func Run(game runtime.Game, opts Options) error {
 		canvasID = "ff-canvas"
 	}
 
-	driver := runtime.NewDriver(game, log)
 	cfg := driver.Config()
 
 	doc := js.Global().Get("document")
@@ -67,6 +86,13 @@ func Run(game runtime.Game, opts Options) error {
 	h.registerResizeListener()
 	h.registerInputListeners()
 	h.renderer = selectRenderer(canvas, cfg.Clear, opts.ForceCanvas2D, log)
+	if opts.RecordReplay {
+		if opts.GameFactory == nil {
+			log.Error("RecordReplay enabled without GameFactory; panel disabled")
+		} else {
+			h.panel = newRecordingPanel(h, opts.GameFactory, log)
+		}
+	}
 	h.startLoop()
 	select {}
 }

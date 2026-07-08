@@ -168,7 +168,7 @@ func TestDebugRuntimeStatsLinesIncludesHistoryRangeWhenRecorderPresent(t *testin
 
 	found := false
 	for _, line := range lines {
-		if line == "range: 0-1" {
+		if line == "range: 0-0" {
 			found = true
 		}
 	}

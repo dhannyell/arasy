@@ -37,12 +37,12 @@ type comparisonRow struct {
 
 // compareAgainstPrevious resolves which previous report to diff against
 // (either the explicit path in compareFlag, or the most recent report for
-// pkg in outDir when compareFlag is "auto"), diffs it against the results in
+// family in outDir when compareFlag is "auto"), diffs it against the results in
 // the freshly captured `output`, and returns the rendered markdown section.
-func compareAgainstPrevious(compareFlag, outDir, pkg, newReportLabel, output string) (string, error) {
+func compareAgainstPrevious(compareFlag, outDir, family, newReportLabel, output string) (string, error) {
 	prevPath := compareFlag
 	if prevPath == "auto" {
-		found, err := findPreviousReport(outDir, pkg)
+		found, err := findPreviousReport(outDir, family)
 		if err != nil {
 			return "", err
 		}
@@ -165,11 +165,11 @@ func runCompareAll(outDir, outPath string) error {
 }
 
 // findPreviousReport returns the most recent report in outDir whose name was
-// produced by the default "bench-<pkg>-<timestamp>.md" naming for pkg. It is
+// produced by the default "bench-<family>-<timestamp>.md" naming. It is
 // meant to be called before the current run's report is written, so it never
 // picks up the report being generated in this run.
-func findPreviousReport(outDir, pkg string) (string, error) {
-	prefix := "bench-" + sanitizeName(pkg) + "-"
+func findPreviousReport(outDir, family string) (string, error) {
+	prefix := "bench-" + sanitizeName(family) + "-"
 
 	entries, err := os.ReadDir(outDir)
 	if err != nil {

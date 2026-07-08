@@ -4,15 +4,19 @@ package main
 
 import (
 	"log/slog"
-	"os"
 
 	"github.com/dhannyell/frameforge/cmd/demos/breakout"
 	"github.com/dhannyell/frameforge/platform/wasm"
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{Log: log}); err != nil {
+	log := wasm.NewConsoleLogger(slog.LevelInfo)
+	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
+		Log:          log,
+		RecordReplay: true,
+		GameFactory:  func() runtime.Game { return &breakout.Breakout{} },
+	}); err != nil {
 		log.Error("wasm host failed", "err", err)
 	}
 }

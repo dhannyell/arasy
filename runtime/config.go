@@ -24,6 +24,9 @@ type Config struct {
 	// Zero is a valid, deterministic seed. The seed must be stable for the
 	// lifetime of a game instance: rewind/scrub re-derive the stream from it.
 	Seed uint64
+	// KeyframeInterval is the spacing in ticks between full snapshots.
+	// The default value is 30
+	KeyframeInterval int
 
 	UITheme ui.Theme
 
