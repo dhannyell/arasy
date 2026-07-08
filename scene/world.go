@@ -35,41 +35,48 @@ type World struct {
 	rectColliders   map[EntityID]RectCollider
 	debugGridCells  []DebugGridCell
 	contacts        []Contact
+	// renderTransforms stores the previous-tick transform for each entity,
+	// used by RenderCommandsInterpolated to produce smooth visual poses
+	// between fixed simulation ticks. It is a presentation cache only and
+	// is NOT included in Checksum or persisted snapshots.
+	renderTransforms map[EntityID]Transform
 }
 
 func NewWorld() *World {
 	return &World{
-		nextID:          1,
-		transforms:      make(map[EntityID]Transform),
-		transformTweens: make(map[EntityID]TransformTween),
-		circleSprites:   make(map[EntityID]CircleSprite),
-		circleTweens:    make(map[EntityID]CircleSpriteTween),
-		rectSprites:     make(map[EntityID]RectSprite),
-		velocities:      make(map[EntityID]Velocity),
-		accelerations:   make(map[EntityID]Acceleration),
-		dampings:        make(map[EntityID]Damping),
-		bodies:          make(map[EntityID]Body),
-		circleColliders: make(map[EntityID]CircleCollider),
-		rectColliders:   make(map[EntityID]RectCollider),
+		nextID:           1,
+		transforms:       make(map[EntityID]Transform),
+		transformTweens:  make(map[EntityID]TransformTween),
+		circleSprites:    make(map[EntityID]CircleSprite),
+		circleTweens:     make(map[EntityID]CircleSpriteTween),
+		rectSprites:      make(map[EntityID]RectSprite),
+		velocities:       make(map[EntityID]Velocity),
+		accelerations:    make(map[EntityID]Acceleration),
+		dampings:         make(map[EntityID]Damping),
+		bodies:           make(map[EntityID]Body),
+		circleColliders:  make(map[EntityID]CircleCollider),
+		rectColliders:    make(map[EntityID]RectCollider),
+		renderTransforms: make(map[EntityID]Transform),
 	}
 }
 
 func (w *World) Clone() *World {
 	return &World{
-		nextID:          w.nextID,
-		stepTick:        w.stepTick,
-		transforms:      cloneMap(w.transforms),
-		transformTweens: cloneMap(w.transformTweens),
-		circleSprites:   cloneMap(w.circleSprites),
-		circleTweens:    cloneMap(w.circleTweens),
-		rectSprites:     cloneMap(w.rectSprites),
-		velocities:      cloneMap(w.velocities),
-		accelerations:   cloneMap(w.accelerations),
-		dampings:        cloneMap(w.dampings),
-		bodies:          cloneMap(w.bodies),
-		circleColliders: cloneMap(w.circleColliders),
-		rectColliders:   cloneMap(w.rectColliders),
-		debugGridCells:  append([]DebugGridCell(nil), w.debugGridCells...),
+		nextID:           w.nextID,
+		stepTick:         w.stepTick,
+		transforms:       cloneMap(w.transforms),
+		transformTweens:  cloneMap(w.transformTweens),
+		circleSprites:    cloneMap(w.circleSprites),
+		circleTweens:     cloneMap(w.circleTweens),
+		rectSprites:      cloneMap(w.rectSprites),
+		velocities:       cloneMap(w.velocities),
+		accelerations:    cloneMap(w.accelerations),
+		dampings:         cloneMap(w.dampings),
+		bodies:           cloneMap(w.bodies),
+		circleColliders:  cloneMap(w.circleColliders),
+		rectColliders:    cloneMap(w.rectColliders),
+		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
+		renderTransforms: cloneMap(w.renderTransforms),
 		// contacts are transient per-tick — not cloned
 	}
 }
@@ -93,6 +100,7 @@ func (w *World) Despawn(id EntityID) {
 	delete(w.bodies, id)
 	delete(w.circleColliders, id)
 	delete(w.rectColliders, id)
+	delete(w.renderTransforms, id)
 }
 
 func (w *World) Transform(id EntityID) (Transform, bool) {
@@ -104,11 +112,14 @@ func (w *World) Transform(id EntityID) (Transform, bool) {
 func (w *World) SetTransform(id EntityID, transform Transform) {
 	delete(w.transformTweens, id)
 	w.transforms[id] = transform
+	// Sync render state immediately to prevent visual smear on teleport.
+	w.renderTransforms[id] = transform
 }
 
 func (w *World) RemoveTransform(id EntityID) {
 	delete(w.transformTweens, id)
 	delete(w.transforms, id)
+	delete(w.renderTransforms, id)
 }
 
 func (w *World) TransformTween(id EntityID) (TransformTween, bool) {
