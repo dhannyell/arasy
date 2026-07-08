@@ -49,6 +49,7 @@ type Driver struct {
 	// Recording keeps the full input log while explicit recording is enabled.
 	recordingEnabled bool
 	recording        []input.Event
+	recordingAnchors []Anchor
 
 	// scrubLog is the unbounded input log used by ScrubToTick.
 	// A step from an older tick forks the timeline and drops stale future input.
@@ -288,6 +289,9 @@ func (d *Driver) stepOnce(dt float64) {
 	if d.recorder != nil && d.recorder.WantsCapture(d.tick) {
 		d.recorder.Capture(d.captureSnapshot())
 	}
+	if d.recordingEnabled && d.tick%uint64(d.cfg.KeyframeInterval) == 0 {
+		d.recordingAnchors = append(d.recordingAnchors, Anchor{Tick: d.tick, Checksum: d.world.Checksum()})
+	}
 
 	d.stepCore(dt)
 
@@ -483,6 +487,7 @@ func (d *Driver) doReset() {
 		// with the new run's ticks and Replay would apply both. Restart the
 		// capture so StopRecording returns a reproducible post-reset log.
 		d.recording = nil
+		d.recordingAnchors = nil
 		d.log.Info("reset restarted the active input recording")
 	}
 	d.clock.Reset()
