@@ -21,6 +21,9 @@ type Options struct {
 	Log *slog.Logger
 	// ForceCanvas2D skips WebGPU initialization and uses the Canvas2D fallback.
 	ForceCanvas2D bool
+	// DevTools enables the in-browser debug control panel. Default false; the
+	// panel starts hidden and is toggled with the Backquote/~ key.
+	DevTools bool
 	// RecordReplay enables an in-browser recording/replay panel: start/stop
 	// recording, download the .ffrp binary, and load a .ffrp to verify+replay.
 	// Default false; production builds leave it off. Requires GameFactory.
@@ -45,8 +48,8 @@ type host struct {
 	hasTimestamp  bool
 	renderer      renderer
 
-	// panel is the optional recording/replay UI; nil when RecordReplay is off.
-	panel *recordingPanel
+	// debugPanel is the optional runtime tooling UI; nil when no overlay is enabled.
+	debugPanel *debugPanel
 
 	loopCb   js.Func
 	resizeCb js.Func
@@ -86,12 +89,16 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	h.registerResizeListener()
 	h.registerInputListeners()
 	h.renderer = selectRenderer(canvas, cfg.Clear, opts.ForceCanvas2D, log)
+	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
-			log.Error("RecordReplay enabled without GameFactory; panel disabled")
+			log.Error("RecordReplay enabled without GameFactory; recording controls disabled")
 		} else {
-			h.panel = newRecordingPanel(h, opts.GameFactory, log)
+			replayFactory = opts.GameFactory
 		}
+	}
+	if opts.DevTools || replayFactory != nil {
+		h.debugPanel = newDebugPanel(h, opts.DevTools, replayFactory)
 	}
 	h.startLoop()
 	select {}

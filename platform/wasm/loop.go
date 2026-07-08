@@ -15,6 +15,10 @@ type renderer interface {
 }
 
 func (h *host) startLoop() {
+	var fpsFrames int
+	var fpsElapsed time.Duration
+	var fps int
+
 	var cb js.Func
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
@@ -32,8 +36,17 @@ func (h *host) startLoop() {
 		frame := h.driver.Frame(elapsed)
 		h.renderer.Render(frame)
 
-		if h.panel != nil {
-			h.panel.sync(h.driver.State())
+		fpsFrames++
+		fpsElapsed += elapsed
+		if fpsElapsed >= time.Second {
+			fps = fpsFrames
+			fpsFrames = 0
+			fpsElapsed = 0
+		}
+
+		state := h.driver.State()
+		if h.debugPanel != nil {
+			h.debugPanel.sync(state, fps, len(frame.Commands))
 		}
 
 		js.Global().Call("requestAnimationFrame", cb)
