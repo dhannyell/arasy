@@ -186,6 +186,26 @@ internal runtime/platform behavior. Keep helpers small, call `t.Helper()`, and
 move shared helpers into `*_helpers_test.go` only when several files use them.
 Benchmarks belong in dedicated `*_benchmark_test.go` files.
 
+## Render Interpolation
+
+The engine provides built-in render interpolation for official platforms (WASM,
+offline raster, future native). The platform/web/canvas debug tool does NOT
+receive interpolation.
+
+- runtime.Config.RenderInterpolation (default false) enables the feature.
+- runtime.RenderContext.Alpha exposes the [0, 1) fraction between ticks.
+- scene.World.RenderCommandsInterpolated(alpha) returns interpolated commands.
+- scene.World.SyncRenderState() captures the previous tick's transforms.
+- Interpolation is a presentation cache: it never enters Checksum(), replay,
+  rewind snapshots, or persisted recordings.
+- SetTransform immediately syncs the render state for that entity to prevent
+  visual smear on teleport/reset.
+- Only transform properties are interpolated (Position, Rotation, Scale via
+  Vec2.Lerp and math2d.Lerp). Debug overlays (colliders, grid, velocity)
+  always show the current simulation state.
+- Games opt in by calling ctx.World.RenderCommandsInterpolated(ctx.Alpha)
+  in their Render method.
+
 ## Design Constraints
 
 - Keep engine packages independent from application-specific rules.

@@ -47,6 +47,10 @@ type RenderContext struct {
 	Dt   float64
 	Log  *slog.Logger
 	Tick uint64
+	// Alpha is the normalized fraction [0, 1) between fixed simulation ticks.
+	// It is 0 when render interpolation is disabled or unavailable.
+	// Use it with World.RenderCommandsInterpolated to produce smooth visuals.
+	Alpha float64
 
 	camera render.Camera
 }

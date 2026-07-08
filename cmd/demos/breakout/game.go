@@ -19,13 +19,14 @@ func (b *Breakout) Setup() runtime.Config {
 			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 960}),
 			Aspect:   render.AspectExpand,
 		},
-		Clear:         render.RGBA(0.03, 0.035, 0.045, 1),
-		Bounds:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
-		Bounce:        scene.BounceConfig{OpenSides: scene.SideBottom},
-		SimulationHz:  60,
-		FPS:           60,
-		InputBindings: breakoutBindings(),
-		HistoryLen:    1000,
+		Clear:               render.RGBA(0.03, 0.035, 0.045, 1),
+		Bounds:              math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
+		Bounce:              scene.BounceConfig{OpenSides: scene.SideBottom},
+		SimulationHz:        60,
+		FPS:                 60,
+		RenderInterpolation: true,
+		InputBindings:       breakoutBindings(),
+		HistoryLen:          1000,
 		DebugOverlay: scene.DebugOverlayConfig{
 			Bounds:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
 			CellSize: physicsCellSize,
@@ -167,7 +168,7 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
 	b.renderScreenOverlay(ctx)
 
-	cmds = append(cmds, ctx.World.RenderCommands()...)
+	cmds = append(cmds, ctx.World.RenderCommandsInterpolated(ctx.Alpha)...)
 
 	return cmds
 }

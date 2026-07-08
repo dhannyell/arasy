@@ -34,6 +34,12 @@ type World struct {
 
 	entityCountCache int
 	entityCountDirty bool
+
+	// renderTransforms stores the previous-tick transform for each entity,
+	// used by RenderCommandsInterpolated to produce smooth visual poses
+	// between fixed simulation ticks. It is a presentation cache only and
+	// is NOT included in Checksum.
+	renderTransforms store[Transform]
 }
 
 func NewWorld() *World {
@@ -66,6 +72,7 @@ func (w *World) Clone() *World {
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
+		renderTransforms: w.renderTransforms.clone(),
 		// contacts are transient per-tick — not cloned
 	}
 }
@@ -90,6 +97,7 @@ func (w *World) Despawn(id EntityID) {
 	w.bodies.remove(id)
 	w.circleColliders.remove(id)
 	w.rectColliders.remove(id)
+	w.renderTransforms.remove(id)
 }
 
 func (w *World) Transform(id EntityID) (Transform, bool) {
@@ -102,12 +110,15 @@ func (w *World) SetTransform(id EntityID, transform Transform) {
 	w.markEntityCountDirty()
 	w.transformTweens.remove(id)
 	w.transforms.set(id, transform)
+	// Sync render state immediately to prevent visual smear on teleport.
+	w.renderTransforms.set(id, transform)
 }
 
 func (w *World) RemoveTransform(id EntityID) {
 	w.markEntityCountDirty()
 	w.transformTweens.remove(id)
 	w.transforms.remove(id)
+	w.renderTransforms.remove(id)
 }
 
 func (w *World) TransformTween(id EntityID) (TransformTween, bool) {
