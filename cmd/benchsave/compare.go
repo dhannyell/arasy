@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -11,6 +13,12 @@ import (
 	"strings"
 	"time"
 )
+
+const baselineDir = "baselines"
+
+// benchstatVersion is the pinned version of golang.org/x/perf to use for
+// statistical comparison. Use "latest" for the latest version.
+const benchstatVersion = "latest"
 
 // timestampSuffix matches the trailing timestamp benchsave appends to a
 // report's default name (e.g. "-2026-07-02" or "-2026-07-02-023854"), so it
@@ -36,10 +44,64 @@ type comparisonRow struct {
 	OldAllocs, NewAllocs float64
 }
 
+// saveTempBenchmarkOutput writes benchmark output to a temporary file
+// that benchstat can read, returning the file path.
+func saveTempBenchmarkOutput(output string) (string, error) {
+	tmpfile, err := os.CreateTemp("", "benchstat-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer tmpfile.Close()
+
+	if _, err := tmpfile.WriteString(output); err != nil {
+		os.Remove(tmpfile.Name())
+		return "", fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	return tmpfile.Name(), nil
+}
+
+// runBenchstat invokes golang.org/x/perf/cmd/benchstat with two files
+// and returns the formatted output suitable for inclusion in a markdown report.
+func runBenchstat(oldPath, newPath string) (string, error) {
+	pkg := fmt.Sprintf("golang.org/x/perf/cmd/benchstat@%s", benchstatVersion)
+	cmd := exec.Command("go", "run", pkg, oldPath, newPath)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return "", fmt.Errorf("benchstat failed: %s", stderr.String())
+		}
+		return "", fmt.Errorf("benchstat failed: %w", err)
+	}
+
+	return stdout.String(), nil
+}
+
+// formatBenchstatComparison wraps benchstat output into a markdown section.
+func formatBenchstatComparison(oldLabel, newLabel, benchstatOutput string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## Comparison: %s → %s (benchstat)\n\n", oldLabel, newLabel)
+	b.WriteString("Statistical comparison via [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat).\n")
+	b.WriteString("Symbols: `~` = no significant change, `+/-NN%` = measured change with significance.\n\n")
+	b.WriteString("```text\n")
+	b.WriteString(benchstatOutput)
+	if benchstatOutput != "" && !strings.HasSuffix(benchstatOutput, "\n") {
+		b.WriteString("\n")
+	}
+	b.WriteString("```\n")
+	return b.String()
+}
+
 // compareAgainstPrevious resolves which previous report to diff against
 // (either the explicit path in compareFlag, or the most recent report for
 // family in outDir when compareFlag is "auto"), diffs it against the results in
 // the freshly captured `output`, and returns the rendered markdown section.
+// If compareFlag points to a .txt file (benchmark format), uses benchstat
+// for statistical comparison; otherwise falls back to percentage-based comparison.
 func compareAgainstPrevious(compareFlag, outDir, family, newReportLabel, output string) (string, error) {
 	prevPath := compareFlag
 	if prevPath == "auto" {
@@ -50,6 +112,31 @@ func compareAgainstPrevious(compareFlag, outDir, family, newReportLabel, output 
 		prevPath = found
 	}
 
+	// If comparing against a .txt file (baseline or raw benchmark output),
+	// use benchstat for statistical comparison.
+	if strings.HasSuffix(prevPath, ".txt") {
+		tempFile, err := saveTempBenchmarkOutput(output)
+		if err != nil {
+			// Fall back to percentage-based comparison on temp file creation failure
+			oldResults, err := parseReportFile(prevPath)
+			if err != nil {
+				return "", err
+			}
+			newResults := parseBenchmarkResults(output)
+			rows := buildComparison(oldResults, newResults)
+			return renderComparison(filepath.Base(prevPath), newReportLabel, rows), nil
+		}
+		defer os.Remove(tempFile)
+
+		benchstatOutput, err := runBenchstat(prevPath, tempFile)
+		if err != nil {
+			return "", fmt.Errorf("benchstat comparison failed: %w", err)
+		}
+
+		return formatBenchstatComparison(filepath.Base(prevPath), newReportLabel, benchstatOutput), nil
+	}
+
+	// Fall back to percentage-based comparison for .md files or other formats.
 	oldResults, err := parseReportFile(prevPath)
 	if err != nil {
 		return "", err
@@ -438,4 +525,33 @@ func formatPercent(pct float64) string {
 		sign = "+"
 	}
 	return fmt.Sprintf("%s%.1f%%", sign, pct)
+}
+
+// resolveBaselinePath returns the path to the baseline file for a given family,
+// or an error if the baseline does not exist.
+func resolveBaselinePath(outDir, family string) (string, error) {
+	if family == "" {
+		return "", fmt.Errorf("family cannot be empty")
+	}
+	baselinePath := filepath.Join(outDir, baselineDir, "bench-"+sanitizeName(family)+".txt")
+	if _, err := os.Stat(baselinePath); err != nil {
+		return "", fmt.Errorf("no baseline for family %q; run with -update-baseline to create one", family)
+	}
+	return baselinePath, nil
+}
+
+// saveBaseline saves the raw benchmark output as the baseline for a family.
+func saveBaseline(outDir, family, rawOutput string) error {
+	if family == "" {
+		return fmt.Errorf("family cannot be empty")
+	}
+	baselineDirPath := filepath.Join(outDir, baselineDir)
+	if err := os.MkdirAll(baselineDirPath, 0o755); err != nil {
+		return fmt.Errorf("failed to create baseline directory: %w", err)
+	}
+	baselinePath := filepath.Join(baselineDirPath, "bench-"+sanitizeName(family)+".txt")
+	if err := os.WriteFile(baselinePath, []byte(rawOutput), 0o644); err != nil {
+		return fmt.Errorf("failed to write baseline: %w", err)
+	}
+	return nil
 }

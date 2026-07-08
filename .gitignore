@@ -49,4 +49,7 @@ qodana.yaml
 .harper*
 *.ffrp
 
+# Benchmark runs (ad-hoc); only committed baselines are versioned.
+benchmarks/runs/
+
 
