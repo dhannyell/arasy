@@ -2,6 +2,7 @@ package scene_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -231,17 +232,20 @@ func TestChecksumDistinguishesAbsentFromZero(t *testing.T) {
 	}
 }
 
-func TestChecksumCoversAllComponentMaps(t *testing.T) {
+func TestChecksumCoversAllComponentStores(t *testing.T) {
 	wt := reflect.TypeFor[scene.World]()
 	count := 0
 	for f := range wt.Fields() {
-		if f.Type.Kind() == reflect.Map &&
-			f.Type.Key() == reflect.TypeFor[scene.EntityID]() {
+		if strings.HasPrefix(f.Type.String(), "scene.store[") {
 			count++
 		}
 	}
-	if count != scene.ChecksumComponentMaps {
-		t.Fatalf("wrong number of component maps: %d != %d", count, scene.ChecksumComponentMaps)
+	if count != scene.ChecksumComponentStores {
+		t.Fatalf("component stores = %d, checksum covers %d — new component missing from Checksum?",
+			count, scene.ChecksumComponentStores)
+	}
+	if count == 0 {
+		t.Fatal("reflection found no scene.store fields — type name matching broke")
 	}
 }
 
