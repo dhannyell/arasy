@@ -119,10 +119,17 @@ type DrawPolygon struct {
 // rectangle in world coordinates.
 type DrawImage struct {
 	BaseCommand
-	Texture  TextureID
-	Dest     math2d.Rect
-	Src      math2d.Rect
-	Tint     Color
+	Texture TextureID
+	// Dest is the destination rectangle in world coordinates.
+	Dest math2d.Rect
+	// Src selects a sub-rectangle of the texture in pixel coordinates.
+	// Zero value = the whole texture (sprite sheets pass a sprite rect).
+	Src math2d.Rect
+	// Tint multiplies the texture color channel-wise (including alpha).
+	// Zero value = no tint (drawn as-is); opaque white behaves the same.
+	Tint Color
+	// Rotation is applied around the center of Dest, in radians. Zero
+	// keeps the image axis-aligned.
 	Rotation float64
 }
 

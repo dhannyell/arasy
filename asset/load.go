@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"sort"
 
 	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
 )
 
 type manifestFile struct {
@@ -84,24 +82,16 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		return Manifest{}, errors.New("asset: no manifest.json found in any layer")
 	}
 
-	texNames := make([]string, 0, len(texByName))
-	for name := range texByName {
-		texNames = append(texNames, name)
-	}
-	sort.Strings(texNames)
-
-	textures := make(map[string]TextureDecl, len(texNames))
+	// newManifest owns ID and Name assignment (sorted by name); here we only
+	// read the winning bytes for each declared texture.
+	textures := make(map[string]TextureDecl, len(texByName))
 	sprites := make(map[string]Sprite, len(sprByName))
-	for i, name := range texNames {
-		data, err := readLayered(layers, texByName[name].File)
+	for name, entry := range texByName {
+		data, err := readLayered(layers, entry.File)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: texture %q: %w", name, err)
 		}
-		textures[name] = TextureDecl{
-			ID:   render.TextureID(i + 1),
-			Name: name,
-			Data: data,
-		}
+		textures[name] = TextureDecl{Data: data}
 	}
 
 	manifest := newManifest(textures, nil)
