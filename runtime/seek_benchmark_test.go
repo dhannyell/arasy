@@ -172,6 +172,25 @@ func BenchmarkDriverScrubToTick(b *testing.B) {
 	}
 }
 
+func BenchmarkDriverSeekForward(b *testing.B) {
+	for _, size := range seekBenchSizes {
+		b.Run(fmt.Sprintf("entities=%d/delta=5", size), func(b *testing.B) {
+			driver := newSeekDriver(size, seekBenchHistory)
+			primeTicks(driver, seekBenchHistory)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for range b.N {
+				driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: seekBenchHistory - 5})
+				driver.AdvanceTime(0)
+				driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: seekBenchHistory})
+				driver.AdvanceTime(0)
+			}
+		})
+	}
+}
+
 func BenchmarkReplay(b *testing.B) {
 	for _, size := range seekBenchSizes {
 		b.Run(fmt.Sprintf("entities=%d/ticks=%d", size, seekBenchHistory), func(b *testing.B) {
