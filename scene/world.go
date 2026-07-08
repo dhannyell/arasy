@@ -1,9 +1,5 @@
 package scene
 
-import (
-	"maps"
-)
-
 const defaultCellSize = 64
 
 type PhysicsConfig struct {
@@ -22,61 +18,61 @@ type World struct {
 
 	stepTick uint64
 
-	transforms      map[EntityID]Transform
-	transformTweens map[EntityID]TransformTween
-	circleSprites   map[EntityID]CircleSprite
-	circleTweens    map[EntityID]CircleSpriteTween
-	rectSprites     map[EntityID]RectSprite
-	velocities      map[EntityID]Velocity
-	accelerations   map[EntityID]Acceleration
-	dampings        map[EntityID]Damping
-	bodies          map[EntityID]Body
-	circleColliders map[EntityID]CircleCollider
-	rectColliders   map[EntityID]RectCollider
+	transforms      store[Transform]
+	transformTweens store[TransformTween]
+	circleSprites   store[CircleSprite]
+	circleTweens    store[CircleSpriteTween]
+	rectSprites     store[RectSprite]
+	velocities      store[Velocity]
+	accelerations   store[Acceleration]
+	dampings        store[Damping]
+	bodies          store[Body]
+	circleColliders store[CircleCollider]
+	rectColliders   store[RectCollider]
 	debugGridCells  []DebugGridCell
 	contacts        []Contact
+
+	entityCountCache int
+	entityCountDirty bool
+
 	// renderTransforms stores the previous-tick transform for each entity,
 	// used by RenderCommandsInterpolated to produce smooth visual poses
 	// between fixed simulation ticks. It is a presentation cache only and
-	// is NOT included in Checksum or persisted snapshots.
-	renderTransforms map[EntityID]Transform
+	// is NOT included in Checksum.
+	renderTransforms store[Transform]
 }
 
 func NewWorld() *World {
 	return &World{
-		nextID:           1,
-		transforms:       make(map[EntityID]Transform),
-		transformTweens:  make(map[EntityID]TransformTween),
-		circleSprites:    make(map[EntityID]CircleSprite),
-		circleTweens:     make(map[EntityID]CircleSpriteTween),
-		rectSprites:      make(map[EntityID]RectSprite),
-		velocities:       make(map[EntityID]Velocity),
-		accelerations:    make(map[EntityID]Acceleration),
-		dampings:         make(map[EntityID]Damping),
-		bodies:           make(map[EntityID]Body),
-		circleColliders:  make(map[EntityID]CircleCollider),
-		rectColliders:    make(map[EntityID]RectCollider),
-		renderTransforms: make(map[EntityID]Transform),
+		nextID: 1,
 	}
 }
 
+// Clone returns a deep copy of the world. It is cheap: component stores copy
+// only their dense data, not the sparse index, which each store rebuilds lazily
+// on its first lookup. As a consequence the returned world is not safe for
+// concurrent access until it has been read once on a single goroutine — the
+// first getter or Step call rebuilds sparse indexes and thus mutates state.
+// See the store type for details.
 func (w *World) Clone() *World {
 	return &World{
 		nextID:           w.nextID,
 		stepTick:         w.stepTick,
-		transforms:       cloneMap(w.transforms),
-		transformTweens:  cloneMap(w.transformTweens),
-		circleSprites:    cloneMap(w.circleSprites),
-		circleTweens:     cloneMap(w.circleTweens),
-		rectSprites:      cloneMap(w.rectSprites),
-		velocities:       cloneMap(w.velocities),
-		accelerations:    cloneMap(w.accelerations),
-		dampings:         cloneMap(w.dampings),
-		bodies:           cloneMap(w.bodies),
-		circleColliders:  cloneMap(w.circleColliders),
-		rectColliders:    cloneMap(w.rectColliders),
+		transforms:       w.transforms.clone(),
+		transformTweens:  w.transformTweens.clone(),
+		circleSprites:    w.circleSprites.clone(),
+		circleTweens:     w.circleTweens.clone(),
+		rectSprites:      w.rectSprites.clone(),
+		velocities:       w.velocities.clone(),
+		accelerations:    w.accelerations.clone(),
+		dampings:         w.dampings.clone(),
+		bodies:           w.bodies.clone(),
+		circleColliders:  w.circleColliders.clone(),
+		rectColliders:    w.rectColliders.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
-		renderTransforms: cloneMap(w.renderTransforms),
+		entityCountCache: w.entityCountCache,
+		entityCountDirty: w.entityCountDirty,
+		renderTransforms: w.renderTransforms.clone(),
 		// contacts are transient per-tick — not cloned
 	}
 }
@@ -89,212 +85,238 @@ func (w *World) Spawn() EntityID {
 }
 
 func (w *World) Despawn(id EntityID) {
-	delete(w.transforms, id)
-	delete(w.transformTweens, id)
-	delete(w.circleSprites, id)
-	delete(w.circleTweens, id)
-	delete(w.rectSprites, id)
-	delete(w.velocities, id)
-	delete(w.accelerations, id)
-	delete(w.dampings, id)
-	delete(w.bodies, id)
-	delete(w.circleColliders, id)
-	delete(w.rectColliders, id)
-	delete(w.renderTransforms, id)
+	w.markEntityCountDirty()
+	w.transforms.remove(id)
+	w.transformTweens.remove(id)
+	w.circleSprites.remove(id)
+	w.circleTweens.remove(id)
+	w.rectSprites.remove(id)
+	w.velocities.remove(id)
+	w.accelerations.remove(id)
+	w.dampings.remove(id)
+	w.bodies.remove(id)
+	w.circleColliders.remove(id)
+	w.rectColliders.remove(id)
+	w.renderTransforms.remove(id)
 }
 
 func (w *World) Transform(id EntityID) (Transform, bool) {
-	transform, ok := w.transforms[id]
+	transform, ok := w.transforms.get(id)
 	return transform, ok
 }
 
 // SetTransform applies an immediate transform and cancels any active transform tween.
 func (w *World) SetTransform(id EntityID, transform Transform) {
-	delete(w.transformTweens, id)
-	w.transforms[id] = transform
+	w.markEntityCountDirty()
+	w.transformTweens.remove(id)
+	w.transforms.set(id, transform)
 	// Sync render state immediately to prevent visual smear on teleport.
-	w.renderTransforms[id] = transform
+	w.renderTransforms.set(id, transform)
 }
 
 func (w *World) RemoveTransform(id EntityID) {
-	delete(w.transformTweens, id)
-	delete(w.transforms, id)
-	delete(w.renderTransforms, id)
+	w.markEntityCountDirty()
+	w.transformTweens.remove(id)
+	w.transforms.remove(id)
+	w.renderTransforms.remove(id)
 }
 
 func (w *World) TransformTween(id EntityID) (TransformTween, bool) {
-	transformTween, ok := w.transformTweens[id]
+	transformTween, ok := w.transformTweens.get(id)
 	return transformTween, ok
 }
 
 // SetTransformTween is a low-level API. Prefer TweenTransform unless you need
 // explicit From/Elapsed state, such as loading snapshots or tests.
 func (w *World) SetTransformTween(id EntityID, tw TransformTween) {
-	w.transformTweens[id] = tw
+	w.markEntityCountDirty()
+	w.transformTweens.set(id, tw)
 }
 
 // TweenTransform animates an entity from its current Transform to target.
 // It returns false when the entity has no Transform to animate.
 func (w *World) TweenTransform(id EntityID, target Transform, opts TransformTweenOptions) bool {
-	from, ok := w.transforms[id]
+	from, ok := w.transforms.get(id)
 	if !ok {
 		return false
 	}
 	if opts.StopVelocity {
-		w.velocities[id] = Velocity{}
+		w.markEntityCountDirty()
+		w.velocities.set(id, Velocity{})
 	}
-	w.transformTweens[id] = TransformTween{
+	w.markEntityCountDirty()
+	w.transformTweens.set(id, TransformTween{
 		From:             from,
 		To:               target,
 		Duration:         opts.Duration,
 		Ease:             opts.Ease,
 		Loop:             opts.Loop,
 		RemoveOnComplete: opts.RemoveOnComplete,
-	}
+	})
 	return true
 }
 
 func (w *World) RemoveTransformTween(id EntityID) {
-	delete(w.transformTweens, id)
+	w.markEntityCountDirty()
+	w.transformTweens.remove(id)
 }
 
 func (w *World) SetCircleSprite(id EntityID, sprite CircleSprite) {
-	delete(w.circleTweens, id)
-	w.circleSprites[id] = sprite
+	w.markEntityCountDirty()
+	w.circleTweens.remove(id)
+	w.circleSprites.set(id, sprite)
 }
 
 func (w *World) RemoveCircleSprite(id EntityID) {
-	delete(w.circleTweens, id)
-	delete(w.circleSprites, id)
+	w.markEntityCountDirty()
+	w.circleTweens.remove(id)
+	w.circleSprites.remove(id)
 }
 
 func (w *World) CircleSprite(id EntityID) (CircleSprite, bool) {
-	sprite, ok := w.circleSprites[id]
+	sprite, ok := w.circleSprites.get(id)
 	return sprite, ok
 }
 
 func (w *World) CircleSpriteTween(id EntityID) (CircleSpriteTween, bool) {
-	tween, ok := w.circleTweens[id]
+	tween, ok := w.circleTweens.get(id)
 	return tween, ok
 }
 
 // SetCircleSpriteTween is a low-level API. Prefer TweenCircleSprite unless you
 // need explicit From/Elapsed state, such as loading snapshots or tests.
 func (w *World) SetCircleSpriteTween(id EntityID, tw CircleSpriteTween) {
-	w.circleTweens[id] = tw
+	w.markEntityCountDirty()
+	w.circleTweens.set(id, tw)
 }
 
 // TweenCircleSprite animates an entity from its current CircleSprite to target.
 // It returns false when the entity has no CircleSprite to animate.
 func (w *World) TweenCircleSprite(id EntityID, target CircleSprite, opts CircleSpriteTweenOptions) bool {
-	from, ok := w.circleSprites[id]
+	from, ok := w.circleSprites.get(id)
 	if !ok {
 		return false
 	}
-	w.circleTweens[id] = CircleSpriteTween{
+	w.markEntityCountDirty()
+	w.circleTweens.set(id, CircleSpriteTween{
 		From:             from,
 		To:               target,
 		Duration:         opts.Duration,
 		Ease:             opts.Ease,
 		Loop:             opts.Loop,
 		RemoveOnComplete: opts.RemoveOnComplete,
-	}
+	})
 	return true
 }
 
 func (w *World) RemoveCircleSpriteTween(id EntityID) {
-	delete(w.circleTweens, id)
+	w.markEntityCountDirty()
+	w.circleTweens.remove(id)
 }
 
 func (w *World) SetRectSprite(id EntityID, sprite RectSprite) {
-	w.rectSprites[id] = sprite
+	w.markEntityCountDirty()
+	w.rectSprites.set(id, sprite)
 }
 
 func (w *World) RemoveRectSprite(id EntityID) {
-	delete(w.rectSprites, id)
+	w.markEntityCountDirty()
+	w.rectSprites.remove(id)
 }
 
 func (w *World) RectSprite(id EntityID) (RectSprite, bool) {
-	sprite, ok := w.rectSprites[id]
+	sprite, ok := w.rectSprites.get(id)
 	return sprite, ok
 }
 
 func (w *World) SetVelocity(id EntityID, velocity Velocity) {
-	w.velocities[id] = velocity
+	w.markEntityCountDirty()
+	w.velocities.set(id, velocity)
 }
 
 func (w *World) Velocity(id EntityID) (Velocity, bool) {
-	velocity, ok := w.velocities[id]
+	velocity, ok := w.velocities.get(id)
 	return velocity, ok
 }
 
 func (w *World) RemoveVelocity(id EntityID) {
-	delete(w.velocities, id)
+	w.markEntityCountDirty()
+	w.velocities.remove(id)
 }
 
 func (w *World) SetAcceleration(id EntityID, acceleration Acceleration) {
-	w.accelerations[id] = acceleration
+	w.markEntityCountDirty()
+	w.accelerations.set(id, acceleration)
 }
 
 func (w *World) Acceleration(id EntityID) (Acceleration, bool) {
-	acceleration, ok := w.accelerations[id]
+	acceleration, ok := w.accelerations.get(id)
 	return acceleration, ok
 }
 
 func (w *World) RemoveAcceleration(id EntityID) {
-	delete(w.accelerations, id)
+	w.markEntityCountDirty()
+	w.accelerations.remove(id)
 }
 
 func (w *World) SetDamping(id EntityID, damping Damping) {
-	w.dampings[id] = damping
+	w.markEntityCountDirty()
+	w.dampings.set(id, damping)
 }
 
 func (w *World) Damping(id EntityID) (Damping, bool) {
-	damping, ok := w.dampings[id]
+	damping, ok := w.dampings.get(id)
 	return damping, ok
 }
 
 func (w *World) RemoveDamping(id EntityID) {
-	delete(w.dampings, id)
+	w.markEntityCountDirty()
+	w.dampings.remove(id)
 }
 
 func (w *World) SetBody(id EntityID, body Body) {
-	w.bodies[id] = body
+	w.markEntityCountDirty()
+	w.bodies.set(id, body)
 }
 
 func (w *World) Body(id EntityID) (Body, bool) {
-	body, ok := w.bodies[id]
+	body, ok := w.bodies.get(id)
 	return body, ok
 }
 
 func (w *World) RemoveBody(id EntityID) {
-	delete(w.bodies, id)
+	w.markEntityCountDirty()
+	w.bodies.remove(id)
 }
 
 func (w *World) CircleCollider(id EntityID) (CircleCollider, bool) {
-	collider, ok := w.circleColliders[id]
+	collider, ok := w.circleColliders.get(id)
 	return collider, ok
 }
 
 func (w *World) SetCircleCollider(id EntityID, collider CircleCollider) {
-	w.circleColliders[id] = collider
+	w.markEntityCountDirty()
+	w.circleColliders.set(id, collider)
 }
 
 func (w *World) RemoveCircleCollider(id EntityID) {
-	delete(w.circleColliders, id)
+	w.markEntityCountDirty()
+	w.circleColliders.remove(id)
 }
 
 func (w *World) RectCollider(id EntityID) (RectCollider, bool) {
-	collider, ok := w.rectColliders[id]
+	collider, ok := w.rectColliders.get(id)
 	return collider, ok
 }
 
 func (w *World) SetRectCollider(id EntityID, collider RectCollider) {
-	w.rectColliders[id] = collider
+	w.markEntityCountDirty()
+	w.rectColliders.set(id, collider)
 }
 
 func (w *World) RemoveRectCollider(id EntityID) {
-	delete(w.rectColliders, id)
+	w.markEntityCountDirty()
+	w.rectColliders.remove(id)
 }
 
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {
@@ -314,45 +336,49 @@ func (w *World) Contacts() []Contact {
 }
 
 func (w *World) entityCount() int {
+	if !w.entityCountDirty {
+		return w.entityCountCache
+	}
+
 	ids := make(map[EntityID]struct{})
 
-	for id := range w.transforms {
+	for _, id := range w.transforms.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.circleSprites {
+	for _, id := range w.circleSprites.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.circleTweens {
+	for _, id := range w.circleTweens.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.rectSprites {
+	for _, id := range w.rectSprites.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.velocities {
+	for _, id := range w.velocities.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.accelerations {
+	for _, id := range w.accelerations.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.dampings {
+	for _, id := range w.dampings.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.bodies {
+	for _, id := range w.bodies.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.circleColliders {
+	for _, id := range w.circleColliders.ids {
 		ids[id] = struct{}{}
 	}
-	for id := range w.rectColliders {
+	for _, id := range w.rectColliders.ids {
 		ids[id] = struct{}{}
 	}
 
-	return len(ids)
+	w.entityCountCache = len(ids)
+	w.entityCountDirty = false
+
+	return w.entityCountCache
 }
 
-func cloneMap[K comparable, V any](src map[K]V) map[K]V {
-	dst := make(map[K]V, len(src))
-	maps.Copy(dst, src)
-
-	return dst
+func (w *World) markEntityCountDirty() {
+	w.entityCountDirty = true
 }

@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"math"
-	"slices"
 )
 
 const (
@@ -24,11 +23,9 @@ const (
 	tagRectCollider
 )
 
-// ChecksumComponentMaps is the number of map[EntityID]T fields on World that
-// represent simulation component storage. renderTransforms is excluded — it is
-// a presentation cache, not simulation state (see scene/render.go).
-// Increment this constant when adding a new component map (AD-9).
-const ChecksumComponentMaps = 11
+// ChecksumComponentStores counts the component stores covered by Checksum.
+// The structural guard test compares it against reflection over World.
+const ChecksumComponentStores = 11
 
 // Checksum returns a deterministic hash of all entity positions and velocities.
 // Two worlds with identical simulation state always produce the same value.
@@ -45,14 +42,14 @@ func (w *World) Checksum() uint64 {
 	hashU64(h, buf[:], uint64(w.nextID))
 	hashU64(h, buf[:], w.stepTick)
 
-	hashComponent(h, buf[:], tagTransform, w.transforms, func(t Transform) {
+	hashComponent(h, buf[:], tagTransform, &w.transforms, func(t Transform) {
 		hashF64(h, buf[:], t.Position.X)
 		hashF64(h, buf[:], t.Position.Y)
 		hashF64(h, buf[:], t.Rotation)
 		hashF64(h, buf[:], t.Scale.X)
 		hashF64(h, buf[:], t.Scale.Y)
 	})
-	hashComponent(h, buf[:], tagTransformTween, w.transformTweens, func(tw TransformTween) {
+	hashComponent(h, buf[:], tagTransformTween, &w.transformTweens, func(tw TransformTween) {
 		hashF64(h, buf[:], tw.From.Rotation)
 		hashF64(h, buf[:], tw.From.Scale.X)
 		hashF64(h, buf[:], tw.From.Scale.Y)
@@ -70,7 +67,7 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], boolToFloat(tw.Done))
 		hashF64(h, buf[:], boolToFloat(tw.RemoveOnComplete))
 	})
-	hashComponent(h, buf[:], tagCircleSprite, w.circleSprites, func(s CircleSprite) {
+	hashComponent(h, buf[:], tagCircleSprite, &w.circleSprites, func(s CircleSprite) {
 		hashU64(h, buf[:], uint64(int64(s.Layer)))
 		hashF64(h, buf[:], s.Color.R)
 		hashF64(h, buf[:], s.Color.G)
@@ -78,7 +75,7 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], s.Color.A)
 		hashF64(h, buf[:], s.Radius)
 	})
-	hashComponent(h, buf[:], tagCircleSpriteTween, w.circleTweens, func(tw CircleSpriteTween) {
+	hashComponent(h, buf[:], tagCircleSpriteTween, &w.circleTweens, func(tw CircleSpriteTween) {
 		hashCircleSprite(h, buf[:], tw.From)
 		hashCircleSprite(h, buf[:], tw.To)
 		hashF64(h, buf[:], tw.Duration)
@@ -88,7 +85,7 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], boolToFloat(tw.Done))
 		hashF64(h, buf[:], boolToFloat(tw.RemoveOnComplete))
 	})
-	hashComponent(h, buf[:], tagRectSprite, w.rectSprites, func(s RectSprite) {
+	hashComponent(h, buf[:], tagRectSprite, &w.rectSprites, func(s RectSprite) {
 		hashU64(h, buf[:], uint64(int64(s.Layer)))
 		hashF64(h, buf[:], s.Color.R)
 		hashF64(h, buf[:], s.Color.G)
@@ -104,25 +101,25 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], s.Stroke.B)
 		hashF64(h, buf[:], s.Stroke.A)
 	})
-	hashComponent(h, buf[:], tagVelocity, w.velocities, func(v Velocity) {
+	hashComponent(h, buf[:], tagVelocity, &w.velocities, func(v Velocity) {
 		hashF64(h, buf[:], v.Linear.X)
 		hashF64(h, buf[:], v.Linear.Y)
 	})
-	hashComponent(h, buf[:], tagAcceleration, w.accelerations, func(a Acceleration) {
+	hashComponent(h, buf[:], tagAcceleration, &w.accelerations, func(a Acceleration) {
 		hashF64(h, buf[:], a.Linear.X)
 		hashF64(h, buf[:], a.Linear.Y)
 	})
-	hashComponent(h, buf[:], tagDamping, w.dampings, func(d Damping) {
+	hashComponent(h, buf[:], tagDamping, &w.dampings, func(d Damping) {
 		hashF64(h, buf[:], d.Linear)
 	})
-	hashComponent(h, buf[:], tagBody, w.bodies, func(b Body) {
+	hashComponent(h, buf[:], tagBody, &w.bodies, func(b Body) {
 		hashF64(h, buf[:], b.InvMass)
 		hashF64(h, buf[:], b.Restitution)
 	})
-	hashComponent(h, buf[:], tagCircleCollider, w.circleColliders, func(c CircleCollider) {
+	hashComponent(h, buf[:], tagCircleCollider, &w.circleColliders, func(c CircleCollider) {
 		hashF64(h, buf[:], c.Radius)
 	})
-	hashComponent(h, buf[:], tagRectCollider, w.rectColliders, func(c RectCollider) {
+	hashComponent(h, buf[:], tagRectCollider, &w.rectColliders, func(c RectCollider) {
 		hashF64(h, buf[:], c.HalfExtends.X)
 		hashF64(h, buf[:], c.HalfExtends.Y)
 	})
@@ -140,27 +137,19 @@ func hashCircleSprite(h hash.Hash64, buf []byte, s CircleSprite) {
 }
 
 func hashComponent[T any](h hash.Hash64, buf []byte, tag byte,
-	m map[EntityID]T, write func(T)) {
-	ids := make([]EntityID, 0, len(m))
-	for id := range m {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-
+	s *store[T], write func(T)) {
 	_, err := h.Write([]byte{tag})
 	if err != nil {
 		slog.Error("Failed hash component", "err", err.Error())
 		return
 	}
-
-	for _, id := range ids {
+	for i, id := range s.ids {
 		binary.LittleEndian.PutUint64(buf, uint64(id))
-		_, err := h.Write(buf)
-		if err != nil {
+		if _, err := h.Write(buf); err != nil {
 			slog.Error("Failed hash component", "err", err.Error())
 			return
 		}
-		write(m[id])
+		write(s.dense[i])
 	}
 }
 
