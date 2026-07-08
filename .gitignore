@@ -40,3 +40,4 @@ internal/render/adapter/web/testdata/failures/
 
 .agents/
 .claude/
+*.ffrp

@@ -33,6 +33,9 @@ type recordingPanel struct {
 
 	// recording mirrors driver state so sync() can render an accurate label.
 	recording bool
+	// stopped holds the last completed recording so the natural Record -> Stop
+	// -> Save flow does not discard the captured log.
+	stopped *runtime.Recording
 
 	// pendingRecord defers StartRecording until the reset-to-tick-0 completes.
 	// Replay always reconstructs from tick 0, so a recording started mid-run
@@ -108,12 +111,14 @@ func (p *recordingPanel) toggleRecording() {
 		if p.pendingRecord {
 			// Reset was pending but recording hadn't started yet; just cancel.
 			p.pendingRecord = false
+			p.stopped = nil
 		} else {
-			p.driver.StopRecording()
+			rec := p.driver.StopRecording()
+			p.stopped = &rec
 		}
 		p.recording = false
 		p.recordEl.Set("textContent", "Record")
-		p.setStatus("recording stopped")
+		p.setStatus("recording stopped; ready to save")
 		return
 	}
 	// Queue a reset; StartRecording is deferred to sync() at tick 0 so the
@@ -121,6 +126,7 @@ func (p *recordingPanel) toggleRecording() {
 	p.driver.Control(runtime.ControlCommand{Kind: runtime.ControlReset})
 	p.pendingRecord = true
 	p.recording = true
+	p.stopped = nil
 	p.recordEl.Set("textContent", "Stop")
 	p.setStatus("resetting to tick 0…")
 }
@@ -132,13 +138,18 @@ func (p *recordingPanel) saveRecording() {
 		p.setStatus("recording hasn't started yet — wait for reset")
 		return
 	}
-	if !p.recording {
-		p.setStatus("nothing to save — no active recording")
+	rec := p.stopped
+	if p.recording {
+		stopped := p.driver.StopRecording()
+		p.recording = false
+		p.recordEl.Set("textContent", "Record")
+		p.stopped = &stopped
+		rec = p.stopped
+	}
+	if rec == nil {
+		p.setStatus("nothing to save — no recording")
 		return
 	}
-	rec := p.driver.StopRecording()
-	p.recording = false
-	p.recordEl.Set("textContent", "Record")
 
 	data, err := rec.MarshalBinary()
 	if err != nil {
@@ -211,6 +222,10 @@ func (p *recordingPanel) applyRecording(data []byte, name string) {
 	}
 	replayed := runtime.Replay(p.newGame(), p.log, rec)
 	p.adoptDriver(replayed)
+	p.pendingRecord = false
+	p.recording = false
+	p.stopped = nil
+	p.recordEl.Set("textContent", "Record")
 	p.setStatus("replay loaded: " + name + " (ticks=" + itoa(int(rec.Ticks)) + ")")
 }
 
@@ -219,6 +234,7 @@ func (p *recordingPanel) adoptDriver(d *runtime.Driver) {
 	p.driver = d
 	if p.host != nil {
 		p.host.driver = d
+		p.host.resize()
 	}
 }
 
