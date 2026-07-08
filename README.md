@@ -266,6 +266,7 @@ go run ./cmd/benchsave -list-suites
 
 # Run one suite by name instead of passing -pkg/-bench by hand
 go run ./cmd/benchsave -suite runtime
+go run ./cmd/benchsave -suite raster
 
 # Run the focused runtime seek baseline suites from plan 023
 go run ./cmd/benchsave -suite runtime-seek
@@ -274,6 +275,20 @@ go run ./cmd/benchsave -suite runtime-seek-back
 # Run every registered suite, saving one report per suite
 go run ./cmd/benchsave -suite all
 ```
+
+For performance decisions, prefer a repeated, longer run instead of the quick
+default:
+
+```powershell
+go run ./cmd/benchsave -suite scene -profile decision -compare auto
+```
+
+Profiles are shortcuts for `go test` timing flags: `quick` keeps the default
+single run, `ci` uses `-count 3 -benchtime 1s`, and `decision` uses
+`-count 5 -benchtime 2s`. Explicit `-count` or `-benchtime` values still win.
+Each saved Markdown report also gets a same-name `.json` report by default so
+future tooling can read structured metrics without scraping Markdown; pass
+`-json=false` to disable that sidecar.
 
 Adding a future benchmark family (e.g. `render` or `ui`) only requires
 appending one entry to the `benchSuites` slice in `suites.go` — `-suite`,
@@ -301,9 +316,12 @@ go run ./cmd/benchsave -diff benchmarks/old-report.md benchmarks/new-report.md
 
 # Compare every report "family" in benchmarks/ at once (bench-scene,
 # bench-runtime-seek, ...), diffing each family's two most recent reports —
-# no benchmarks are run. A family is the report name with its trailing
-# timestamp stripped, so custom -name reports (e.g. bench-runtime-seek-*)
-# get their own section too, not just the default bench-<pkg>-* ones.
+# no benchmarks are run. Only bench-*.md files are considered, so aggregate
+# files such as compare.md are ignored. A family is the report name with its
+# trailing timestamp stripped, so custom -name reports (e.g.
+# bench-runtime-seek-*) get their own section too, not just the default
+# bench-<pkg>-* ones. Each comparison includes a short summary of new/removed
+# benchmarks and the largest >=10% ns/op changes before the full table.
 go run ./cmd/benchsave -compare-all
 
 # Any of the modes above can also save the comparison as its own file

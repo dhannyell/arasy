@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -15,12 +16,25 @@ import (
 const timestampLayout = "2006-01-02-150405"
 
 type benchmarkResult struct {
-	Name     string
-	Runs     string
-	NsPerOp  string
-	BytesOp  string
-	AllocsOp string
-	Other    []string
+	Name     string   `json:"name"`
+	Runs     string   `json:"runs"`
+	NsPerOp  string   `json:"ns_per_op,omitempty"`
+	BytesOp  string   `json:"bytes_op,omitempty"`
+	AllocsOp string   `json:"allocs_op,omitempty"`
+	Other    []string `json:"other,omitempty"`
+}
+
+type benchmarkReport struct {
+	Status    string            `json:"status"`
+	CreatedAt string            `json:"created_at"`
+	Duration  string            `json:"duration"`
+	OS        string            `json:"os"`
+	Arch      string            `json:"arch"`
+	CPUCount  int               `json:"cpu_count"`
+	Command   string            `json:"command"`
+	Error     string            `json:"error,omitempty"`
+	Results   []benchmarkResult `json:"results"`
+	RawOutput string            `json:"raw_output"`
 }
 
 func main() {
@@ -29,6 +43,7 @@ func main() {
 	run := flag.String("run", "^$", "test regexp passed to -run")
 	outDir := flag.String("out", "benchmarks", "directory where the benchmark report is saved")
 	name := flag.String("name", "", "optional report name without extension (ignored when -suite all is set)")
+	profile := flag.String("profile", "", `benchmark run profile: "quick" (count=1), "decision" (count=5, benchtime=2s), or "ci" (count=3, benchtime=1s). Explicit -count/-benchtime values still win.`)
 	count := flag.Int("count", 1, "benchmark count passed to -count")
 	benchmem := flag.Bool("benchmem", true, "include memory allocation metrics")
 	benchtime := flag.String("benchtime", "", "optional benchmark time passed to -benchtime (e.g. 2s or 300x)")
@@ -37,9 +52,12 @@ func main() {
 	diff := flag.Bool("diff", false, "skip running benchmarks; compare two existing reports instead. Usage: -diff <old-report.md> <new-report.md>")
 	compareAll := flag.Bool("compare-all", false, "skip running benchmarks; compare every report family found in -out (e.g. bench-scene, bench-runtime), diffing each family's two most recent reports")
 	comparisonOut := flag.String("comparison-out", "", "optional path to also save the comparison report as its own markdown file (used with -diff, -compare or -compare-all)")
+	jsonOut := flag.Bool("json", true, "also save a machine-readable JSON report next to each Markdown report")
 	suite := flag.String("suite", "", `named benchmark suite to run instead of -pkg/-bench (see -list-suites), or "all" to run every registered suite`)
 	listSuites := flag.Bool("list-suites", false, "print the registered benchmark suites and exit")
 	flag.Parse()
+	countSet := flagWasSet("count")
+	benchtimeSet := flagWasSet("benchtime")
 
 	if *listSuites {
 		fmt.Println("registered benchmark suites:")
@@ -75,15 +93,22 @@ func main() {
 		return
 	}
 
+	selectedProfile, err := applyRunProfile(*profile, *count, countSet, *benchtime, benchtimeSet)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	baseOpts := runOptions{
 		Run:           *run,
 		OutDir:        *outDir,
-		Count:         *count,
+		Count:         selectedProfile.Count,
 		Benchmem:      *benchmem,
-		Benchtime:     *benchtime,
+		Benchtime:     selectedProfile.Benchtime,
 		Timeout:       *timeout,
 		Compare:       *compare,
 		ComparisonOut: *comparisonOut,
+		JSON:          *jsonOut,
 	}
 
 	if *suite == "all" {
@@ -141,6 +166,51 @@ type runOptions struct {
 	Benchmem                              bool
 	Benchtime, Timeout                    string
 	Compare, ComparisonOut                string
+	JSON                                  bool
+}
+
+type runProfile struct {
+	Count     int
+	Benchtime string
+}
+
+func flagWasSet(name string) bool {
+	wasSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			wasSet = true
+		}
+	})
+	return wasSet
+}
+
+func applyRunProfile(profile string, count int, countSet bool, benchtime string, benchtimeSet bool) (runProfile, error) {
+	opts := runProfile{Count: count, Benchtime: benchtime}
+	if profile == "" {
+		return opts, nil
+	}
+
+	switch profile {
+	case "quick":
+	case "ci":
+		if !countSet {
+			opts.Count = 3
+		}
+		if !benchtimeSet {
+			opts.Benchtime = "1s"
+		}
+	case "decision":
+		if !countSet {
+			opts.Count = 5
+		}
+		if !benchtimeSet {
+			opts.Benchtime = "2s"
+		}
+	default:
+		return runProfile{}, fmt.Errorf("unknown -profile %q; use quick, ci, or decision", profile)
+	}
+
+	return opts, nil
 }
 
 // runOnce runs one benchmark suite (a single go test -bench invocation),
@@ -183,7 +253,8 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 	}
 
 	reportPath = filepath.Join(opts.OutDir, reportName+".md")
-	report := buildReport(start, duration, args, output.String(), runErr)
+	reportData := newBenchmarkReport(start, duration, args, output.String(), runErr)
+	report := renderBenchmarkReport(reportData)
 
 	var comparison string
 	if opts.Compare != "" {
@@ -209,6 +280,12 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 	if writeErr := os.WriteFile(reportPath, []byte(report), 0o644); writeErr != nil {
 		return "", fmt.Errorf("failed to write benchmark report: %w", writeErr)
 	}
+	if opts.JSON {
+		jsonPath := filepath.Join(opts.OutDir, reportName+".json")
+		if writeErr := writeJSONReport(jsonPath, reportData); writeErr != nil {
+			return "", writeErr
+		}
+	}
 
 	fmt.Print(output.String())
 	if comparison != "" {
@@ -223,32 +300,48 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 	return reportPath, nil
 }
 
-func buildReport(start time.Time, duration time.Duration, args []string, output string, runErr error) string {
+func newBenchmarkReport(start time.Time, duration time.Duration, args []string, output string, runErr error) benchmarkReport {
 	status := "pass"
+	errText := ""
 	if runErr != nil {
 		status = "fail"
+		errText = runErr.Error()
 	}
 
+	return benchmarkReport{
+		Status:    status,
+		CreatedAt: start.Format(time.RFC3339),
+		Duration:  duration.Round(time.Millisecond).String(),
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		CPUCount:  runtime.NumCPU(),
+		Command:   commandString(args),
+		Error:     errText,
+		Results:   parseBenchmarkResults(output),
+		RawOutput: output,
+	}
+}
+
+func renderBenchmarkReport(report benchmarkReport) string {
 	var b strings.Builder
 	b.WriteString("# Benchmark Report\n\n")
 	b.WriteString("## Metadata\n\n")
-	b.WriteString(fmt.Sprintf("- Status: `%s`\n", status))
-	b.WriteString(fmt.Sprintf("- Created at: `%s`\n", start.Format(time.RFC3339)))
-	b.WriteString(fmt.Sprintf("- Duration: `%s`\n", duration.Round(time.Millisecond)))
-	b.WriteString(fmt.Sprintf("- OS: `%s`\n", runtime.GOOS))
-	b.WriteString(fmt.Sprintf("- Arch: `%s`\n", runtime.GOARCH))
-	b.WriteString(fmt.Sprintf("- CPU count: `%d`\n", runtime.NumCPU()))
-	b.WriteString(fmt.Sprintf("- Command: `%s`\n", commandString(args)))
-	if runErr != nil {
-		b.WriteString(fmt.Sprintf("- Error: `%v`\n", runErr))
+	b.WriteString(fmt.Sprintf("- Status: `%s`\n", report.Status))
+	b.WriteString(fmt.Sprintf("- Created at: `%s`\n", report.CreatedAt))
+	b.WriteString(fmt.Sprintf("- Duration: `%s`\n", report.Duration))
+	b.WriteString(fmt.Sprintf("- OS: `%s`\n", report.OS))
+	b.WriteString(fmt.Sprintf("- Arch: `%s`\n", report.Arch))
+	b.WriteString(fmt.Sprintf("- CPU count: `%d`\n", report.CPUCount))
+	b.WriteString(fmt.Sprintf("- Command: `%s`\n", report.Command))
+	if report.Error != "" {
+		b.WriteString(fmt.Sprintf("- Error: `%s`\n", report.Error))
 	}
 
-	results := parseBenchmarkResults(output)
-	if len(results) > 0 {
+	if len(report.Results) > 0 {
 		b.WriteString("\n## Results\n\n")
 		b.WriteString("| Benchmark | Runs | ns/op | B/op | allocs/op |\n")
 		b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
-		for _, result := range results {
+		for _, result := range report.Results {
 			b.WriteString(fmt.Sprintf(
 				"| `%s` | %s | %s | %s | %s |\n",
 				result.Name,
@@ -262,13 +355,25 @@ func buildReport(start time.Time, duration time.Duration, args []string, output 
 
 	b.WriteString("\n## Raw Output\n\n")
 	b.WriteString("```text\n")
-	b.WriteString(output)
-	if output != "" && !strings.HasSuffix(output, "\n") {
+	b.WriteString(report.RawOutput)
+	if report.RawOutput != "" && !strings.HasSuffix(report.RawOutput, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString("```\n")
 
 	return b.String()
+}
+
+func writeJSONReport(path string, report benchmarkReport) error {
+	content, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal benchmark JSON report: %w", err)
+	}
+	content = append(content, '\n')
+	if err := os.WriteFile(path, content, 0o644); err != nil {
+		return fmt.Errorf("failed to write benchmark JSON report: %w", err)
+	}
+	return nil
 }
 
 func parseBenchmarkResults(output string) []benchmarkResult {
