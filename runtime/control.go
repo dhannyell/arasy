@@ -34,15 +34,27 @@ type ControlCommand struct {
 	DebugLayers scene.DebugLayers
 }
 
+type seekKind uint8
+
+const (
+	seekBack seekKind = iota
+	seekToTick
+	seekBackSeconds
+	seekScrub
+)
+
+type seekRequest struct {
+	kind    seekKind
+	tick    uint64
+	seconds float64
+}
+
 type devControls struct {
 	paused      bool
 	speed       float64
 	debugLayers scene.DebugLayers
 	stepPending int
-	backPending int
-	backTicks   []uint64
-	backSeconds []float64
-	scrubTicks  []uint64
+	seeks       []seekRequest
 }
 
 type devFrame struct {
@@ -50,10 +62,7 @@ type devFrame struct {
 	speed       float64
 	debugLayers scene.DebugLayers
 	steps       int
-	backs       int
-	backTicks   []uint64
-	backSeconds []float64
-	scrubTicks  []uint64
+	seeks       []seekRequest
 }
 
 func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
@@ -67,22 +76,19 @@ func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 		c.stepPending++
 	case ControlBack:
 		c.paused = true
-		c.backPending++
+		c.seeks = append(c.seeks, seekRequest{kind: seekBack})
 	case ControlBackToTick:
 		c.paused = true
-		c.backTicks = append(c.backTicks, cmd.Tick)
+		c.seeks = append(c.seeks, seekRequest{kind: seekToTick, tick: cmd.Tick})
 	case ControlBackSeconds:
 		c.paused = true
-		c.backSeconds = append(c.backSeconds, cmd.Seconds)
+		c.seeks = append(c.seeks, seekRequest{kind: seekBackSeconds, seconds: cmd.Seconds})
 	case ControlScrubToTick:
 		c.paused = true
-		c.scrubTicks = append(c.scrubTicks, cmd.Tick)
+		c.seeks = append(c.seeks, seekRequest{kind: seekScrub, tick: cmd.Tick})
 	case ControlReset:
 		c.stepPending = 0
-		c.backPending = 0
-		c.backTicks = c.backTicks[:0]
-		c.backSeconds = c.backSeconds[:0]
-		c.scrubTicks = c.scrubTicks[:0]
+		c.seeks = c.seeks[:0]
 		return true
 	case ControlSetSpeed:
 		if math.IsNaN(cmd.Speed) || cmd.Speed < minSpeed {
@@ -107,30 +113,13 @@ func (c *devControls) consume() devFrame {
 	}
 	steps := c.stepPending
 	c.stepPending = 0
-	backs := c.backPending
-	c.backPending = 0
-	backTicks := append([]uint64(nil), c.backTicks...)
-	c.backTicks = c.backTicks[:0]
-	backSeconds := append([]float64(nil), c.backSeconds...)
-	c.backSeconds = c.backSeconds[:0]
-	// Coalesce scrub ticks: each ScrubToTick replays deterministically from
-	// tick 0, so only the final target matters. When a platform queues many
-	// scrub commands during a slider drag (the web canvas sends one every
-	// 50 milliseconds), processing every intermediate target would replay from 0 that
-	// many times -- keeping just the last tick collapses that to one replay.
-	var scrubTicks []uint64
-	if len(c.scrubTicks) > 0 {
-		scrubTicks = []uint64{c.scrubTicks[len(c.scrubTicks)-1]}
-	}
-	c.scrubTicks = c.scrubTicks[:0]
+	seeks := append([]seekRequest(nil), c.seeks...)
+	c.seeks = c.seeks[:0]
 	return devFrame{
 		paused:      c.paused,
 		speed:       speed,
 		debugLayers: c.debugLayers,
 		steps:       steps,
-		backs:       backs,
-		backTicks:   backTicks,
-		backSeconds: backSeconds,
-		scrubTicks:  scrubTicks,
+		seeks:       seeks,
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 const defaultSimulationHz = 60
 const defaultFPS = 60
+const defaultKeyframeInterval = 30
 
 type Frame struct {
 	Camera   render.Camera
@@ -48,6 +49,11 @@ type Driver struct {
 	// Recording keeps the full input log while explicit recording is enabled.
 	recordingEnabled bool
 	recording        []input.Event
+	recordingAnchors []Anchor
+	// recordingInitialViewport is the surface size captured at StartRecording
+	// (tick 0) so StopRecording can persist it; Replay must restore it or
+	// viewport-dependent logic (UI hit-tests) diverges from the live run.
+	recordingInitialViewport math2d.Rect
 
 	// scrubLog is the unbounded input log used by ScrubToTick.
 	// A step from an older tick forks the timeline and drops stale future input.
@@ -62,6 +68,8 @@ type Driver struct {
 	// stagedViewport follows the same fork/discard rules as stagedEvents.
 	stagedViewport    math2d.Rect
 	hasStagedViewport bool
+
+	determinismViolated bool
 }
 
 // viewportEntry records a SetViewport call at the tick it was applied.
@@ -82,6 +90,10 @@ type DriveState struct {
 	// MaxRecordedTick is the highest tick ScrubToTick can reach — the full
 	// scrub range is [0, MaxRecordedTick], independent of HistoryLen.
 	MaxRecordedTick uint64
+
+	// DeterminismViolated stays true after a seek reconstructs a keyframed
+	// tick with a checksum different from the recorded keyframe checksum.
+	DeterminismViolated bool
 }
 
 type AdvanceStats struct {
@@ -105,6 +117,9 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if cfg.FPS <= 0 {
 		cfg.FPS = defaultFPS
 	}
+	if cfg.KeyframeInterval <= 0 {
+		cfg.KeyframeInterval = defaultKeyframeInterval
+	}
 
 	d := &Driver{
 		game:     game,
@@ -116,7 +131,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	}
 	d.uiTheme = ui.WithDefaults(cfg.UITheme)
 	if cfg.HistoryLen > 0 {
-		d.recorder = newRecorder(cfg.HistoryLen)
+		d.recorder = newRecorder(cfg.HistoryLen, cfg.KeyframeInterval)
 	}
 	d.rng = NewRand(cfg.Seed)
 	d.doReset()
@@ -198,17 +213,8 @@ func (d *Driver) AdvanceTime(elapsed time.Duration) AdvanceStats {
 		return AdvanceStats{Alpha: d.clock.Alpha()}
 	}
 
-	for range frame.backs {
-		d.doBack()
-	}
-	for _, tick := range frame.backTicks {
-		d.doBackToTick(tick)
-	}
-	for _, seconds := range frame.backSeconds {
-		d.doBackSeconds(seconds)
-	}
-	for _, tick := range frame.scrubTicks {
-		d.doScrubToTick(tick)
+	if target, ok := d.coalesceSeeks(frame.seeks); ok {
+		d.seekTo(target)
 	}
 
 	if frame.paused && frame.steps == 0 {
@@ -239,17 +245,8 @@ func (d *Driver) Step() AdvanceStats {
 		return AdvanceStats{Alpha: d.clock.Alpha()}
 	}
 
-	for range frame.backs {
-		d.doBack()
-	}
-	for _, tick := range frame.backTicks {
-		d.doBackToTick(tick)
-	}
-	for _, seconds := range frame.backSeconds {
-		d.doBackSeconds(seconds)
-	}
-	for _, tick := range frame.scrubTicks {
-		d.doScrubToTick(tick)
+	if target, ok := d.coalesceSeeks(frame.seeks); ok {
+		d.seekTo(target)
 	}
 
 	d.runSteps(1)
@@ -288,12 +285,26 @@ func (d *Driver) stepOnce(dt float64) {
 			d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, d.viewport)
 		}
 		d.maxTick = d.tick
+		if d.recorder != nil {
+			d.recorder.DropAfter(d.tick)
+		}
 	}
 
-	if d.recorder != nil {
+	if d.recorder != nil && d.recorder.WantsCapture(d.tick) {
 		d.recorder.Capture(d.captureSnapshot())
 	}
+	if d.recordingEnabled && d.tick%uint64(d.cfg.KeyframeInterval) == 0 {
+		d.recordingAnchors = append(d.recordingAnchors, Anchor{Tick: d.tick, Checksum: d.world.Checksum()})
+	}
 
+	d.stepCore(dt)
+
+	if d.tick > d.maxTick {
+		d.maxTick = d.tick
+	}
+}
+
+func (d *Driver) stepCore(dt float64) {
 	d.input.BeginTick()
 	uiInst := d.newUpdateUI()
 	ctx := d.makeUpdateContext(uiInst)
@@ -313,9 +324,6 @@ func (d *Driver) stepOnce(dt float64) {
 	}
 
 	d.tick++
-	if d.tick > d.maxTick {
-		d.maxTick = d.tick
-	}
 	d.input.EndTick(d.tick)
 }
 
@@ -329,12 +337,13 @@ func (d *Driver) warnManualStepOnce() {
 
 func (d *Driver) State() DriveState {
 	state := DriveState{
-		Tick:            d.tick,
-		Paused:          d.controls.paused,
-		Speed:           d.controls.speed,
-		DebugLayers:     d.controls.debugLayers,
-		HistoryLen:      d.historyLen(),
-		MaxRecordedTick: d.maxTick,
+		Tick:                d.tick,
+		Paused:              d.controls.paused,
+		Speed:               d.controls.speed,
+		DebugLayers:         d.controls.debugLayers,
+		HistoryLen:          d.historyLen(),
+		MaxRecordedTick:     d.maxTick,
+		DeterminismViolated: d.determinismViolated,
 	}
 	if d.recorder != nil {
 		start, end, ok := d.recorder.Range()
@@ -482,6 +491,10 @@ func (d *Driver) doReset() {
 		// with the new run's ticks and Replay would apply both. Restart the
 		// capture so StopRecording returns a reproducible post-reset log.
 		d.recording = nil
+		d.recordingAnchors = nil
+		// The viewport survives a reset (doReset never clears d.viewport), so
+		// the post-reset recording's tick-0 viewport is the current surface.
+		d.recordingInitialViewport = d.viewport
 		d.log.Info("reset restarted the active input recording")
 	}
 	d.clock.Reset()
@@ -490,6 +503,7 @@ func (d *Driver) doReset() {
 	d.renderTime = 0
 	d.renderDt = 0
 	d.input.Reset()
+	d.determinismViolated = false
 	if d.recorder != nil {
 		d.recorder.Clear()
 	}
@@ -499,95 +513,12 @@ func (d *Driver) doReset() {
 	d.log.Info("reset")
 }
 
-// doBack reverts to a recorder snapshot.
-func (d *Driver) doBack() {
-	if d.recorder == nil {
-		return
-	}
-	snap, ok := d.recorder.Back()
-	if !ok {
-		return
-	}
-	d.restoreSnapshot(snap)
-
-	if d.log.Enabled(context.Background(), slog.LevelDebug) {
-		d.log.Debug("back", "tick", d.tick, "checksum", d.world.Checksum())
-	}
-}
-
-func (d *Driver) doBackToTick(target uint64) {
-	if d.recorder == nil {
-		return
-	}
-	snap, ok := d.recorder.BackToTick(d.tick, target)
-	if !ok {
-		return
-	}
-	d.restoreSnapshot(snap)
-
-	d.log.Debug("backToTick", "tick", d.tick, "target", target)
-}
-
-// doScrubToTick moves the driver to target by deterministically replaying
-// the full scrub log from tick 0, then adopting the replayed driver's
-// world/input/recorder/tick. It's a no-op outside [0, maxTick]. Unlike
-// doBack/doBackToTick, it never discards scrubLog, so scrubbing backward
-// and then forward again always lands on the exact original state.
-func (d *Driver) doScrubToTick(target uint64) {
-	if target > d.maxTick {
-		return
-	}
-
-	// Thread the live viewport AND the viewport change log so
-	// viewport-dependent Update logic (UI hit-testing above all) reconstructs
-	// identically — the viewport at each tick during replay matches what was
-	// active when the pointer events were originally recorded.
-	replayed := replayWithViewport(d.game, d.log, Recording{Events: d.scrubLog, Ticks: target, Seed: d.cfg.Seed}, d.viewport, d.viewportLog)
-
-	d.world = replayed.world
-	d.uiState = replayed.uiState
-	d.input = replayed.input
-	d.recorder = replayed.recorder
-	d.tick = replayed.tick
-	// The replayed mapper carries none of the input staged since the last
-	// rewind — discard the staged events and staged viewport too, keeping
-	// log and state aligned.
-	d.stagedEvents = nil
-	d.hasStagedViewport = false
-
-	// The replay suppressed snapshot capture (see replayWithViewport) to
-	// avoid cloning the world on every replay tick. Rebuild the recorder with
-	// a single snapshot at the target tick so Back still works after a scrub.
-	if d.cfg.HistoryLen > 0 {
-		d.recorder = newRecorder(d.cfg.HistoryLen)
-		d.recorder.Capture(d.captureSnapshot())
-	}
-
-	d.log.Debug("scrubToTick", "tick", d.tick, "target", target)
-}
-
-func (d *Driver) doBackSeconds(seconds float64) {
-	if seconds <= 0 {
-		return
-	}
-
-	ticksBack := uint64(math.Ceil(seconds * float64(d.cfg.SimulationHz)))
-	if ticksBack == 0 {
-		return
-	}
-
-	target := uint64(0)
-	if ticksBack < d.tick {
-		target = d.tick - ticksBack
-	}
-	d.doBackToTick(target)
-}
-
 func (d *Driver) restoreSnapshot(snap driverSnapshot) {
-	d.world = snap.world
-	d.uiState = snap.uiState
-	d.input.Restore(snap.input)
+	d.world = snap.world.Clone()
+	d.uiState = snap.uiState.Clone()
+	d.input.Restore(cloneDriverInputSnapshot(snap.input))
 	d.rng = snap.rng
+	d.viewport = snap.viewport
 	d.tick = snap.tick
 	// Restoring replaces the mapper wholesale, dropping the effect of any
 	// staged input — drop the staged events and staged viewport with it
@@ -600,6 +531,14 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	}
 }
 
+func cloneDriverInputSnapshot(snapshot driverInputSnapshot) driverInputSnapshot {
+	return driverInputSnapshot{
+		mapper:    snapshot.mapper.Clone(),
+		lastInput: snapshot.lastInput.Clone(),
+		pointer:   snapshot.pointer.Clone(),
+	}
+}
+
 func (d *Driver) captureSnapshot() driverSnapshot {
 	return driverSnapshot{
 		world:     d.world.Clone(),
@@ -607,7 +546,9 @@ func (d *Driver) captureSnapshot() driverSnapshot {
 		uiState:   d.uiState.Clone(),
 		gameState: d.captureGameState(),
 		rng:       d.rng,
+		viewport:  d.viewport,
 		tick:      d.tick,
+		checksum:  d.world.Checksum(),
 	}
 }
 
@@ -621,4 +562,194 @@ func (d *Driver) captureGameState() GameState {
 	// (boxing a value type into the GameState interface copies it) — no
 	// further cloning needed here, unlike world/input/uiState.
 	return game.GameState()
+}
+
+func (d *Driver) coalesceSeeks(seeks []seekRequest) (target uint64, ok bool) {
+	target = d.tick
+	for _, seek := range seeks {
+		switch seek.kind {
+		case seekBack:
+			if target > 0 {
+				target--
+			}
+		case seekToTick:
+			if seek.tick < target {
+				target = seek.tick
+			}
+		case seekBackSeconds:
+			if seek.seconds <= 0 {
+				continue
+			}
+			back := uint64(math.Ceil(seek.seconds * float64(d.cfg.SimulationHz)))
+			if back > target {
+				target = 0
+			} else {
+				target -= back
+			}
+		case seekScrub:
+			if seek.tick <= d.maxTick {
+				target = seek.tick
+			}
+		}
+	}
+	return target, target != d.tick
+}
+
+// seekTo moves the driver to target ∈ [0, maxTick]. It never truncates scrubLog
+// or keyframes — the fork remains exclusive to stepOnce.
+func (d *Driver) seekTo(target uint64) {
+	if target > d.maxTick || target == d.tick {
+		return
+	}
+
+	surfaceViewport := d.viewport
+
+	// Fast-forward can be incremental only when the current state has not been
+	// tainted by staged input/viewport changes that are waiting for a fork.
+	if target > d.tick && len(d.stagedEvents) == 0 && !d.hasStagedViewport {
+		d.viewport = d.viewportAtTick(d.tick, d.viewport)
+		d.resimulate(target)
+		d.viewport = surfaceViewport
+		return
+	}
+
+	restored := false
+	if d.recorder != nil && d.canRestoreKeyframes() {
+		if snap, ok := d.recorder.KeyframeAtOrBefore(target); ok {
+			d.restoreSnapshot(snap)
+			restored = true
+		}
+	}
+	if !restored {
+		d.resetForResimulation()
+	}
+	d.viewport = d.viewportAtTick(d.tick, d.viewport)
+	if !restored && target == 0 {
+		d.applyLoggedInputsAtCurrentTick()
+	}
+	d.resimulate(target)
+	d.viewport = surfaceViewport
+
+	if d.log.Enabled(context.Background(), slog.LevelDebug) {
+		d.log.Debug("seek", "tick", d.tick, "target", target, "checksum", d.world.Checksum())
+	}
+}
+
+func (d *Driver) resetForResimulation() {
+	d.world = scene.NewWorld()
+	d.tick = 0
+	d.uiState = ui.State{}
+	d.animStore = ui.AnimStore{}
+	d.input.Reset()
+	d.stagedEvents = nil
+	d.stagedViewport = math2d.Rect{}
+	d.hasStagedViewport = false
+	d.rng = NewRand(d.cfg.Seed)
+	if game, ok := d.game.(StatefulGame); ok {
+		game.RestoreGameState(nil)
+	}
+	ctx := d.makeUpdateContext(d.newRenderUI())
+	d.game.Init(&ctx)
+}
+
+func (d *Driver) canRestoreKeyframes() bool {
+	_, ok := d.game.(StatefulGame)
+	return ok
+}
+
+func (d *Driver) resimulate(target uint64) {
+	cursor := newResimulationCursor(d.scrubLog, d.viewportLog, d.tick)
+	dt := d.clock.DT()
+
+	for d.tick < target {
+		for _, viewport := range cursor.viewportsAt(d.tick) {
+			d.viewport = viewport
+		}
+		d.input.Apply(cursor.eventsAt(d.tick), d.tick)
+		d.stepCore(dt)
+		d.verifyKeyframe(d.tick)
+	}
+	d.stagedEvents = nil
+	d.stagedViewport = math2d.Rect{}
+	d.hasStagedViewport = false
+}
+
+func (d *Driver) applyLoggedInputsAtCurrentTick() {
+	cursor := newResimulationCursor(d.scrubLog, d.viewportLog, d.tick)
+	for _, viewport := range cursor.viewportsAt(d.tick) {
+		d.viewport = viewport
+	}
+	d.input.Apply(cursor.eventsAt(d.tick), d.tick)
+}
+
+func (d *Driver) verifyKeyframe(tick uint64) {
+	if d.recorder == nil || !d.canRestoreKeyframes() {
+		return
+	}
+	keyframe, ok := d.recorder.KeyframeAt(tick)
+	if !ok {
+		return
+	}
+	got := d.world.Checksum()
+	if got == keyframe.checksum {
+		return
+	}
+	d.determinismViolated = true
+	d.log.Error("resimulation diverged from keyframe", "tick", tick, "got", got, "want", keyframe.checksum)
+}
+
+func (d *Driver) viewportAtTick(tick uint64, fallback math2d.Rect) math2d.Rect {
+	viewport := fallback
+	for _, entry := range d.viewportLog {
+		if entry.tick > tick {
+			break
+		}
+		viewport = entry.viewport
+	}
+	return viewport
+}
+
+type resimulationCursor struct {
+	events        []input.Event
+	eventIndex    int
+	viewportLog   []viewportEntry
+	viewportIndex int
+}
+
+func newResimulationCursor(events []input.Event, viewportLog []viewportEntry, tick uint64) resimulationCursor {
+	cursor := resimulationCursor{events: events, viewportLog: viewportLog}
+	for cursor.eventIndex < len(cursor.events) && cursor.events[cursor.eventIndex].Tick < tick {
+		cursor.eventIndex++
+	}
+	for cursor.viewportIndex < len(cursor.viewportLog) && cursor.viewportLog[cursor.viewportIndex].tick < tick {
+		cursor.viewportIndex++
+	}
+	return cursor
+}
+
+func (c *resimulationCursor) eventsAt(tick uint64) []input.Event {
+	for c.eventIndex < len(c.events) && c.events[c.eventIndex].Tick < tick {
+		c.eventIndex++
+	}
+	start := c.eventIndex
+	for c.eventIndex < len(c.events) && c.events[c.eventIndex].Tick == tick {
+		c.eventIndex++
+	}
+	return c.events[start:c.eventIndex]
+}
+
+func (c *resimulationCursor) viewportsAt(tick uint64) []math2d.Rect {
+	for c.viewportIndex < len(c.viewportLog) && c.viewportLog[c.viewportIndex].tick < tick {
+		c.viewportIndex++
+	}
+	start := c.viewportIndex
+	for c.viewportIndex < len(c.viewportLog) && c.viewportLog[c.viewportIndex].tick == tick {
+		c.viewportIndex++
+	}
+	entries := c.viewportLog[start:c.viewportIndex]
+	viewports := make([]math2d.Rect, 0, len(entries))
+	for _, entry := range entries {
+		viewports = append(viewports, entry.viewport)
+	}
+	return viewports
 }

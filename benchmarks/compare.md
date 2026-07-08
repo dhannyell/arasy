@@ -1,70 +1,120 @@
-## Comparison: bench-scene-2026-07-06-222936.md → bench-scene-2026-07-07-162332.md
+# Benchmark Comparison Report
+
+Generated at 2026-07-07T22:22:21-03:00 from every report family in `benchmarks`.
+
+## bench-runtime
+
+_bench-runtime-2026-07-03-150710.md → bench-runtime-2026-07-07-220958.md_
 
 Negative % = faster/smaller (improvement). Positive % = slower/bigger (regression).
 
 | Benchmark | ns/op (old → new) | Δ ns/op | B/op (old → new) | Δ B/op | allocs/op (old → new) | Δ allocs/op |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/10/spread-16` | 2312.2 → 2518.8 | +8.9% | 1248 → 1248 | +0.0% | 5 → 5 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/25/spread-16` | 14179.8 → 15818 | +11.6% | 7520 → 7520 | +0.0% | 6 → 6 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/50/spread-16` | 56456.2 → 57839.8 | +2.5% | 24432 → 24432 | +0.0% | 7 → 7 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/75/spread-16` | 127292.2 → 143216 | +12.5% | 79680 → 79680 | +0.0% | 9 → 9 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/100/spread-16` | 228555 → 233229.2 | +2.0% | 127264 → 127264 | +0.0% | 10 → 10 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/1000/spread-16` | 25849200.8 → 29039038.8 | +12.3% | 22784081.6 → 22784066.6 | -0.0% | 26 → 26 | +0.0% |
-| `BenchmarkCollisionOverlapsAllPairs/narrow/5000/spread-16` | 747773930 → 779319960 | +4.2% | 615133896.8 → 615133329.6 | -0.0% | 38 → 37 | -2.6% |
-| `BenchmarkCollisionOverlapsGrid/grid/10/spread-16` | 2349 → 2430.2 | +3.5% | 1592 → 1592 | +0.0% | 27 → 27 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/25/spread-16` | 6626.8 → 7707.4 | +16.3% | 4424 → 4424 | +0.0% | 59 → 59 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/50/spread-16` | 19611.6 → 23628.2 | +20.5% | 16168 → 16168 | +0.0% | 143 → 143 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/75/spread-16` | 25464.4 → 30027.6 | +17.9% | 17896 → 17896 | +0.0% | 185 → 185 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/100/spread-16` | 29908.2 → 37013 | +23.8% | 19112 → 19112 | +0.0% | 213 → 213 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/1000/spread-16` | 459619.6 → 622797 | +35.5% | 296905 → 296905.2 | +0.0% | 2562 → 2562 | +0.0% |
-| `BenchmarkCollisionOverlapsGrid/grid/5000/spread-16` | 2671248.8 → 3974701.6 | +48.8% | 1266568.6 → 1266616.6 | +0.0% | 8225 → 8226 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/10/dense-16` | 2592.2 → 3414.6 | +31.7% | 1592 → 1592 | +0.0% | 27 → 27 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/25/dense-16` | 9815.6 → 11356.4 | +15.7% | 4592 → 4592 | +0.0% | 51 → 51 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/50/dense-16` | 17828.4 → 20224 | +13.4% | 6368 → 6368 | +0.0% | 55 → 55 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/75/dense-16` | 56346 → 58926.8 | +4.6% | 20696 → 20696 | +0.0% | 84 → 84 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/100/dense-16` | 110039.6 → 113230.8 | +2.9% | 38528 → 38528 | +0.0% | 105 → 105 | +0.0% |
-| `BenchmarkCollisionOverlapsGridDense/grid/1000/dense-16` | 9507592.6 → 10286923.4 | +8.2% | 2123268.8 → 2123269.4 | +0.0% | 434 → 434 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/10/large-colliders-16` | 26117.2 → 26615.8 | +1.9% | 15416 → 15416 | +0.0% | 133 → 133 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/25/large-colliders-16` | 74167.4 → 67489.8 | -9.0% | 36328 → 36328 | +0.0% | 353 → 353 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/50/large-colliders-16` | 150790.4 → 138676.2 | -8.0% | 69176 → 69176 | +0.0% | 637 → 637 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/75/large-colliders-16` | 279920.2 → 256505.4 | -8.4% | 133304 → 133304 | +0.0% | 1021 → 1021 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/100/large-colliders-16` | 306614.8 → 290105.8 | -5.4% | 143576 → 143576 | +0.0% | 1269 → 1269 | +0.0% |
-| `BenchmarkCollisionOverlapsGridLargeColliders/grid/1000/large-colliders-16` | 3311952 → 2725475.4 | -17.7% | 1182566.6 → 1182682.4 | +0.0% | 8096 → 8096 | -0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/10/mixed-16` | 3656.8 → 3392 | -7.2% | 1592 → 1592 | +0.0% | 28 → 28 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/25/mixed-16` | 9599.4 → 8869 | -7.6% | 4424 → 4424 | +0.0% | 60 → 60 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/50/mixed-16` | 31134.4 → 27546.6 | -11.5% | 16184 → 16184 | +0.0% | 144 → 144 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/75/mixed-16` | 36280 → 34603.8 | -4.6% | 17896 → 17896 | +0.0% | 186 → 186 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/100/mixed-16` | 41676.4 → 40850.8 | -2.0% | 19112 → 19112 | +0.0% | 214 → 214 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/1000/mixed-16` | 709634.2 → 625873.8 | -11.8% | 296905.2 → 296905.2 | +0.0% | 2563 → 2563 | +0.0% |
-| `BenchmarkCollisionOverlapsGridMixed/grid/5000/mixed-16` | 4134760.6 → 3693270.8 | -10.7% | 1266396.2 → 1266390.4 | -0.0% | 8226 → 8226 | +0.0% |
-| `BenchmarkCollisionOverlapsGridBreakoutProfile-16` | 91809.4 → 97430.8 | +6.1% | 23528 → 23528 | +0.0% | 121 → 121 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/10/spread-16` | 6493.8 → 6542.8 | +0.8% | 4000 → 4000 | +0.0% | 48 → 48 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/25/spread-16` | 14603.6 → 13627.6 | -6.7% | 8496 → 8496 | +0.0% | 80 → 80 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/50/spread-16` | 39272.8 → 35455.2 | -9.7% | 23120 → 23120 | +0.0% | 164 → 164 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/75/spread-16` | 48992.6 → 45303.4 | -7.5% | 30736 → 30736 | +0.0% | 206 → 206 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/100/spread-16` | 52691.6 → 53039.4 | +0.7% | 31952 → 31952 | +0.0% | 234 → 234 | +0.0% |
-| `BenchmarkCollisionResolveGrid/resolve-grid/1000/spread-16` | 838997.4 → 778637.2 | -7.2% | 503913.8 → 503913.2 | -0.0% | 2589 → 2589 | +0.0% |
-| `BenchmarkWorldStep/step/10/spread-16` | 3867 → 3895.4 | +0.7% | 1776 → 1776 | +0.0% | 30 → 30 | +0.0% |
-| `BenchmarkWorldStep/step/25/spread-16` | 10196.6 → 10212.6 | +0.2% | 4928 → 4928 | +0.0% | 64 → 64 | +0.0% |
-| `BenchmarkWorldStep/step/50/spread-16` | 21012 → 22950.4 | +9.2% | 10608 → 10608 | +0.0% | 118 → 118 | +0.0% |
-| `BenchmarkWorldStep/step/75/spread-16` | 35725.4 → 36765.6 | +2.9% | 19376 → 19376 | +0.0% | 172 → 172 | +0.0% |
-| `BenchmarkWorldStep/step/100/spread-16` | 42485.4 → 44360.6 | +4.4% | 21408 → 21408 | +0.0% | 222 → 222 | +0.0% |
-| `BenchmarkWorldStep/step/1000/spread-16` | 729355 → 745870.6 | +2.3% | 242392.2 → 242392.2 | +0.0% | 873 → 873 | +0.0% |
-| `BenchmarkWorldStep/step/10/mixed-16` | 3824.6 → 3640.4 | -4.8% | 1776 → 1776 | +0.0% | 31 → 31 | +0.0% |
-| `BenchmarkWorldStep/step/25/mixed-16` | 10250.6 → 9872.4 | -3.7% | 4928 → 4928 | +0.0% | 65 → 65 | +0.0% |
-| `BenchmarkWorldStep/step/50/mixed-16` | 20772.4 → 20760.2 | -0.1% | 10624 → 10624 | +0.0% | 119 → 119 | +0.0% |
-| `BenchmarkWorldStep/step/75/mixed-16` | 35338.6 → 34435 | -2.6% | 19376 → 19376 | +0.0% | 173 → 173 | +0.0% |
-| `BenchmarkWorldStep/step/100/mixed-16` | 42770.6 → 42656.8 | -0.3% | 21408 → 21408 | +0.0% | 223 → 223 | +0.0% |
-| `BenchmarkWorldStep/step/1000/mixed-16` | 750808 → 792184.8 | +5.5% | 242392.4 → 242392.4 | +0.0% | 874 → 874 | +0.0% |
-| `BenchmarkWorldClone/clone/10/spread-16` | 2468 → 2132.4 | -13.6% | 2408 → 2408 | +0.0% | 21 → 21 | +0.0% |
-| `BenchmarkWorldClone/clone/25/spread-16` | 4271.2 → 4000.6 | -6.3% | 4072 → 4072 | +0.0% | 21 → 21 | +0.0% |
-| `BenchmarkWorldClone/clone/50/spread-16` | 7473 → 6616.2 | -11.5% | 6952 → 6952 | +0.0% | 21 → 21 | +0.0% |
-| `BenchmarkWorldClone/clone/75/spread-16` | 11088.4 → 11177 | +0.8% | 12840 → 12840 | +0.0% | 21 → 21 | +0.0% |
-| `BenchmarkWorldClone/clone/100/spread-16` | 13943.2 → 14527.4 | +4.2% | 12840 → 12840 | +0.0% | 21 → 21 | +0.0% |
-| `BenchmarkWorldClone/clone/1000/spread-16` | 168349.8 → 161524.2 | -4.1% | 207009 → 207009 | +0.0% | 27 → 27 | +0.0% |
-| `BenchmarkWorldClone/clone/10/mixed-16` | 2341 → 2145 | -8.4% | 2432 → 2432 | +0.0% | 20 → 20 | +0.0% |
-| `BenchmarkWorldClone/clone/25/mixed-16` | 4270.2 → 3970.4 | -7.0% | 4240 → 4240 | +0.0% | 24 → 24 | +0.0% |
-| `BenchmarkWorldClone/clone/50/mixed-16` | 7230 → 6910 | -4.4% | 7312 → 7312 | +0.0% | 24 → 24 | +0.0% |
-| `BenchmarkWorldClone/clone/75/mixed-16` | 11035.4 → 10904.2 | -1.2% | 13520 → 13520 | +0.0% | 24 → 24 | +0.0% |
-| `BenchmarkWorldClone/clone/100/mixed-16` | 12913.8 → 12719.4 | -1.5% | 13520 → 13520 | +0.0% | 24 → 24 | +0.0% |
-| `BenchmarkWorldClone/clone/1000/mixed-16` | 155493 → 155050.6 | -0.3% | 215841 → 215840.2 | -0.0% | 28 → 28 | +0.0% |
+| `BenchmarkDriverStep/entities=100/history=0-16` | 87158.8 → 52031 | -40.3% | 25179.2 → 24390 | -3.1% | 243 → 226 | -7.0% |
+| `BenchmarkDriverStep/entities=100/history=600-16` | 95908.8 → 57484 | -40.1% | 44981.2 → 25118 | -44.2% | 282 → 228 | -19.1% |
+| `BenchmarkDriverStep/entities=1000/history=0-16` | 1212021.8 → 896286 | -26.1% | 261942.4 → 246388 | -5.9% | 918 → 902 | -1.8% |
+| `BenchmarkDriverStep/entities=1000/history=600-16` | 1494430.6 → 870415 | -41.8% | 532183 → 255963 | -51.9% | 965 → 904 | -6.3% |
+| `BenchmarkDriverBack/entities=100-16` | 34894 → 38266453 | +109564.9% | 1712 → 14838021 | +866606.8% | 17 → 143762 | +845558.8% |
+| `BenchmarkDriverBack/entities=1000-16` | 401037.6 → 496094367 | +123602.7% | 16432 → 147966816 | +900379.6% | 17 → 539547 | +3173705.9% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=600/to-1-16` | 154935.2 → 47.43 | -100.0% | 85185.2 → 24 | -100.0% | 462 → 1 | -99.8% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=600/to-half-16` | 34273815 → 47.88 | -100.0% | 13837723.2 → 24 | -100.0% | 91314 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=600/to-last-16` | 69747029.8 → 49.99 | -100.0% | 27516383 → 24 | -100.0% | 179581 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-1-16` | 169745 → 39.14 | -100.0% | 110943.6 → 24 | -100.0% | 662 → 1 | -99.8% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-half-16` | 196933170 → 41.96 | -100.0% | 82261632.8 → 25 | -100.0% | 532006 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=100/timeline=3600/to-last-16` | 370861580 → 46.88 | -100.0% | 164117812.6 → 27 | -100.0% | 1057439 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-1-16` | 1945242.6 → 32.19 | -100.0% | 1051930.2 → 24 | -100.0% | 1155 → 1 | -99.9% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-half-16` | 425284200 → 42.3 | -100.0% | 160148975.2 → 26 | -100.0% | 288161 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=600/to-last-16` | 831586230 → 57.64 | -100.0% | 319504579.2 → 31 | -100.0% | 580047 → 1 | -100.0% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-1-16` | 2038010 → 32.08 | -100.0% | 1077582.2 → 24 | -100.0% | 1355 → 1 | -99.9% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-half-16` | 3027475600 → 1430269100 | -52.8% | 959397384 → 444130624 | -53.7% | 1751998 → 1629786 | -7.0% |
+| `BenchmarkDriverScrubToTick/entities=1000/timeline=3600/to-last-16` | 5777383260 → 2867368500 | -50.4% | 1917803052.8 → 887616856 | -53.7% | 3512838 → 3268494 | -7.0% |
+| `BenchmarkDriverSeekForward/entities=100/delta=5-16` | — → 31439655 | novo | — → 14861709 | novo | — → 143980 | novo |
+| `BenchmarkDriverSeekForward/entities=1000/delta=5-16` | — → 482249667 | novo | — → 148200896 | novo | — → 540445 | novo |
+| `BenchmarkReplay/entities=100/ticks=600-16` | 60054583.6 → 31127615 | -48.2% | 15343571.4 → 14876700 | -3.0% | 154029 → 144089 | -6.5% |
+| `BenchmarkReplay/entities=1000/ticks=600-16` | 857961600 → 505014350 | -41.1% | 157633440.8 → 148302500 | -5.9% | 550623 → 540635 | -1.8% |
+
+## bench-runtime-seek
+
+Only one report so far (`bench-runtime-seek-2026-07-07-221149.md`) — nothing to compare yet, this is the baseline.
+
+## bench-runtime-seek-back
+
+Only one report so far (`bench-runtime-seek-back-2026-07-07-221337.md`) — nothing to compare yet, this is the baseline.
+
+## bench-scene
+
+_bench-scene-2026-07-07-211115.md → bench-scene-2026-07-07-220823.md_
+
+Negative % = faster/smaller (improvement). Positive % = slower/bigger (regression).
+
+| Benchmark | ns/op (old → new) | Δ ns/op | B/op (old → new) | Δ B/op | allocs/op (old → new) | Δ allocs/op |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/10/spread-16` | — → 2268 | novo | — → 1248 | novo | — → 5 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/25/spread-16` | — → 14069 | novo | — → 7520 | novo | — → 6 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/50/spread-16` | — → 55171 | novo | — → 24432 | novo | — → 7 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/75/spread-16` | — → 124728 | novo | — → 79680 | novo | — → 9 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/100/spread-16` | — → 225459 | novo | — → 127264 | novo | — → 10 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/1000/spread-16` | — → 25997851 | novo | — → 22784184 | novo | — → 26 | novo |
+| `BenchmarkCollisionOverlapsAllPairs/narrow/5000/spread-16` | — → 777136250 | novo | — → 615133408 | novo | — → 38 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/10/spread-16` | — → 2349 | novo | — → 1592 | novo | — → 27 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/25/spread-16` | — → 7244 | novo | — → 4424 | novo | — → 59 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/50/spread-16` | — → 21905 | novo | — → 16168 | novo | — → 143 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/75/spread-16` | — → 29947 | novo | — → 17896 | novo | — → 185 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/100/spread-16` | — → 39263 | novo | — → 19112 | novo | — → 213 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/1000/spread-16` | — → 590092 | novo | — → 296905 | novo | — → 2562 | novo |
+| `BenchmarkCollisionOverlapsGrid/grid/5000/spread-16` | — → 3264164 | novo | — → 1266746 | novo | — → 8226 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/10/dense-16` | — → 3460 | novo | — → 1592 | novo | — → 27 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/25/dense-16` | — → 11754 | novo | — → 4592 | novo | — → 51 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/50/dense-16` | — → 20951 | novo | — → 6368 | novo | — → 55 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/75/dense-16` | — → 64058 | novo | — → 20696 | novo | — → 84 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/100/dense-16` | — → 130927 | novo | — → 38528 | novo | — → 105 | novo |
+| `BenchmarkCollisionOverlapsGridDense/grid/1000/dense-16` | — → 11271159 | novo | — → 2123270 | novo | — → 434 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/10/large-colliders-16` | — → 23309 | novo | — → 15416 | novo | — → 133 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/25/large-colliders-16` | — → 68504 | novo | — → 36328 | novo | — → 353 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/50/large-colliders-16` | — → 137819 | novo | — → 69176 | novo | — → 637 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/75/large-colliders-16` | — → 241880 | novo | — → 133304 | novo | — → 1021 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/100/large-colliders-16` | — → 274372 | novo | — → 143576 | novo | — → 1269 | novo |
+| `BenchmarkCollisionOverlapsGridLargeColliders/grid/1000/large-colliders-16` | — → 2942884 | novo | — → 1181728 | novo | — → 8096 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/10/mixed-16` | — → 3859 | novo | — → 1592 | novo | — → 28 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/25/mixed-16` | — → 9494 | novo | — → 4424 | novo | — → 60 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/50/mixed-16` | — → 29849 | novo | — → 16184 | novo | — → 144 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/75/mixed-16` | — → 38835 | novo | — → 17896 | novo | — → 186 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/100/mixed-16` | — → 43318 | novo | — → 19112 | novo | — → 214 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/1000/mixed-16` | — → 697879 | novo | — → 296905 | novo | — → 2563 | novo |
+| `BenchmarkCollisionOverlapsGridMixed/grid/5000/mixed-16` | — → 4043742 | novo | — → 1266383 | novo | — → 8226 | novo |
+| `BenchmarkCollisionOverlapsGridBreakoutProfile-16` | — → 105842 | novo | — → 23528 | novo | — → 121 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/10/spread-16` | — → 6904 | novo | — → 4000 | novo | — → 48 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/25/spread-16` | — → 12797 | novo | — → 8496 | novo | — → 80 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/50/spread-16` | — → 33113 | novo | — → 23120 | novo | — → 164 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/75/spread-16` | — → 42884 | novo | — → 30736 | novo | — → 206 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/100/spread-16` | — → 49692 | novo | — → 31952 | novo | — → 234 | novo |
+| `BenchmarkCollisionResolveGrid/resolve-grid/1000/spread-16` | — → 877244 | novo | — → 503914 | novo | — → 2589 | novo |
+| `BenchmarkWorldStep/step/10/spread-16` | — → 3715 | novo | — → 1776 | novo | — → 30 | novo |
+| `BenchmarkWorldStep/step/25/spread-16` | — → 9783 | novo | — → 4928 | novo | — → 64 | novo |
+| `BenchmarkWorldStep/step/50/spread-16` | — → 22047 | novo | — → 10608 | novo | — → 118 | novo |
+| `BenchmarkWorldStep/step/75/spread-16` | — → 37391 | novo | — → 19376 | novo | — → 172 | novo |
+| `BenchmarkWorldStep/step/100/spread-16` | — → 42290 | novo | — → 21408 | novo | — → 222 | novo |
+| `BenchmarkWorldStep/step/1000/spread-16` | — → 784599 | novo | — → 242392 | novo | — → 873 | novo |
+| `BenchmarkWorldStep/step/10/mixed-16` | — → 3743 | novo | — → 1776 | novo | — → 31 | novo |
+| `BenchmarkWorldStep/step/25/mixed-16` | — → 10174 | novo | — → 4928 | novo | — → 65 | novo |
+| `BenchmarkWorldStep/step/50/mixed-16` | — → 21099 | novo | — → 10624 | novo | — → 119 | novo |
+| `BenchmarkWorldStep/step/75/mixed-16` | — → 37742 | novo | — → 19376 | novo | — → 173 | novo |
+| `BenchmarkWorldStep/step/100/mixed-16` | — → 44174 | novo | — → 21408 | novo | — → 223 | novo |
+| `BenchmarkWorldStep/step/1000/mixed-16` | — → 797755 | novo | — → 242392 | novo | — → 874 | novo |
+| `BenchmarkWorldClone/clone/10/spread-16` | — → 2634 | novo | — → 2408 | novo | — → 21 | novo |
+| `BenchmarkWorldClone/clone/25/spread-16` | — → 3914 | novo | — → 4072 | novo | — → 21 | novo |
+| `BenchmarkWorldClone/clone/50/spread-16` | — → 6857 | novo | — → 6952 | novo | — → 21 | novo |
+| `BenchmarkWorldClone/clone/75/spread-16` | — → 12643 | novo | — → 12840 | novo | — → 21 | novo |
+| `BenchmarkWorldClone/clone/100/spread-16` | — → 12524 | novo | — → 12840 | novo | — → 21 | novo |
+| `BenchmarkWorldClone/clone/1000/spread-16` | — → 155179 | novo | — → 207009 | novo | — → 27 | novo |
+| `BenchmarkWorldClone/clone/10/mixed-16` | — → 2456 | novo | — → 2432 | novo | — → 20 | novo |
+| `BenchmarkWorldClone/clone/25/mixed-16` | — → 3809 | novo | — → 4240 | novo | — → 24 | novo |
+| `BenchmarkWorldClone/clone/50/mixed-16` | — → 6982 | novo | — → 7312 | novo | — → 24 | novo |
+| `BenchmarkWorldClone/clone/75/mixed-16` | — → 10679 | novo | — → 13520 | novo | — → 24 | novo |
+| `BenchmarkWorldClone/clone/100/mixed-16` | — → 13305 | novo | — → 13520 | novo | — → 24 | novo |
+| `BenchmarkWorldClone/clone/1000/mixed-16` | — → 149075 | novo | — → 215841 | novo | — → 28 | novo |
+
+## compare
+
+Only one report so far (`compare.md`) — nothing to compare yet, this is the baseline.
+
