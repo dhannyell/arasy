@@ -131,11 +131,7 @@ func (s *audioSink) playCues(cues []audio.Cue) {
 		panner := s.ctx.Call("createStereoPanner")
 		panner.Get("pan").Set("value", cue.Pan)
 		gain := s.ctx.Call("createGain")
-		gainValue := cue.Gain
-		if gainValue == 0 {
-			gainValue = 1
-		}
-		gain.Get("gain").Set("value", gainValue)
+		gain.Get("gain").Set("value", cue.Gain)
 
 		source.Call("connect", panner)
 		panner.Call("connect", gain)
@@ -154,18 +150,15 @@ func (s *audioSink) reconcileTracks() {
 	}
 
 	for id, track := range s.desired {
-		buffer, ok := s.buffers[track.ClipID]
+		buffer, ok := s.buffers[track.Clip]
 		if !ok {
 			continue
 		}
 		current, active := s.active[id]
 		fadeSec := track.FadeSec
 		gainValue := track.Gain
-		if gainValue == 0 {
-			gainValue = 1
-		}
 
-		if !active || current.clip != track.ClipID {
+		if !active || current.clip != track.Clip {
 			if active {
 				s.fadeAndStop(current, now, fadeSec)
 			}
@@ -178,7 +171,7 @@ func (s *audioSink) reconcileTracks() {
 			source.Call("connect", gain)
 			gain.Call("connect", s.ctx.Get("destination"))
 			source.Call("start", 0)
-			s.active[id] = activeTrack{source: source, gain: gain, clip: track.ClipID}
+			s.active[id] = activeTrack{source: source, gain: gain, clip: track.Clip}
 			continue
 		}
 

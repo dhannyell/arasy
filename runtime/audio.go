@@ -32,10 +32,17 @@ func (a *driverAudio) beginTick(tick uint64) {
 	a.seq = 0
 }
 
-func (a *driverAudio) play(clip audio.ClipID, opts audio.CueOptions) {
-	if opts.Gain == 0 {
-		opts.Gain = defaultGain
+// normalizeGain maps the zero value to the default and clamps everything else
+// into the valid [0, 1] range. Cues and tracks share the same policy.
+func normalizeGain(gain float64) float64 {
+	if gain == 0 {
+		return defaultGain
 	}
+	return math2d.Clamp(gain, 0.0, 1.0)
+}
+
+func (a *driverAudio) play(clip audio.ClipID, opts audio.CueOptions) {
+	opts.Gain = normalizeGain(opts.Gain)
 	cue := audio.Cue{Tick: a.tick, Seq: a.seq, Clip: clip, Gain: opts.Gain, Pan: opts.Pan}
 	a.seq++
 	if a.suppressCues {
@@ -51,11 +58,7 @@ func (a *driverAudio) setTrack(id audio.TrackID, track audio.Track) {
 	if a.state.Tracks == nil {
 		a.state.Tracks = make(map[audio.TrackID]audio.Track)
 	}
-	if track.Gain == 0.0 {
-		track.Gain = defaultGain
-	} else {
-		track.Gain = math2d.Clamp(track.Gain, 0.0, 1.0)
-	}
+	track.Gain = normalizeGain(track.Gain)
 	a.state.Tracks[id] = track
 }
 

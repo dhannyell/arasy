@@ -45,7 +45,7 @@ func (g *audioGame) Setup() runtime.Config {
 
 func (g *audioGame) Init(ctx *runtime.UpdateContext) {
 	g.player = ctx.World.Spawn()
-	ctx.Audio.SetTrack("music", audio.Track{ClipID: "music", Gain: 0.5, Loop: true, FadeSec: 0.5})
+	ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Gain: 0.5, Loop: true, FadeSec: 0.5})
 }
 
 func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -57,7 +57,7 @@ func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
 		ctx.Audio.Play("beep")
 	}
 	if ctx.Tick == 5 {
-		ctx.Audio.SetTrack("music", audio.Track{ClipID: "alt_music", Gain: 0.8, Loop: true})
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "alt_music", Gain: 0.8, Loop: true})
 	}
 	if ctx.Tick == 7 {
 		ctx.Audio.Play("beep2")
@@ -101,8 +101,8 @@ func TestAudioCueStampedAndDrainedOnce(t *testing.T) {
 	if out1.Cues[0].Clip != "beep" {
 		t.Errorf("expected cue.Clip == 'beep', got %s", out1.Cues[0].Clip)
 	}
-	if out1.Tracks["music"].ClipID != "music" {
-		t.Errorf("expected track 'music' ClipID == 'music', got %s", out1.Tracks["music"].ClipID)
+	if out1.Tracks["music"].Clip != "music" {
+		t.Errorf("expected track 'music' Clip == 'music', got %s", out1.Tracks["music"].Clip)
 	}
 
 	// Second consume: cues must be empty (drained), tracks unchanged.
@@ -111,8 +111,8 @@ func TestAudioCueStampedAndDrainedOnce(t *testing.T) {
 	if len(out2.Cues) != 0 {
 		t.Errorf("expected 0 cues on second consume, got %d", len(out2.Cues))
 	}
-	if out2.Tracks["music"].ClipID != "music" {
-		t.Errorf("expected track 'music' to remain after drain, got %s", out2.Tracks["music"].ClipID)
+	if out2.Tracks["music"].Clip != "music" {
+		t.Errorf("expected track 'music' to remain after drain, got %s", out2.Tracks["music"].Clip)
 	}
 }
 
@@ -180,19 +180,19 @@ func TestAudioTracksReflectDesired(t *testing.T) {
 	}
 
 	// After tick 5, the track should be alt_music with gain 0.8.
-	if out.Tracks["music"].ClipID != "alt_music" {
-		t.Errorf("expected ClipID 'alt_music', got %s", out.Tracks["music"].ClipID)
+	if out.Tracks["music"].Clip != "alt_music" {
+		t.Errorf("expected Clip 'alt_music', got %s", out.Tracks["music"].Clip)
 	}
 	if out.Tracks["music"].Gain != 0.8 {
 		t.Errorf("expected Gain 0.8, got %f", out.Tracks["music"].Gain)
 	}
 
 	// Mutate the returned map: must not affect the driver's internal state.
-	out.Tracks["music"] = audio.Track{ClipID: "hacked"}
+	out.Tracks["music"] = audio.Track{Clip: "hacked"}
 	out2 := driver.ConsumeAudio()
 
-	if out2.Tracks["music"].ClipID != "alt_music" {
-		t.Errorf("clone isolation broken: expected 'alt_music', got %s", out2.Tracks["music"].ClipID)
+	if out2.Tracks["music"].Clip != "alt_music" {
+		t.Errorf("clone isolation broken: expected 'alt_music', got %s", out2.Tracks["music"].Clip)
 	}
 }
 
@@ -230,8 +230,8 @@ func TestAudioResetClearsAll(t *testing.T) {
 	}
 
 	// Track should be restored to the Init state.
-	if out.Tracks["music"].ClipID != "music" {
-		t.Errorf("expected track 'music' after reset, got %s", out.Tracks["music"].ClipID)
+	if out.Tracks["music"].Clip != "music" {
+		t.Errorf("expected track 'music' after reset, got %s", out.Tracks["music"].Clip)
 	}
 }
 
@@ -263,8 +263,8 @@ func TestAudioRewindRestoresTracksDiscardsPending(t *testing.T) {
 	}
 
 	// Track should be the original one (before tick 5 change).
-	if out.Tracks["music"].ClipID != "music" {
-		t.Errorf("expected original track 'music', got %s", out.Tracks["music"].ClipID)
+	if out.Tracks["music"].Clip != "music" {
+		t.Errorf("expected original track 'music', got %s", out.Tracks["music"].Clip)
 	}
 }
 
@@ -293,8 +293,40 @@ func TestAudioScrubSuppressesCuesReconstructsTracks(t *testing.T) {
 	}
 
 	// Track should reflect what was active at tick 8: alt_music (changed at tick 5).
-	if out.Tracks["music"].ClipID != "alt_music" {
-		t.Errorf("expected track 'alt_music' at tick 8 after scrub, got %s", out.Tracks["music"].ClipID)
+	if out.Tracks["music"].Clip != "alt_music" {
+		t.Errorf("expected track 'alt_music' at tick 8 after scrub, got %s", out.Tracks["music"].Clip)
+	}
+}
+
+// TestAudioForwardScrubSuppressesCues verifies that scrubbing FORWARD (target
+// tick greater than the current one, the incremental fast-forward path in
+// seekTo) is just as silent as scrubbing back: the re-simulated cues were
+// already heard and must not replay.
+func TestAudioForwardScrubSuppressesCues(t *testing.T) {
+	game := &audioGame{}
+	driver := runtime.NewDriver(game, slog.New(slog.DiscardHandler))
+
+	for range 10 {
+		driver.Step()
+	}
+	driver.ConsumeAudio() // drain
+
+	// Scrub back to tick 2, then forward to tick 8 (target > current tick).
+	driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: 2})
+	driver.AdvanceTime(0)
+	driver.ConsumeAudio() // drain
+
+	driver.Control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: 8})
+	driver.AdvanceTime(0)
+
+	out := driver.ConsumeAudio()
+
+	if len(out.Cues) != 0 {
+		t.Errorf("expected 0 cues after forward scrub, got %d", len(out.Cues))
+	}
+	// Track state at tick 8 must still be reconstructed (alt_music from tick 5).
+	if out.Tracks["music"].Clip != "alt_music" {
+		t.Errorf("expected track 'alt_music' at tick 8 after forward scrub, got %s", out.Tracks["music"].Clip)
 	}
 }
 

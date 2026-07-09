@@ -7,9 +7,10 @@ type TrackID string
 // desired set against what is actually playing every delivery: start what is
 // missing, stop what is stale, retune gain on what stays.
 type Track struct {
-	ClipID ClipID
+	Clip ClipID
 
-	// Gain is the linear volume; zero means 1.0 (normalized on SetTrack).
+	// Gain is the linear volume in [0, 1]; zero means 1.0. SetTrack normalizes
+	// the zero value to 1.0 and clamps everything else into range.
 	Gain float64
 	Loop bool
 	// FadeSec is the fade-in/out the sink applies when this track starts or
