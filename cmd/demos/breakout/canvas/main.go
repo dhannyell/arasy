@@ -8,6 +8,7 @@ import (
 	"os/signal"
 
 	"github.com/dhannyell/frameforge/cmd/demos/breakout"
+	"github.com/dhannyell/frameforge/cmd/demos/breakout/audioassets"
 	"github.com/dhannyell/frameforge/platform/web/canvas"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -56,7 +57,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	err := canvas.RunDriver(ctx, driver, canvas.Options{Addr: *addr, Log: log})
+	err := canvas.RunDriver(ctx, driver, canvas.Options{Addr: *addr, Log: log, AudioFS: audioassets.FS()})
 	if *recordOut != "" {
 		if writeErr := writeRecording(*recordOut, driver.StopRecording()); writeErr != nil {
 			log.Error("write recording failed", "path", *recordOut, "err", writeErr)

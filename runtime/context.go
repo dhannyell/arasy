@@ -22,6 +22,7 @@ type UpdateContext struct {
 	Log     *slog.Logger
 	Tick    uint64
 	Rand    *Rand
+	Audio   *AudioPort
 
 	StepConfig scene.StepConfig
 
@@ -62,3 +63,19 @@ type RenderContext struct {
 
 func (ctx *RenderContext) Camera() render.Camera       { return ctx.camera }
 func (ctx *RenderContext) SetCamera(cam render.Camera) { ctx.camera = cam }
+
+func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
+	return UpdateContext{
+		World:      d.world,
+		Assets:     d.cfg.Assets,
+		Input:      d.input.LastInput(),
+		Pointer:    d.input.PointerFrame(),
+		Log:        d.log.With("scope", "game"),
+		Tick:       d.tick,
+		Rand:       &d.rng,
+		UI:         uiInst,
+		Audio:      &d.audioPort,
+		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
+		camera:     d.cameraForSurface(),
+	}
+}

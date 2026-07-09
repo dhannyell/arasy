@@ -3,6 +3,7 @@ package asset
 import (
 	"sort"
 
+	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
@@ -29,6 +30,7 @@ type Manifest struct {
 	textures []TextureDecl // index i holds ID i+1
 	byName   map[string]render.TextureID
 	sprites  map[string]Sprite
+	audio    []audio.Clip
 }
 
 // Texture resolves a texture name to its handle. Unknown names return 0,
@@ -55,7 +57,13 @@ func (m Manifest) Textures() []TextureDecl {
 	return m.textures
 }
 
-func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite) Manifest {
+// AudioClips returns the declared audio clips ordered by ID. The returned
+// slice is shared - callers must not mutate it.
+func (m Manifest) AudioClips() []audio.Clip {
+	return m.audio
+}
+
+func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, clips map[audio.ClipID]audio.Clip) Manifest {
 	byName := make(map[string]render.TextureID, len(textures))
 	decls := make([]TextureDecl, 0, len(textures))
 	names := make([]string, 0, len(textures))
@@ -70,5 +78,16 @@ func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite) Man
 		decls = append(decls, decl)
 		byName[name] = decl.ID
 	}
-	return Manifest{textures: decls, byName: byName, sprites: sprites}
+
+	audioIDs := make([]string, 0, len(clips))
+	for id := range clips {
+		audioIDs = append(audioIDs, string(id))
+	}
+	sort.Strings(audioIDs)
+	audioClips := make([]audio.Clip, 0, len(audioIDs))
+	for _, id := range audioIDs {
+		audioClips = append(audioClips, clips[audio.ClipID(id)])
+	}
+
+	return Manifest{textures: decls, byName: byName, sprites: sprites, audio: audioClips}
 }

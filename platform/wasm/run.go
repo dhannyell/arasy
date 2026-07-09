@@ -4,6 +4,7 @@ package wasm
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"syscall/js"
 
@@ -33,6 +34,8 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
+	// AudioFS provides bytes for Config.Assets.AudioClips paths. Nil disables audio.
+	AudioFS fs.FS
 }
 
 type host struct {
@@ -50,6 +53,7 @@ type host struct {
 
 	// debugPanel is the optional runtime tooling UI; nil when no overlay is enabled.
 	debugPanel *debugPanel
+	audio      *audioSink
 
 	loopCb   js.Func
 	resizeCb js.Func
@@ -88,6 +92,9 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	h.resize()
 	h.registerResizeListener()
 	h.registerInputListeners()
+	if opts.AudioFS != nil {
+		h.audio = newAudioSink(cfg.Assets.AudioClips(), opts.AudioFS, log)
+	}
 	h.renderer = selectRenderer(canvas, cfg.Clear, opts.ForceCanvas2D, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {

@@ -32,6 +32,9 @@ func (h *host) startLoop() {
 		h.driver.ApplyInput(h.pending)
 		h.pending = h.pending[:0]
 		h.driver.AdvanceTime(elapsed)
+		if h.audio != nil {
+			h.audio.consume(h.driver.ConsumeAudio())
+		}
 
 		frame := h.driver.Frame(elapsed)
 		h.renderer.Render(frame)
