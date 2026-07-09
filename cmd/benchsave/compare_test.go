@@ -70,6 +70,26 @@ func TestFindPreviousReportMatchesExactFamily(t *testing.T) {
 	}
 }
 
+func TestBaselineRootDirUsesParentForRunsDir(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{name: "default runs", out: filepath.Join("benchmarks", "runs"), want: "benchmarks"},
+		{name: "custom regular dir", out: "tmp-benches", want: "tmp-benches"},
+		{name: "custom runs dir", out: filepath.Join("tmp-benches", "runs"), want: "tmp-benches"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := baselineRootDir(tt.out); got != tt.want {
+				t.Fatalf("baselineRootDir(%q) = %q, want %q", tt.out, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildComparisonAggregatesRepeatedRuns(t *testing.T) {
 	oldResults := []benchmarkResult{
 		{Name: "BenchmarkA-16", NsPerOp: "100", BytesOp: "10", AllocsOp: "1"},
@@ -104,7 +124,7 @@ func TestRenderComparisonTableIncludesSummary(t *testing.T) {
 		"- Benchmarks: `2` compared, `1` new, `1` removed",
 		"`BenchmarkSlower-16` (+25.0%)",
 		"`BenchmarkFaster-16` (-20.0%)",
-		"| `BenchmarkNew-16` | — → 50 | novo |",
+		"| `BenchmarkNew-16` | — → 50 | new |",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("comparison table missing %q:\n%s", want, got)
