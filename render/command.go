@@ -133,11 +133,32 @@ type DrawImage struct {
 	Rotation float64
 }
 
-func (DrawRect) isRenderCommand()    {}
-func (DrawCircle) isRenderCommand()  {}
-func (DrawPoint) isRenderCommand()   {}
-func (DrawLine) isRenderCommand()    {}
-func (DrawText) isRenderCommand()    {}
-func (DrawArc) isRenderCommand()     {}
-func (DrawPolygon) isRenderCommand() {}
-func (DrawImage) isRenderCommand()   {}
+// DrawImageQuad draws a texture, or a sub-rectangle of it, mapped onto an
+// arbitrary convex quadrilateral in world coordinates with perspective-
+// correct interpolation (projective mapping). Corners are given in the
+// order top-left, top-right, bottom-right, bottom-left of the SOURCE
+// image; a plain rectangle reproduces DrawImage. Non-convex or degenerate
+// corner sets are skipped by backends (a one-time warning is logged).
+type DrawImageQuad struct {
+	BaseCommand
+	Texture TextureID
+	// Corners in world coordinates: source top-left, top-right,
+	// bottom-right, bottom-left.
+	Corners [4]math2d.Vec2
+	// Src selects a sub-rectangle of the texture in pixel coordinates.
+	// Zero value = the whole texture.
+	Src math2d.Rect
+	// Tint multiplies the texture color channel-wise (including alpha).
+	// Zero value = no tint.
+	Tint Color
+}
+
+func (DrawRect) isRenderCommand()      {}
+func (DrawCircle) isRenderCommand()    {}
+func (DrawPoint) isRenderCommand()     {}
+func (DrawLine) isRenderCommand()      {}
+func (DrawText) isRenderCommand()      {}
+func (DrawArc) isRenderCommand()       {}
+func (DrawPolygon) isRenderCommand()   {}
+func (DrawImage) isRenderCommand()     {}
+func (DrawImageQuad) isRenderCommand() {}
