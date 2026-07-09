@@ -1,6 +1,7 @@
 import { connectFrameSocket } from "./socket.js";
 import { createCanvasRenderer } from "./renderer.js";
 import { createAudioEngine } from "./audio.js";
+import { loadAssetRegistry } from "./assets.js";
 
 const canvas = document.getElementById("ff-canvas");
 const stats = document.getElementById("stats");
@@ -73,6 +74,10 @@ const renderer = createCanvasRenderer(canvas, {
         });
     },
 });
+
+loadAssetRegistry().then((registry) => {
+    renderer.setAssets(registry)
+})
 
 const audioEngine = createAudioEngine();
 
