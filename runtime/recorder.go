@@ -3,6 +3,7 @@ package runtime
 import (
 	"sort"
 
+	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/scene"
 	"github.com/dhannyell/frameforge/ui"
@@ -26,14 +27,15 @@ func (r *recorder) WantsCapture(tick uint64) bool {
 // driverSnapshot is the complete mutable runtime state needed for rewind.
 // Every mutable collaborator must contribute a Snapshot/Restore payload here.
 type driverSnapshot struct {
-	world     *scene.World
-	input     driverInputSnapshot
-	uiState   ui.State
-	gameState GameState
-	rng       Rand
-	viewport  math2d.Rect
-	tick      uint64
-	checksum  uint64
+	world      *scene.World
+	input      driverInputSnapshot
+	uiState    ui.State
+	gameState  GameState
+	rng        Rand
+	viewport   math2d.Rect
+	tick       uint64
+	checksum   uint64
+	audioState audio.State
 }
 
 func newRecorder(historyLen, interval int) *recorder {

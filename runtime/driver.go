@@ -6,6 +6,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -70,6 +71,11 @@ type Driver struct {
 	hasStagedViewport bool
 
 	determinismViolated bool
+
+	// Audio
+
+	audio     driverAudio
+	audioPort AudioPort
 }
 
 // viewportEntry records a SetViewport call at the tick it was applied.
@@ -134,6 +140,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 		d.recorder = newRecorder(cfg.HistoryLen, cfg.KeyframeInterval)
 	}
 	d.rng = NewRand(cfg.Seed)
+	d.audioPort = AudioPort{audio: &d.audio}
 	d.doReset()
 	return d
 }
@@ -309,6 +316,7 @@ func (d *Driver) stepOnce(dt float64) {
 }
 
 func (d *Driver) stepCore(dt float64) {
+	d.audio.beginTick(d.tick)
 	d.input.BeginTick()
 	uiInst := d.newUpdateUI()
 	ctx := d.makeUpdateContext(uiInst)
@@ -388,6 +396,10 @@ func (d *Driver) Frame(elapsed time.Duration) Frame {
 	}
 }
 
+func (d *Driver) ConsumeAudio() audio.Output {
+	return d.audio.consume()
+}
+
 func (d *Driver) debugCommands(gameCmds []render.Command, cam render.Camera) []render.Command {
 	if d.controls.debugLayers == 0 {
 		return nil
@@ -454,21 +466,6 @@ func (d *Driver) SetViewport(viewport math2d.Rect) {
 	}
 }
 
-func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
-	return UpdateContext{
-		World:      d.world,
-		Assets:     d.cfg.Assets,
-		Input:      d.input.LastInput(),
-		Pointer:    d.input.PointerFrame(),
-		Log:        d.log.With("scope", "game"),
-		Tick:       d.tick,
-		Rand:       &d.rng,
-		UI:         uiInst,
-		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
-		camera:     d.cameraForSurface(),
-	}
-}
-
 func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	alpha := 0.0
 	if d.cfg.RenderInterpolation {
@@ -520,6 +517,7 @@ func (d *Driver) doReset() {
 	}
 	ctx := d.makeUpdateContext(d.newRenderUI())
 	d.rng = NewRand(d.cfg.Seed)
+	d.audio.reset()
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }
@@ -531,6 +529,8 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	d.rng = snap.rng
 	d.viewport = snap.viewport
 	d.tick = snap.tick
+	d.audio.state = snap.audioState.Clone()
+	d.audio.pending = nil
 	// Restoring replaces the mapper wholesale, dropping the effect of any
 	// staged input — drop the staged events and staged viewport with it
 	// (see stepOnce's fork).
@@ -552,14 +552,15 @@ func cloneDriverInputSnapshot(snapshot driverInputSnapshot) driverInputSnapshot 
 
 func (d *Driver) captureSnapshot() driverSnapshot {
 	return driverSnapshot{
-		world:     d.world.Clone(),
-		input:     d.input.Snapshot(),
-		uiState:   d.uiState.Clone(),
-		gameState: d.captureGameState(),
-		rng:       d.rng,
-		viewport:  d.viewport,
-		tick:      d.tick,
-		checksum:  d.world.Checksum(),
+		world:      d.world.Clone(),
+		input:      d.input.Snapshot(),
+		uiState:    d.uiState.Clone(),
+		gameState:  d.captureGameState(),
+		rng:        d.rng,
+		viewport:   d.viewport,
+		tick:       d.tick,
+		audioState: d.audio.state,
+		checksum:   d.world.Checksum(),
 	}
 }
 
@@ -639,6 +640,7 @@ func (d *Driver) seekTo(target uint64) {
 		d.applyLoggedInputsAtCurrentTick()
 	}
 	d.resimulate(target)
+	d.audio.pending = d.audio.pending[:0]
 	d.viewport = surfaceViewport
 
 	if d.log.Enabled(context.Background(), slog.LevelDebug) {
@@ -656,6 +658,7 @@ func (d *Driver) resetForResimulation() {
 	d.stagedViewport = math2d.Rect{}
 	d.hasStagedViewport = false
 	d.rng = NewRand(d.cfg.Seed)
+	d.audio.reset()
 	if game, ok := d.game.(StatefulGame); ok {
 		game.RestoreGameState(nil)
 	}

@@ -120,6 +120,8 @@ func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewp
 	// Replay only needs the final state; snapshot capture would clone the
 	// whole World every tick.
 	driver.recorder = nil
+	// cues were already heard on the live run
+	driver.audio.suppressCues = true
 
 	viewportByTick := make(map[uint64]math2d.Rect)
 	for _, ve := range viewportLog {
