@@ -44,7 +44,7 @@ Driver.Step/AdvanceTime -> Game.Update -> World.Step/PostStep -> render commands
 
 ```
 foundation:     math2d
-vocabulary:     render, input, ui
+vocabulary:     render, input, ui, audio
 simulation:     scene
 orchestration:  runtime
 hosts:          platform/raster, platform/web/canvas, platform/wasm
@@ -54,7 +54,7 @@ apps:           cmd/
 
 **Dependency direction** (never reverse):
 ```
-cmd/demos -> platform/* -> runtime -> {scene, input, ui, render, asset} -> math2d
+cmd/demos -> platform/* -> runtime -> {scene, input, ui, render, audio, asset} -> math2d
 asset -> render -> math2d
 platform/* -> asset/pixel -> asset
 ```
@@ -71,11 +71,12 @@ platform/* -> asset/pixel -> asset
 |---|---|
 | `math2d/` | Pure 2D math (`Vec2`, `Rect`). Zero engine deps. |
 | `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`. |
-| `asset/` | Data-driven texture/sprite declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` stable per-run, resolved by name, never persisted. `asset/pixel` subpackage owns shared image decode for native backends; `runtime` carries only the resolved `asset.Manifest`. |
+| `asset/` | Data-driven texture/sprite/audio declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` stable per-run, resolved by name, never persisted. `asset/pixel` subpackage owns shared image decode for native backends; `runtime` carries only the resolved `asset.Manifest`. |
+| `audio/` | Backend-agnostic audio vocabulary: clip IDs, one-shot cues, continuous tracks, and rewindable track state. Hosts decode/play; runtime only transports intent. |
 | `scene/` | ECS world + simulation tick. `EntityID` (uint32). Step pipeline: acceleration -> integrate -> bounce -> grid broad-phase -> contact resolution -> damping. `World.Checksum()` for determinism. |
 | `input/` | `Source`/`Action`/`Binding`/`Mapper`/`Buffer` + pointer types. `Mapper.EndFrame()` called by driver at tick end. |
 | `ui/` | Immediate-mode: Button, Panel, Label, etc. Three coord spaces. `ui.State` owned by driver (captured in rewind). |
-| `runtime/` | Orchestration hub. Owns `Game` contract, `Driver` (fixed timestep, dev controls, rewind), `StateSlot[T]`. Defines *what a tick is* -- platforms must not duplicate. |
+| `runtime/` | Orchestration hub. Owns `Game` contract, `Driver` (fixed timestep, dev controls, rewind), `StateSlot[T]`, and `ConsumeAudio`. Defines *what a tick is* -- platforms must not duplicate. |
 | `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
 | `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
 | `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas. Not a distribution target. |
@@ -89,6 +90,7 @@ platform/* -> asset/pixel -> asset
 - `AdvanceTime`: consume dev controls -> apply reset/rewind -> convert wall time x speed -> fixed steps with catch-up clamp -> run each step.
 - `Driver.Step()`: exactly one fixed tick, no wall clock (for tests/replay).
 - Per step: capture rewind snapshot -> snapshot input -> `Game.Update` -> auto `World.Step` (unless `ctx.HoldSimulation()`) -> optional `PostStep` -> advance tick -> clear pointer frame -> `mapper.EndFrame()` -> prune input buffer.
+- Hosts drain audio cues/tracks with `Driver.ConsumeAudio` from the simulation loop after `AdvanceTime`/`Step`, never from render.
 - Input applied *before* `AdvanceTime`/`Step` via `ApplyInput`, stamped with current tick.
 - **Do not reorder.** Determinism and rewind depend on this pipeline.
 - `StateSlot[T]` snapshots by value: T must be a pure value type (no slices/maps/pointers).
@@ -166,6 +168,7 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 ## Reference Docs
 - `README.md` -- capabilities, quick start, demo instructions
 - `docs/runtime.md` -- runtime guide (tick semantics, Driver API, rewind)
+- `docs/audio.md` -- audio guide (cues, tracks, host contract, rewind/scrub policy)
 - `docs/ui.md` -- UI guide (themes, coord spaces, interaction)
 - `docs/scrubbing.md` -- bidirectional time scrubbing (replay, timeline forking, checksum)
 - `docs/testing.md` -- test organization conventions

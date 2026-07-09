@@ -18,6 +18,7 @@ Current capabilities:
 - Camera with aspect-ratio modes (stretch, fit, expand).
 - Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
 - Runtime package with a portable `Game` contract, automatic fixed-timestep world stepping, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
+- Backend-agnostic audio intents with deterministic one-shot cues, continuous tracks, and Web Audio playback in the web canvas host.
 - Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
 - Raster renderer using Go's standard `image` packages, including text rendering and alpha blending.
 - Scene world with entities and components: transform, circle/rect sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle/rect collider.
@@ -52,10 +53,16 @@ input/
 ui/
   Immediate-mode UI widgets, themes, and pointer interaction helpers.
 
+audio/
+  Backend-agnostic audio vocabulary for clip IDs, one-shot cues, continuous
+  tracks, and rewindable track state. Clip paths are declared in asset
+  manifests.
+
 runtime/
   Orchestration hub: platform-agnostic Game contract, Context, Driver,
   input/control plumbing, fixed timestep pump, frame production, dev controls,
-  and optional rewind history. The only behavioral API platforms need to drive.
+  audio output, and optional rewind history. The only behavioral API platforms
+  need to drive.
 
 platform/raster/
   Software renderer that draws render commands into image.RGBA, plus an
