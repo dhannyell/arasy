@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/dhannyell/frameforge/cmd/demos/breakout"
+	"github.com/dhannyell/frameforge/cmd/demos/breakout/audioassets"
 	"github.com/dhannyell/frameforge/platform/wasm"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -17,6 +18,7 @@ func main() {
 		Log:          log,
 		RecordReplay: true,
 		GameFactory:  func() runtime.Game { return &breakout.Breakout{} },
+		AudioFS:      audioassets.FS(),
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)
 	}
