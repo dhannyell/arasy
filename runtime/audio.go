@@ -51,8 +51,10 @@ func (a *driverAudio) setTrack(id audio.TrackID, track audio.Track) {
 	if a.state.Tracks == nil {
 		a.state.Tracks = make(map[audio.TrackID]audio.Track)
 	}
-	if track.Gain != 0.0 {
-		track.Gain = math2d.Clamp(track.Gain/100, 0.0, 1.0)
+	if track.Gain == 0.0 {
+		track.Gain = defaultGain
+	} else {
+		track.Gain = math2d.Clamp(track.Gain, 0.0, 1.0)
 	}
 	a.state.Tracks[id] = track
 }

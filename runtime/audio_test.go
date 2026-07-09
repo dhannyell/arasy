@@ -38,8 +38,7 @@ func (g *audioGame) Setup() runtime.Config {
 
 func (g *audioGame) Init(ctx *runtime.UpdateContext) {
 	g.player = ctx.World.Spawn()
-	// Set initial track with gain 50 (50/100 → 0.5 via setTrack normalization).
-	ctx.Audio.SetTrack("music", audio.Track{ClipID: "music", Gain: 50, Loop: true, FadeSec: 0.5})
+	ctx.Audio.SetTrack("music", audio.Track{ClipID: "music", Gain: 0.5, Loop: true, FadeSec: 0.5})
 }
 
 func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -51,7 +50,7 @@ func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
 		ctx.Audio.Play("beep")
 	}
 	if ctx.Tick == 5 {
-		ctx.Audio.SetTrack("music", audio.Track{ClipID: "alt_music", Gain: 80, Loop: true})
+		ctx.Audio.SetTrack("music", audio.Track{ClipID: "alt_music", Gain: 0.8, Loop: true})
 	}
 	if ctx.Tick == 7 {
 		ctx.Audio.Play("beep2")
@@ -173,7 +172,7 @@ func TestAudioTracksReflectDesired(t *testing.T) {
 		t.Fatalf("expected 1 cue, got %d", len(out.Cues))
 	}
 
-	// After tick 5, the track should be alt_music with gain 80 → 0.8.
+	// After tick 5, the track should be alt_music with gain 0.8.
 	if out.Tracks["music"].ClipID != "alt_music" {
 		t.Errorf("expected ClipID 'alt_music', got %s", out.Tracks["music"].ClipID)
 	}
@@ -223,7 +222,7 @@ func TestAudioResetClearsAll(t *testing.T) {
 		t.Errorf("expected 0 cues after reset, got %d", len(out.Cues))
 	}
 
-	// Track should be restored to the Init state (music, Gain: 50 → 0.5).
+	// Track should be restored to the Init state.
 	if out.Tracks["music"].ClipID != "music" {
 		t.Errorf("expected track 'music' after reset, got %s", out.Tracks["music"].ClipID)
 	}

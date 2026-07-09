@@ -1,5 +1,6 @@
 import { connectFrameSocket } from "./socket.js";
 import { createCanvasRenderer } from "./renderer.js";
+import { createAudioEngine } from "./audio.js";
 
 const canvas = document.getElementById("ff-canvas");
 const stats = document.getElementById("stats");
@@ -72,6 +73,8 @@ const renderer = createCanvasRenderer(canvas, {
         });
     },
 });
+
+const audioEngine = createAudioEngine();
 
 playPauseButton.addEventListener("click", () => {
     paused = !paused;
@@ -265,6 +268,15 @@ connection = connectFrameSocket({
         stats.textContent =
             `tick ${frame.tick} | commands ${frame.commands.length} | ` +
             `sim ${formatSpeed(frame.state.simulationHz * frame.state.speed)}Hz effective | render ${measuredFPS}/${frame.state.renderFPS} FPS`;
+    },
+
+    onAudio(audio) {
+        audioEngine.playCues(audio.cues ?? []);
+        if (audio.tracks) audioEngine.setTracks(audio.tracks);
+    },
+
+    onAudioManifest(audio) {
+        audioEngine.loadManifest(audio.clips ?? []);
     },
 });
 
