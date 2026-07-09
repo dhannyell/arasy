@@ -3,6 +3,9 @@ package breakout
 import (
 	"fmt"
 
+	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/frameforge/audio"
+	"github.com/dhannyell/frameforge/cmd/demos/breakout/audioassets"
 	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -13,6 +16,10 @@ import (
 )
 
 func (b *Breakout) Setup() runtime.Config {
+	assets, err := asset.Load(audioassets.FS())
+	if err != nil {
+		panic(err)
+	}
 	return runtime.Config{
 		Camera: render.Camera{
 			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
@@ -26,6 +33,7 @@ func (b *Breakout) Setup() runtime.Config {
 		FPS:                 60,
 		RenderInterpolation: true,
 		InputBindings:       breakoutBindings(),
+		Assets:              assets,
 		HistoryLen:          1000,
 		DebugOverlay: scene.DebugOverlayConfig{
 			Bounds:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldWidth, Y: worldHeight}),
@@ -74,7 +82,7 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	})
 
 	b.State.lives = 3
-
+	playTrack(ctx, "music", audio.Track{ClipID: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
 }
 
 func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -92,12 +100,14 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 			b.State.state = StateReady
 			b.State.lives = 3
 			b.respawnBricks(ctx.World)
+			playTrack(ctx, "music", audio.Track{ClipID: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
 		}
 		return
 	}
 
 	if b.State.bricksLeft <= 0 {
 		b.State.state = StateWon
+		stopTrack(ctx, "music")
 		ctx.HoldSimulation()
 		return
 	}
@@ -129,15 +139,17 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 
 func (b *Breakout) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 	b.syncBallFromWorld(ctx.World)
-	b.resolveGameContacts(ctx.World)
+	b.resolveGameContacts(ctx)
 
 	if b.State.ball.Position.Y-b.State.ball.Radius > worldHeight {
 		b.State.lives--
+		playCue(ctx, "ball_lost")
 		b.attachBallToPaddle()
 		ctx.World.SetTransform(b.State.ball.id, scene.Transform{Position: b.State.ball.Position})
 		ctx.World.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
 		if b.State.lives <= 0 {
 			b.State.state = StateGameOver
+			stopTrack(ctx, "music")
 			return
 		}
 		b.State.state = StateReady
@@ -295,7 +307,8 @@ func (b *Breakout) syncPaddleToWorld(world *scene.World) {
 
 // resolveGameContacts applies breakout's game rules to the physics contacts of
 // the last Step: paddle bounce angle by impact point, and brick destruction.
-func (b *Breakout) resolveGameContacts(world *scene.World) {
+func (b *Breakout) resolveGameContacts(ctx *runtime.UpdateContext) {
+	world := ctx.World
 	for _, contact := range world.Contacts() {
 		other, involvesBall := contactOther(contact, b.State.ball.id)
 		if !involvesBall {
@@ -305,6 +318,7 @@ func (b *Breakout) resolveGameContacts(world *scene.World) {
 		if other == b.State.paddle.id {
 			b.bounceFromPaddle()
 			world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
+			playCue(ctx, "paddle_hit")
 			continue
 		}
 
@@ -317,8 +331,27 @@ func (b *Breakout) resolveGameContacts(world *scene.World) {
 				b.State.bricksLeft--
 				b.speedUpBallAfterBrick()
 				world.SetVelocity(b.State.ball.id, scene.Velocity{Linear: b.State.ball.Velocity})
+				playCue(ctx, "brick_break")
 			}
 		}
+	}
+}
+
+func playCue(ctx *runtime.UpdateContext, clip audio.ClipID) {
+	if ctx.Audio != nil {
+		ctx.Audio.Play(clip)
+	}
+}
+
+func playTrack(ctx *runtime.UpdateContext, id audio.TrackID, track audio.Track) {
+	if ctx.Audio != nil {
+		ctx.Audio.SetTrack(id, track)
+	}
+}
+
+func stopTrack(ctx *runtime.UpdateContext, id audio.TrackID) {
+	if ctx.Audio != nil {
+		ctx.Audio.StopTrack(id)
 	}
 }
 

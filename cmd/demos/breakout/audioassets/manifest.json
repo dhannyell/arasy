@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "audio": [
+    { "id": "paddle_hit", "file": "paddle.wav" },
+    { "id": "brick_break", "file": "brick.wav" },
+    { "id": "ball_lost", "file": "lost.wav" },
+    { "id": "music", "file": "music.wav" }
+  ]
+}

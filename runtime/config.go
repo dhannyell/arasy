@@ -2,7 +2,6 @@ package runtime
 
 import (
 	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -19,7 +18,6 @@ type Config struct {
 	SimulationHz  int
 	FPS           int
 	InputBindings []input.Binding
-	AudioClips    []audio.Clip
 
 	// Max ticks recorded.
 	HistoryLen int

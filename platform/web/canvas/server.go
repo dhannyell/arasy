@@ -64,7 +64,7 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 	}
 	if opts.AudioFS != nil {
 		h.audioEnabled = true
-		h.audioManifest = newAudioManifestDTO(cfg.AudioClips)
+		h.audioManifest = newAudioManifestDTO(cfg.Assets.AudioClips())
 	}
 	go h.run(ctx)
 
