@@ -559,7 +559,7 @@ func (d *Driver) captureSnapshot() driverSnapshot {
 		rng:        d.rng,
 		viewport:   d.viewport,
 		tick:       d.tick,
-		audioState: d.audio.state,
+		audioState: d.audio.state.Clone(),
 		checksum:   d.world.Checksum(),
 	}
 }

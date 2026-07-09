@@ -5,6 +5,8 @@ export function connectFrameSocket(options) {
         onClose = () => {},
         onError = () => {},
         onFrame = () => {},
+        onAudio = () => {},
+        onAudioManifest = () => {},
         reconnectDelayMs = 750,
     } = options;
 
@@ -28,6 +30,14 @@ export function connectFrameSocket(options) {
 
             if (message.type === "frame") {
                 onFrame(message);
+            }
+
+            if (message.type === "audio") {
+                onAudio(message);
+            }
+
+            if (message.type === "audioManifest") {
+                onAudioManifest(message);
             }
         });
 

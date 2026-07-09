@@ -4,13 +4,16 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"io/fs"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/internal/render/adapter/web"
 	"github.com/dhannyell/frameforge/math2d"
@@ -25,6 +28,9 @@ var staticFiles embed.FS
 type Options struct {
 	Addr string
 	Log  *slog.Logger
+	// filesystem mounted at /audio/ clip paths in the game config
+	// are relative to it; nil disables audio delivery
+	AudioFS fs.FS
 }
 
 func Run(game runtime.Game, opts Options) error {
@@ -56,12 +62,19 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 		camera:  cfg.Camera,
 		clients: make(map[*client]struct{}),
 	}
+	if opts.AudioFS != nil {
+		h.audioEnabled = true
+		h.audioManifest = newAudioManifestDTO(cfg.AudioClips)
+	}
 	go h.run(ctx)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handleIndex)
 	mux.HandleFunc("/ws", h.handleWS)
 	mux.Handle("/static/", http.FileServerFS(staticFiles))
+	if opts.AudioFS != nil {
+		mux.Handle("/audio/", http.StripPrefix("/audio/", http.FileServerFS(opts.AudioFS)))
+	}
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
@@ -118,6 +131,12 @@ type hub struct {
 
 	clientsMu sync.RWMutex
 	clients   map[*client]struct{}
+
+	audioMu         sync.Mutex
+	audioEnabled    bool
+	audioManifest   audioManifestDTO
+	lastAudioTracks map[string]audioTrackDTO
+	pendingAudio    []audioMessageDTO
 }
 
 type client struct {
@@ -191,9 +210,33 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
 			}
 			h.driver.ApplyInput(events)
 			h.driver.AdvanceTime(elapsed)
+			out := h.driver.ConsumeAudio()
 			h.worldMu.Unlock()
+
+			h.enqueueAudio(out)
 		}
 	}
+}
+
+func (h *hub) enqueueAudio(out audio.Output) {
+	if !h.audioEnabled {
+		return
+	}
+	msg := newAudioMessageDTO(out)
+
+	h.audioMu.Lock()
+	defer h.audioMu.Unlock()
+
+	tracksChanged := !maps.Equal(h.lastAudioTracks, msg.Tracks)
+	if !tracksChanged && len(msg.Cues) == 0 {
+		return
+	}
+	if tracksChanged {
+		h.lastAudioTracks = cloneAudioTrackDTOs(msg.Tracks)
+	} else {
+		msg.Tracks = nil
+	}
+	h.pendingAudio = append(h.pendingAudio, msg)
 }
 
 func (h *hub) drainInbox() ([]input.Event, []runtime.ControlCommand, math2d.Rect, bool) {
@@ -258,12 +301,33 @@ func (h *hub) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	c := &client{conn: conn, camera: h.camera}
 	h.addClient(c)
+	h.sendAudioBootstrap(r.Context(), c)
 	defer func() {
 		h.removeClient(c)
 		_ = conn.CloseNow()
 	}()
 
 	h.readClientMessages(r.Context(), c)
+}
+
+func (h *hub) sendAudioBootstrap(ctx context.Context, c *client) {
+	h.audioMu.Lock()
+	if !h.audioEnabled {
+		h.audioMu.Unlock()
+		return
+	}
+	manifest := h.audioManifest
+	tracks := cloneAudioTrackDTOs(h.lastAudioTracks)
+	h.audioMu.Unlock()
+
+	if len(manifest.Clips) > 0 {
+		if !writeWS(ctx, c, manifest) {
+			return
+		}
+	}
+	if len(tracks) > 0 {
+		_ = writeWS(ctx, c, audioMessageDTO{Type: "audio", Tracks: tracks})
+	}
 }
 
 func (h *hub) readClientMessages(ctx context.Context, c *client) {
@@ -483,6 +547,31 @@ func (h *hub) broadcast(commands []render.Command, camera render.Camera, state r
 			_ = c.conn.CloseNow()
 		}
 	}
+
+	for _, msg := range h.drainAudio() {
+		for _, c := range clients {
+			if !writeWS(context.Background(), c, msg) {
+				h.sendDisconnectFrame(c)
+				h.removeClient(c)
+				_ = c.conn.CloseNow()
+			}
+		}
+	}
+}
+
+func (h *hub) drainAudio() []audioMessageDTO {
+	h.audioMu.Lock()
+	defer h.audioMu.Unlock()
+
+	out := append([]audioMessageDTO(nil), h.pendingAudio...)
+	h.pendingAudio = h.pendingAudio[:0]
+	return out
+}
+
+func writeWS(ctx context.Context, c *client, v any) bool {
+	writeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	return wsjson.Write(writeCtx, c.conn, v) == nil
 }
 
 // ---------------------------------------------------------------------------
