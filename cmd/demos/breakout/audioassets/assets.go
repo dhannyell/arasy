@@ -1,3 +1,5 @@
+// Package audioassets embeds the Breakout demo's audio manifest and clips so
+// the canvas and wasm hosts can serve or stream them.
 package audioassets
 
 import (

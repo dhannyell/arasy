@@ -82,12 +82,16 @@ func sample(v float64) int16 {
 	return int16(v * math.MaxInt16)
 }
 
-func writeWAV(path string, samples []int16) error {
+func writeWAV(path string, samples []int16) (err error) {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
 
 	dataBytes := uint32(len(samples) * 2)
 	if _, err := f.Write([]byte("RIFF")); err != nil {
