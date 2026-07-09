@@ -27,12 +27,14 @@ func TestAudioManifestDTO(t *testing.T) {
 }
 
 func TestAudioMessageDTO(t *testing.T) {
+	// Gain arrives already normalized from the runtime AudioPort; the DTO is a
+	// pure pass-through and must not re-default or clamp it.
 	dto := newAudioMessageDTO(audio.Output{
 		Cues: []audio.Cue{
-			{Tick: 7, Seq: 2, Clip: "hit", Pan: -0.25},
+			{Tick: 7, Seq: 2, Clip: "hit", Gain: 0.5, Pan: -0.25},
 		},
 		Tracks: map[audio.TrackID]audio.Track{
-			"music": {ClipID: "song", Loop: true, FadeSec: 0.5},
+			"music": {Clip: "song", Gain: 0.5, Loop: true, FadeSec: 0.5},
 		},
 	})
 
@@ -43,15 +45,15 @@ func TestAudioMessageDTO(t *testing.T) {
 		t.Fatalf("cues len = %d, want 1", len(dto.Cues))
 	}
 	cue := dto.Cues[0]
-	if cue.Tick != 7 || cue.Seq != 2 || cue.Clip != "hit" || cue.Gain != 1 || cue.Pan != -0.25 {
-		t.Fatalf("cue = %+v, want default gain cue", cue)
+	if cue.Tick != 7 || cue.Seq != 2 || cue.Clip != "hit" || cue.Gain != 0.5 || cue.Pan != -0.25 {
+		t.Fatalf("cue = %+v, want pass-through gain cue", cue)
 	}
 
 	track, ok := dto.Tracks["music"]
 	if !ok {
 		t.Fatalf("missing music track")
 	}
-	if track.Clip != "song" || track.Gain != 1 || !track.Loop || track.FadeSec != 0.5 {
-		t.Fatalf("track = %+v, want default gain looping song", track)
+	if track.Clip != "song" || track.Gain != 0.5 || !track.Loop || track.FadeSec != 0.5 {
+		t.Fatalf("track = %+v, want pass-through looping song", track)
 	}
 }

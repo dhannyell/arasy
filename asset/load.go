@@ -109,7 +109,10 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		textures[name] = TextureDecl{Data: data}
 	}
 	for id, entry := range audioByID {
-		if _, err := readLayered(layers, entry.File); err != nil {
+		// Audio bytes stay on disk: the host resolves and streams them (HTTP on
+		// web, embed on wasm). Only confirm the winning layer has the file so a
+		// bad path fails at load, not at first playback.
+		if err := statLayered(layers, entry.File); err != nil {
 			return Manifest{}, fmt.Errorf("asset: audio %q: %w", id, err)
 		}
 		clips[audio.ClipID(id)] = audio.Clip{ID: audio.ClipID(id), Path: entry.File}
@@ -164,6 +167,21 @@ func validateAudioEntries(entries []audioEntry) error {
 		seen[entry.ID] = struct{}{}
 	}
 	return nil
+}
+
+// statLayered reports whether path exists in any layer (last wins), without
+// reading its bytes — used to validate declarations the host loads lazily.
+func statLayered(layers []fs.FS, path string) error {
+	for i := len(layers) - 1; i >= 0; i-- {
+		_, err := fs.Stat(layers[i], path)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: %s", fs.ErrNotExist, path)
 }
 
 func readLayered(layers []fs.FS, path string) ([]byte, error) {

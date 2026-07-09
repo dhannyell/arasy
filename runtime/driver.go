@@ -640,7 +640,6 @@ func (d *Driver) seekTo(target uint64) {
 		d.applyLoggedInputsAtCurrentTick()
 	}
 	d.resimulate(target)
-	d.audio.pending = d.audio.pending[:0]
 	d.viewport = surfaceViewport
 
 	if d.log.Enabled(context.Background(), slog.LevelDebug) {
@@ -672,6 +671,14 @@ func (d *Driver) canRestoreKeyframes() bool {
 }
 
 func (d *Driver) resimulate(target uint64) {
+	// Reconstruction is silent regardless of direction: the cues at these ticks
+	// were already heard on the live run (D7 scrub policy). Suppressing here
+	// covers both seekTo paths (incremental fast-forward and keyframe restore),
+	// and drops any cue left pending from the pre-seek present.
+	d.audio.suppressCues = true
+	d.audio.pending = nil
+	defer func() { d.audio.suppressCues = false }()
+
 	cursor := newResimulationCursor(d.scrubLog, d.viewportLog, d.tick)
 	dt := d.clock.DT()
 

@@ -82,7 +82,7 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 	})
 
 	b.State.lives = 3
-	playTrack(ctx, "music", audio.Track{ClipID: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
+	playTrack(ctx, "music", audio.Track{Clip: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
 }
 
 func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -100,7 +100,7 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 			b.State.state = StateReady
 			b.State.lives = 3
 			b.respawnBricks(ctx.World)
-			playTrack(ctx, "music", audio.Track{ClipID: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
+			playTrack(ctx, "music", audio.Track{Clip: "music", Loop: true, Gain: 0.4, FadeSec: 0.5})
 		}
 		return
 	}
@@ -158,12 +158,6 @@ func (b *Breakout) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 
 func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds := make([]render.Command, 0)
-
-	for _, brick := range b.State.bricks {
-		if !brick.Alive {
-			continue
-		}
-	}
 
 	cmds = append(cmds, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: 30},

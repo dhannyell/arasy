@@ -58,26 +58,19 @@ func newAudioMessageDTO(out audio.Output) audioMessageDTO {
 		Tracks: make(map[string]audioTrackDTO, len(out.Tracks)),
 	}
 	for _, cue := range out.Cues {
-		gain := cue.Gain
-		if gain == 0 {
-			gain = 1
-		}
+		// Gain is already normalized by the runtime (AudioPort); pass it through.
 		dto.Cues = append(dto.Cues, audioCueDTO{
 			Tick: cue.Tick,
 			Seq:  cue.Seq,
 			Clip: string(cue.Clip),
-			Gain: gain,
+			Gain: cue.Gain,
 			Pan:  cue.Pan,
 		})
 	}
 	for id, track := range out.Tracks {
-		gain := track.Gain
-		if gain == 0 {
-			gain = 1
-		}
 		dto.Tracks[string(id)] = audioTrackDTO{
-			Clip:    string(track.ClipID),
-			Gain:    gain,
+			Clip:    string(track.Clip),
+			Gain:    track.Gain,
 			Loop:    track.Loop,
 			FadeSec: track.FadeSec,
 		}

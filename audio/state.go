@@ -10,7 +10,7 @@ type State struct {
 }
 
 // Clone is used by the runtime driver when capturing rewind snapshots.
-func (s *State) Clone() State {
+func (s State) Clone() State {
 	return State{Tracks: maps.Clone(s.Tracks)}
 }
 

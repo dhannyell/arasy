@@ -35,7 +35,7 @@ and sprites.
 
 ```go
 func (g *Game) Init(ctx *runtime.UpdateContext) {
-	ctx.Audio.SetTrack("music", audio.Track{ClipID: "music", Loop: true, Gain: 0.4})
+	ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Loop: true, Gain: 0.4})
 }
 
 func (g *Game) PostStep(ctx *runtime.UpdateContext, stats scene.StepStats) {

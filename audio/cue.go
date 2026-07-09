@@ -9,8 +9,9 @@ type Cue struct {
 	Seq  uint32
 	Clip ClipID
 
-	// Gain is the linear volume multiplier. The zero value means 1.0 —
-	// constructors normalize it so a zero-valued options struct stays useful.
+	// Gain is the linear volume in [0, 1]. The zero value means 1.0 —
+	// constructors normalize it (and clamp the rest into range) so a
+	// zero-valued options struct stays useful.
 	Gain float64
 	// Pan is the stereo position in [-1, 1]; 0 is centered.
 	Pan float64

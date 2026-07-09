@@ -9,8 +9,8 @@ import (
 func TestStateClone(t *testing.T) {
 	tracks := make(map[audio.TrackID]audio.Track, 1)
 	tracks["original"] = audio.Track{
-		ClipID: "original_clip",
-		Gain:   1.0,
+		Clip: "original_clip",
+		Gain: 1.0,
 	}
 	originalState := audio.State{Tracks: tracks}
 	cloneState := originalState.Clone()
