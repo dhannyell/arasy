@@ -5,7 +5,7 @@ This directory contains benchmark baselines and reports for frameforge's perform
 ## Structure
 
 - **`baselines/`** — Committed baseline benchmarks (`bench-<family>.txt`), one per benchmark family. These are the reference points against which performance regressions are measured.
-- **`runs/`** — Ad-hoc benchmark runs (ignored by git). Use this to organize temporary results during investigation.
+- **`runs/`** — Default destination for generated `.md` and `.json` benchmark reports. It is ignored by git so routine runs do not clutter the repository root.
 
 ## Workflow
 
@@ -16,6 +16,9 @@ Run a named suite:
 ```bash
 go run ./cmd/benchsave -suite scene
 ```
+
+By default, reports are written under `benchmarks/runs/`. Use `-out <dir>` only
+when you intentionally want reports somewhere else.
 
 List all available suites:
 
@@ -58,6 +61,8 @@ go run ./cmd/benchsave -suite scene -profile decision -update-baseline
 ```
 
 This saves the raw benchmark output to `baselines/bench-scene.txt`, overwriting any previous baseline.
+Even though reports default to `benchmarks/runs/`, baselines still resolve to
+`benchmarks/baselines/`.
 
 ### Interpreting Results
 
