@@ -7,6 +7,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/dhannyell/frameforge/asset/pixel"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
 	"golang.org/x/image/math/fixed"
@@ -15,11 +16,22 @@ import (
 	"github.com/dhannyell/frameforge/render"
 )
 
+var missingTextureColor = color.RGBA{R: 255, G: 0, B: 255, A: 255}
+
+type tintFactors struct {
+	r, g, b, a float64
+}
+
+var noTint = tintFactors{1, 1, 1, 1}
+
 // Renderer draws backend-agnostic render commands into an RGBA image.
 type Renderer struct {
 	Width, Height int
 	Camera        render.Camera
 	Clear         render.Color
+	// Textures resolves TextureIDs to decoded pixels. Nil is valid:
+	// every DrawImage then renders the missing-texture placeholder.
+	Textures pixel.Registry
 }
 
 // Render draws commands into a new RGBA image.
@@ -49,6 +61,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawText(img, command)
 		case render.DrawPolygon:
 			r.drawPolygon(img, command)
+		case render.DrawImage:
+			r.drawImage(img, command)
 		}
 	}
 
@@ -232,11 +246,11 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	bounds := r.clipBounds(img, rotatedRectBounds(screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation), command.Clip)
 
 	if command.Rotation == 0 {
-		blitScaled(img, glyphs, destX, destY, destWidth, destHeight, bounds)
+		blitScaled(img, glyphs, glyphs.Bounds(), destX, destY, destWidth, destHeight, bounds, noTint)
 		return
 	}
 
-	blitScaledRotated(img, glyphs, screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation, bounds)
+	blitScaledRotated(img, glyphs, glyphs.Bounds(), screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation, bounds, noTint)
 }
 
 func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
@@ -263,6 +277,50 @@ func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
 		to := points[(i+1)%len(points)]
 		drawLine(img, from, to, strokeWidth, r.clipBounds(img, lineBounds(from, to, strokeWidth), command.Clip), toRGBA(command.Stroke))
 	}
+}
+
+// Rotation pivots on the destination center, mirroring how
+// rotated text anchors on its position.
+func (r Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
+	screenMin := r.Camera.WorldToScreen(command.Dest.Min)
+	screenMax := r.Camera.WorldToScreen(command.Dest.Max)
+
+	destX, destY := screenMin.X, screenMin.Y
+	destW, destH := screenMax.X-screenMin.X, screenMax.Y-screenMin.Y
+	if destW <= 0 || destH <= 0 {
+		return
+	}
+
+	tex := r.Textures.Lookup(command.Texture)
+	if tex == nil {
+		rect := image.Rect(int(destX), int(destY), int(screenMax.X), int(screenMax.Y))
+		fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.Clip)), missingTextureColor)
+		return
+	}
+
+	srcRect := tex.Bounds()
+	if command.Src != (math2d.Rect{}) {
+		srcRect = image.Rect(int(math.Round(command.Src.Min.X)), int(math.Round(command.Src.Min.Y)),
+			int(math.Round(command.Src.Max.X)), int(math.Round(command.Src.Max.Y))).Intersect(tex.Bounds())
+		if srcRect.Empty() {
+			return
+		}
+	}
+
+	tint := tintFrom(command.Tint)
+
+	if command.Rotation == 0 {
+		bounds := r.clipBounds(img, image.Rect(
+			int(math.Floor(destX)), int(math.Floor(destY)),
+			int(math.Ceil(destX+destW)), int(math.Ceil(destY+destH))), command.Clip)
+		blitScaled(img, tex, srcRect, destX, destY, destW, destH, bounds, tint)
+		return
+	}
+
+	anchor := math2d.Vec2{X: destX + destW/2, Y: destY + destH/2}
+	offsetX, offsetY := -destW/2, -destH/2
+	bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.Rotation), command.Clip)
+	blitScaledRotated(img, tex, srcRect, anchor, offsetX, offsetY, destW, destH, command.Rotation, bounds, tint)
 }
 
 func fillPolygon(img *image.RGBA, points []math2d.Vec2, bounds image.Rectangle, c color.RGBA) {
@@ -325,7 +383,17 @@ func fillPolygon(img *image.RGBA, points []math2d.Vec2, bounds image.Rectangle, 
 
 // blitScaled nearest-neighbor scales src into dst at the given destination
 // rect, alpha-blending each opaque source pixel over the destination.
-func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destHeight float64, bounds image.Rectangle) {
+func blitScaled(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	destX,
+	destY,
+	destWidth,
+	destHeight float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
@@ -337,22 +405,22 @@ func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destH
 		int(math.Ceil(destY+destHeight)),
 	))
 
-	srcBounds := src.Bounds()
-	scaleX := float64(srcBounds.Dx()) / destWidth
-	scaleY := float64(srcBounds.Dy()) / destHeight
+	scaleX := float64(srcRect.Dx()) / destWidth
+	scaleY := float64(srcRect.Dy()) / destHeight
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		srcY := srcBounds.Min.Y + int((float64(y)+0.5-destY)*scaleY)
-		if srcY < srcBounds.Min.Y || srcY >= srcBounds.Max.Y {
+		srcY := srcRect.Min.Y + int((float64(y)+0.5-destY)*scaleY)
+		if srcY < srcRect.Min.Y || srcY >= srcRect.Max.Y {
 			continue
 		}
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			srcX := srcBounds.Min.X + int((float64(x)+0.5-destX)*scaleX)
-			if srcX < srcBounds.Min.X || srcX >= srcBounds.Max.X {
+			srcX := srcRect.Min.X + int((float64(x)+0.5-destX)*scaleX)
+			if srcX < srcRect.Min.X || srcX >= srcRect.Max.X {
 				continue
 			}
 
 			c := src.RGBAAt(srcX, srcY)
+			c = tint.apply(c)
 			if c.A == 0 {
 				continue
 			}
@@ -361,16 +429,23 @@ func blitScaled(dst *image.RGBA, src *image.RGBA, destX, destY, destWidth, destH
 	}
 }
 
-func blitScaledRotated(dst *image.RGBA, src *image.RGBA, anchor math2d.Vec2, offsetX, offsetY, destWidth, destHeight, angle float64, bounds image.Rectangle) {
+func blitScaledRotated(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	anchor math2d.Vec2,
+	offsetX, offsetY, destWidth, destHeight, angle float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
 
 	cosAngle := math.Cos(angle)
 	sinAngle := math.Sin(angle)
-	srcBounds := src.Bounds()
-	scaleX := float64(srcBounds.Dx()) / destWidth
-	scaleY := float64(srcBounds.Dy()) / destHeight
+	scaleX := float64(srcRect.Dx()) / destWidth
+	scaleY := float64(srcRect.Dy()) / destHeight
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -383,13 +458,14 @@ func blitScaledRotated(dst *image.RGBA, src *image.RGBA, anchor math2d.Vec2, off
 				continue
 			}
 
-			srcX := srcBounds.Min.X + int(localX*scaleX)
-			srcY := srcBounds.Min.Y + int(localY*scaleY)
-			if srcX < srcBounds.Min.X || srcX >= srcBounds.Max.X || srcY < srcBounds.Min.Y || srcY >= srcBounds.Max.Y {
+			srcX := srcRect.Min.X + int(localX*scaleX)
+			srcY := srcRect.Min.Y + int(localY*scaleY)
+			if srcX < srcRect.Min.X || srcX >= srcRect.Max.X || srcY < srcRect.Min.Y || srcY >= srcRect.Max.Y {
 				continue
 			}
 
 			c := src.RGBAAt(srcX, srcY)
+			c = tint.apply(c)
 			if c.A == 0 {
 				continue
 			}
@@ -768,6 +844,25 @@ func blendRGBA(dst, src color.RGBA) color.RGBA {
 		G: src.G + uint8(uint32(dst.G)*inv/255),
 		B: src.B + uint8(uint32(dst.B)*inv/255),
 		A: src.A + uint8(uint32(dst.A)*inv/255),
+	}
+}
+
+func tintFrom(c render.Color) tintFactors {
+	if c == (render.Color{}) {
+		return noTint
+	}
+	return tintFactors{r: c.R * c.A, g: c.G * c.A, b: c.B * c.A, a: c.A}
+}
+
+func (t tintFactors) apply(c color.RGBA) color.RGBA {
+	if t == noTint {
+		return c
+	}
+	return color.RGBA{
+		R: toByte(float64(c.R) / 255 * t.r),
+		G: toByte(float64(c.G) / 255 * t.g),
+		B: toByte(float64(c.B) / 255 * t.b),
+		A: toByte(float64(c.A) / 255 * t.a),
 	}
 }
 

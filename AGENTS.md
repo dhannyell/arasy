@@ -22,6 +22,7 @@ go run ./cmd/benchsave -compare-all                    # diff all families
 
 # Demos
 go run ./cmd/demos/football/raster               # offline PNG/GIF
+go run ./cmd/demos/assets/raster                 # offline asset pipeline PNG
 go run ./cmd/demos/football/webCanvas             # browser WS :8080
 go run ./cmd/demos/breakout/canvas                # browser WS :8080
 # WASM build then serve:
