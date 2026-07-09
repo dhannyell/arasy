@@ -187,6 +187,36 @@
           "y": 64
         }
       ]
+    },
+    {
+      "type": "image",
+      "rect": {
+        "x": 20,
+        "y": 15,
+        "width": 80,
+        "height": 60
+      },
+      "rotation": 0.5,
+      "layer": 8,
+      "clip": {
+        "x": 5,
+        "y": 5,
+        "width": 95,
+        "height": 70
+      },
+      "texture": 3,
+      "src": {
+        "x": 0,
+        "y": 0,
+        "width": 64,
+        "height": 64
+      },
+      "tint": {
+        "r": 1,
+        "g": 1,
+        "b": 1,
+        "a": 1
+      }
     }
   ]
 }
