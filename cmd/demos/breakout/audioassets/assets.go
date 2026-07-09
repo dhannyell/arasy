@@ -5,11 +5,10 @@ import (
 	"io/fs"
 )
 
-//go:embed *.wav
+//go:embed manifest.json *.wav
 var files embed.FS
 
-// FS returns the Breakout demo audio files. The runtime AudioClips paths are
-// relative to this filesystem.
+// FS returns the Breakout demo audio manifest and files.
 func FS() fs.FS {
 	return files
 }

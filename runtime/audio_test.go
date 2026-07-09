@@ -3,7 +3,9 @@ package runtime_test
 import (
 	"log/slog"
 	"testing"
+	"testing/fstest"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -20,18 +22,23 @@ type audioGame struct {
 }
 
 func (g *audioGame) Setup() runtime.Config {
+	assets, err := asset.Load(fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"audio":[{"id":"beep","file":"beep.wav"},{"id":"beep2","file":"beep2.wav"},{"id":"beep3","file":"beep3.wav"},{"id":"music","file":"music.wav"},{"id":"alt_music","file":"alt_music.wav"}]}`)},
+		"alt_music.wav": {Data: []byte("alt")},
+		"beep.wav":      {Data: []byte("beep")},
+		"beep2.wav":     {Data: []byte("beep2")},
+		"beep3.wav":     {Data: []byte("beep3")},
+		"music.wav":     {Data: []byte("music")},
+	})
+	if err != nil {
+		panic(err)
+	}
 	return runtime.Config{
 		Bounds: math2d.NewRect(
 			math2d.Vec2{X: -100, Y: -100},
 			math2d.Vec2{X: 200, Y: 200},
 		),
-		AudioClips: []audio.Clip{
-			{ID: "beep", Path: "beep.wav"},
-			{ID: "beep2", Path: "beep2.wav"},
-			{ID: "beep3", Path: "beep3.wav"},
-			{ID: "music", Path: "music.wav"},
-			{ID: "alt_music", Path: "alt_music.wav"},
-		},
+		Assets:     assets,
 		HistoryLen: 60,
 	}
 }

@@ -14,7 +14,8 @@ import (
 
 func TestLoadSingleManifestResolvesTexturesAndSprites(t *testing.T) {
 	layers := fstest.MapFS{
-		"manifest.json":        {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"},{"name":"players","file":"textures/players.png"}],"sprites":[{"name":"player_idle","texture":"players","x":1,"y":2,"w":3,"h":4}]}`)},
+		"manifest.json":        {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"},{"name":"players","file":"textures/players.png"}],"sprites":[{"name":"player_idle","texture":"players","x":1,"y":2,"w":3,"h":4}],"audio":[{"id":"hit","file":"audio/hit.wav"}]}`)},
+		"audio/hit.wav":        {Data: []byte("hit-bytes")},
 		"textures/ball.png":    {Data: []byte("ball-bytes")},
 		"textures/players.png": {Data: []byte("players-bytes")},
 	}
@@ -38,6 +39,10 @@ func TestLoadSingleManifestResolvesTexturesAndSprites(t *testing.T) {
 	sprite := m.Sprite("player_idle")
 	if sprite.Texture != 2 || sprite.Src.Min.X != 1 || sprite.Src.Min.Y != 2 || sprite.Src.Width() != 3 || sprite.Src.Height() != 4 {
 		t.Fatalf("Sprite(player_idle) = %#v, want players sprite", sprite)
+	}
+	clips := m.AudioClips()
+	if len(clips) != 1 || clips[0].ID != "hit" || clips[0].Path != "audio/hit.wav" {
+		t.Fatalf("AudioClips() = %#v, want hit clip", clips)
 	}
 }
 
@@ -63,11 +68,13 @@ func TestLoadIsDeterministicAcrossCalls(t *testing.T) {
 
 func TestLoadAllowsManifestOverrideAndFileOverride(t *testing.T) {
 	base := fstest.MapFS{
-		"manifest.json":     {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"}]}`)},
+		"audio/theme.wav":   {Data: []byte("theme-base")},
+		"manifest.json":     {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"}],"audio":[{"id":"theme","file":"audio/theme.wav"}]}`)},
 		"textures/ball.png": {Data: []byte("base")},
 	}
 	overrideManifest := fstest.MapFS{
-		"manifest.json":        {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball-hi.png"}]}`)},
+		"audio/theme-hi.wav":   {Data: []byte("theme-hi")},
+		"manifest.json":        {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball-hi.png"}],"audio":[{"id":"theme","file":"audio/theme-hi.wav"}]}`)},
 		"textures/ball-hi.png": {Data: []byte("hi")},
 	}
 	overrideFile := fstest.MapFS{
@@ -80,6 +87,9 @@ func TestLoadAllowsManifestOverrideAndFileOverride(t *testing.T) {
 	}
 	if got := string(m.Textures()[0].Data); got != "file-only-hi" {
 		t.Fatalf("override bytes = %q, want file-only-hi", got)
+	}
+	if got := m.AudioClips()[0].Path; got != "audio/theme-hi.wav" {
+		t.Fatalf("override audio path = %q, want audio/theme-hi.wav", got)
 	}
 }
 
@@ -109,6 +119,12 @@ func TestLoadSpriteErrorsAndValidationFailures(t *testing.T) {
 		_, err := asset.Load(fstest.MapFS{"manifest.json": {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"a"},{"name":"ball","file":"b"}]}`)}})
 		if err == nil {
 			t.Fatal("Load() error = nil, want duplicate texture error")
+		}
+	})
+	t.Run("duplicate audio", func(t *testing.T) {
+		_, err := asset.Load(fstest.MapFS{"manifest.json": {Data: []byte(`{"version":1,"audio":[{"id":"hit","file":"a"},{"id":"hit","file":"b"}]}`)}})
+		if err == nil {
+			t.Fatal("Load() error = nil, want duplicate audio error")
 		}
 	})
 	t.Run("missing file", func(t *testing.T) {
