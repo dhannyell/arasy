@@ -8,8 +8,16 @@ export async function loadAssetRegistry() {
     }
     const { textures } = await res.json();
     await Promise.all((textures ?? []).map(async (tex) => {
-        const blob = await (await fetch(tex.url)).blob();
-        registry.set(tex.id, await createImageBitmap(blob));
+        try {
+            const textureRes = await fetch(tex.url);
+            if (!textureRes.ok) {
+                return;
+            }
+            const blob = await textureRes.blob();
+            registry.set(tex.id, await createImageBitmap(blob));
+        } catch {
+            // Missing or invalid textures keep rendering as the placeholder.
+        }
     }));
     return registry;
 }

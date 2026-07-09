@@ -81,7 +81,7 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 	if opts.AudioFS != nil {
 		mux.Handle("/audio/", http.StripPrefix("/audio/", http.FileServerFS(opts.AudioFS)))
 	}
-	mux.HandleFunc("/assets/manifest/", h.handleAssetManifest)
+	mux.HandleFunc("/assets/manifest", h.handleAssetManifest)
 	mux.HandleFunc("/assets/textures/", h.handleAssetTexture)
 
 	srv := &http.Server{

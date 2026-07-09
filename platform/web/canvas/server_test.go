@@ -1,8 +1,19 @@
 package canvas
 
 import (
+	"bytes"
+	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
+	"testing/fstest"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -286,4 +297,135 @@ func TestClientCameraPreservesFrameCameraAndUsesClientViewport(t *testing.T) {
 	if got.Viewport.Width() != 1280 || got.Viewport.Height() != 720 {
 		t.Fatalf("viewport = %+v, want 1280x720", got.Viewport)
 	}
+}
+
+func TestAssetManifestEndpointListsTextures(t *testing.T) {
+	h := &hub{assets: testManifest(t, map[string][]byte{
+		"ball.png":    minimalPNG(t),
+		"players.png": minimalPNG(t),
+	})}
+	req := httptest.NewRequest(http.MethodGet, "/assets/manifest", nil)
+	rec := httptest.NewRecorder()
+
+	h.handleAssetManifest(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q, want application/json", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+
+	var got assetManifestDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode manifest: %v", err)
+	}
+	want := assetManifestDTO{Textures: []assetTextureDTO{
+		{ID: 1, Name: "ball", URL: "/assets/textures/1"},
+		{ID: 2, Name: "players", URL: "/assets/textures/2"},
+	}}
+	if !slices.Equal(got.Textures, want.Textures) {
+		t.Fatalf("manifest = %#v, want %#v", got, want)
+	}
+}
+
+func TestAssetManifestEndpointListsEmptyManifest(t *testing.T) {
+	h := &hub{}
+	req := httptest.NewRequest(http.MethodGet, "/assets/manifest", nil)
+	rec := httptest.NewRecorder()
+
+	h.handleAssetManifest(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != `{"textures":[]}` {
+		t.Fatalf("body = %q, want empty textures", got)
+	}
+}
+
+func TestAssetTextureEndpointServesTextureBytes(t *testing.T) {
+	data := minimalPNG(t)
+	h := &hub{assets: testManifest(t, map[string][]byte{"ball.png": data})}
+	req := httptest.NewRequest(http.MethodGet, "/assets/textures/1", nil)
+	rec := httptest.NewRecorder()
+
+	h.handleAssetTexture(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/png" {
+		t.Fatalf("Content-Type = %q, want image/png", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if got := rec.Body.Bytes(); !bytes.Equal(got, data) {
+		t.Fatalf("texture bytes = %d bytes, want %d bytes", len(got), len(data))
+	}
+}
+
+func TestAssetTextureEndpointReturnsNotFound(t *testing.T) {
+	h := &hub{assets: testManifest(t, map[string][]byte{"ball.png": minimalPNG(t)})}
+
+	for _, path := range []string{"/assets/textures/2", "/assets/textures/nope"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+
+			h.handleAssetTexture(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+			}
+		})
+	}
+}
+
+func minimalPNG(t *testing.T) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		t.Fatalf("encode PNG: %v", err)
+	}
+	return b.Bytes()
+}
+
+func testManifest(t *testing.T, textures map[string][]byte) asset.Manifest {
+	t.Helper()
+
+	files := fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"textures":[]}`)},
+	}
+	var manifest bytes.Buffer
+	manifest.WriteString(`{"version":1,"textures":[`)
+	i := 0
+	for file, data := range textures {
+		if i > 0 {
+			manifest.WriteByte(',')
+		}
+		name := strings.TrimSuffix(file, ".png")
+		manifest.WriteString(`{"name":"`)
+		manifest.WriteString(name)
+		manifest.WriteString(`","file":"`)
+		manifest.WriteString(file)
+		manifest.WriteString(`"}`)
+		files[file] = &fstest.MapFile{Data: data}
+		i++
+	}
+	manifest.WriteString(`]}`)
+	files["manifest.json"] = &fstest.MapFile{Data: manifest.Bytes()}
+
+	m, err := asset.Load(files)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	return m
 }

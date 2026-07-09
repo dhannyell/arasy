@@ -23,7 +23,8 @@ go run ./cmd/benchsave -compare-all                    # diff all families
 # Demos
 go run ./cmd/demos/football/raster               # offline PNG/GIF
 go run ./cmd/demos/assets/raster                 # offline asset pipeline PNG
-go run ./cmd/demos/football/webCanvas             # browser WS :8080
+go run ./cmd/demos/assets/canvas                 # browser asset pipeline :8080
+go run ./cmd/demos/football/canvas               # browser WS :8080
 go run ./cmd/demos/breakout/canvas                # browser WS :8080
 # WASM build then serve:
 go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
@@ -80,7 +81,7 @@ platform/* -> asset/pixel -> asset
 | `runtime/` | Orchestration hub. Owns `Game` contract, `Driver` (fixed timestep, dev controls, rewind), `StateSlot[T]`, and `ConsumeAudio`. Defines *what a tick is* -- platforms must not duplicate. |
 | `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
 | `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
-| `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas. Not a distribution target. |
+| `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas, plus `/assets/manifest` and `/assets/textures/{id}` for browser-side texture registration. Not a distribution target. |
 | `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. Dev panel (backtick key) for debug controls. |
 | `internal/render/adapter/web/` | Converts `render.Command` -> JSON DTOs for web canvas. |
 | `cmd/` | Demos and tools. Game code lives here, not in engine packages. |
