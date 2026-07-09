@@ -14,6 +14,7 @@ import (
 )
 
 const timestampLayout = "2006-01-02-150405"
+const defaultOutDir = "benchmarks/runs"
 
 type benchmarkResult struct {
 	Name     string   `json:"name"`
@@ -44,7 +45,7 @@ func main() {
 	pkg := flag.String("pkg", "./scene", "package pattern passed to go test (ignored when -suite is set)")
 	bench := flag.String("bench", ".", "benchmark regexp passed to -bench (ignored when -suite is set)")
 	run := flag.String("run", "^$", "test regexp passed to -run")
-	outDir := flag.String("out", "benchmarks", "directory where the benchmark report is saved")
+	outDir := flag.String("out", defaultOutDir, "directory where the benchmark report is saved")
 	name := flag.String("name", "", "optional report name without extension (ignored when -suite all is set)")
 	profile := flag.String("profile", "", `benchmark run profile: "quick" (count=1), "decision" (count=5, benchtime=2s), or "ci" (count=3, benchtime=1s). Explicit -count/-benchtime values still win.`)
 	count := flag.Int("count", 1, "benchmark count passed to -count")
@@ -275,7 +276,7 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 
 		compareFlag := opts.Compare
 		if compareFlag == "baseline" {
-			baselinePath, err := resolveBaselinePath(opts.OutDir, family)
+			baselinePath, err := resolveBaselinePath(baselineRootDir(opts.OutDir), family)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "comparison skipped: %v\n", err)
 				compareFlag = ""
@@ -323,14 +324,14 @@ func runOnce(opts runOptions) (reportPath string, err error) {
 		if family == "" {
 			family = opts.Pkg
 		}
-		if err := saveBaseline(opts.OutDir, family, output.String()); err != nil {
+		if err := saveBaseline(baselineRootDir(opts.OutDir), family, output.String()); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to update baseline: %v\n", err)
 			if runErr != nil {
 				return reportPath, fmt.Errorf("%w", runErr)
 			}
 			return reportPath, err
 		}
-		baselinePath := filepath.Join(opts.OutDir, baselineDir, "bench-"+sanitizeName(family)+".txt")
+		baselinePath := filepath.Join(baselineRootDir(opts.OutDir), baselineDir, "bench-"+sanitizeName(family)+".txt")
 		fmt.Printf("baseline updated: %s\n", baselinePath)
 	}
 

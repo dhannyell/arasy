@@ -72,6 +72,12 @@ func TestApplyRunProfile(t *testing.T) {
 	}
 }
 
+func TestDefaultOutDirUsesRuns(t *testing.T) {
+	if filepath.Clean(defaultOutDir) != filepath.Join("benchmarks", "runs") {
+		t.Fatalf("defaultOutDir = %q, want benchmarks/runs", defaultOutDir)
+	}
+}
+
 func TestRenderBenchmarkReportIncludesResultsAndRawOutput(t *testing.T) {
 	report := newBenchmarkReport(
 		time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC),

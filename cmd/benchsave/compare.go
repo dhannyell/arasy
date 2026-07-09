@@ -26,6 +26,17 @@ const benchstatVersion = "latest"
 // "bench-runtime-seek", "bench-runtime-seek-back").
 var timestampSuffix = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}(-\d{6})?$`)
 
+func baselineRootDir(outDir string) string {
+	clean := filepath.Clean(outDir)
+	if filepath.Base(clean) == "runs" {
+		parent := filepath.Dir(clean)
+		if parent != "." {
+			return parent
+		}
+	}
+	return clean
+}
+
 func reportFamily(baseName string) string {
 	family := timestampSuffix.ReplaceAllString(baseName, "")
 	if family == "" {
@@ -508,10 +519,10 @@ func formatMetric(has bool, v float64, isCount bool) string {
 
 func metricDelta(row comparisonRow, oldV, newV float64) string {
 	if !row.HasOld {
-		return "novo"
+		return "new"
 	}
 	if !row.HasNew {
-		return "removido"
+		return "removed"
 	}
 	if oldV == 0 {
 		return "n/a"
