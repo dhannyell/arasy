@@ -1,5 +1,7 @@
 import { colorToCSS, hasAlpha } from "./color.js";
 
+const tintCache = new Map();
+
 export function drawRect(ctx, command) {
     const rect = command.rect;
     const radius = Math.max(0, Math.min(
@@ -140,6 +142,67 @@ export function drawPolygon(ctx, command) {
         ctx.lineWidth = command.strokeWidth;
         ctx.stroke();
     }
+}
+
+export function drawImage(ctx, command, registry) {
+    const dest = command.rect;
+    const bitmap = registry?.get(command.texture ?? 0);
+
+    if (!bitmap) {
+        // Same missing-texture placeholder as the raster backend.
+        ctx.fillStyle = "rgb(255, 0, 255)";
+        ctx.fillRect(dest.x, dest.y, dest.width, dest.height);
+        return;
+    }
+
+    const src = command.src ?? { x: 0, y: 0, width: bitmap.width, height: bitmap.height };
+
+    ctx.save();
+    if (command.tint) {
+        // Alpha modulation is native; color modulation uses a cached
+        // offscreen multiply (see tintedBitmap below).
+        ctx.globalAlpha = command.tint.a ?? 1;
+    }
+    const source = command.tint ? tintedBitmap(bitmap, command.texture, command.tint) : bitmap;
+
+    if (command.rotation) {
+        // Pivot on the destination center, mirroring the raster backend.
+        ctx.translate(dest.x + dest.width / 2, dest.y + dest.height / 2);
+        ctx.rotate(command.rotation);
+        ctx.drawImage(source, src.x, src.y, src.width, src.height,
+            -dest.width / 2, -dest.height / 2, dest.width, dest.height);
+    } else {
+        ctx.drawImage(source, src.x, src.y, src.width, src.height,
+            dest.x, dest.y, dest.width, dest.height);
+    }
+    ctx.restore();
+}
+
+// tintedBitmap multiplies the bitmap's color channels by the tint,
+// preserving the original alpha. Cached per (texture, tint rgb).
+function tintedBitmap(bitmap, textureID, tint) {
+    const r = Math.round((tint.r ?? 0) * 255);
+    const g = Math.round((tint.g ?? 0) * 255);
+    const b = Math.round((tint.b ?? 0) * 255);
+    if (r === 255 && g === 255 && b === 255) {
+        return bitmap; // white tint = alpha-only, handled by globalAlpha
+    }
+    const key = `${textureID}:${r},${g},${b}`;
+    let canvas = tintCache.get(key);
+    if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const off = canvas.getContext("2d");
+        off.drawImage(bitmap, 0, 0);
+        off.globalCompositeOperation = "multiply";
+        off.fillStyle = `rgb(${r}, ${g}, ${b})`;
+        off.fillRect(0, 0, canvas.width, canvas.height);
+        off.globalCompositeOperation = "destination-in";
+        off.drawImage(bitmap, 0, 0); // restore original alpha
+        tintCache.set(key, canvas);
+    }
+    return canvas;
 }
 
 function roundedRectPath(ctx, rect, radius) {

@@ -34,6 +34,10 @@ type CommandDTO struct {
 	Layer    int        `json:"layer"`
 	Points   []*Vec2DTO `json:"points,omitempty"`
 	Clip     *RectDTO   `json:"clip,omitempty"`
+
+	Texture uint32    `json:"texture,omitempty"`
+	Src     *RectDTO  `json:"src,omitempty"`
+	Tint    *ColorDTO `json:"tint,omitempty"`
 }
 
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
@@ -127,6 +131,17 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				StrokeWidth: command.StrokeWidth,
 				Layer:       command.Layer(),
 				Clip:        newOptionalRectDTO(command.Clip),
+			}
+		case render.DrawImage:
+			commandDTO = CommandDTO{
+				Type:     "image",
+				Texture:  uint32(command.Texture),
+				Rect:     new(NewRectDTO(command.Dest)),
+				Src:      newOptionalRectDTO(command.Src),
+				Tint:     newOptionalColorDTO(command.Tint),
+				Rotation: command.Rotation,
+				Layer:    command.Layer(),
+				Clip:     newOptionalRectDTO(command.Clip),
 			}
 		default:
 			continue

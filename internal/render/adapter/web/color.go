@@ -1,6 +1,8 @@
 package web
 
-import "github.com/dhannyell/frameforge/render"
+import (
+	"github.com/dhannyell/frameforge/render"
+)
 
 type ColorDTO struct {
 	R float64 `json:"r"`
@@ -16,4 +18,12 @@ func NewColorDTO(color render.Color) ColorDTO {
 		B: color.B,
 		A: color.A,
 	}
+}
+
+func newOptionalColorDTO(color render.Color) *ColorDTO {
+	if color == (render.Color{}) {
+		return nil
+	}
+
+	return new(NewColorDTO(color))
 }

@@ -8,11 +8,13 @@ import {
     drawArc,
     drawText,
     drawPolygon,
+    drawImage,
 } from "./primitives.js";
 
 export function createCanvasRenderer(canvas, options = {}) {
     const ctx = canvas.getContext("2d");
     const onResize = options.onResize ?? (() => {});
+    const assets = options.assets ?? new Map()
     let latestFrame = null;
     let resizeFrame = 0;
 
@@ -58,6 +60,12 @@ export function createCanvasRenderer(canvas, options = {}) {
         resetTransform(ctx);
     }
 
+    function setAssets(map) {
+        for (const [key, value] of map) {
+            assets.set(key, value)
+        }
+    }
+
     function drawCommand(ctx, command) {
         const clipped = command.clip && command.clip.width > 0 && command.clip.height > 0;
         if (clipped) {
@@ -89,6 +97,9 @@ export function createCanvasRenderer(canvas, options = {}) {
             case "polygon":
                 drawPolygon(ctx, command);
                 break;
+            case "image":
+                drawImage(ctx, command, assets);
+                break;
         }
 
         if (clipped) {
@@ -114,6 +125,7 @@ export function createCanvasRenderer(canvas, options = {}) {
         resize,
         destroy,
         size,
+        setAssets,
     };
 
     function destroy() {

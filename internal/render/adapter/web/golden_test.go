@@ -150,5 +150,16 @@ func goldenCommands() []render.Command {
 			Stroke:      render.RGBA(1, 0.85, 0.25, 1),
 			StrokeWidth: 1.5,
 		},
+		render.DrawImage{
+			BaseCommand: render.BaseCommand{
+				LayerValue: 8,
+				Clip:       math2d.NewRect(math2d.Vec2{X: 5, Y: 5}, math2d.Vec2{X: 95, Y: 70}),
+			},
+			Texture:  3,
+			Dest:     math2d.NewRect(math2d.Vec2{X: 20, Y: 15}, math2d.Vec2{X: 80, Y: 60}),
+			Src:      math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 64, Y: 64}),
+			Tint:     render.RGBA(1, 1, 1, 1),
+			Rotation: 0.5,
+		},
 	}
 }

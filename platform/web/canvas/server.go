@@ -3,16 +3,21 @@ package canvas
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"maps"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/internal/render/adapter/web"
@@ -60,6 +65,7 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 		simHz:   cfg.SimulationHz,
 		clear:   cfg.Clear,
 		camera:  cfg.Camera,
+		assets:  cfg.Assets,
 		clients: make(map[*client]struct{}),
 	}
 	if opts.AudioFS != nil {
@@ -75,6 +81,8 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 	if opts.AudioFS != nil {
 		mux.Handle("/audio/", http.StripPrefix("/audio/", http.FileServerFS(opts.AudioFS)))
 	}
+	mux.HandleFunc("/assets/manifest", h.handleAssetManifest)
+	mux.HandleFunc("/assets/textures/", h.handleAssetTexture)
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
@@ -137,6 +145,8 @@ type hub struct {
 	audioManifest   audioManifestDTO
 	lastAudioTracks map[string]audioTrackDTO
 	pendingAudio    []audioMessageDTO
+
+	assets asset.Manifest
 }
 
 type client struct {
@@ -161,6 +171,51 @@ type clientMessage struct {
 	Value   float64 `json:"value"`
 	X       float64 `json:"x"`
 	Y       float64 `json:"y"`
+}
+
+// assetManifestDTO lists the declared textures so the browser can
+// prefetch and register them by ID before frames arrive.
+type assetManifestDTO struct {
+	Textures []assetTextureDTO `json:"textures"`
+}
+
+type assetTextureDTO struct {
+	ID   uint32 `json:"id"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+func (h *hub) handleAssetManifest(w http.ResponseWriter, r *http.Request) {
+	decls := h.assets.Textures()
+	dto := assetManifestDTO{Textures: make([]assetTextureDTO, 0, len(decls))}
+	for _, d := range decls {
+		dto.Textures = append(dto.Textures, assetTextureDTO{
+			ID:   uint32(d.ID),
+			Name: d.Name,
+			URL:  fmt.Sprintf("/assets/textures/%d", d.ID),
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store") // IDs are per-run
+	_ = json.NewEncoder(w).Encode(dto)
+}
+
+func (h *hub) handleAssetTexture(w http.ResponseWriter, r *http.Request) {
+	idStr := strings.TrimPrefix(r.URL.Path, "/assets/textures/")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	for _, d := range h.assets.Textures() {
+		if uint32(d.ID) == uint32(id) {
+			w.Header().Set("Content-Type", http.DetectContentType(d.Data))
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(d.Data)
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 // ---------------------------------------------------------------------------

@@ -101,3 +101,47 @@ func TestNewCommandDTOsSerializesDrawText(t *testing.T) {
 		t.Fatalf("Layer = %v, want 7", dto.Layer)
 	}
 }
+
+func TestNewCommandDTOsSerializesDrawImage(t *testing.T) {
+	dtos := NewCommandDTOs([]render.Command{
+		render.DrawImage{
+			Texture:  1,
+			Tint:     render.RGBA(1, 1, 1, 1),
+			Dest:     math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2}),
+			Src:      math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2}),
+			Rotation: 40,
+			BaseCommand: render.BaseCommand{
+				LayerValue: 7,
+				Clip:       math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2})},
+		},
+		render.DrawImage{
+			Texture: 2,
+			Dest:    math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2}),
+		},
+	})
+
+	if len(dtos) != 2 {
+		t.Fatalf("len(dtos) = %v, want 2", len(dtos))
+	}
+
+	if dtos[0].Texture != 2 {
+		t.Fatalf("Texture = %v, want 2", dtos[0].Texture)
+	}
+
+	if dtos[0].Tint != nil {
+		t.Fatalf("Tint = %v, want nil", dtos[0].Tint)
+	}
+
+	if dtos[0].Src != nil {
+		t.Fatalf("Src = %v, want nil", dtos[0].Src)
+	}
+
+	if dtos[1].Texture != 1 {
+		t.Fatalf("Texture = %v, want 1", dtos[1].Texture)
+	}
+
+	wantTint := ColorDTO{1, 1, 1, 1}
+	if *dtos[1].Tint != wantTint {
+		t.Fatalf("Tint = %v, want = %v", dtos[1].Tint, &wantTint)
+	}
+}
