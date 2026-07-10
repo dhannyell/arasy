@@ -19,6 +19,7 @@ type textureUpdater interface {
 }
 
 func (h *host) startLoop() {
+	var frameTimer runtime.FrameTimer
 	var fpsFrames int
 	var fpsElapsed time.Duration
 	var fps int
@@ -26,18 +27,11 @@ func (h *host) startLoop() {
 	var cb js.Func
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
-		elapsed := time.Duration(0)
-		if h.hasTimestamp {
-			elapsed = time.Duration((ts - h.lastTimestamp) * float64(time.Millisecond))
-		}
-		h.lastTimestamp = ts
-		h.hasTimestamp = true
-
-		h.driver.ApplyInput(h.pending)
+		elapsed := frameTimer.ElapsedMillis(ts)
+		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
 		h.pending = h.pending[:0]
-		h.driver.AdvanceTime(elapsed)
 		if h.audio != nil {
-			h.audio.consume(h.driver.ConsumeAudio())
+			h.audio.consume(audioOut)
 		}
 
 		frame := h.driver.Frame(elapsed)
