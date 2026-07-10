@@ -7,6 +7,7 @@ export function connectFrameSocket(options) {
         onFrame = () => {},
         onAudio = () => {},
         onAudioManifest = () => {},
+        onTextureUpdate = () => {},
         reconnectDelayMs = 750,
     } = options;
 
@@ -38,6 +39,10 @@ export function connectFrameSocket(options) {
 
             if (message.type === "audioManifest") {
                 onAudioManifest(message);
+            }
+
+            if (message.type === "textureUpdate") {
+                onTextureUpdate(message);
             }
         });
 

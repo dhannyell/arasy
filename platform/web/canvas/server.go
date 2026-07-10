@@ -60,13 +60,15 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 	defer cancel()
 
 	h := &hub{
-		driver:  driver,
-		fps:     cfg.FPS,
-		simHz:   cfg.SimulationHz,
-		clear:   cfg.Clear,
-		camera:  cfg.Camera,
-		assets:  cfg.Assets,
-		clients: make(map[*client]struct{}),
+		driver:             driver,
+		fps:                cfg.FPS,
+		simHz:              cfg.SimulationHz,
+		clear:              cfg.Clear,
+		camera:             cfg.Camera,
+		assets:             cfg.Assets,
+		textureVersion:     make(map[render.TextureID]int),
+		dynamicTextureData: make(map[render.TextureID][]byte),
+		clients:            make(map[*client]struct{}),
 	}
 	if opts.AudioFS != nil {
 		h.audioEnabled = true
@@ -83,6 +85,7 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 	}
 	mux.HandleFunc("/assets/manifest", h.handleAssetManifest)
 	mux.HandleFunc("/assets/textures/", h.handleAssetTexture)
+	mux.HandleFunc("/assets/dynamic/", h.handleDynamicTexture)
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
@@ -146,7 +149,11 @@ type hub struct {
 	lastAudioTracks map[string]audioTrackDTO
 	pendingAudio    []audioMessageDTO
 
-	assets asset.Manifest
+	assets             asset.Manifest
+	textureVersion     map[render.TextureID]int
+	textureVersionMu   sync.Mutex
+	dynamicTextureData map[render.TextureID][]byte
+	dynamicTextureMu   sync.RWMutex
 }
 
 type client struct {
@@ -189,10 +196,14 @@ func (h *hub) handleAssetManifest(w http.ResponseWriter, r *http.Request) {
 	decls := h.assets.Textures()
 	dto := assetManifestDTO{Textures: make([]assetTextureDTO, 0, len(decls))}
 	for _, d := range decls {
+		url := fmt.Sprintf("/assets/textures/%d", d.ID)
+		if d.Dynamic {
+			url = fmt.Sprintf("/assets/dynamic/%d", d.ID)
+		}
 		dto.Textures = append(dto.Textures, assetTextureDTO{
 			ID:   uint32(d.ID),
 			Name: d.Name,
-			URL:  fmt.Sprintf("/assets/textures/%d", d.ID),
+			URL:  url,
 		})
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -208,6 +219,9 @@ func (h *hub) handleAssetTexture(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, d := range h.assets.Textures() {
+		if d.Dynamic {
+			continue
+		}
 		if uint32(d.ID) == uint32(id) {
 			w.Header().Set("Content-Type", http.DetectContentType(d.Data))
 			w.Header().Set("Cache-Control", "no-store")

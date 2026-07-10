@@ -21,3 +21,15 @@ export async function loadAssetRegistry() {
     }));
     return registry;
 }
+
+export async function updateDynamicTexture(textureID, version) {
+    try {
+        const url = `/assets/dynamic/${textureID}?_=${version}`;
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        return await createImageBitmap(blob);
+    } catch {
+        return null;
+    }
+}

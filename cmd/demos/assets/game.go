@@ -3,6 +3,8 @@ package assets
 
 import (
 	"embed"
+	"image"
+	"image/color"
 	"io/fs"
 
 	"github.com/dhannyell/frameforge/asset"
@@ -44,8 +46,21 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	ctx.HoldSimulation()
 }
 
+var heatmapCount int
+
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	commands := make([]render.Command, 0, 5)
+	commands := make([]render.Command, 0, 8)
+	heatmapCount++
+	heatmapTex := ctx.Assets.Texture("heatmap")
+	// Generate a procedural heatmap every frame
+	img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			v := uint8(((x ^ y) * heatmapCount * 8) & 0xff)
+			img.SetRGBA(x, y, color.RGBA{v, v ^ 0xff, uint8(x * 16), 255})
+		}
+	}
+	ctx.UpdateTexture(heatmapTex, img)
 
 	ballTexture := ctx.Assets.Texture("ball")
 	ballSprite := ctx.Assets.Sprite("ball_left")
@@ -76,6 +91,12 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 		Dest:        math2d.NewRect(math2d.Vec2{X: 60, Y: 37.5}, math2d.Vec2{X: 10, Y: 10}),
 		Tint:        render.RGBA(0.5, 0.8, 0.3, 1),
 		Rotation:    0.65,
+	})
+
+	commands = append(commands, render.DrawImage{
+		BaseCommand: render.BaseCommand{LayerValue: 1},
+		Texture:     heatmapTex,
+		Dest:        math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 16, Y: 16}),
 	})
 
 	typoTexture := ctx.Assets.Texture("typo")
