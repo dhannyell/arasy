@@ -4,8 +4,10 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"log/slog"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
 	"golang.org/x/image/font"
@@ -63,6 +65,8 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 			r.drawPolygon(img, command)
 		case render.DrawImage:
 			r.drawImage(img, command)
+		case render.DrawImageQuad:
+			r.drawImageQuad(img, command)
 		}
 	}
 
@@ -293,8 +297,20 @@ func (r Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 
 	tex := r.Textures.Lookup(command.Texture)
 	if tex == nil {
-		rect := image.Rect(int(destX), int(destY), int(screenMax.X), int(screenMax.Y))
-		fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.Clip)), missingTextureColor)
+		if command.Rotation == 0 {
+			rect := image.Rect(int(destX), int(destY), int(screenMax.X), int(screenMax.Y))
+			fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.Clip)), missingTextureColor)
+			return
+		}
+
+		// Rotated placeholder: cover the same rotated quad the image would
+		// have occupied, so the missing-texture indicator stays truthful
+		// about the area it stands in for.
+		anchor := math2d.Vec2{X: destX + destW/2, Y: destY + destH/2}
+		offsetX, offsetY := -destW/2, -destH/2
+		corners := rotatedRectCorners(anchor, offsetX, offsetY, destW, destH, command.Rotation)
+		bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.Rotation), command.Clip)
+		fillPolygon(img, corners[:], bounds, missingTextureColor)
 		return
 	}
 
@@ -321,6 +337,97 @@ func (r Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 	offsetX, offsetY := -destW/2, -destH/2
 	bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.Rotation), command.Clip)
 	blitScaledRotated(img, tex, srcRect, anchor, offsetX, offsetY, destW, destH, command.Rotation, bounds, tint)
+}
+
+// Warnings below fire at most once per process: a bad DrawImageQuad command
+// is almost always a persistent authoring mistake (e.g. a bad quad
+// generator), not a one-frame fluke, so repeating it every frame would only
+// spam the log without adding information.
+var (
+	imageQuadDegenerateWarnOnce sync.Once
+	imageQuadNonConvexWarnOnce  sync.Once
+	imageQuadUninvertibleOnce   sync.Once
+)
+
+// drawImageQuad maps a texture onto an arbitrary convex quadrilateral using
+// inverse homography sampling: for every destination pixel it solves for
+// the (u,v) coordinate in the source unit square and nearest-neighbor
+// samples the texture there. A plain axis-aligned, unrotated quad degenerates
+// to the same per-pixel math as drawImage's affine blit.
+func (r Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) {
+	var corners [4]math2d.Vec2
+	for i, corner := range command.Corners {
+		corners[i] = r.Camera.WorldToScreen(corner)
+	}
+
+	h, ok := math2d.HomographyFromQuad(corners)
+	if !ok {
+		imageQuadDegenerateWarnOnce.Do(func() {
+			slog.Warn("raster: DrawImageQuad has degenerate corners; command skipped")
+		})
+		return
+	}
+
+	if !math2d.IsConvexQuad(corners) {
+		imageQuadNonConvexWarnOnce.Do(func() {
+			slog.Warn("raster: DrawImageQuad corners are not convex; command skipped")
+		})
+		return
+	}
+
+	hinv, ok := h.Inverse()
+	if !ok {
+		imageQuadUninvertibleOnce.Do(func() {
+			slog.Warn("raster: DrawImageQuad homography is not invertible; command skipped")
+		})
+		return
+	}
+
+	bounds := r.clipBounds(img, polygonBounds(corners[:]), command.Clip)
+
+	tex := r.Textures.Lookup(command.Texture)
+	if tex == nil {
+		fillPolygon(img, corners[:], bounds, missingTextureColor)
+		return
+	}
+
+	srcRect := tex.Bounds()
+	if command.Src != (math2d.Rect{}) {
+		srcRect = image.Rect(int(math.Round(command.Src.Min.X)), int(math.Round(command.Src.Min.Y)),
+			int(math.Round(command.Src.Max.X)), int(math.Round(command.Src.Max.Y))).Intersect(tex.Bounds())
+		if srcRect.Empty() {
+			return
+		}
+	}
+
+	tint := tintFrom(command.Tint)
+	srcWidth := float64(srcRect.Dx())
+	srcHeight := float64(srcRect.Dy())
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			uv := hinv.Apply(math2d.Vec2{X: float64(x) + 0.5, Y: float64(y) + 0.5})
+			if uv.X < 0 || uv.X > 1 || uv.Y < 0 || uv.Y > 1 {
+				continue
+			}
+
+			srcX := srcRect.Min.X + int(uv.X*srcWidth)
+			if srcX >= srcRect.Max.X {
+				srcX = srcRect.Max.X - 1
+			}
+			srcY := srcRect.Min.Y + int(uv.Y*srcHeight)
+			if srcY >= srcRect.Max.Y {
+				srcY = srcRect.Max.Y - 1
+			}
+
+			c := tex.RGBAAt(srcX, srcY)
+			c = tint.apply(c)
+			if c.A == 0 {
+				continue
+			}
+			img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+		}
+	}
 }
 
 func fillPolygon(img *image.RGBA, points []math2d.Vec2, bounds image.Rectangle, c color.RGBA) {
@@ -760,26 +867,17 @@ func rotatedRectBounds(anchor math2d.Vec2, offsetX, offsetY, width, height, angl
 		)
 	}
 
-	cosAngle := math.Cos(angle)
-	sinAngle := math.Sin(angle)
-	corners := [4]math2d.Vec2{
-		{X: offsetX, Y: offsetY},
-		{X: offsetX + width, Y: offsetY},
-		{X: offsetX + width, Y: offsetY + height},
-		{X: offsetX, Y: offsetY + height},
-	}
+	corners := rotatedRectCorners(anchor, offsetX, offsetY, width, height, angle)
 
 	minX := math.Inf(1)
 	maxX := math.Inf(-1)
 	minY := math.Inf(1)
 	maxY := math.Inf(-1)
 	for _, corner := range corners {
-		x := anchor.X + corner.X*cosAngle - corner.Y*sinAngle
-		y := anchor.Y + corner.X*sinAngle + corner.Y*cosAngle
-		minX = min(minX, x)
-		maxX = max(maxX, x)
-		minY = min(minY, y)
-		maxY = max(maxY, y)
+		minX = min(minX, corner.X)
+		maxX = max(maxX, corner.X)
+		minY = min(minY, corner.Y)
+		maxY = max(maxY, corner.Y)
 	}
 
 	return image.Rect(
@@ -788,6 +886,31 @@ func rotatedRectBounds(anchor math2d.Vec2, offsetX, offsetY, width, height, angl
 		int(math.Ceil(maxX)),
 		int(math.Ceil(maxY)),
 	)
+}
+
+// rotatedRectCorners returns the four corners, in screen space, of a
+// destination rect anchored at anchor with the given local-space offset and
+// size, rotated by angle around anchor. It mirrors the per-pixel transform
+// blitScaledRotated inverts, so the placeholder polygon and the eventual
+// image blit always agree on the area they cover.
+func rotatedRectCorners(anchor math2d.Vec2, offsetX, offsetY, width, height, angle float64) [4]math2d.Vec2 {
+	cosAngle := math.Cos(angle)
+	sinAngle := math.Sin(angle)
+	local := [4]math2d.Vec2{
+		{X: offsetX, Y: offsetY},
+		{X: offsetX + width, Y: offsetY},
+		{X: offsetX + width, Y: offsetY + height},
+		{X: offsetX, Y: offsetY + height},
+	}
+
+	var corners [4]math2d.Vec2
+	for i, corner := range local {
+		corners[i] = math2d.Vec2{
+			X: anchor.X + corner.X*cosAngle - corner.Y*sinAngle,
+			Y: anchor.Y + corner.X*sinAngle + corner.Y*cosAngle,
+		}
+	}
+	return corners
 }
 
 func isZeroRect(rect math2d.Rect) bool {

@@ -43,6 +43,29 @@ func TextBytes(mesh TextMesh) []byte {
 	return out
 }
 
+// TexBytes serializes a textured mesh into the WebGPU vertex buffer layout.
+//
+// Each TexVertex is encoded as ten little-endian float32 values in field
+// order: XW, YW, 0 (a Z placeholder so position is a vec4 for the WGSL
+// pipeline), W, R, G, B, A, U, V.
+func TexBytes(mesh TexMesh) []byte {
+	out := make([]byte, len(mesh.Vertices)*40)
+	for i, v := range mesh.Vertices {
+		offset := i * 40
+		putFloat32(out[offset:], v.XW)
+		putFloat32(out[offset+4:], v.YW)
+		putFloat32(out[offset+8:], 0)
+		putFloat32(out[offset+12:], v.W)
+		putFloat32(out[offset+16:], v.R)
+		putFloat32(out[offset+20:], v.G)
+		putFloat32(out[offset+24:], v.B)
+		putFloat32(out[offset+28:], v.A)
+		putFloat32(out[offset+32:], v.U)
+		putFloat32(out[offset+36:], v.V)
+	}
+	return out
+}
+
 func putFloat32(dst []byte, v float32) {
 	binary.LittleEndian.PutUint32(dst, math.Float32bits(v))
 }

@@ -71,6 +71,31 @@ func HomographyFromQuad(c [4]Vec2) (Homography, bool) {
 	return out, true
 }
 
+// IsConvexQuad reports whether c is a non-degenerate convex quadrilateral
+// whose corners are in cyclic order. Quads accepted by HomographyFromQuad
+// still need this check: a self-intersecting order can have an invertible
+// homography but has no unambiguous draw region.
+func IsConvexQuad(c [4]Vec2) bool {
+	var sign float64
+	for i := range c {
+		a := c[i]
+		b := c[(i+1)%len(c)]
+		d := c[(i+2)%len(c)]
+		cross := (b.X-a.X)*(d.Y-b.Y) - (b.Y-a.Y)*(d.X-b.X)
+		if math.Abs(cross) <= homographyEpsilon {
+			return false
+		}
+		if sign == 0 {
+			sign = cross
+			continue
+		}
+		if (cross > 0) != (sign > 0) {
+			return false
+		}
+	}
+	return true
+}
+
 func (h Homography) Apply(p Vec2) Vec2 {
 	x, y := p.X, p.Y
 	w := h[6]*x + h[7]*y + h[8]

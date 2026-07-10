@@ -145,3 +145,69 @@ func TestNewCommandDTOsSerializesDrawImage(t *testing.T) {
 		t.Fatalf("Tint = %v, want = %v", dtos[1].Tint, &wantTint)
 	}
 }
+
+func TestNewCommandDTOsSerializesDrawImageQuad(t *testing.T) {
+	dtos := NewCommandDTOs([]render.Command{
+		render.DrawImageQuad{
+			Texture: 1,
+			Tint:    render.RGBA(1, 1, 1, 1),
+			Corners: [4]math2d.Vec2{
+				{X: 1, Y: 1},
+				{X: 5, Y: 2},
+				{X: 6, Y: 8},
+				{X: 0, Y: 7},
+			},
+			Src: math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2}),
+			BaseCommand: render.BaseCommand{
+				LayerValue: 7,
+				Clip:       math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2})},
+		},
+		render.DrawImageQuad{
+			Texture: 2,
+			Corners: [4]math2d.Vec2{
+				{X: 1, Y: 1},
+				{X: 2, Y: 1},
+				{X: 2, Y: 2},
+				{X: 1, Y: 2},
+			},
+		},
+	})
+
+	if len(dtos) != 2 {
+		t.Fatalf("len(dtos) = %v, want 2", len(dtos))
+	}
+
+	if dtos[0].Type != "imagequad" {
+		t.Fatalf("Type = %q, want imagequad", dtos[0].Type)
+	}
+
+	if dtos[0].Texture != 2 {
+		t.Fatalf("Texture = %v, want 2", dtos[0].Texture)
+	}
+
+	if dtos[0].Tint != nil {
+		t.Fatalf("Tint = %v, want nil", dtos[0].Tint)
+	}
+
+	if dtos[0].Src != nil {
+		t.Fatalf("Src = %v, want nil", dtos[0].Src)
+	}
+
+	if dtos[0].Corners == nil {
+		t.Fatal("Corners = nil, want value")
+	}
+
+	wantCorners := [4][2]float64{{1, 1}, {2, 1}, {2, 2}, {1, 2}}
+	if *dtos[0].Corners != wantCorners {
+		t.Fatalf("Corners = %v, want %v", *dtos[0].Corners, wantCorners)
+	}
+
+	if dtos[1].Texture != 1 {
+		t.Fatalf("Texture = %v, want 1", dtos[1].Texture)
+	}
+
+	wantTint := ColorDTO{1, 1, 1, 1}
+	if *dtos[1].Tint != wantTint {
+		t.Fatalf("Tint = %v, want = %v", dtos[1].Tint, &wantTint)
+	}
+}

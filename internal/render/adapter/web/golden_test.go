@@ -46,6 +46,28 @@ func TestGoldenFrameDTO(t *testing.T) {
 	assertGoldenBytes(t, "frame", got)
 }
 
+func TestGoldenImageQuadDTO(t *testing.T) {
+	commands := NewCommandDTOs([]render.Command{
+		render.DrawImageQuad{
+			BaseCommand: render.BaseCommand{
+				LayerValue: 9,
+				Clip:       math2d.NewRect(math2d.Vec2{X: 5, Y: 5}, math2d.Vec2{X: 95, Y: 70}),
+			},
+			Texture: 3,
+			Corners: [4]math2d.Vec2{
+				{X: 40, Y: 10}, {X: 60, Y: 10}, {X: 85, Y: 55}, {X: 15, Y: 55},
+			},
+			Src:  math2d.NewRect(math2d.Vec2{X: 8, Y: 8}, math2d.Vec2{X: 56, Y: 56}),
+			Tint: render.RGBA(1, 0.9, 0.8, 0.6),
+		},
+	})
+	got, err := json.MarshalIndent(commands, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal image quad commands: %v", err)
+	}
+	assertGoldenBytes(t, "image_quad", append(got, '\n'))
+}
+
 func assertGoldenBytes(t *testing.T, name string, got []byte) {
 	t.Helper()
 

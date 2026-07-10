@@ -4,26 +4,76 @@ package wasm
 
 import (
 	"fmt"
+	"log/slog"
 	"math"
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )
 
+const imageQuadGridSize = 16
+
 type Canvas2D struct {
-	ctx    js.Value
-	canvas js.Value
-	clear  render.Color
+	ctx      js.Value
+	canvas   js.Value
+	clear    render.Color
+	textures map[render.TextureID]js.Value
+	log      *slog.Logger
 }
 
-func newCanvas2D(canvas js.Value, clear render.Color) *Canvas2D {
-	return &Canvas2D{
-		ctx:    canvas.Call("getContext", "2d"),
-		canvas: canvas,
-		clear:  clear,
+func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) *Canvas2D {
+	if log == nil {
+		log = slog.Default()
 	}
+	c := &Canvas2D{
+		ctx:      canvas.Call("getContext", "2d"),
+		canvas:   canvas,
+		clear:    clear,
+		textures: make(map[render.TextureID]js.Value),
+		log:      log,
+	}
+	for _, decl := range manifest.Textures() {
+		c.loadTexture(decl)
+	}
+	return c
+}
+
+// loadTexture decodes manifest bytes asynchronously. Until createImageBitmap
+// resolves, draw calls use the same magenta placeholder as the raster
+// backend rather than blocking the browser render loop.
+func (c *Canvas2D) loadTexture(decl asset.TextureDecl) {
+	createImageBitmap := js.Global().Get("createImageBitmap")
+	if createImageBitmap.IsUndefined() {
+		c.log.Warn("Canvas2D ImageBitmap unavailable; texture will use placeholder", "texture", decl.Name)
+		return
+	}
+
+	blob := js.Global().Get("Blob").New([]any{bytesToJS(decl.Data)})
+	promise := createImageBitmap.Invoke(blob)
+
+	var resolve, reject js.Func
+	release := func() {
+		resolve.Release()
+		reject.Release()
+	}
+	resolve = js.FuncOf(func(this js.Value, args []js.Value) any {
+		if len(args) == 0 {
+			c.log.Warn("Canvas2D texture decode returned no bitmap", "texture", decl.Name)
+		} else {
+			c.textures[decl.ID] = args[0]
+		}
+		release()
+		return nil
+	})
+	reject = js.FuncOf(func(this js.Value, args []js.Value) any {
+		c.log.Warn("Canvas2D texture decode failed; using placeholder", "texture", decl.Name)
+		release()
+		return nil
+	})
+	promise.Call("then", resolve).Call("catch", reject)
 }
 
 func (c *Canvas2D) Render(frame runtime.Frame) {
@@ -54,9 +104,167 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 			c.drawText(cmd, frame.Camera)
 		case render.DrawPolygon:
 			c.drawPolygon(cmd, frame.Camera)
+		case render.DrawImage:
+			c.drawImage(cmd, frame.Camera)
+		case render.DrawImageQuad:
+			c.drawImageQuad(cmd, frame.Camera)
 		}
 		c.ctx.Call("restore")
 	}
+}
+
+// drawImage is the Canvas2D fallback implementation of DrawImage. Canvas
+// has no efficient channel-wise tint primitive, so its tint approximation
+// preserves alpha only; the raster backend remains the colour reference.
+func (c *Canvas2D) drawImage(cmd render.DrawImage, camera render.Camera) {
+	x, y, w, h := screenRect(cmd.Dest, camera)
+	if w <= 0 || h <= 0 {
+		return
+	}
+
+	bitmap, ok := c.textures[cmd.Texture]
+	if !ok || !bitmap.Truthy() {
+		c.drawImagePlaceholder(x, y, w, h, cmd.Rotation)
+		return
+	}
+
+	sx, sy, sw, sh, ok := imageSource(cmd.Src, bitmap)
+	if !ok {
+		return
+	}
+	c.ctx.Call("save")
+	if cmd.Tint != (render.Color{}) {
+		c.ctx.Set("globalAlpha", cmd.Tint.A)
+	}
+	if cmd.Rotation != 0 {
+		c.ctx.Call("translate", x+w/2, y+h/2)
+		c.ctx.Call("rotate", cmd.Rotation)
+		c.ctx.Call("drawImage", bitmap, sx, sy, sw, sh, -w/2, -h/2, w, h)
+	} else {
+		c.ctx.Call("drawImage", bitmap, sx, sy, sw, sh, x, y, w, h)
+	}
+	c.ctx.Call("restore")
+}
+
+// drawImageQuad approximates projective mapping by splitting the source into
+// a grid of affine triangles. This is intentionally a development-host
+// approximation; the raster and WebGPU paths define the exact semantics.
+func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera) {
+	var corners [4]math2d.Vec2
+	for i, corner := range cmd.Corners {
+		corners[i] = camera.WorldToScreen(corner)
+	}
+	if !math2d.IsConvexQuad(corners) {
+		return
+	}
+	homography, ok := math2d.HomographyFromQuad(corners)
+	if !ok {
+		return
+	}
+
+	bitmap, found := c.textures[cmd.Texture]
+	if !found || !bitmap.Truthy() {
+		c.fillScreenQuad(corners)
+		return
+	}
+	sx, sy, sw, sh, ok := imageSource(cmd.Src, bitmap)
+	if !ok {
+		return
+	}
+
+	alpha := 1.0
+	if cmd.Tint != (render.Color{}) {
+		alpha = cmd.Tint.A
+	}
+	for row := 0; row < imageQuadGridSize; row++ {
+		v0 := float64(row) / imageQuadGridSize
+		v1 := float64(row+1) / imageQuadGridSize
+		for col := 0; col < imageQuadGridSize; col++ {
+			u0 := float64(col) / imageQuadGridSize
+			u1 := float64(col+1) / imageQuadGridSize
+
+			p00 := homography.Apply(math2d.Vec2{X: u0, Y: v0})
+			p10 := homography.Apply(math2d.Vec2{X: u1, Y: v0})
+			p11 := homography.Apply(math2d.Vec2{X: u1, Y: v1})
+			p01 := homography.Apply(math2d.Vec2{X: u0, Y: v1})
+			s00 := math2d.Vec2{X: sx + u0*sw, Y: sy + v0*sh}
+			s10 := math2d.Vec2{X: sx + u1*sw, Y: sy + v0*sh}
+			s11 := math2d.Vec2{X: sx + u1*sw, Y: sy + v1*sh}
+			s01 := math2d.Vec2{X: sx + u0*sw, Y: sy + v1*sh}
+
+			c.drawTexturedTriangle(bitmap, alpha, s00, s10, s01, p00, p10, p01)
+			c.drawTexturedTriangle(bitmap, alpha, s10, s11, s01, p10, p11, p01)
+		}
+	}
+}
+
+func (c *Canvas2D) drawTexturedTriangle(bitmap js.Value, alpha float64, s0, s1, s2, d0, d1, d2 math2d.Vec2) {
+	a, b, cc, d, e, f, ok := affineFromTriangles(s0, s1, s2, d0, d1, d2)
+	if !ok {
+		return
+	}
+	c.ctx.Call("save")
+	c.ctx.Set("globalAlpha", alpha)
+	c.ctx.Call("setTransform", a, b, cc, d, e, f)
+	c.ctx.Call("beginPath")
+	c.ctx.Call("moveTo", s0.X, s0.Y)
+	c.ctx.Call("lineTo", s1.X, s1.Y)
+	c.ctx.Call("lineTo", s2.X, s2.Y)
+	c.ctx.Call("closePath")
+	c.ctx.Call("clip")
+	c.ctx.Call("drawImage", bitmap, 0, 0)
+	c.ctx.Call("restore")
+}
+
+func affineFromTriangles(s0, s1, s2, d0, d1, d2 math2d.Vec2) (a, b, c, d, e, f float64, ok bool) {
+	den := (s1.X-s0.X)*(s2.Y-s0.Y) - (s2.X-s0.X)*(s1.Y-s0.Y)
+	if math.Abs(den) <= 1e-12 {
+		return 0, 0, 0, 0, 0, 0, false
+	}
+	a = ((d1.X-d0.X)*(s2.Y-s0.Y) - (d2.X-d0.X)*(s1.Y-s0.Y)) / den
+	b = ((d1.Y-d0.Y)*(s2.Y-s0.Y) - (d2.Y-d0.Y)*(s1.Y-s0.Y)) / den
+	c = ((d2.X-d0.X)*(s1.X-s0.X) - (d1.X-d0.X)*(s2.X-s0.X)) / den
+	d = ((d2.Y-d0.Y)*(s1.X-s0.X) - (d1.Y-d0.Y)*(s2.X-s0.X)) / den
+	e = d0.X - a*s0.X - c*s0.Y
+	f = d0.Y - b*s0.X - d*s0.Y
+	return a, b, c, d, e, f, true
+}
+
+func imageSource(src math2d.Rect, bitmap js.Value) (x, y, w, h float64, ok bool) {
+	bw := bitmap.Get("width").Float()
+	bh := bitmap.Get("height").Float()
+	if src == (math2d.Rect{}) {
+		return 0, 0, bw, bh, bw > 0 && bh > 0
+	}
+	x = math.Max(0, math.Min(bw, math.Round(src.Min.X)))
+	y = math.Max(0, math.Min(bh, math.Round(src.Min.Y)))
+	maxX := math.Max(0, math.Min(bw, math.Round(src.Max.X)))
+	maxY := math.Max(0, math.Min(bh, math.Round(src.Max.Y)))
+	return x, y, maxX - x, maxY - y, maxX > x && maxY > y
+}
+
+func (c *Canvas2D) drawImagePlaceholder(x, y, w, h, rotation float64) {
+	c.ctx.Set("fillStyle", "rgb(255, 0, 255)")
+	if rotation == 0 {
+		c.ctx.Call("fillRect", x, y, w, h)
+		return
+	}
+	c.ctx.Call("save")
+	c.ctx.Call("translate", x+w/2, y+h/2)
+	c.ctx.Call("rotate", rotation)
+	c.ctx.Call("fillRect", -w/2, -h/2, w, h)
+	c.ctx.Call("restore")
+}
+
+func (c *Canvas2D) fillScreenQuad(corners [4]math2d.Vec2) {
+	c.ctx.Set("fillStyle", "rgb(255, 0, 255)")
+	c.ctx.Call("beginPath")
+	c.ctx.Call("moveTo", corners[0].X, corners[0].Y)
+	for _, corner := range corners[1:] {
+		c.ctx.Call("lineTo", corner.X, corner.Y)
+	}
+	c.ctx.Call("closePath")
+	c.ctx.Call("fill")
 }
 
 func cssColor(c render.Color) string {
@@ -256,6 +464,10 @@ func commandClip(cmd render.Command) math2d.Rect {
 	case render.DrawArc:
 		return cm.Clip
 	case render.DrawPolygon:
+		return cm.Clip
+	case render.DrawImage:
+		return cm.Clip
+	case render.DrawImageQuad:
 		return cm.Clip
 	default:
 		return math2d.Rect{}

@@ -20,3 +20,20 @@ var solidWGSL string
 //
 //go:embed shaders/text.wgsl
 var textWGSL string
+
+// texturedWGSL is the image/texture WebGPU pipeline shader.
+//
+// Vertex inputs match tess.TexVertex serialized by tess.TexBytes:
+// @location(0) position vec4f (xw, yw, 0, w — pre-multiplied by w so the
+// hardware perspective divide and UV interpolation are perspective-correct),
+// @location(1) tint vec4f, @location(2) uv vec2f.
+//
+//go:embed shaders/textured.wgsl
+var texturedWGSL string
+
+// mipmapWGSL is the internal fullscreen-triangle shader used to generate a
+// texture's mip chain via successive render passes. It has no vertex buffer
+// inputs; the fullscreen triangle is derived from @builtin(vertex_index).
+//
+//go:embed shaders/mipmap.wgsl
+var mipmapWGSL string

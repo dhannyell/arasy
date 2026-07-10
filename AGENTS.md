@@ -72,7 +72,7 @@ platform/* -> asset/pixel -> asset
 | Package | Role |
 |---|---|
 | `math2d/` | Pure 2D math (`Vec2`, `Rect`). Zero engine deps. |
-| `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`. |
+| `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`; `DrawImageQuad` maps a texture onto a convex projective quad. Raster is the geometry/color reference; Canvas2D hosts approximate quads with an affine grid. |
 | `asset/` | Data-driven texture/sprite/audio declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` stable per-run, resolved by name, never persisted. `asset/pixel` subpackage owns shared image decode for native backends; `runtime` carries only the resolved `asset.Manifest`. |
 | `audio/` | Backend-agnostic audio vocabulary: clip IDs, one-shot cues, continuous tracks, and rewindable track state. Hosts decode/play; runtime only transports intent. |
 | `scene/` | ECS world + simulation tick. `EntityID` (uint32). Step pipeline: acceleration -> integrate -> bounce -> grid broad-phase -> contact resolution -> damping. `World.Checksum()` for determinism. |
@@ -82,7 +82,7 @@ platform/* -> asset/pixel -> asset
 | `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
 | `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
 | `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas, plus `/assets/manifest` and `/assets/textures/{id}` for browser-side texture registration. Not a distribution target. |
-| `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. Dev panel (backtick key) for debug controls. |
+| `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. WebGPU uploads manifest textures, generates mip chains at boot, and uses linear anisotropic sampling; Canvas2D approximates projective image quads with a grid. Dev panel (backtick key) for debug controls. |
 | `internal/render/adapter/web/` | Converts `render.Command` -> JSON DTOs for web canvas. |
 | `cmd/` | Demos and tools. Game code lives here, not in engine packages. |
 
