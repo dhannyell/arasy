@@ -295,3 +295,39 @@ func TestDrawImageRotation180(t *testing.T) {
 	assertPixel(t, img.At(2, 0), black)
 	assertPixel(t, img.At(0, 1), black)
 }
+
+// TestDrawImageMissingTextureRotated renders the magenta placeholder for a
+// missing texture with a rotated Dest. The placeholder must cover the
+// rotated quad the image would have occupied, not the unrotated Dest rect:
+// a corner of the original axis-aligned rect falls outside the rotated
+// square and stays clear, while a point outside that rect but inside the
+// rotated square's tip turns magenta.
+func TestDrawImageMissingTextureRotated(t *testing.T) {
+	renderer := imageRenderer(40, 40)
+	renderer.Textures = pixel.Registry{nil} // no textures loaded
+
+	img := renderer.Render([]render.Command{
+		render.DrawImage{
+			Texture:  42, // out of range
+			Dest:     math2d.NewRect(math2d.Vec2{X: 16, Y: 16}, math2d.Vec2{X: 8, Y: 8}),
+			Rotation: math.Pi / 4,
+		},
+	})
+
+	magenta := color.RGBA{R: 255, G: 0, B: 255, A: 255}
+	black := color.RGBA{R: 0, G: 0, B: 0, A: 255}
+
+	// Center of Dest is always covered, rotated or not.
+	assertPixel(t, img.At(20, 20), magenta)
+
+	// (19,15) sits above the unrotated Dest (whose top edge is at y=16) but
+	// inside the 45°-rotated square's upper tip: only a rotation-aware
+	// placeholder paints it.
+	assertPixel(t, img.At(19, 15), magenta)
+
+	// (16,16) is a corner of the unrotated Dest rect. A naive axis-aligned
+	// placeholder (the old, unrotated behavior) would paint it magenta, but
+	// the 45°-rotated square doesn't reach that far into the corner, so it
+	// must stay clear.
+	assertPixel(t, img.At(16, 16), black)
+}

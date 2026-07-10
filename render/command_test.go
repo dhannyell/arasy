@@ -25,6 +25,7 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 		render.DrawArc{},
 		render.DrawPolygon{},
 		render.DrawImage{},
+		render.DrawImageQuad{},
 	}
 
 	for _, command := range commands {
@@ -37,6 +38,20 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 func TestDrawImageHasExpectedZeroValue(t *testing.T) {
 	command := render.DrawImage{}
 
+	if got := command.Src; got != (math2d.Rect{}) {
+		t.Fatalf("Src = %#v, want zero value", got)
+	}
+	if got := command.Tint; got != (render.Color{}) {
+		t.Fatalf("Tint = %#v, want zero value", got)
+	}
+}
+
+func TestDrawImageQuadHasExpectedZeroValueAndLayer(t *testing.T) {
+	command := render.DrawImageQuad{BaseCommand: render.BaseCommand{LayerValue: 9}}
+
+	if got := command.Layer(); got != 9 {
+		t.Fatalf("Layer() = %d, want 9", got)
+	}
 	if got := command.Src; got != (math2d.Rect{}) {
 		t.Fatalf("Src = %#v, want zero value", got)
 	}

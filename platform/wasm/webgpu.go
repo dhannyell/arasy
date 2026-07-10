@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
@@ -15,8 +16,9 @@ import (
 var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
 type webgpuRenderer struct {
-	canvas js.Value
-	clear  render.Color
+	canvas   js.Value
+	clear    render.Color
+	manifest asset.Manifest
 
 	gpu     js.Value
 	device  js.Value
@@ -24,19 +26,41 @@ type webgpuRenderer struct {
 	context js.Value
 	format  js.Value
 
-	solidPipeline js.Value
-	textPipeline  js.Value
-	atlasBind     js.Value
+	solidPipeline    js.Value
+	textPipeline     js.Value
+	texturedPipeline js.Value
+	// mipPipeline renders a fullscreen triangle sampling one mip level into
+	// the next. Boot-time only, used by generateMipmaps.
+	mipPipeline js.Value
+
+	atlasBind js.Value
+	// texSampler is shared by every declared texture: linear filtering in
+	// every dimension plus anisotropy, unlike the font atlas's nearest
+	// sampler which wants pixel-sharp text.
+	texSampler js.Value
+	// mipSampler is used only while generating mip chains, sampling a
+	// single source level at a time.
+	mipSampler js.Value
 
 	solidBuffer js.Value
 	textBuffer  js.Value
+	texBuffer   js.Value
 	solidCap    int
 	textCap     int
+	texCap      int
 
 	atlas *tess.Atlas
+
+	// texSizes maps TextureID to pixel dimensions for the textured
+	// pipeline, populated from the asset manifest in newWebGPU.
+	texSizes tess.TexSizes
+
+	// textures maps TextureID to its GPU texture/view/bind group, indexed
+	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
+	textures []gpuTexture
 }
 
-func newWebGPU(canvas js.Value, clear render.Color) (*webgpuRenderer, error) {
+func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*webgpuRenderer, error) {
 	gpu := js.Global().Get("navigator").Get("gpu")
 	if gpu.IsUndefined() || gpu.IsNull() {
 		return nil, errWebGPUUnavailable
@@ -68,21 +92,29 @@ func newWebGPU(canvas js.Value, clear render.Color) (*webgpuRenderer, error) {
 	})
 
 	r := &webgpuRenderer{
-		canvas:  canvas,
-		clear:   clear,
-		gpu:     gpu,
-		device:  device,
-		queue:   device.Get("queue"),
-		context: context,
-		format:  format,
-		atlas:   tess.NewAtlas(),
+		canvas:   canvas,
+		clear:    clear,
+		manifest: manifest,
+		gpu:      gpu,
+		device:   device,
+		queue:    device.Get("queue"),
+		context:  context,
+		format:   format,
+		atlas:    tess.NewAtlas(),
 	}
 
 	r.solidPipeline = r.createSolidPipeline()
 	r.textPipeline = r.createTextPipeline()
+	r.texturedPipeline = r.createTexturedPipeline()
+	r.mipPipeline = r.createMipPipeline()
 	r.atlasBind = r.createAtlasBindGroup()
+	r.texSampler = r.createTextureSampler()
+	r.mipSampler = r.createMipSampler()
 	r.solidBuffer, r.solidCap = r.createVertexBuffer(64 * 1024)
 	r.textBuffer, r.textCap = r.createVertexBuffer(64 * 1024)
+	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
+
+	r.textures, r.texSizes = r.buildTextures(manifest)
 
 	return r, nil
 }
@@ -94,7 +126,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		return
 	}
 
-	mesh, textMesh := tess.Build(frame, w, h, r.atlas)
+	mesh, texRuns, textMesh := tess.Build(frame, w, h, r.atlas, r.texSizes)
 
 	solidBytes := tess.Bytes(mesh)
 	textBytes := tess.TextBytes(textMesh)
@@ -107,6 +139,25 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 	if len(textBytes) > 0 {
 		r.queue.Call("writeBuffer", r.textBuffer, 0, bytesToJS(textBytes))
+	}
+
+	// Textured runs share one vertex buffer; texOffsets/texCounts record
+	// each run's vertex range within it so it can be drawn with the right
+	// bind group via a firstVertex-offset draw call.
+	var texBytes []byte
+	texOffsets := make([]int, len(texRuns))
+	texCounts := make([]int, len(texRuns))
+	vertexOffset := 0
+	for i, run := range texRuns {
+		runBytes := tess.TexBytes(run)
+		texBytes = append(texBytes, runBytes...)
+		texOffsets[i] = vertexOffset
+		texCounts[i] = len(run.Vertices)
+		vertexOffset += len(run.Vertices)
+	}
+	r.ensureTexBuffer(len(texBytes))
+	if len(texBytes) > 0 {
+		r.queue.Call("writeBuffer", r.texBuffer, 0, bytesToJS(texBytes))
 	}
 
 	encoder := r.device.Call("createCommandEncoder")
@@ -125,6 +176,22 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		pass.Call("setPipeline", r.solidPipeline)
 		pass.Call("setVertexBuffer", 0, r.solidBuffer)
 		pass.Call("draw", len(mesh.Vertices))
+	}
+
+	// Draw order is solids, then textured runs, then text — the same known
+	// cross-command-kind ordering limitation documented on tess.Build (no
+	// depth/layer sort between command kinds within a frame).
+	if len(texRuns) > 0 {
+		pass.Call("setPipeline", r.texturedPipeline)
+		pass.Call("setVertexBuffer", 0, r.texBuffer)
+		for i, run := range texRuns {
+			gt, ok := r.textureFor(run.Texture)
+			if !ok {
+				continue
+			}
+			pass.Call("setBindGroup", 0, gt.bindGroup)
+			pass.Call("draw", texCounts[i], 1, texOffsets[i], 0)
+		}
 	}
 
 	if len(textMesh.Vertices) > 0 {
@@ -200,6 +267,84 @@ func (r *webgpuRenderer) createTextPipeline() js.Value {
 	})
 }
 
+func (r *webgpuRenderer) createTexturedPipeline() js.Value {
+	module := r.device.Call("createShaderModule", map[string]any{"code": texturedWGSL})
+
+	return r.device.Call("createRenderPipeline", map[string]any{
+		"layout": "auto",
+		"vertex": map[string]any{
+			"module":     module,
+			"entryPoint": "vs_main",
+			"buffers": []any{map[string]any{
+				"arrayStride": 40,
+				"attributes": []any{
+					map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
+					map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
+					map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
+				},
+			}},
+		},
+		"fragment": map[string]any{
+			"module":     module,
+			"entryPoint": "fs_main",
+			"targets": []any{map[string]any{
+				"format": r.format,
+				"blend":  premultipliedBlend(),
+			}},
+		},
+		"primitive": map[string]any{
+			"topology": "triangle-list",
+		},
+	})
+}
+
+// createMipPipeline builds the internal pipeline used by generateMipmaps: a
+// fullscreen triangle (no vertex buffer) sampling one mip level into the
+// next, one render pass per level.
+func (r *webgpuRenderer) createMipPipeline() js.Value {
+	module := r.device.Call("createShaderModule", map[string]any{"code": mipmapWGSL})
+
+	return r.device.Call("createRenderPipeline", map[string]any{
+		"layout": "auto",
+		"vertex": map[string]any{
+			"module":     module,
+			"entryPoint": "vs_main",
+		},
+		"fragment": map[string]any{
+			"module":     module,
+			"entryPoint": "fs_main",
+			"targets": []any{map[string]any{
+				"format": "rgba8unorm",
+			}},
+		},
+		"primitive": map[string]any{
+			"topology": "triangle-list",
+		},
+	})
+}
+
+// createTextureSampler builds the sampler shared by every declared texture.
+// The WebGPU spec requires magFilter, minFilter and mipmapFilter to all be
+// "linear" whenever maxAnisotropy > 1.
+func (r *webgpuRenderer) createTextureSampler() js.Value {
+	return r.device.Call("createSampler", map[string]any{
+		"magFilter":     "linear",
+		"minFilter":     "linear",
+		"mipmapFilter":  "linear",
+		"maxAnisotropy": 16,
+	})
+}
+
+// createMipSampler builds the sampler used only while generating mip
+// chains: each sample reads a single source level, so no anisotropy or
+// mipmap filtering is needed.
+func (r *webgpuRenderer) createMipSampler() js.Value {
+	return r.device.Call("createSampler", map[string]any{
+		"magFilter": "linear",
+		"minFilter": "linear",
+	})
+}
+
 func (r *webgpuRenderer) createAtlasBindGroup() js.Value {
 	bounds := r.atlas.Image.Bounds()
 	width := bounds.Dx()
@@ -268,6 +413,15 @@ func (r *webgpuRenderer) ensureTextBuffer(size int) {
 	r.textBuffer, r.textCap = r.createVertexBuffer(newCap)
 }
 
+func (r *webgpuRenderer) ensureTexBuffer(size int) {
+	if size <= r.texCap {
+		return
+	}
+
+	newCap := growBufferCap(r.texCap, size)
+	r.texBuffer, r.texCap = r.createVertexBuffer(newCap)
+}
+
 func awaitPromise(promise js.Value) (js.Value, error) {
 	resolveChan := make(chan js.Value, 1)
 	rejectChan := make(chan js.Value, 1)
@@ -320,10 +474,31 @@ func bytesToJS(data []byte) js.Value {
 	return array
 }
 
+// alphaBlend is straight-alpha blending for the solid-color pipeline: colors
+// are not premultiplied, so the source contribution is scaled by src-alpha.
 func alphaBlend() map[string]any {
 	return map[string]any{
 		"color": map[string]any{
 			"srcFactor": "src-alpha",
+			"dstFactor": "one-minus-src-alpha",
+			"operation": "add",
+		},
+		"alpha": map[string]any{
+			"srcFactor": "one",
+			"dstFactor": "one-minus-src-alpha",
+			"operation": "add",
+		},
+	}
+}
+
+// premultipliedBlend is premultiplied-alpha blending for the textured
+// pipeline: asset/pixel decodes textures into premultiplied pixels and
+// tess.texTint premultiplies the tint, so the source is already scaled and
+// srcFactor is "one" rather than "src-alpha".
+func premultipliedBlend() map[string]any {
+	return map[string]any{
+		"color": map[string]any{
+			"srcFactor": "one",
 			"dstFactor": "one-minus-src-alpha",
 			"operation": "add",
 		},
@@ -341,6 +516,14 @@ func textureUsageTextureBinding() int {
 
 func textureUsageCopyDst() int {
 	return js.Global().Get("GPUTextureUsage").Get("COPY_DST").Int()
+}
+
+// textureUsageRenderAttachment is required (alongside TEXTURE_BINDING and
+// COPY_DST) on every declared texture: generateMipmaps renders into each mip
+// level after level 0, which needs RENDER_ATTACHMENT usage on the target
+// view.
+func textureUsageRenderAttachment() int {
+	return js.Global().Get("GPUTextureUsage").Get("RENDER_ATTACHMENT").Int()
 }
 
 func clearValue(clear render.Color) map[string]any {

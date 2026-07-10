@@ -622,3 +622,61 @@ func TestGoldenImages(t *testing.T) {
 
 	assertGolden(t, "images", img)
 }
+
+func TestGoldenImageQuads(t *testing.T) {
+	r := goldenRenderer()
+	r.Textures = pixel.Registry{nil, goldenImageTexture()}
+
+	img := r.Render([]render.Command{
+		// 1 — Plain rectangle quad (corners of an axis-aligned rect):
+		// reproduces a DrawImage blit through the homography path.
+		render.DrawImageQuad{
+			Texture: 1,
+			Corners: [4]math2d.Vec2{
+				{X: 5, Y: 5}, {X: 25, Y: 5}, {X: 25, Y: 25}, {X: 5, Y: 25},
+			},
+		},
+		// 2 — Trapezoid: narrow top edge, wide bottom edge.
+		render.DrawImageQuad{
+			Texture: 1,
+			Corners: [4]math2d.Vec2{
+				{X: 38, Y: 8}, {X: 52, Y: 8}, {X: 60, Y: 28}, {X: 30, Y: 28},
+			},
+		},
+		// 3 — Quad with genuine perspective (non-parallelogram): converging
+		// left edge, to exercise the projective (non-affine) homography path.
+		render.DrawImageQuad{
+			Texture: 1,
+			Corners: [4]math2d.Vec2{
+				{X: 68, Y: 5}, {X: 92, Y: 10}, {X: 92, Y: 26}, {X: 68, Y: 28},
+			},
+		},
+		// 4 — Src sub-rect + Tint, on a plain rectangle quad.
+		render.DrawImageQuad{
+			Texture: 1,
+			Corners: [4]math2d.Vec2{
+				{X: 5, Y: 35}, {X: 25, Y: 35}, {X: 25, Y: 55}, {X: 5, Y: 55},
+			},
+			Src:  math2d.Rect{Min: math2d.Vec2{X: 4, Y: 0}, Max: math2d.Vec2{X: 8, Y: 4}},
+			Tint: render.RGBA(0.3, 0.9, 0.6, 0.75),
+		},
+		// 5 — Missing texture (ID 99) on a rotated (non-rectangular)
+		// quad -> magenta placeholder polygon.
+		render.DrawImageQuad{
+			Texture: 99,
+			Corners: [4]math2d.Vec2{
+				{X: 45, Y: 40}, {X: 65, Y: 34}, {X: 72, Y: 54}, {X: 50, Y: 60},
+			},
+		},
+		// 6 — Degenerate corners (three collinear points): skipped entirely,
+		// nothing drawn here.
+		render.DrawImageQuad{
+			Texture: 1,
+			Corners: [4]math2d.Vec2{
+				{X: 80, Y: 40}, {X: 86, Y: 40}, {X: 92, Y: 40}, {X: 86, Y: 60},
+			},
+		},
+	})
+
+	assertGolden(t, "image_quads", img)
+}

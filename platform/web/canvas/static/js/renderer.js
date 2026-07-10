@@ -9,6 +9,7 @@ import {
     drawText,
     drawPolygon,
     drawImage,
+    drawImageQuad,
 } from "./primitives.js";
 
 export function createCanvasRenderer(canvas, options = {}) {
@@ -54,7 +55,7 @@ export function createCanvasRenderer(canvas, options = {}) {
         applyCamera(ctx, frame.camera);
 
         for (const command of frame.commands) {
-            drawCommand(ctx, command);
+            drawCommand(ctx, command, frame.camera);
         }
 
         resetTransform(ctx);
@@ -66,7 +67,7 @@ export function createCanvasRenderer(canvas, options = {}) {
         }
     }
 
-    function drawCommand(ctx, command) {
+    function drawCommand(ctx, command, camera) {
         const clipped = command.clip && command.clip.width > 0 && command.clip.height > 0;
         if (clipped) {
             ctx.save();
@@ -99,6 +100,9 @@ export function createCanvasRenderer(canvas, options = {}) {
                 break;
             case "image":
                 drawImage(ctx, command, assets);
+                break;
+            case "imagequad":
+                drawImageQuad(ctx, command, camera, assets);
                 break;
         }
 

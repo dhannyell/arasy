@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -95,7 +96,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if opts.AudioFS != nil {
 		h.audio = newAudioSink(cfg.Assets.AudioClips(), opts.AudioFS, log)
 	}
-	h.renderer = selectRenderer(canvas, cfg.Clear, opts.ForceCanvas2D, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -111,20 +112,20 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	select {}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, forceCanvas2D bool, log *slog.Logger) renderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D bool, log *slog.Logger) renderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
-		return newCanvas2D(canvas, clear)
+		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear)
+	r, err := newWebGPU(canvas, clear, manifest)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r
 	}
 
 	log.Warn("webgpu unavailable, falling back to canvas2d", "error", err)
-	return newCanvas2D(canvas, clear)
+	return newCanvas2D(canvas, clear, manifest, log)
 }
 
 func (h *host) resize() {

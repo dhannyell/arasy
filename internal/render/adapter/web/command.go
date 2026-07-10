@@ -3,6 +3,7 @@ package web
 import (
 	"sort"
 
+	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
 
@@ -35,9 +36,10 @@ type CommandDTO struct {
 	Points   []*Vec2DTO `json:"points,omitempty"`
 	Clip     *RectDTO   `json:"clip,omitempty"`
 
-	Texture uint32    `json:"texture,omitempty"`
-	Src     *RectDTO  `json:"src,omitempty"`
-	Tint    *ColorDTO `json:"tint,omitempty"`
+	Texture uint32         `json:"texture,omitempty"`
+	Src     *RectDTO       `json:"src,omitempty"`
+	Tint    *ColorDTO      `json:"tint,omitempty"`
+	Corners *[4][2]float64 `json:"corners,omitempty"`
 }
 
 func NewCommandDTOs(commands []render.Command) []CommandDTO {
@@ -143,6 +145,17 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 				Layer:    command.Layer(),
 				Clip:     newOptionalRectDTO(command.Clip),
 			}
+		case render.DrawImageQuad:
+			corners := newCornersDTO(command.Corners)
+			commandDTO = CommandDTO{
+				Type:    "imagequad",
+				Texture: uint32(command.Texture),
+				Corners: &corners,
+				Src:     newOptionalRectDTO(command.Src),
+				Tint:    newOptionalColorDTO(command.Tint),
+				Layer:   command.Layer(),
+				Clip:    newOptionalRectDTO(command.Clip),
+			}
 		default:
 			continue
 		}
@@ -151,6 +164,16 @@ func NewCommandDTOs(commands []render.Command) []CommandDTO {
 	}
 
 	return commandDTOs
+}
+
+// newCornersDTO flattens the quad's four corners (source top-left,
+// top-right, bottom-right, bottom-left) into plain [x, y] pairs for JSON.
+func newCornersDTO(corners [4]math2d.Vec2) [4][2]float64 {
+	var out [4][2]float64
+	for i, c := range corners {
+		out[i] = [2]float64{c.X, c.Y}
+	}
+	return out
 }
 
 func textAlignToString(a render.TextAlign) string {
