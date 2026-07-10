@@ -76,6 +76,7 @@ type Driver struct {
 
 	audio     driverAudio
 	audioPort AudioPort
+	texture   driverTexture
 }
 
 // viewportEntry records a SetViewport call at the tick it was applied.
@@ -141,6 +142,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	}
 	d.rng = NewRand(cfg.Seed)
 	d.audioPort = AudioPort{audio: &d.audio}
+	d.texture = driverTexture{}
 	d.doReset()
 	return d
 }
@@ -380,6 +382,8 @@ func (d *Driver) historyLen() int {
 // the same value — use it to verify a Replay reproduced a recording exactly.
 func (d *Driver) Checksum() uint64 { return d.world.Checksum() }
 
+func (d *Driver) ConsumeTextureUpdates() []TextureUpdate { return d.texture.consume() }
+
 func (d *Driver) Frame(elapsed time.Duration) Frame {
 	d.renderDt = elapsed.Seconds()
 	d.renderTime += d.renderDt
@@ -472,15 +476,16 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		alpha = d.clock.Alpha()
 	}
 	return RenderContext{
-		World:  d.world,
-		Assets: d.cfg.Assets,
-		UI:     uiInst,
-		Time:   d.renderTime,
-		Dt:     d.renderDt,
-		Log:    d.log.With("scope", "game"),
-		Tick:   d.tick,
-		Alpha:  alpha,
-		camera: d.cameraForSurface(),
+		World:              d.world,
+		Assets:             d.cfg.Assets,
+		UI:                 uiInst,
+		Time:               d.renderTime,
+		Dt:                 d.renderDt,
+		Log:                d.log.With("scope", "game"),
+		Tick:               d.tick,
+		Alpha:              alpha,
+		UpdateTextureField: &TexturePort{texture: &d.texture},
+		camera:             d.cameraForSurface(),
 	}
 }
 

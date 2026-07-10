@@ -13,6 +13,7 @@ import (
 type manifestFile struct {
 	Version  int            `json:"version"`
 	Textures []textureEntry `json:"textures"`
+	Dynamic  []dynamicEntry `json:"dynamic"`
 	Sprites  []spriteEntry  `json:"sprites"`
 	Audio    []audioEntry   `json:"audio"`
 }
@@ -20,6 +21,14 @@ type manifestFile struct {
 type textureEntry struct {
 	Name string `json:"name"`
 	File string `json:"file"`
+	W    int    `json:"w"`
+	H    int    `json:"h"`
+}
+
+type dynamicEntry struct {
+	Name string `json:"name"`
+	W    int    `json:"w"`
+	H    int    `json:"h"`
 }
 
 type spriteEntry struct {
@@ -77,11 +86,17 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		if err := validateSpriteEntries(mf.Sprites); err != nil {
 			return Manifest{}, err
 		}
+		if err := validateDynamicEntries(mf.Dynamic); err != nil {
+			return Manifest{}, err
+		}
 		if err := validateAudioEntries(mf.Audio); err != nil {
 			return Manifest{}, err
 		}
 		for _, entry := range mf.Textures {
 			texByName[entry.Name] = entry
+		}
+		for _, entry := range mf.Dynamic {
+			texByName[entry.Name] = textureEntry{Name: entry.Name, W: entry.W, H: entry.H}
 		}
 		for _, entry := range mf.Sprites {
 			sprByName[entry.Name] = entry
@@ -102,6 +117,10 @@ func Load(layers ...fs.FS) (Manifest, error) {
 	sprites := make(map[string]Sprite, len(sprByName))
 	clips := make(map[audio.ClipID]audio.Clip, len(audioByID))
 	for name, entry := range texByName {
+		if entry.File == "" {
+			textures[name] = TextureDecl{Dynamic: true, W: entry.W, H: entry.H}
+			continue
+		}
 		data, err := readLayered(layers, entry.File)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: texture %q: %w", name, err)
@@ -165,6 +184,15 @@ func validateAudioEntries(entries []audioEntry) error {
 			return fmt.Errorf("asset: duplicate audio %q in manifest.json", entry.ID)
 		}
 		seen[entry.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateDynamicEntries(entries []dynamicEntry) error {
+	for _, entry := range entries {
+		if entry.W <= 0 || entry.H <= 0 {
+			return fmt.Errorf("asset: dynamic texture %q has non-positive dimensions (%d x %d)", entry.Name, entry.W, entry.H)
+		}
 	}
 	return nil
 }

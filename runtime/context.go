@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"image"
 	"log/slog"
 
 	"github.com/dhannyell/frameforge/asset"
@@ -46,7 +47,7 @@ type RenderContext struct {
 	Assets asset.Manifest
 	UI     ui.Drawer
 	// Time is the monotonic render-elapsed time in seconds. Not tied to
-	// simulation ticks — use it for visual oscillations and UI animations.
+	// simulation ticks â€” use it for visual oscillations and UI animations.
 	Time float64
 	// Dt is the render-frame delta in seconds. Zero when called via Commands().
 	// Use it for frame-rate-independent easing and UI animations.
@@ -56,13 +57,19 @@ type RenderContext struct {
 	// Alpha is the normalized fraction [0, 1) between fixed simulation ticks.
 	// It is 0 when render interpolation is disabled or unavailable.
 	// Use it with World.RenderCommandsInterpolated to produce smooth visuals.
-	Alpha float64
+	Alpha              float64
+	UpdateTextureField *TexturePort
 
 	camera render.Camera
 }
 
 func (ctx *RenderContext) Camera() render.Camera       { return ctx.camera }
 func (ctx *RenderContext) SetCamera(cam render.Camera) { ctx.camera = cam }
+func (ctx *RenderContext) UpdateTexture(id render.TextureID, img *image.RGBA) {
+	if ctx.UpdateTextureField != nil {
+		ctx.UpdateTextureField.UpdateTexture(id, img)
+	}
+}
 
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 	return UpdateContext{
