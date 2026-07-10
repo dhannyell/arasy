@@ -140,12 +140,12 @@ func TestDriverSetViewportIgnoresDuplicateViewport(t *testing.T) {
 	driver.Step()
 	driver.SetViewport(viewport)
 
-	if got := len(driver.viewportLog); got != 1 {
+	if got := len(driver.timeline.viewports); got != 1 {
 		t.Fatalf("viewportLog len after duplicate viewport = %d, want 1", got)
 	}
 
 	driver.SetViewport(other)
-	if got := len(driver.viewportLog); got != 2 {
+	if got := len(driver.timeline.viewports); got != 2 {
 		t.Fatalf("viewportLog len after new viewport = %d, want 2", got)
 	}
 }
@@ -164,10 +164,10 @@ func TestDriverForkFromScrubCommitsCurrentViewport(t *testing.T) {
 	driver.AdvanceTime(0)
 	driver.Step()
 
-	if got := len(driver.viewportLog); got != 2 {
+	if got := len(driver.timeline.viewports); got != 2 {
 		t.Fatalf("viewportLog len after fork = %d, want 2", got)
 	}
-	if got := driver.viewportLog[1]; got.tick != 1 || got.viewport != second {
+	if got := driver.timeline.viewports[1]; got.tick != 1 || got.viewport != second {
 		t.Fatalf("fork viewport entry = %+v, want tick 1 viewport %+v", got, second)
 	}
 }

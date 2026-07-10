@@ -50,25 +50,22 @@ type Driver struct {
 	// Recording keeps the full input log while explicit recording is enabled.
 	recordingEnabled bool
 	recording        []input.Event
+	// recordingStaged mirrors timeline.staged for the recording log: events
+	// applied while rewound (d.tick < d.timeline.maxTick) are held here
+	// instead of d.recording, so a later scrub that discards the staged
+	// timeline edits (never applied by the live run) also discards their
+	// recorded entry. Without this, StopRecording/Replay could reproduce an
+	// event the live run never actually stepped through.
+	recordingStaged  []input.Event
 	recordingAnchors []Anchor
 	// recordingInitialViewport is the surface size captured at StartRecording
 	// (tick 0) so StopRecording can persist it; Replay must restore it or
 	// viewport-dependent logic (UI hit-tests) diverges from the live run.
 	recordingInitialViewport math2d.Rect
 
-	// scrubLog is the unbounded input log used by ScrubToTick.
-	// A step from an older tick forks the timeline and drops stale future input.
-	scrubLog     []input.Event
-	stagedEvents []input.Event
-	maxTick      uint64
-
-	// viewportLog lets replay map screen-space pointer events with the viewport
-	// that was active when each event was recorded.
-	viewportLog []viewportEntry
-
-	// stagedViewport follows the same fork/discard rules as stagedEvents.
-	stagedViewport    math2d.Rect
-	hasStagedViewport bool
+	// timeline owns the unbounded scrub journal, staged fork edits, viewport
+	// history, and maximum reachable tick.
+	timeline timeline
 
 	determinismViolated bool
 
@@ -152,55 +149,20 @@ func (d *Driver) ApplyInput(events []input.Event) {
 	d.input.Apply(events, d.tick)
 
 	if d.recordingEnabled {
+		rewound := d.tick < d.timeline.maxTick
 		for _, event := range events {
 			event.Tick = d.tick
-			d.recording = append(d.recording, event)
+			if rewound {
+				// Staged like the timeline: only committed to d.recording if
+				// stepOnce later forks from this tick; discarded otherwise.
+				d.recordingStaged = append(d.recordingStaged, event)
+			} else {
+				d.recording = append(d.recording, event)
+			}
 		}
 	}
 
-	for _, event := range events {
-		event.Tick = d.tick
-		if d.tick < d.maxTick {
-			// Rewound: the log still holds the old future at this tick, so
-			// fresh events can't be appended yet — stage them until a step
-			// forks the timeline (or a scrub/back discards them).
-			d.stagedEvents = append(d.stagedEvents, event)
-		} else {
-			d.scrubLog = append(d.scrubLog, event)
-		}
-	}
-}
-
-func truncateAtTick(events []input.Event, tick uint64) []input.Event {
-	kept := events[:0]
-	for _, e := range events {
-		if e.Tick < tick {
-			kept = append(kept, e)
-		}
-	}
-	return kept
-}
-
-// truncateViewportLogAtTick drops viewport entries at or after the fork tick,
-// matching truncateAtTick for input events.
-func truncateViewportLogAtTick(log []viewportEntry, tick uint64) []viewportEntry {
-	kept := log[:0]
-	for _, ve := range log {
-		if ve.tick < tick {
-			kept = append(kept, ve)
-		}
-	}
-	return kept
-}
-
-func appendViewportLogEntry(log []viewportEntry, tick uint64, viewport math2d.Rect) []viewportEntry {
-	if viewport.Width() <= 0 || viewport.Height() <= 0 {
-		return log
-	}
-	if len(log) > 0 && log[len(log)-1].viewport == viewport {
-		return log
-	}
-	return append(log, viewportEntry{tick: tick, viewport: viewport})
+	d.timeline.record(d.tick, events)
 }
 
 // Control applies a platform control command before AdvanceTime or Step.
@@ -281,19 +243,13 @@ func (d *Driver) runSteps(steps int) {
 
 func (d *Driver) stepOnce(dt float64) {
 	// Stepping from a rewound tick forks the timeline.
-	if d.tick < d.maxTick {
-		d.scrubLog = truncateAtTick(d.scrubLog, d.tick)
-		d.scrubLog = append(d.scrubLog, d.stagedEvents...)
-		d.stagedEvents = nil
-		d.viewportLog = truncateViewportLogAtTick(d.viewportLog, d.tick)
-		if d.hasStagedViewport {
-			d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, d.stagedViewport)
-			d.stagedViewport = math2d.Rect{}
-			d.hasStagedViewport = false
-		} else {
-			d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, d.viewport)
+	if d.tick < d.timeline.maxTick {
+		d.timeline.fork(d.tick, d.viewport)
+		if d.recordingEnabled {
+			d.recording = truncateAtTick(d.recording, d.tick)
+			d.recording = append(d.recording, d.recordingStaged...)
+			d.recordingStaged = nil
 		}
-		d.maxTick = d.tick
 		if d.recorder != nil {
 			d.recorder.DropAfter(d.tick)
 		}
@@ -312,9 +268,7 @@ func (d *Driver) stepOnce(dt float64) {
 
 	d.stepCore(dt)
 
-	if d.tick > d.maxTick {
-		d.maxTick = d.tick
-	}
+	d.timeline.advanceTo(d.tick)
 }
 
 func (d *Driver) stepCore(dt float64) {
@@ -356,7 +310,7 @@ func (d *Driver) State() DriveState {
 		Speed:               d.controls.speed,
 		DebugLayers:         d.controls.debugLayers,
 		HistoryLen:          d.historyLen(),
-		MaxRecordedTick:     d.maxTick,
+		MaxRecordedTick:     d.timeline.maxTick,
 		DeterminismViolated: d.determinismViolated,
 	}
 	if d.recorder != nil {
@@ -459,15 +413,7 @@ func (d *Driver) SetViewport(viewport math2d.Rect) {
 	}
 
 	d.viewport = viewport
-	if d.tick < d.maxTick {
-		if d.hasStagedViewport && d.stagedViewport == viewport {
-			return
-		}
-		d.stagedViewport = viewport
-		d.hasStagedViewport = true
-	} else {
-		d.viewportLog = appendViewportLogEntry(d.viewportLog, d.tick, viewport)
-	}
+	d.timeline.recordViewport(d.tick, viewport)
 }
 
 func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
@@ -493,17 +439,13 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
-	d.maxTick = 0
-	d.scrubLog = nil
-	d.stagedEvents = nil
-	d.viewportLog = nil
-	d.stagedViewport = math2d.Rect{}
-	d.hasStagedViewport = false
+	d.timeline.reset()
 	if d.recordingEnabled {
 		// Ticks restart at 0: keeping the pre-reset events would collide
 		// with the new run's ticks and Replay would apply both. Restart the
 		// capture so StopRecording returns a reproducible post-reset log.
 		d.recording = nil
+		d.recordingStaged = nil
 		d.recordingAnchors = nil
 		// The viewport survives a reset (doReset never clears d.viewport), so
 		// the post-reset recording's tick-0 viewport is the current surface.
@@ -540,8 +482,8 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	// Restoring replaces the mapper wholesale, dropping the effect of any
 	// staged input — drop the staged events and staged viewport with it
 	// (see stepOnce's fork).
-	d.stagedEvents = nil
-	d.hasStagedViewport = false
+	d.timeline.discardStaged()
+	d.recordingStaged = nil
 
 	if game, ok := d.game.(StatefulGame); ok {
 		game.RestoreGameState(snap.gameState)
@@ -605,7 +547,7 @@ func (d *Driver) coalesceSeeks(seeks []seekRequest) (target uint64, ok bool) {
 				target -= back
 			}
 		case seekScrub:
-			if seek.tick <= d.maxTick {
+			if seek.tick <= d.timeline.maxTick {
 				target = seek.tick
 			}
 		}
@@ -613,10 +555,10 @@ func (d *Driver) coalesceSeeks(seeks []seekRequest) (target uint64, ok bool) {
 	return target, target != d.tick
 }
 
-// seekTo moves the driver to target ∈ [0, maxTick]. It never truncates scrubLog
-// or keyframes — the fork remains exclusive to stepOnce.
+// seekTo moves the driver to target ∈ [0, maxTick]. It never truncates the
+// timeline journal or keyframes — the fork remains exclusive to stepOnce.
 func (d *Driver) seekTo(target uint64) {
-	if target > d.maxTick || target == d.tick {
+	if target > d.timeline.maxTick || target == d.tick {
 		return
 	}
 
@@ -624,8 +566,8 @@ func (d *Driver) seekTo(target uint64) {
 
 	// Fast-forward can be incremental only when the current state has not been
 	// tainted by staged input/viewport changes that are waiting for a fork.
-	if target > d.tick && len(d.stagedEvents) == 0 && !d.hasStagedViewport {
-		d.viewport = d.viewportAtTick(d.tick, d.viewport)
+	if target > d.tick && len(d.timeline.staged) == 0 && !d.timeline.hasStagedViewport {
+		d.viewport = d.timeline.viewportAt(d.tick, d.viewport)
 		d.resimulate(target)
 		d.viewport = surfaceViewport
 		return
@@ -641,7 +583,7 @@ func (d *Driver) seekTo(target uint64) {
 	if !restored {
 		d.resetForResimulation()
 	}
-	d.viewport = d.viewportAtTick(d.tick, d.viewport)
+	d.viewport = d.timeline.viewportAt(d.tick, d.viewport)
 	if !restored && target == 0 {
 		d.applyLoggedInputsAtCurrentTick()
 	}
@@ -659,9 +601,8 @@ func (d *Driver) resetForResimulation() {
 	d.uiState = ui.State{}
 	d.animStore = ui.AnimStore{}
 	d.input.Reset()
-	d.stagedEvents = nil
-	d.stagedViewport = math2d.Rect{}
-	d.hasStagedViewport = false
+	d.timeline.discardStaged()
+	d.recordingStaged = nil
 	d.rng = NewRand(d.cfg.Seed)
 	d.audio.reset()
 	if game, ok := d.game.(StatefulGame); ok {
@@ -685,7 +626,7 @@ func (d *Driver) resimulate(target uint64) {
 	d.audio.pending = nil
 	defer func() { d.audio.suppressCues = false }()
 
-	cursor := newResimulationCursor(d.scrubLog, d.viewportLog, d.tick)
+	cursor := d.timeline.cursorFrom(d.tick)
 	dt := d.clock.DT()
 
 	for d.tick < target {
@@ -696,13 +637,12 @@ func (d *Driver) resimulate(target uint64) {
 		d.stepCore(dt)
 		d.verifyKeyframe(d.tick)
 	}
-	d.stagedEvents = nil
-	d.stagedViewport = math2d.Rect{}
-	d.hasStagedViewport = false
+	d.timeline.discardStaged()
+	d.recordingStaged = nil
 }
 
 func (d *Driver) applyLoggedInputsAtCurrentTick() {
-	cursor := newResimulationCursor(d.scrubLog, d.viewportLog, d.tick)
+	cursor := d.timeline.cursorFrom(d.tick)
 	for _, viewport := range cursor.viewportsAt(d.tick) {
 		d.viewport = viewport
 	}
@@ -723,60 +663,4 @@ func (d *Driver) verifyKeyframe(tick uint64) {
 	}
 	d.determinismViolated = true
 	d.log.Error("resimulation diverged from keyframe", "tick", tick, "got", got, "want", keyframe.checksum)
-}
-
-func (d *Driver) viewportAtTick(tick uint64, fallback math2d.Rect) math2d.Rect {
-	viewport := fallback
-	for _, entry := range d.viewportLog {
-		if entry.tick > tick {
-			break
-		}
-		viewport = entry.viewport
-	}
-	return viewport
-}
-
-type resimulationCursor struct {
-	events        []input.Event
-	eventIndex    int
-	viewportLog   []viewportEntry
-	viewportIndex int
-}
-
-func newResimulationCursor(events []input.Event, viewportLog []viewportEntry, tick uint64) resimulationCursor {
-	cursor := resimulationCursor{events: events, viewportLog: viewportLog}
-	for cursor.eventIndex < len(cursor.events) && cursor.events[cursor.eventIndex].Tick < tick {
-		cursor.eventIndex++
-	}
-	for cursor.viewportIndex < len(cursor.viewportLog) && cursor.viewportLog[cursor.viewportIndex].tick < tick {
-		cursor.viewportIndex++
-	}
-	return cursor
-}
-
-func (c *resimulationCursor) eventsAt(tick uint64) []input.Event {
-	for c.eventIndex < len(c.events) && c.events[c.eventIndex].Tick < tick {
-		c.eventIndex++
-	}
-	start := c.eventIndex
-	for c.eventIndex < len(c.events) && c.events[c.eventIndex].Tick == tick {
-		c.eventIndex++
-	}
-	return c.events[start:c.eventIndex]
-}
-
-func (c *resimulationCursor) viewportsAt(tick uint64) []math2d.Rect {
-	for c.viewportIndex < len(c.viewportLog) && c.viewportLog[c.viewportIndex].tick < tick {
-		c.viewportIndex++
-	}
-	start := c.viewportIndex
-	for c.viewportIndex < len(c.viewportLog) && c.viewportLog[c.viewportIndex].tick == tick {
-		c.viewportIndex++
-	}
-	entries := c.viewportLog[start:c.viewportIndex]
-	viewports := make([]math2d.Rect, 0, len(entries))
-	for _, entry := range entries {
-		viewports = append(viewports, entry.viewport)
-	}
-	return viewports
 }
