@@ -121,31 +121,55 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.ctx.Call("fillRect", 0, 0, w, h)
 	}
 
-	for _, cmd := range frame.Commands {
-		c.ctx.Call("save")
-		c.applyClip(cmd, frame.Camera)
-		switch cmd := cmd.(type) {
-		case render.DrawRect:
-			c.drawRect(cmd, frame.Camera)
-		case render.DrawCircle:
-			c.drawCircle(cmd, frame.Camera)
-		case render.DrawPoint:
-			c.drawPoint(cmd, frame.Camera)
-		case render.DrawLine:
-			c.drawLine(cmd, frame.Camera)
-		case render.DrawArc:
-			c.drawArc(cmd, frame.Camera)
-		case render.DrawText:
-			c.drawText(cmd, frame.Camera)
-		case render.DrawPolygon:
-			c.drawPolygon(cmd, frame.Camera)
-		case render.DrawImage:
-			c.drawImage(cmd, frame.Camera)
-		case render.DrawImageQuad:
-			c.drawImageQuad(cmd, frame.Camera)
-		}
-		c.ctx.Call("restore")
-	}
+	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
+}
+
+type canvasSink struct {
+	canvas *Canvas2D
+	camera render.Camera
+}
+
+func (s canvasSink) withClip(clip math2d.Rect, draw func()) {
+	s.canvas.ctx.Call("save")
+	s.canvas.applyClip(clip, s.camera)
+	draw()
+	s.canvas.ctx.Call("restore")
+}
+
+func (s canvasSink) VisitRect(command render.DrawRect) {
+	s.withClip(command.Clip, func() { s.canvas.drawRect(command, s.camera) })
+}
+
+func (s canvasSink) VisitCircle(command render.DrawCircle) {
+	s.withClip(command.Clip, func() { s.canvas.drawCircle(command, s.camera) })
+}
+
+func (s canvasSink) VisitPoint(command render.DrawPoint) {
+	s.withClip(command.Clip, func() { s.canvas.drawPoint(command, s.camera) })
+}
+
+func (s canvasSink) VisitLine(command render.DrawLine) {
+	s.withClip(command.Clip, func() { s.canvas.drawLine(command, s.camera) })
+}
+
+func (s canvasSink) VisitText(command render.DrawText) {
+	s.withClip(command.Clip, func() { s.canvas.drawText(command, s.camera) })
+}
+
+func (s canvasSink) VisitArc(command render.DrawArc) {
+	s.withClip(command.Clip, func() { s.canvas.drawArc(command, s.camera) })
+}
+
+func (s canvasSink) VisitPolygon(command render.DrawPolygon) {
+	s.withClip(command.Clip, func() { s.canvas.drawPolygon(command, s.camera) })
+}
+
+func (s canvasSink) VisitImage(command render.DrawImage) {
+	s.withClip(command.Clip, func() { s.canvas.drawImage(command, s.camera) })
+}
+
+func (s canvasSink) VisitImageQuad(command render.DrawImageQuad) {
+	s.withClip(command.Clip, func() { s.canvas.drawImageQuad(command, s.camera) })
 }
 
 // drawImage is the Canvas2D fallback implementation of DrawImage. It matches
@@ -505,8 +529,7 @@ func (c *Canvas2D) drawPolygon(cmd render.DrawPolygon, camera render.Camera) {
 	}
 }
 
-func (c *Canvas2D) applyClip(cmd render.Command, camera render.Camera) {
-	clip := commandClip(cmd)
+func (c *Canvas2D) applyClip(clip math2d.Rect, camera render.Camera) {
 	if clip.Width() <= 0 || clip.Height() <= 0 {
 		return
 	}
@@ -526,31 +549,6 @@ func (c *Canvas2D) applyClip(cmd render.Command, camera render.Camera) {
 	c.ctx.Call("beginPath")
 	c.ctx.Call("rect", x, y, w, h)
 	c.ctx.Call("clip")
-}
-
-func commandClip(cmd render.Command) math2d.Rect {
-	switch cm := cmd.(type) {
-	case render.DrawRect:
-		return cm.Clip
-	case render.DrawCircle:
-		return cm.Clip
-	case render.DrawPoint:
-		return cm.Clip
-	case render.DrawLine:
-		return cm.Clip
-	case render.DrawText:
-		return cm.Clip
-	case render.DrawArc:
-		return cm.Clip
-	case render.DrawPolygon:
-		return cm.Clip
-	case render.DrawImage:
-		return cm.Clip
-	case render.DrawImageQuad:
-		return cm.Clip
-	default:
-		return math2d.Rect{}
-	}
 }
 
 func screenRect(rect math2d.Rect, camera render.Camera) (x, y, w, h float64) {
