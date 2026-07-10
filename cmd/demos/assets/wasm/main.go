@@ -18,10 +18,11 @@ func main() {
 
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		DevTools:     true,
-		Log:          log,
-		RecordReplay: true,
-		GameFactory:  func() runtime.Game { return game },
+		DevTools:      true,
+		Log:           log,
+		RecordReplay:  true,
+		GameFactory:   func() runtime.Game { return game },
+		ForceCanvas2D: true,
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)
 	}

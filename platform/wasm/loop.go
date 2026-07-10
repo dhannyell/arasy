@@ -14,6 +14,10 @@ type renderer interface {
 	Render(frame runtime.Frame)
 }
 
+type textureUpdater interface {
+	UpdateTextures(updates []runtime.TextureUpdate)
+}
+
 func (h *host) startLoop() {
 	var fpsFrames int
 	var fpsElapsed time.Duration
@@ -37,6 +41,9 @@ func (h *host) startLoop() {
 		}
 
 		frame := h.driver.Frame(elapsed)
+		if updater, ok := h.renderer.(textureUpdater); ok {
+			updater.UpdateTextures(h.driver.ConsumeTextureUpdates())
+		}
 		h.renderer.Render(frame)
 
 		fpsFrames++

@@ -11,6 +11,7 @@ import (
 	"github.com/dhannyell/frameforge/asset/pixel"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 // gpuTexture is one declared texture uploaded to the GPU, with its full mip
@@ -164,6 +165,35 @@ func mipLevelCount(w, h int) int {
 // out of range or was never built (e.g. a decode failure logged in
 // buildTextures); tess.Build already substitutes a solid magenta placeholder
 // for such ids, so the caller should simply skip drawing the run.
+func (r *webgpuRenderer) UpdateTextures(updates []runtime.TextureUpdate) {
+	for _, u := range updates {
+		if u.Image == nil {
+			continue
+		}
+		gt, ok := r.textureFor(u.ID)
+		if !ok {
+			continue
+		}
+		b := u.Image.Bounds()
+		w, h := b.Dx(), b.Dy()
+		r.queue.Call(
+			"writeTexture",
+			map[string]any{"texture": gt.texture},
+			bytesToJS(u.Image.Pix),
+			map[string]any{
+				"bytesPerRow":  4 * w,
+				"rowsPerImage": h,
+			},
+			map[string]any{
+				"width":              w,
+				"height":             h,
+				"depthOrArrayLayers": 1,
+			},
+		)
+		r.generateMipmaps(gt.texture, w, h, mipLevelCount(w, h))
+	}
+}
+
 func (r *webgpuRenderer) textureFor(id render.TextureID) (gpuTexture, bool) {
 	if id == 0 || int(id) >= len(r.textures) {
 		return gpuTexture{}, false
