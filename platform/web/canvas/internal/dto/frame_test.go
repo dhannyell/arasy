@@ -1,4 +1,4 @@
-package web
+package dto
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package web
+package dto
 
 import (
 	"bytes"
@@ -80,7 +80,7 @@ func assertGoldenBytes(t *testing.T, name string, got []byte) {
 
 	want, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read golden %s: %v (run go test ./internal/render/adapter/web -run TestGolden -update)", path, err)
+		t.Fatalf("read golden %s: %v (run go test ./platform/web/canvas/internal/dto -run TestGolden -update)", path, err)
 	}
 
 	if bytes.Equal(normalizeLineEndings(want), normalizeLineEndings(got)) {

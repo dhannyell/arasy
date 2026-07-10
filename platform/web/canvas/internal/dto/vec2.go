@@ -1,4 +1,4 @@
-package web
+package dto
 
 import "github.com/dhannyell/frameforge/math2d"
 
