@@ -50,7 +50,10 @@ func AppendImage(m *TexMesh, c ctx, cmd render.DrawImage, texW, texH int) {
 		return
 	}
 
-	uv := srcUV(cmd.Src, texW, texH)
+	uv, ok := srcUV(cmd.Src, texW, texH)
+	if !ok {
+		return
+	}
 	tint := texTint(cmd.Tint)
 
 	start := len(m.Vertices)
@@ -90,7 +93,10 @@ func AppendImageQuad(m *TexMesh, c ctx, cmd render.DrawImageQuad, texW, texH int
 		w[i] = ww
 	}
 
-	uv := srcUV(cmd.Src, texW, texH)
+	uv, ok := srcUV(cmd.Src, texW, texH)
+	if !ok {
+		return
+	}
 	tint := texTint(cmd.Tint)
 
 	start := len(m.Vertices)
@@ -164,16 +170,33 @@ func destCorners(c ctx, dest math2d.Rect, rotation float64) (corners [4]math2d.V
 
 // srcUV normalizes a pixel-space sub-rectangle into texture UV. The zero
 // rect (or non-positive texture dimensions) selects the whole texture.
-func srcUV(src math2d.Rect, texW, texH int) [4][2]float32 {
-	u0, v0, u1, v1 := float32(0), float32(0), float32(1), float32(1)
-	if src != (math2d.Rect{}) && texW > 0 && texH > 0 {
-		w, h := float64(texW), float64(texH)
-		u0 = float32(src.Min.X / w)
-		v0 = float32(src.Min.Y / h)
-		u1 = float32(src.Max.X / w)
-		v1 = float32(src.Max.Y / h)
+//
+// Non-zero Src is clamped to the texture bounds before normalizing, mirroring
+// the raster backend's tex.Bounds() intersection (platform/raster/renderer.go
+// drawImage/drawImageQuad): without this, a Src that overshoots the texture
+// produces UV outside [0,1], and clamp-to-edge sampling stretches the border
+// instead of shrinking the sampled sub-rect like raster does. ok is false
+// when the clamped rect has zero or negative area, matching raster's
+// intersect-then-skip behavior for a Src wholly outside the texture.
+func srcUV(src math2d.Rect, texW, texH int) (uv [4][2]float32, ok bool) {
+	if src == (math2d.Rect{}) || texW <= 0 || texH <= 0 {
+		return [4][2]float32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}, true
 	}
-	return [4][2]float32{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}
+
+	w, h := float64(texW), float64(texH)
+	minX := math.Max(0, math.Min(w, src.Min.X))
+	minY := math.Max(0, math.Min(h, src.Min.Y))
+	maxX := math.Max(0, math.Min(w, src.Max.X))
+	maxY := math.Max(0, math.Min(h, src.Max.Y))
+	if maxX <= minX || maxY <= minY {
+		return [4][2]float32{}, false
+	}
+
+	u0 := float32(minX / w)
+	v0 := float32(minY / h)
+	u1 := float32(maxX / w)
+	v1 := float32(maxY / h)
+	return [4][2]float32{{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}}, true
 }
 
 // texTint mirrors the raster backend's tintFrom: the zero Color means no

@@ -132,6 +132,130 @@ func TestAppendImageSrcSubRectNormalizesUV(t *testing.T) {
 	}
 }
 
+// TestAppendImageSrcClampsToTextureBounds mirrors the raster backend's
+// tex.Bounds() intersection: a Src rect that overshoots the texture must be
+// clamped rather than producing UV outside [0,1] (which would stretch the
+// border under clamp-to-edge sampling instead of shrinking the sampled
+// sub-rect like raster does).
+func TestAppendImageSrcClampsToTextureBounds(t *testing.T) {
+	var mesh TexMesh
+	AppendImage(&mesh, testCtx(), render.DrawImage{
+		Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+		Src:  math2d.NewRectFromCorners(math2d.Vec2{X: -8, Y: -8}, math2d.Vec2{X: 40, Y: 24}),
+	}, 32, 16)
+
+	if len(mesh.Vertices) != 6 {
+		t.Fatalf("len(vertices) = %d, want 6", len(mesh.Vertices))
+	}
+
+	wantUV := [4][2]float32{{0, 0}, {1, 0}, {1, 1}, {0, 1}}
+	quadCornerForVertex := [6]int{0, 1, 2, 0, 2, 3}
+	for i, v := range mesh.Vertices {
+		want := wantUV[quadCornerForVertex[i]]
+		assertFloat32(t, v.U, want[0])
+		assertFloat32(t, v.V, want[1])
+	}
+}
+
+// TestAppendImageSrcEntirelyOutsideTextureSkipsDraw asserts that a Src rect
+// with no overlap with the texture produces no vertices, matching raster's
+// empty-intersection skip in drawImage/drawImageQuad.
+func TestAppendImageSrcEntirelyOutsideTextureSkipsDraw(t *testing.T) {
+	var mesh TexMesh
+	AppendImage(&mesh, testCtx(), render.DrawImage{
+		Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+		Src:  math2d.NewRectFromCorners(math2d.Vec2{X: 100, Y: 100}, math2d.Vec2{X: 200, Y: 200}),
+	}, 32, 16)
+
+	if len(mesh.Vertices) != 0 {
+		t.Fatalf("len(vertices) = %d, want 0 for a Src entirely outside the texture", len(mesh.Vertices))
+	}
+}
+
+// TestAppendImageQuadAffineClipRestrictsGeneratedVertices covers the
+// documented affine clip path (image.go AppendImageQuad): a parallelogram
+// quad (zero diagonal defect -> homography.IsAffine()) with Clip set must
+// actually clip, mirroring TestClipRestrictsGeneratedVertices for the solid
+// mesh. This scenario had no test before.
+func TestAppendImageQuadAffineClipRestrictsGeneratedVertices(t *testing.T) {
+	c := testCtx()
+	corners := [4]math2d.Vec2{
+		{X: 10, Y: 10}, {X: 50, Y: 10}, {X: 60, Y: 50}, {X: 20, Y: 50},
+	}
+
+	_, homography, ok := imageQuadProjection(c, corners)
+	if !ok || !homography.IsAffine() {
+		t.Fatal("test fixture quad must be a valid affine (parallelogram) quad")
+	}
+
+	var unclipped TexMesh
+	AppendImageQuad(&unclipped, c, render.DrawImageQuad{Corners: corners}, 0, 0)
+
+	clipBoundary := screenToClip(c, math2d.Vec2{X: 35, Y: 0})[0]
+	foundBeyondBoundary := false
+	for _, v := range unclipped.Vertices {
+		if texClipX(v) > float32(clipBoundary)+testEpsilon {
+			foundBeyondBoundary = true
+			break
+		}
+	}
+	if !foundBeyondBoundary {
+		t.Fatal("test fixture quad must extend past the clip boundary when unclipped")
+	}
+
+	var clipped TexMesh
+	AppendImageQuad(&clipped, c, render.DrawImageQuad{
+		BaseCommand: render.BaseCommand{
+			Clip: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 35, Y: 100}),
+		},
+		Corners: corners,
+	}, 0, 0)
+
+	if len(clipped.Vertices) == 0 {
+		t.Fatal("clipped affine quad produced no vertices")
+	}
+	for _, v := range clipped.Vertices {
+		if x := texClipX(v); x > float32(clipBoundary)+testEpsilon {
+			t.Fatalf("clipped vertex X = %v, want <= %v", x, clipBoundary)
+		}
+	}
+}
+
+// TestAppendImageQuadProjectiveClipIsBypassed covers the documented
+// projective bypass (image.go AppendImageQuad, "Clip only when the
+// homography is affine"): a genuinely projective (non-affine) quad with Clip
+// set must draw the exact same vertices as without Clip. This scenario had
+// no test before, and a regression here would silently start distorting the
+// texture near the clip boundary of any projective DrawImageQuad.
+func TestAppendImageQuadProjectiveClipIsBypassed(t *testing.T) {
+	c := testCtx()
+	// The same trapezoid as TestAppendImageQuadTrapezoidHasVaryingWAndExactClipCorners:
+	// narrower at the top than the bottom, so the homography is projective.
+	corners := [4]math2d.Vec2{
+		{X: 40, Y: 0}, {X: 60, Y: 0}, {X: 90, Y: 100}, {X: 10, Y: 100},
+	}
+
+	_, homography, ok := imageQuadProjection(c, corners)
+	if !ok || homography.IsAffine() {
+		t.Fatal("test fixture quad must be a valid non-affine (projective) quad")
+	}
+
+	var unclipped TexMesh
+	AppendImageQuad(&unclipped, c, render.DrawImageQuad{Corners: corners}, 0, 0)
+
+	var clipped TexMesh
+	AppendImageQuad(&clipped, c, render.DrawImageQuad{
+		BaseCommand: render.BaseCommand{
+			Clip: math2d.NewRect(math2d.Vec2{X: 45, Y: 10}, math2d.Vec2{X: 55, Y: 20}),
+		},
+		Corners: corners,
+	}, 0, 0)
+
+	if !reflect.DeepEqual(unclipped.Vertices, clipped.Vertices) {
+		t.Fatal("projective quad's vertices changed when Clip was set; Clip must be bypassed for non-affine quads")
+	}
+}
+
 func TestAppendImageQuadDegenerateCornersProduceNoVertices(t *testing.T) {
 	var mesh TexMesh
 	AppendImageQuad(&mesh, testCtx(), render.DrawImageQuad{

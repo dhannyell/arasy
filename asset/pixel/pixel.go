@@ -6,6 +6,7 @@ package pixel
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -32,10 +33,15 @@ func DecodeRGBA(data []byte) (*image.RGBA, error) {
 // (TextureID 0 means "missing texture").
 type Registry []*image.RGBA
 
-// BuildRegistry decodes every texture in the manifest.
+// BuildRegistry decodes every texture in the manifest. A texture that fails
+// to decode is left nil in the registry (the same "missing texture" state
+// Lookup already reports for an unknown id) instead of aborting the whole
+// registry, so one corrupt asset never blocks the others; every decode error
+// is collected and returned joined.
 func BuildRegistry(m asset.Manifest) (Registry, error) {
 	decls := m.Textures()
 	reg := make(Registry, len(decls)+1)
+	var errs []error
 	for _, d := range decls {
 		if d.Dynamic {
 			reg[d.ID] = image.NewRGBA(image.Rect(0, 0, d.W, d.H))
@@ -43,11 +49,12 @@ func BuildRegistry(m asset.Manifest) (Registry, error) {
 		}
 		img, err := DecodeRGBA(d.Data)
 		if err != nil {
-			return nil, fmt.Errorf("decode texture %q: %w", d.Name, err)
+			errs = append(errs, fmt.Errorf("decode texture %q: %w", d.Name, err))
+			continue
 		}
 		reg[d.ID] = img
 	}
-	return reg, nil
+	return reg, errors.Join(errs...)
 }
 
 // Lookup returns the pixels for id, or nil when the id is unknown.

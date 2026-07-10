@@ -17,11 +17,12 @@ import (
 const imageQuadGridSize = 16
 
 type Canvas2D struct {
-	ctx      js.Value
-	canvas   js.Value
-	clear    render.Color
-	textures map[render.TextureID]js.Value
-	log      *slog.Logger
+	ctx       js.Value
+	canvas    js.Value
+	clear     render.Color
+	textures  map[render.TextureID]js.Value
+	tintCache map[string]js.Value
+	log       *slog.Logger
 }
 
 func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) *Canvas2D {
@@ -29,11 +30,12 @@ func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, l
 		log = slog.Default()
 	}
 	c := &Canvas2D{
-		ctx:      canvas.Call("getContext", "2d"),
-		canvas:   canvas,
-		clear:    clear,
-		textures: make(map[render.TextureID]js.Value),
-		log:      log,
+		ctx:       canvas.Call("getContext", "2d"),
+		canvas:    canvas,
+		clear:     clear,
+		textures:  make(map[render.TextureID]js.Value),
+		tintCache: make(map[string]js.Value),
+		log:       log,
 	}
 	for _, decl := range manifest.Textures() {
 		c.loadTexture(decl)
@@ -146,9 +148,10 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 	}
 }
 
-// drawImage is the Canvas2D fallback implementation of DrawImage. Canvas
-// has no efficient channel-wise tint primitive, so its tint approximation
-// preserves alpha only; the raster backend remains the colour reference.
+// drawImage is the Canvas2D fallback implementation of DrawImage. It matches
+// the raster/WebGPU backends' full RGB tint (not just alpha) via
+// tintedBitmap, mirroring the JS dev host's frontend approximation
+// (static/js/primitives.js tintedBitmap) so the two dev tools agree.
 func (c *Canvas2D) drawImage(cmd render.DrawImage, camera render.Camera) {
 	x, y, w, h := screenRect(cmd.Dest, camera)
 	if w <= 0 || h <= 0 {
@@ -165,16 +168,19 @@ func (c *Canvas2D) drawImage(cmd render.DrawImage, camera render.Camera) {
 	if !ok {
 		return
 	}
+
+	source := bitmap
 	c.ctx.Call("save")
 	if cmd.Tint != (render.Color{}) {
 		c.ctx.Set("globalAlpha", cmd.Tint.A)
+		source = c.tintedBitmap(bitmap, cmd.Texture, cmd.Tint)
 	}
 	if cmd.Rotation != 0 {
 		c.ctx.Call("translate", x+w/2, y+h/2)
 		c.ctx.Call("rotate", cmd.Rotation)
-		c.ctx.Call("drawImage", bitmap, sx, sy, sw, sh, -w/2, -h/2, w, h)
+		c.ctx.Call("drawImage", source, sx, sy, sw, sh, -w/2, -h/2, w, h)
 	} else {
-		c.ctx.Call("drawImage", bitmap, sx, sy, sw, sh, x, y, w, h)
+		c.ctx.Call("drawImage", source, sx, sy, sw, sh, x, y, w, h)
 	}
 	c.ctx.Call("restore")
 }
@@ -206,8 +212,10 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 	}
 
 	alpha := 1.0
+	source := bitmap
 	if cmd.Tint != (render.Color{}) {
 		alpha = cmd.Tint.A
+		source = c.tintedBitmap(bitmap, cmd.Texture, cmd.Tint)
 	}
 	for row := 0; row < imageQuadGridSize; row++ {
 		v0 := float64(row) / imageQuadGridSize
@@ -225,10 +233,48 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 			s11 := math2d.Vec2{X: sx + u1*sw, Y: sy + v1*sh}
 			s01 := math2d.Vec2{X: sx + u0*sw, Y: sy + v1*sh}
 
-			c.drawTexturedTriangle(bitmap, alpha, s00, s10, s01, p00, p10, p01)
-			c.drawTexturedTriangle(bitmap, alpha, s10, s11, s01, p10, p11, p01)
+			c.drawTexturedTriangle(source, alpha, s00, s10, s01, p00, p10, p01)
+			c.drawTexturedTriangle(source, alpha, s10, s11, s01, p10, p11, p01)
 		}
 	}
+}
+
+// tintedBitmap returns bitmap with its color channels multiplied by tint,
+// preserving the original alpha, mirroring the JS frontend's tintedBitmap
+// (static/js/primitives.js) so both dev hosts render the same tint. Results
+// are cached per (textureID, tint rgb): an opaque offscreen canvas is
+// composited with the bitmap ("multiply"), then "destination-in" restores
+// the source alpha. A white tint is alpha-only and returns bitmap unchanged,
+// since globalAlpha already handles it at the call site.
+func (c *Canvas2D) tintedBitmap(bitmap js.Value, textureID render.TextureID, tint render.Color) js.Value {
+	r := int(math.Round(tint.R * 255))
+	g := int(math.Round(tint.G * 255))
+	b := int(math.Round(tint.B * 255))
+	if r == 255 && g == 255 && b == 255 {
+		return bitmap
+	}
+
+	key := fmt.Sprintf("%d:%d,%d,%d", textureID, r, g, b)
+	if cached, ok := c.tintCache[key]; ok {
+		return cached
+	}
+
+	width := bitmap.Get("width")
+	height := bitmap.Get("height")
+	canvas := js.Global().Get("document").Call("createElement", "canvas")
+	canvas.Set("width", width)
+	canvas.Set("height", height)
+
+	off := canvas.Call("getContext", "2d")
+	off.Call("drawImage", bitmap, 0, 0)
+	off.Set("globalCompositeOperation", "multiply")
+	off.Set("fillStyle", fmt.Sprintf("rgb(%d, %d, %d)", r, g, b))
+	off.Call("fillRect", 0, 0, width, height)
+	off.Set("globalCompositeOperation", "destination-in")
+	off.Call("drawImage", bitmap, 0, 0)
+
+	c.tintCache[key] = canvas
+	return canvas
 }
 
 func (c *Canvas2D) drawTexturedTriangle(bitmap js.Value, alpha float64, s0, s1, s2, d0, d1, d2 math2d.Vec2) {

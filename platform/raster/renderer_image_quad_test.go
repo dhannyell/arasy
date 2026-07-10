@@ -220,6 +220,37 @@ func TestDrawImageQuadNonConvexSkipsDraw(t *testing.T) {
 	assertPixel(t, img.At(3, 3), black)
 }
 
+// TestDrawImageQuadClip mirrors TestDrawImageClip through the quad path: no
+// existing test combined DrawImageQuad with BaseCommand.Clip, even though
+// raster's drawImageQuad clips unconditionally (unlike the WebGPU tess
+// backend, which only clips affine quads -- see AppendImageQuad).
+func TestDrawImageQuadClip(t *testing.T) {
+	tex := makeTexWhite()
+	renderer := imageRenderer(4, 4)
+	renderer.Textures = pixel.Registry{nil, tex}
+
+	img := renderer.Render([]render.Command{
+		render.DrawImageQuad{
+			BaseCommand: render.BaseCommand{
+				Clip: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 4}),
+			},
+			Texture: 1,
+			Corners: rectCorners(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4})),
+		},
+	})
+
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	black := color.RGBA{R: 0, G: 0, B: 0, A: 255}
+
+	// Left half is drawn.
+	assertPixel(t, img.At(0, 0), white)
+	assertPixel(t, img.At(1, 2), white)
+
+	// Right half is clipped away.
+	assertPixel(t, img.At(2, 0), black)
+	assertPixel(t, img.At(3, 3), black)
+}
+
 // TestDrawImageQuadMissingTexture renders the magenta placeholder polygon
 // when the texture id is unknown.
 func TestDrawImageQuadMissingTexture(t *testing.T) {

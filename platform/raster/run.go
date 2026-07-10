@@ -40,9 +40,12 @@ func Run(game runtime.Game, opts Options) error {
 	driver := runtime.NewDriver(game, log)
 	cfg := driver.Config()
 
+	// A texture that fails to decode is left nil in the registry (rendered as
+	// the missing-texture placeholder) rather than aborting the whole run, so
+	// one corrupt asset never blocks the others.
 	textures, err := pixel.BuildRegistry(cfg.Assets)
 	if err != nil {
-		return fmt.Errorf("build texture registry: %w", err)
+		log.Error("build texture registry", "error", err)
 	}
 
 	cam := cfg.Camera

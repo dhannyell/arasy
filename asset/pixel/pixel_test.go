@@ -65,14 +65,39 @@ func TestBuildRegistryAndLookup(t *testing.T) {
 }
 
 func TestBuildRegistryReportsCorruptedTexture(t *testing.T) {
+	var buf bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 1, G: 2, B: 3, A: 4})
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("png.Encode() error = %v", err)
+	}
+
 	m, err := asset.Load(fstest.MapFS{
-		"manifest.json":     {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"}]}`)},
-		"textures/ball.png": {Data: []byte("not-a-png")},
+		"manifest.json": {Data: []byte(`{"version":1,"textures":[
+			{"name":"ball","file":"textures/ball.png"},
+			{"name":"broken","file":"textures/broken.png"}
+		]}`)},
+		"textures/ball.png":   {Data: buf.Bytes()},
+		"textures/broken.png": {Data: []byte("not-a-png")},
 	})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if _, err := pixel.BuildRegistry(m); err == nil {
-		t.Fatal("BuildRegistry() error = nil, want decode failure")
+
+	reg, err := pixel.BuildRegistry(m)
+	if err == nil {
+		t.Fatal("BuildRegistry() error = nil, want decode failure reported for the corrupted texture")
+	}
+	if reg == nil {
+		t.Fatal("BuildRegistry() registry = nil, want a partial registry alongside the error")
+	}
+
+	ballID := m.Texture("ball")
+	if got := reg.Lookup(ballID); got == nil {
+		t.Fatal("Lookup(ball) = nil, want the valid texture decoded despite the sibling failure")
+	}
+	brokenID := m.Texture("broken")
+	if got := reg.Lookup(brokenID); got != nil {
+		t.Fatalf("Lookup(broken) = %v, want nil for the corrupted texture", got)
 	}
 }
