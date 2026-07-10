@@ -152,10 +152,10 @@ func TestColorsRemainStraightAlpha(t *testing.T) {
 	assertFloat32(t, got.A, float32(color.A))
 }
 
-func TestBuildPreservesInputOrderForSolidCommands(t *testing.T) {
+func TestBuildSortsSolidCommandsByLayer(t *testing.T) {
 	first := render.RGBA(1, 0, 0, 1)
 	second := render.RGBA(0, 0, 1, 1)
-	mesh, textured, textMesh := Build(runtime.Frame{
+	runs := Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawRect{
@@ -171,64 +171,27 @@ func TestBuildPreservesInputOrderForSolidCommands(t *testing.T) {
 		},
 	}, 100, 100, nil, nil)
 
-	if len(textMesh.Vertices) != 0 {
-		t.Fatalf("len(text vertices) = %d, want 0", len(textMesh.Vertices))
+	if len(runs) != 1 || runs[0].Kind != DrawRunSolid {
+		t.Fatalf("runs = %+v, want one solid run", runs)
 	}
-	if len(textured) != 0 {
-		t.Fatalf("len(textured runs) = %d, want 0", len(textured))
-	}
+	mesh := runs[0].Solid
 	if len(mesh.Vertices) != 12 {
 		t.Fatalf("len(vertices) = %d, want 12", len(mesh.Vertices))
 	}
-	assertFloat32(t, mesh.Vertices[0].R, float32(first.R))
-	assertFloat32(t, mesh.Vertices[6].B, float32(second.B))
+	assertFloat32(t, mesh.Vertices[0].B, float32(second.B))
+	assertFloat32(t, mesh.Vertices[6].R, float32(first.R))
 }
 
-// TestAppendTexRunReusesOpenRunOnlyForMatchingTexture exercises appendTexRun
-// directly: consecutive draws of the same texture must share a run, a
-// different texture must start a new run, and reverting to a previously-used
-// texture must NOT reuse the old (now closed) run -- runs reflect draw order,
-// not texture identity.
-func TestAppendTexRunReusesOpenRunOnlyForMatchingTexture(t *testing.T) {
-	var runs []TexMesh
-
-	idx := appendTexRun(&runs, -1, 1)
-	if idx != 0 || len(runs) != 1 {
-		t.Fatalf("first draw: idx=%d len(runs)=%d, want 0,1", idx, len(runs))
-	}
-
-	idx = appendTexRun(&runs, idx, 1)
-	if idx != 0 || len(runs) != 1 {
-		t.Fatalf("same texture: idx=%d len(runs)=%d, want 0,1 (run reused)", idx, len(runs))
-	}
-
-	idx = appendTexRun(&runs, idx, 2)
-	if idx != 1 || len(runs) != 2 {
-		t.Fatalf("different texture: idx=%d len(runs)=%d, want 1,2 (new run)", idx, len(runs))
-	}
-
-	idx = appendTexRun(&runs, idx, 1)
-	if idx != 2 || len(runs) != 3 {
-		t.Fatalf("texture reverts to 1: idx=%d len(runs)=%d, want 2,3 (new run, not merged with run 0)", idx, len(runs))
-	}
-
-	wantTextures := []render.TextureID{1, 2, 1}
-	for i, run := range runs {
-		if run.Texture != wantTextures[i] {
-			t.Fatalf("runs[%d].Texture = %d, want %d", i, run.Texture, wantTextures[i])
-		}
-	}
-}
-
-// TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation is the
-// end-to-end counterpart via Build: it confirms appendTexRun's grouping is
-// wired correctly into the DrawImage dispatch, including vertex counts per
-// run and that overall draw order is preserved across the split runs.
+// TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation confirms
+// that buildSink's run grouping is wired correctly into the DrawImage
+// dispatch: consecutive draws of the same texture share one run, a different
+// texture starts a new run, and vertex counts plus overall draw order are
+// preserved across the split runs.
 func TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation(t *testing.T) {
 	sizes := TexSizes{{}, {8, 8}, {8, 8}}
 	dest := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10})
 
-	_, textured, _ := Build(runtime.Frame{
+	runs := Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawImage{Texture: 1, Dest: dest},
@@ -240,15 +203,15 @@ func TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation(t *testing
 
 	wantTextures := []render.TextureID{1, 2, 1}
 	wantVertexCounts := []int{12, 6, 6}
-	if len(textured) != len(wantTextures) {
-		t.Fatalf("len(textured) = %d, want %d runs", len(textured), len(wantTextures))
+	if len(runs) != len(wantTextures) {
+		t.Fatalf("len(runs) = %d, want %d runs", len(runs), len(wantTextures))
 	}
-	for i, run := range textured {
-		if run.Texture != wantTextures[i] {
-			t.Fatalf("textured[%d].Texture = %d, want %d", i, run.Texture, wantTextures[i])
+	for i, run := range runs {
+		if run.Kind != DrawRunTextured || run.Textured.Texture != wantTextures[i] {
+			t.Fatalf("runs[%d] = %+v, want textured texture %d", i, run, wantTextures[i])
 		}
-		if len(run.Vertices) != wantVertexCounts[i] {
-			t.Fatalf("textured[%d] len(vertices) = %d, want %d", i, len(run.Vertices), wantVertexCounts[i])
+		if len(run.Textured.Vertices) != wantVertexCounts[i] {
+			t.Fatalf("textured[%d] len(vertices) = %d, want %d", i, len(run.Textured.Vertices), wantVertexCounts[i])
 		}
 	}
 }
