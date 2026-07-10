@@ -10,6 +10,7 @@ import {
     drawPolygon,
     drawImage,
     drawImageQuad,
+    invalidateTextureCache,
 } from "./primitives.js";
 
 export function createCanvasRenderer(canvas, options = {}) {
@@ -65,6 +66,14 @@ export function createCanvasRenderer(canvas, options = {}) {
         for (const [key, value] of map) {
             assets.set(key, value)
         }
+    }
+
+    function addOrUpdateAsset(id, bitmap) {
+        const old = assets.get(id);
+        assets.set(id, bitmap);
+        invalidateTextureCache(id);
+        // ImageData isn't reliably freed by the GC; close explicitly on swap.
+        old?.close();
     }
 
     function drawCommand(ctx, command, camera) {
@@ -130,6 +139,7 @@ export function createCanvasRenderer(canvas, options = {}) {
         destroy,
         size,
         setAssets,
+        addOrUpdateAsset,
     };
 
     function destroy() {

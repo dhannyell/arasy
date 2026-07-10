@@ -78,6 +78,39 @@ func (c *Canvas2D) loadTexture(decl asset.TextureDecl) {
 	promise.Call("then", resolve).Call("catch", reject)
 }
 
+func (c *Canvas2D) UpdateTextures(updates []runtime.TextureUpdate) {
+	for _, u := range updates {
+		if u.Image == nil {
+			continue
+		}
+		b := u.Image.Bounds()
+		c.UpdateTexture(u.ID, u.Image.Pix, b.Dx(), b.Dy())
+	}
+}
+
+func (c *Canvas2D) UpdateTexture(id render.TextureID, pix []byte, w, h int) {
+	createImageBitmap := js.Global().Get("createImageBitmap")
+	if createImageBitmap.IsUndefined() {
+		return
+	}
+	canvas := js.Global().Get("document").Call("createElement", "canvas")
+	canvas.Set("width", w)
+	canvas.Set("height", h)
+	ctx := canvas.Call("getContext", "2d")
+	imgData := ctx.Call("createImageData", w, h)
+	// ImageData.data has no setter -- copy into its existing backing array
+	// instead of assigning a new one, or the write is silently dropped.
+	js.CopyBytesToJS(imgData.Get("data"), pix)
+	ctx.Call("putImageData", imgData, 0, 0)
+	createImageBitmap.Invoke(canvas).Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+		if old, ok := c.textures[id]; ok {
+			old.Call("close")
+		}
+		c.textures[id] = args[0]
+		return nil
+	}))
+}
+
 func (c *Canvas2D) Render(frame runtime.Frame) {
 	w := c.canvas.Get("width").Float()
 	h := c.canvas.Get("height").Float()

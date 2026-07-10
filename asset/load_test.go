@@ -182,3 +182,36 @@ func TestLoadCanDecodeRealPNGBytesInMapFS(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 }
+
+func TestDynamicTextureDeclarations(t *testing.T) {
+	lm := fstest.MapFS{
+		"manifest.json":     {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"}],"dynamic":[{"name":"heatmap","w":32,"h":24}]}`)},
+		"textures/ball.png": {Data: []byte("dummy")},
+	}
+	m, err := asset.Load(lm)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := m.Texture("heatmap"); got == 0 {
+		t.Fatal("Texture(heatmap) = 0")
+	}
+	d, ok := m.TextureDecl(m.Texture("heatmap"))
+	if !ok || !d.Dynamic || d.W != 32 || d.H != 24 {
+		t.Fatalf("TextureDecl(heatmap) = %#v, want Dynamic=true, W=32, H=24", d)
+	}
+	if !m.IsDynamic(m.Texture("heatmap")) {
+		t.Fatal("IsDynamic(heatmap) = false, want true")
+	}
+	if m.IsDynamic(m.Texture("ball")) {
+		t.Fatal("IsDynamic(ball) = true, want false")
+	}
+}
+
+func TestDynamicTextureRejectsBadDimensions(t *testing.T) {
+	_, err := asset.Load(fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"dynamic":[{"name":"bad","w":0,"h":0}]}`)},
+	})
+	if err == nil {
+		t.Fatal("Load() error = nil, want error")
+	}
+}

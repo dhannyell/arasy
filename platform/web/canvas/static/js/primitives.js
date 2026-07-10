@@ -399,3 +399,12 @@ function roundedRectPath(ctx, rect, radius) {
     ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
 }
+
+export function invalidateTextureCache(textureID) {
+    const prefix = textureID + ":";
+    for (const key of tintCache.keys()) {
+        if (key.startsWith(prefix)) {
+            tintCache.delete(key);
+        }
+    }
+}

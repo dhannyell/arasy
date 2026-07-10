@@ -43,6 +43,10 @@ func BuildRegistry(m asset.Manifest) (Registry, error) {
 	reg := make(Registry, len(decls)+1)
 	var errs []error
 	for _, d := range decls {
+		if d.Dynamic {
+			reg[d.ID] = image.NewRGBA(image.Rect(0, 0, d.W, d.H))
+			continue
+		}
 		img, err := DecodeRGBA(d.Data)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("decode texture %q: %w", d.Name, err))

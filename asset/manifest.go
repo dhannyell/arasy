@@ -22,6 +22,14 @@ type TextureDecl struct {
 	ID   render.TextureID
 	Name string
 	Data []byte
+
+	// Dynamic is true when the texture was declared via the "dynamic" section
+	// of the manifest. Dynamic textures have no file-based pixel data; their
+	// content arrives at runtime via RenderContext.UpdateTexture. W and H
+	// specify the fixed dimensions of the texture; they are 0 for static
+	// textures.
+	Dynamic bool
+	W, H    int
 }
 
 // Manifest is the resolved, immutable asset declaration set. The zero value
@@ -55,6 +63,20 @@ func (m Manifest) Sprite(name string) Sprite {
 // is shared - callers must not mutate it.
 func (m Manifest) Textures() []TextureDecl {
 	return m.textures
+}
+
+// TextureDecl returns the declaration for a texture ID, or false if unknown.
+func (m Manifest) TextureDecl(id render.TextureID) (TextureDecl, bool) {
+	if id == 0 || int(id) > len(m.textures) {
+		return TextureDecl{}, false
+	}
+	return m.textures[id-1], true
+}
+
+// IsDynamic reports whether the given texture ID is a dynamic texture.
+func (m Manifest) IsDynamic(id render.TextureID) bool {
+	d, ok := m.TextureDecl(id)
+	return ok && d.Dynamic
 }
 
 // AudioClips returns the declared audio clips ordered by ID. The returned

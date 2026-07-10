@@ -1,7 +1,7 @@
 import { connectFrameSocket } from "./socket.js";
 import { createCanvasRenderer } from "./renderer.js";
 import { createAudioEngine } from "./audio.js";
-import { loadAssetRegistry } from "./assets.js";
+import { loadAssetRegistry, updateDynamicTexture } from "./assets.js";
 
 const canvas = document.getElementById("ff-canvas");
 const stats = document.getElementById("stats");
@@ -80,6 +80,26 @@ loadAssetRegistry().then((registry) => {
 })
 
 const audioEngine = createAudioEngine();
+
+const requestedTextureVersion = new Map();
+
+function handleTextureUpdate(msg) {
+    const updates = msg.updates;
+    if (!updates || !updates.length) return;
+    for (const u of updates) {
+        requestedTextureVersion.set(u.textureID, u.version);
+        updateDynamicTexture(u.textureID, u.version).then((bitmap) => {
+            if (!bitmap) return;
+            // Discard if a newer version was requested while this fetch was
+            // in flight -- only the highest requested version may swap in.
+            if (requestedTextureVersion.get(u.textureID) !== u.version) {
+                bitmap.close();
+                return;
+            }
+            renderer.addOrUpdateAsset(u.textureID, bitmap);
+        });
+    }
+}
 
 playPauseButton.addEventListener("click", () => {
     paused = !paused;
@@ -283,6 +303,8 @@ connection = connectFrameSocket({
     onAudioManifest(audio) {
         audioEngine.loadManifest(audio.clips ?? []);
     },
+
+    onTextureUpdate: (msg) => handleTextureUpdate(msg),
 });
 
 function pointerPayload(e, kind, code) {
