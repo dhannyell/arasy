@@ -25,13 +25,14 @@ type gpuTexture struct {
 // uploads it to the GPU, indexed like pixel.Registry (index 0 unused,
 // TextureID 0 means "missing texture"). tess already draws a magenta
 // placeholder for any DrawImage/DrawImageQuad whose texture id is not found
-// in the returned sizes, so a decode failure here is not fatal: it is
-// logged and the manifest's textures are simply left out of the registry.
+// in the returned sizes, so a decode failure here is not fatal: BuildRegistry
+// already leaves the failed texture's slot nil and reports it in the joined
+// error, so only that texture is missing -- the rest of the manifest still
+// builds normally.
 func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, tess.TexSizes) {
 	reg, err := pixel.BuildRegistry(manifest)
 	if err != nil {
 		slog.Default().Error("build texture registry", "error", err)
-		return nil, nil
 	}
 
 	decls := manifest.Textures()

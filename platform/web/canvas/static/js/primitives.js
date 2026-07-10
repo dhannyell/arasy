@@ -155,9 +155,19 @@ export function drawImage(ctx, command, registry) {
     const bitmap = registry?.get(command.texture ?? 0);
 
     if (!bitmap) {
-        // Same missing-texture placeholder as the raster backend.
+        // Same missing-texture placeholder as the raster backend, rotated
+        // around the destination center like the raster and wasm canvas2d
+        // backends (TestDrawImageMissingTextureRotated is the raster anchor).
         ctx.fillStyle = "rgb(255, 0, 255)";
-        ctx.fillRect(dest.x, dest.y, dest.width, dest.height);
+        if (command.rotation) {
+            ctx.save();
+            ctx.translate(dest.x + dest.width / 2, dest.y + dest.height / 2);
+            ctx.rotate(command.rotation);
+            ctx.fillRect(-dest.width / 2, -dest.height / 2, dest.width, dest.height);
+            ctx.restore();
+        } else {
+            ctx.fillRect(dest.x, dest.y, dest.width, dest.height);
+        }
         return;
     }
 

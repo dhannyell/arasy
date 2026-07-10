@@ -45,7 +45,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	commands := make([]render.Command, 0, 5)
+	commands := make([]render.Command, 0, 6)
 
 	ballTexture := ctx.Assets.Texture("ball")
 	ballSprite := ctx.Assets.Sprite("ball_left")
@@ -83,6 +83,16 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 		BaseCommand: render.BaseCommand{LayerValue: 1},
 		Texture:     typoTexture,
 		Dest:        math2d.NewRect(math2d.Vec2{X: 75, Y: 37.5}, math2d.Vec2{X: 10, Y: 10}),
+	})
+
+	// A trapezoid quad (narrower top, wider bottom) exercises the projective
+	// homography path (DrawImageQuad), which no demo host previously showcased.
+	commands = append(commands, render.DrawImageQuad{
+		BaseCommand: render.BaseCommand{LayerValue: 1},
+		Texture:     ballTexture,
+		Corners: [4]math2d.Vec2{
+			{X: 42, Y: 52}, {X: 58, Y: 52}, {X: 63, Y: 72}, {X: 37, Y: 72},
+		},
 	})
 
 	return commands

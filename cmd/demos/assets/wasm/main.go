@@ -21,7 +21,15 @@ func main() {
 		DevTools:     true,
 		Log:          log,
 		RecordReplay: true,
-		GameFactory:  func() runtime.Game { return game },
+		// Replay mutates the game it is given, so the factory must build a
+		// fresh instance instead of handing back the live one.
+		GameFactory: func() runtime.Game {
+			replayGame, err := assets.NewGame()
+			if err != nil {
+				panic(err)
+			}
+			return replayGame
+		},
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)
 	}

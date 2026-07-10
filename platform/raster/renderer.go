@@ -360,17 +360,25 @@ func (r Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) {
 		corners[i] = r.Camera.WorldToScreen(corner)
 	}
 
-	h, ok := math2d.HomographyFromQuad(corners)
-	if !ok {
-		imageQuadDegenerateWarnOnce.Do(func() {
-			slog.Warn("raster: DrawImageQuad has degenerate corners; command skipped")
+	// Check convexity before building the homography (matching
+	// platform/wasm/tess/image.go's imageQuadProjection): IsConvexQuad
+	// rejects any collinear-triple corner set directly, while
+	// HomographyFromQuad only catches a degenerate quad incidentally, via a
+	// det()==0 fallback on the assembled matrix, after checks that target a
+	// specific corner triple. Checking convexity first means a collinear
+	// input always logs "not convex" instead of sometimes slipping past
+	// HomographyFromQuad's incidental check.
+	if !math2d.IsConvexQuad(corners) {
+		imageQuadNonConvexWarnOnce.Do(func() {
+			slog.Warn("raster: DrawImageQuad corners are not convex; command skipped")
 		})
 		return
 	}
 
-	if !math2d.IsConvexQuad(corners) {
-		imageQuadNonConvexWarnOnce.Do(func() {
-			slog.Warn("raster: DrawImageQuad corners are not convex; command skipped")
+	h, ok := math2d.HomographyFromQuad(corners)
+	if !ok {
+		imageQuadDegenerateWarnOnce.Do(func() {
+			slog.Warn("raster: DrawImageQuad has degenerate corners; command skipped")
 		})
 		return
 	}
