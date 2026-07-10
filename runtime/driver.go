@@ -523,6 +523,7 @@ func (d *Driver) doReset() {
 	ctx := d.makeUpdateContext(d.newRenderUI())
 	d.rng = NewRand(d.cfg.Seed)
 	d.audio.reset()
+	d.texture.reset()
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }

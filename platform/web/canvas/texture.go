@@ -14,10 +14,8 @@ import (
 )
 
 type textureUpdateDTO struct {
-	Type      string `json:"type"`
 	TextureID uint32 `json:"textureID"`
 	Version   int    `json:"version"`
-	URL       string `json:"url"`
 }
 
 type textureUpdateListDTO struct {
@@ -25,23 +23,49 @@ type textureUpdateListDTO struct {
 	Updates []textureUpdateDTO `json:"updates"`
 }
 
-func (h *hub) handleTextureUpdates(updates []runtime.TextureUpdate) {
+// handleTextureUpdates re-encodes changed dynamic textures to PNG and bumps
+// their version. It returns a DTO entry per texture that actually changed, so
+// the caller can queue a "textureUpdate" WS message for clients.
+func (h *hub) handleTextureUpdates(updates []runtime.TextureUpdate) []textureUpdateDTO {
 	if len(updates) == 0 {
-		return
+		return nil
 	}
 	h.dynamicTextureMu.Lock()
 	defer h.dynamicTextureMu.Unlock()
+	changed := make([]textureUpdateDTO, 0, len(updates))
 	for _, u := range updates {
 		if u.Image == nil {
 			continue
 		}
-		h.textureVersion[u.ID]++
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, u.Image); err != nil {
 			continue
 		}
 		h.dynamicTextureData[u.ID] = buf.Bytes()
+		h.textureVersion[u.ID]++
+		changed = append(changed, textureUpdateDTO{TextureID: uint32(u.ID), Version: h.textureVersion[u.ID]})
 	}
+	return changed
+}
+
+// enqueueTextureUpdates applies driver-produced texture updates and queues a
+// WS notification for connected clients, mirroring enqueueAudio.
+func (h *hub) enqueueTextureUpdates(updates []runtime.TextureUpdate) {
+	changed := h.handleTextureUpdates(updates)
+	if len(changed) == 0 {
+		return
+	}
+	h.textureVersionMu.Lock()
+	defer h.textureVersionMu.Unlock()
+	h.pendingTexture = append(h.pendingTexture, changed...)
+}
+
+func (h *hub) drainTextureUpdates() []textureUpdateDTO {
+	h.textureVersionMu.Lock()
+	defer h.textureVersionMu.Unlock()
+	out := append([]textureUpdateDTO(nil), h.pendingTexture...)
+	h.pendingTexture = nil
+	return out
 }
 
 func (h *hub) handleDynamicTexture(w http.ResponseWriter, r *http.Request) {

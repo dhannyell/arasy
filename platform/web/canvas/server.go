@@ -67,7 +67,7 @@ func RunDriver(ctx context.Context, driver *runtime.Driver, opts Options) error 
 		camera:             cfg.Camera,
 		assets:             cfg.Assets,
 		textureVersion:     make(map[render.TextureID]int),
-		dynamicTextureData: make(map[render.TextureID][]byte),
+		dynamicTextureData: initDynamicTextures(cfg.Assets),
 		clients:            make(map[*client]struct{}),
 	}
 	if opts.AudioFS != nil {
@@ -151,6 +151,7 @@ type hub struct {
 
 	assets             asset.Manifest
 	textureVersion     map[render.TextureID]int
+	pendingTexture     []textureUpdateDTO
 	textureVersionMu   sync.Mutex
 	dynamicTextureData map[render.TextureID][]byte
 	dynamicTextureMu   sync.RWMutex
@@ -280,9 +281,11 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
 			h.driver.ApplyInput(events)
 			h.driver.AdvanceTime(elapsed)
 			out := h.driver.ConsumeAudio()
+			texOut := h.driver.ConsumeTextureUpdates()
 			h.worldMu.Unlock()
 
 			h.enqueueAudio(out)
+			h.enqueueTextureUpdates(texOut)
 		}
 	}
 }
@@ -618,6 +621,17 @@ func (h *hub) broadcast(commands []render.Command, camera render.Camera, state r
 	}
 
 	for _, msg := range h.drainAudio() {
+		for _, c := range clients {
+			if !writeWS(context.Background(), c, msg) {
+				h.sendDisconnectFrame(c)
+				h.removeClient(c)
+				_ = c.conn.CloseNow()
+			}
+		}
+	}
+
+	if updates := h.drainTextureUpdates(); len(updates) > 0 {
+		msg := textureUpdateListDTO{Type: "textureUpdate", Updates: updates}
 		for _, c := range clients {
 			if !writeWS(context.Background(), c, msg) {
 				h.sendDisconnectFrame(c)

@@ -98,9 +98,9 @@ func (c *Canvas2D) UpdateTexture(id render.TextureID, pix []byte, w, h int) {
 	canvas.Set("height", h)
 	ctx := canvas.Call("getContext", "2d")
 	imgData := ctx.Call("createImageData", w, h)
-	jsPix := js.Global().Get("Uint8ClampedArray").New(js.Global().Get("Array").New(len(pix)))
-	js.CopyBytesToJS(jsPix, pix)
-	imgData.Set("data", jsPix)
+	// ImageData.data has no setter -- copy into its existing backing array
+	// instead of assigning a new one, or the write is silently dropped.
+	js.CopyBytesToJS(imgData.Get("data"), pix)
 	ctx.Call("putImageData", imgData, 0, 0)
 	createImageBitmap.Invoke(canvas).Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
 		if old, ok := c.textures[id]; ok {

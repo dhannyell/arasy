@@ -65,10 +65,33 @@ type RenderContext struct {
 
 func (ctx *RenderContext) Camera() render.Camera       { return ctx.camera }
 func (ctx *RenderContext) SetCamera(cam render.Camera) { ctx.camera = cam }
+
+// UpdateTexture publishes new content for a dynamic texture declared in the
+// manifest. Ownership of img transfers to the engine -- do not mutate it
+// after the call. Content is render-only: it never enters snapshots,
+// checksums or recordings. Updates for unknown, non-dynamic, or
+// wrong-dimension IDs are dropped with a warning; multiple updates for the
+// same ID in one frame collapse to the last call.
 func (ctx *RenderContext) UpdateTexture(id render.TextureID, img *image.RGBA) {
-	if ctx.UpdateTextureField != nil {
-		ctx.UpdateTextureField.UpdateTexture(id, img)
+	if ctx.UpdateTextureField == nil {
+		return
 	}
+	decl, ok := ctx.Assets.TextureDecl(id)
+	if !ok || !decl.Dynamic {
+		if ctx.Log != nil {
+			ctx.Log.Warn("UpdateTexture: unknown or non-dynamic texture ID", "id", id)
+		}
+		return
+	}
+	b := img.Bounds()
+	if b.Dx() != decl.W || b.Dy() != decl.H {
+		if ctx.Log != nil {
+			ctx.Log.Warn("UpdateTexture: dimension mismatch",
+				"id", id, "want_w", decl.W, "want_h", decl.H, "got_w", b.Dx(), "got_h", b.Dy())
+		}
+		return
+	}
+	ctx.UpdateTextureField.UpdateTexture(id, img)
 }
 
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {

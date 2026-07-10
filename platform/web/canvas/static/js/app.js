@@ -81,12 +81,22 @@ loadAssetRegistry().then((registry) => {
 
 const audioEngine = createAudioEngine();
 
+const requestedTextureVersion = new Map();
+
 function handleTextureUpdate(msg) {
     const updates = msg.updates;
     if (!updates || !updates.length) return;
     for (const u of updates) {
+        requestedTextureVersion.set(u.textureID, u.version);
         updateDynamicTexture(u.textureID, u.version).then((bitmap) => {
-            if (bitmap) renderer.addOrUpdateAsset(u.textureID, bitmap);
+            if (!bitmap) return;
+            // Discard if a newer version was requested while this fetch was
+            // in flight -- only the highest requested version may swap in.
+            if (requestedTextureVersion.get(u.textureID) !== u.version) {
+                bitmap.close();
+                return;
+            }
+            renderer.addOrUpdateAsset(u.textureID, bitmap);
         });
     }
 }

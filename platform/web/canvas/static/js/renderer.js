@@ -69,8 +69,11 @@ export function createCanvasRenderer(canvas, options = {}) {
     }
 
     function addOrUpdateAsset(id, bitmap) {
+        const old = assets.get(id);
         assets.set(id, bitmap);
         invalidateTextureCache(id);
+        // ImageData isn't reliably freed by the GC; close explicitly on swap.
+        old?.close();
     }
 
     function drawCommand(ctx, command, camera) {
