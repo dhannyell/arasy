@@ -72,7 +72,7 @@ platform/web/canvas/
   HTTP + WebSocket server that streams JSON frames to a browser canvas and
   translates browser input/control messages back into the runtime.
 
-internal/render/adapter/web/
+platform/web/canvas/internal/dto/
   JSON DTO conversion of render commands and camera for the web canvas.
 
 cmd/demos/football/

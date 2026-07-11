@@ -36,7 +36,7 @@ cmd/demos/*/wasm/web/app.wasm
 cmd/demos/*/wasm/web/wasm_exec.js
 plans/
 platform/raster/testdata/failures/
-internal/render/adapter/web/testdata/failures/
+platform/web/canvas/internal/dto/testdata/failures/
 
 .agents/
 .claude/

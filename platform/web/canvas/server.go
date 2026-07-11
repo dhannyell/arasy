@@ -20,8 +20,9 @@ import (
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/audio"
 	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/internal/render/adapter/web"
 	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/platform/web/browserinput"
+	"github.com/dhannyell/frameforge/platform/web/canvas/internal/dto"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/dhannyell/frameforge/scene"
@@ -248,8 +249,7 @@ func (h *hub) run(ctx context.Context) {
 }
 
 func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
-	last := time.Now()
-	active := false
+	var frameTimer runtime.FrameTimer
 
 	for {
 		select {
@@ -257,30 +257,25 @@ func (h *hub) simulationLoop(ctx context.Context, simTick <-chan time.Time) {
 			return
 		case now := <-simTick:
 			if h.clientCount() == 0 {
-				active = false
+				frameTimer.Reset()
 				continue
 			}
 
-			elapsed := now.Sub(last)
-			if !active {
-				elapsed = 0
-				active = true
-			}
-			last = now
+			elapsed := frameTimer.Elapsed(now)
 
 			events, cmds, viewport, haveViewport := h.drainInbox()
 
 			// The driver is lock-free; the hub serializes access via worldMu.
 			h.worldMu.Lock()
+			var viewportPtr *math2d.Rect
 			if haveViewport {
-				h.driver.SetViewport(viewport)
+				viewportPtr = &viewport
 			}
-			for _, cmd := range cmds {
-				h.driver.Control(cmd)
-			}
-			h.driver.ApplyInput(events)
-			h.driver.AdvanceTime(elapsed)
-			out := h.driver.ConsumeAudio()
+			_, out := h.driver.RunTick(runtime.TickBatch{
+				Viewport: viewportPtr,
+				Controls: cmds,
+				Events:   events,
+			}, elapsed)
 			texOut := h.driver.ConsumeTextureUpdates()
 			h.worldMu.Unlock()
 
@@ -330,8 +325,7 @@ func (h *hub) drainInbox() ([]input.Event, []runtime.ControlCommand, math2d.Rect
 }
 
 func (h *hub) renderLoop(ctx context.Context, renderTicker <-chan time.Time) {
-	last := time.Now()
-	active := false
+	var frameTimer runtime.FrameTimer
 
 	for {
 		select {
@@ -339,16 +333,11 @@ func (h *hub) renderLoop(ctx context.Context, renderTicker <-chan time.Time) {
 			return
 		case now := <-renderTicker:
 			if h.clientCount() == 0 {
-				active = false
+				frameTimer.Reset()
 				continue
 			}
 
-			elapsed := now.Sub(last)
-			if !active {
-				elapsed = 0
-				active = true
-			}
-			last = now
+			elapsed := frameTimer.Elapsed(now)
 
 			// RLock: can contend with other readers, never with Advance
 			h.worldMu.RLock()
@@ -456,21 +445,14 @@ func (h *hub) enqueueResize(msg clientMessage) {
 func inputEventFromClientMessage(msg clientMessage) (input.Event, bool) {
 	switch msg.Device {
 	case "keyboard":
-		code, ok := BrowserKeyboardCode(msg.Code)
+		event, ok := browserinput.KeyEvent(msg.Code, msg.Kind == "down")
 		if !ok {
 			return input.Event{}, false
 		}
-
-		kind, ok := browserInputKind(msg.Kind)
-		if !ok {
+		if msg.Kind != "down" && msg.Kind != "up" {
 			return input.Event{}, false
 		}
-
-		event := input.Event{
-			Source: input.Source{Device: input.DeviceKeyboard, Code: code},
-			Kind:   kind,
-			Value:  msg.Value,
-		}
+		event.Value = msg.Value
 		return event, event.Valid()
 	case "mouse":
 		return mouseEventFromMessage(msg)
@@ -482,69 +464,28 @@ func inputEventFromClientMessage(msg clientMessage) (input.Event, bool) {
 func mouseEventFromMessage(msg clientMessage) (input.Event, bool) {
 	switch msg.Code {
 	case "Position":
-		return input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseX},
-			Kind:   input.EventPointerMove,
-			X:      msg.X, Y: msg.Y,
-		}, true
+		return browserinput.MouseMoveEvent(msg.X, msg.Y), true
 	case "Leave":
-		return input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
-			Kind:   input.EventPointerLeave,
-		}, true
+		return browserinput.PointerLeaveEvent(), true
 	case "WheelX", "WheelY":
-		code, ok := browserMouseCode(msg.Code)
-		if !ok {
+		dx, dy := 0.0, 0.0
+		if msg.Code == "WheelX" {
+			dx = msg.Value
+		} else {
+			dy = msg.Value
+		}
+		events := browserinput.WheelEvent(dx, dy)
+		if len(events) != 1 {
 			return input.Event{}, false
 		}
-		event := input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: code},
-			Kind:   input.EventAxisChanged,
-			Value:  msg.Value,
-			X:      msg.X, Y: msg.Y,
-		}
+		event := events[0]
+		event.X, event.Y = msg.X, msg.Y
 		return event, event.Valid()
 	default:
-		code, ok := browserMouseCode(msg.Code)
-		if !ok {
+		if msg.Kind != "down" && msg.Kind != "up" {
 			return input.Event{}, false
 		}
-		kind, ok := browserInputKind(msg.Kind)
-		if !ok {
-			return input.Event{}, false
-		}
-		return input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: code},
-			Kind:   kind,
-			X:      msg.X, Y: msg.Y,
-		}, true
-	}
-}
-
-func browserMouseCode(code string) (input.SourceCode, bool) {
-	switch code {
-	case "Left":
-		return input.MouseLeft, true
-	case "Right":
-		return input.MouseRight, true
-	case "Middle":
-		return input.MouseMiddle, true
-	case "WheelX":
-		return input.MouseWheelX, true
-	case "WheelY":
-		return input.MouseWheelY, true
-	}
-	return 0, false
-}
-
-func browserInputKind(kind string) (input.EventKind, bool) {
-	switch kind {
-	case "down":
-		return input.EventButtonDown, true
-	case "up":
-		return input.EventButtonUp, true
-	default:
-		return input.EventButtonDown, false
+		return browserinput.MouseButtonEventCode(msg.Code, msg.Kind == "down", msg.X, msg.Y)
 	}
 }
 
@@ -591,11 +532,11 @@ func (h *hub) broadcast(commands []render.Command, camera render.Camera, state r
 	h.clientsMu.RUnlock()
 
 	for _, c := range clients {
-		frame := web.NewFrameDTOWithState(
+		frame := dto.NewFrameDTOWithState(
 			state.Tick,
 			h.clientCamera(camera, c),
 			h.clear,
-			web.StateDTO{
+			dto.StateDTO{
 				Paused:           state.Paused,
 				Speed:            state.Speed,
 				Debug:            uint32(state.DebugLayers),
@@ -722,7 +663,7 @@ func (h *hub) sendDisconnectFrame(c *client) {
 		},
 	}
 
-	frame := web.NewFrameDTOWithState(0, cam, h.clear, web.StateDTO{}, commands)
+	frame := dto.NewFrameDTOWithState(0, cam, h.clear, dto.StateDTO{}, commands)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	_ = wsjson.Write(ctx, c.conn, frame)
 	cancel()

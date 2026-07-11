@@ -126,10 +126,53 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		return
 	}
 
-	mesh, texRuns, textMesh := tess.Build(frame, w, h, r.atlas, r.texSizes)
+	runs := tess.Build(frame, w, h, r.atlas, r.texSizes)
 
-	solidBytes := tess.Bytes(mesh)
-	textBytes := tess.TextBytes(textMesh)
+	var solidBytes []byte
+	var texBytes []byte
+	var textBytes []byte
+	drawRuns := make([]gpuDrawRun, 0, len(runs))
+	solidOffset := 0
+	texOffset := 0
+	textOffset := 0
+	for _, run := range runs {
+		switch run.Kind {
+		case tess.DrawRunSolid:
+			if len(run.Solid.Vertices) == 0 {
+				continue
+			}
+			solidBytes = append(solidBytes, tess.Bytes(run.Solid)...)
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:   tess.DrawRunSolid,
+				offset: solidOffset,
+				count:  len(run.Solid.Vertices),
+			})
+			solidOffset += len(run.Solid.Vertices)
+		case tess.DrawRunTextured:
+			if len(run.Textured.Vertices) == 0 {
+				continue
+			}
+			texBytes = append(texBytes, tess.TexBytes(run.Textured)...)
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:    tess.DrawRunTextured,
+				texture: run.Textured.Texture,
+				offset:  texOffset,
+				count:   len(run.Textured.Vertices),
+			})
+			texOffset += len(run.Textured.Vertices)
+		case tess.DrawRunText:
+			if len(run.Text.Vertices) == 0 {
+				continue
+			}
+			textBytes = append(textBytes, tess.TextBytes(run.Text)...)
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:   tess.DrawRunText,
+				offset: textOffset,
+				count:  len(run.Text.Vertices),
+			})
+			textOffset += len(run.Text.Vertices)
+		}
+	}
 
 	r.ensureSolidBuffer(len(solidBytes))
 	r.ensureTextBuffer(len(textBytes))
@@ -141,20 +184,6 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		r.queue.Call("writeBuffer", r.textBuffer, 0, bytesToJS(textBytes))
 	}
 
-	// Textured runs share one vertex buffer; texOffsets/texCounts record
-	// each run's vertex range within it so it can be drawn with the right
-	// bind group via a firstVertex-offset draw call.
-	var texBytes []byte
-	texOffsets := make([]int, len(texRuns))
-	texCounts := make([]int, len(texRuns))
-	vertexOffset := 0
-	for i, run := range texRuns {
-		runBytes := tess.TexBytes(run)
-		texBytes = append(texBytes, runBytes...)
-		texOffsets[i] = vertexOffset
-		texCounts[i] = len(run.Vertices)
-		vertexOffset += len(run.Vertices)
-	}
 	r.ensureTexBuffer(len(texBytes))
 	if len(texBytes) > 0 {
 		r.queue.Call("writeBuffer", r.texBuffer, 0, bytesToJS(texBytes))
@@ -172,38 +201,41 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		}},
 	})
 
-	if len(mesh.Vertices) > 0 {
-		pass.Call("setPipeline", r.solidPipeline)
-		pass.Call("setVertexBuffer", 0, r.solidBuffer)
-		pass.Call("draw", len(mesh.Vertices))
-	}
-
-	// Draw order is solids, then textured runs, then text — the same known
-	// cross-command-kind ordering limitation documented on tess.Build (no
-	// depth/layer sort between command kinds within a frame).
-	if len(texRuns) > 0 {
-		pass.Call("setPipeline", r.texturedPipeline)
-		pass.Call("setVertexBuffer", 0, r.texBuffer)
-		for i, run := range texRuns {
-			gt, ok := r.textureFor(run.Texture)
+	// Runs are submitted in painter order. Each pipeline has its own packed
+	// vertex buffer, so the run stores a firstVertex offset into that buffer.
+	for _, run := range drawRuns {
+		switch run.kind {
+		case tess.DrawRunSolid:
+			pass.Call("setPipeline", r.solidPipeline)
+			pass.Call("setVertexBuffer", 0, r.solidBuffer)
+			pass.Call("draw", run.count, 1, run.offset, 0)
+		case tess.DrawRunTextured:
+			gt, ok := r.textureFor(run.texture)
 			if !ok {
 				continue
 			}
+			pass.Call("setPipeline", r.texturedPipeline)
+			pass.Call("setVertexBuffer", 0, r.texBuffer)
 			pass.Call("setBindGroup", 0, gt.bindGroup)
-			pass.Call("draw", texCounts[i], 1, texOffsets[i], 0)
+			pass.Call("draw", run.count, 1, run.offset, 0)
+		case tess.DrawRunText:
+			pass.Call("setPipeline", r.textPipeline)
+			pass.Call("setBindGroup", 0, r.atlasBind)
+			pass.Call("setVertexBuffer", 0, r.textBuffer)
+			pass.Call("draw", run.count, 1, run.offset, 0)
 		}
-	}
-
-	if len(textMesh.Vertices) > 0 {
-		pass.Call("setPipeline", r.textPipeline)
-		pass.Call("setBindGroup", 0, r.atlasBind)
-		pass.Call("setVertexBuffer", 0, r.textBuffer)
-		pass.Call("draw", len(textMesh.Vertices))
 	}
 
 	pass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+}
+
+type gpuDrawRun struct {
+	kind    tess.DrawRunKind
+	texture render.TextureID
+	offset  int
+	count   int
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {

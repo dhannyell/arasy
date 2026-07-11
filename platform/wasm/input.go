@@ -5,7 +5,6 @@ package wasm
 import (
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/platform/web/browserinput"
 )
 
@@ -35,16 +34,13 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		code, ok := browserinput.KeyboardCode(event.Get("code").String())
+		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), true)
 		if !ok {
 			return nil
 		}
 
 		event.Call("preventDefault")
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceKeyboard, Code: code},
-			Kind:   input.EventButtonDown,
-		})
+		h.pending = append(h.pending, keyEvent)
 		return nil
 	}))
 
@@ -54,71 +50,48 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		code, ok := browserinput.KeyboardCode(event.Get("code").String())
+		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), false)
 		if !ok {
 			return nil
 		}
 
 		event.Call("preventDefault")
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceKeyboard, Code: code},
-			Kind:   input.EventButtonUp,
-		})
+		h.pending = append(h.pending, keyEvent)
 		return nil
 	}))
 
 	addCanvasListener("mousemove", js.FuncOf(func(this js.Value, args []js.Value) any {
 		x, y := h.canvasXY(args[0])
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseX},
-			Kind:   input.EventPointerMove,
-			X:      x,
-			Y:      y,
-		})
+		h.pending = append(h.pending, browserinput.MouseMoveEvent(x, y))
 		return nil
 	}))
 
 	addCanvasListener("mousedown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		x, y := h.canvasXY(event)
 
-		code, ok := browserinput.MouseButtonCode(event.Get("button").Int())
+		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
 		if !ok {
 			return nil
 		}
-
-		x, y := h.canvasXY(event)
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: code},
-			Kind:   input.EventButtonDown,
-			X:      x,
-			Y:      y,
-		})
+		h.pending = append(h.pending, mouseEvent)
 		return nil
 	}))
 
 	addCanvasListener("mouseup", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		x, y := h.canvasXY(event)
 
-		code, ok := browserinput.MouseButtonCode(event.Get("button").Int())
+		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
 		if !ok {
 			return nil
 		}
-
-		x, y := h.canvasXY(event)
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: code},
-			Kind:   input.EventButtonUp,
-			X:      x,
-			Y:      y,
-		})
+		h.pending = append(h.pending, mouseEvent)
 		return nil
 	}))
 
 	addCanvasListener("mouseleave", js.FuncOf(func(this js.Value, args []js.Value) any {
-		h.pending = append(h.pending, input.Event{
-			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
-			Kind:   input.EventPointerLeave,
-		})
+		h.pending = append(h.pending, browserinput.PointerLeaveEvent())
 		return nil
 	}))
 
@@ -130,25 +103,12 @@ func (h *host) registerInputListeners() {
 		dx := event.Get("deltaX").Float()
 		dy := event.Get("deltaY").Float()
 
-		if dx != 0 {
-			h.pending = append(h.pending, input.Event{
-				Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelX},
-				Kind:   input.EventAxisChanged,
-				Value:  dx,
-				X:      x,
-				Y:      y,
-			})
+		wheelEvents := browserinput.WheelEvent(dx, dy)
+		for i := range wheelEvents {
+			wheelEvents[i].X = x
+			wheelEvents[i].Y = y
 		}
-
-		if dy != 0 {
-			h.pending = append(h.pending, input.Event{
-				Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
-				Kind:   input.EventAxisChanged,
-				Value:  dy,
-				X:      x,
-				Y:      y,
-			})
-		}
+		h.pending = append(h.pending, wheelEvents...)
 
 		return nil
 	}))

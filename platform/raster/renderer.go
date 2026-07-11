@@ -42,35 +42,50 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 
 	fillRect(img, img.Bounds(), toRGBA(r.Clear))
 
-	orderedCommands := append([]render.Command(nil), commands...)
-	sort.SliceStable(orderedCommands, func(i, j int) bool {
-		return orderedCommands[i].Layer() < orderedCommands[j].Layer()
-	})
-
-	for _, command := range orderedCommands {
-		switch command := command.(type) {
-		case render.DrawRect:
-			r.drawRect(img, command)
-		case render.DrawCircle:
-			r.drawCircle(img, command)
-		case render.DrawPoint:
-			r.drawPoint(img, command)
-		case render.DrawLine:
-			r.drawLine(img, command)
-		case render.DrawArc:
-			r.drawArc(img, command)
-		case render.DrawText:
-			r.drawText(img, command)
-		case render.DrawPolygon:
-			r.drawPolygon(img, command)
-		case render.DrawImage:
-			r.drawImage(img, command)
-		case render.DrawImageQuad:
-			r.drawImageQuad(img, command)
-		}
-	}
+	render.Each(commands, rasterSink{renderer: r, image: img})
 
 	return img
+}
+
+type rasterSink struct {
+	renderer Renderer
+	image    *image.RGBA
+}
+
+func (s rasterSink) VisitRect(command render.DrawRect) {
+	s.renderer.drawRect(s.image, command)
+}
+
+func (s rasterSink) VisitCircle(command render.DrawCircle) {
+	s.renderer.drawCircle(s.image, command)
+}
+
+func (s rasterSink) VisitPoint(command render.DrawPoint) {
+	s.renderer.drawPoint(s.image, command)
+}
+
+func (s rasterSink) VisitLine(command render.DrawLine) {
+	s.renderer.drawLine(s.image, command)
+}
+
+func (s rasterSink) VisitText(command render.DrawText) {
+	s.renderer.drawText(s.image, command)
+}
+
+func (s rasterSink) VisitArc(command render.DrawArc) {
+	s.renderer.drawArc(s.image, command)
+}
+
+func (s rasterSink) VisitPolygon(command render.DrawPolygon) {
+	s.renderer.drawPolygon(s.image, command)
+}
+
+func (s rasterSink) VisitImage(command render.DrawImage) {
+	s.renderer.drawImage(s.image, command)
+}
+
+func (s rasterSink) VisitImageQuad(command render.DrawImageQuad) {
+	s.renderer.drawImageQuad(s.image, command)
 }
 
 func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {

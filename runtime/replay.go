@@ -53,6 +53,7 @@ func (d *Driver) StartRecording() {
 	}
 	d.recordingEnabled = true
 	d.recording = nil
+	d.recordingStaged = nil
 	d.recordingAnchors = nil
 	// Capture the viewport active at tick 0 so Replay can restore it; without
 	// it, a platform surface different from the Config default (e.g. a
@@ -67,8 +68,9 @@ func (d *Driver) StopRecording() Recording {
 	events := d.recording
 	anchors := d.recordingAnchors
 	initial := d.recordingInitialViewport
-	viewports := viewportLogToChanges(d.viewportLog, d.tick)
+	viewports := viewportLogToChanges(d.timeline.viewports, d.tick)
 	d.recording = nil
+	d.recordingStaged = nil
 	d.recordingAnchors = nil
 	d.recordingInitialViewport = math2d.Rect{}
 	return Recording{

@@ -48,9 +48,7 @@ type host struct {
 	// JS/WASM runs callbacks on the same thread; pending is drained by startLoop.
 	pending []input.Event
 
-	lastTimestamp float64
-	hasTimestamp  bool
-	renderer      renderer
+	renderer renderer
 
 	// debugPanel is the optional runtime tooling UI; nil when no overlay is enabled.
 	debugPanel *debugPanel

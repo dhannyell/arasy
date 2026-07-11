@@ -52,93 +52,122 @@ func pushQuad(m *Mesh, a, b, c, d [2]float32, col render.Color) {
 // render.DrawImage/DrawImageQuad whose texture id could not be resolved.
 var missingTexturePlaceholder = render.RGBA8(255, 0, 255, 255)
 
-// Build tessellates frame commands into solid-color, textured, and text
-// meshes.
-//
-// Draw order is solids first, then textured runs, then text, matching the
-// WebGPU v1 renderer's pass order.
-//
-// Solid commands (including the magenta placeholder substituted for a
-// command whose texture could not be resolved via sizes) are appended to the
-// solid mesh in input order. Textured commands are grouped into contiguous
-// runs by texture: a new TexMesh starts whenever the texture differs from
-// the previous textured command, so consecutive draws on the same texture
-// share one draw call while the returned slice still reflects overall
-// drawing order. Text commands are tessellated into the text mesh when atlas
-// is non-nil.
-func Build(frame runtime.Frame, w, h int, atlas *Atlas, sizes TexSizes) (Mesh, []TexMesh, TextMesh) {
-	c := ctx{
-		cam: frame.Camera,
-		w:   float64(w),
-		h:   float64(h),
-	}
+// DrawRunKind identifies the WebGPU pipeline needed for one ordered run.
+type DrawRunKind uint8
 
-	var solid Mesh
-	var textured []TexMesh
-	var text TextMesh
+const (
+	DrawRunSolid DrawRunKind = iota
+	DrawRunTextured
+	DrawRunText
+)
 
-	// runIndex is the index into textured that the current run of same-
-	// texture draws appends to, or -1 when no run is open yet. This is kept
-	// as an index rather than a *TexMesh: appending to textured can move its
-	// backing array, which would invalidate a pointer taken before the
-	// append.
-	runIndex := -1
-
-	for _, cmd := range frame.Commands {
-		switch cmd := cmd.(type) {
-		case render.DrawRect:
-			AppendRect(&solid, c, cmd)
-		case render.DrawCircle:
-			AppendCircle(&solid, c, cmd)
-		case render.DrawPoint:
-			AppendPoint(&solid, c, cmd)
-		case render.DrawLine:
-			AppendLine(&solid, c, cmd)
-		case render.DrawArc:
-			AppendArc(&solid, c, cmd)
-		case render.DrawPolygon:
-			AppendPolygon(&solid, c, cmd)
-		case render.DrawText:
-			if atlas != nil {
-				AppendText(&text, c, cmd, atlas)
-			}
-		case render.DrawImage:
-			texW, texH, ok := sizes.Lookup(cmd.Texture)
-			if !ok {
-				if corners, ok := destCorners(c, cmd.Dest, cmd.Rotation); ok {
-					appendMissingTexture(&solid, c, corners, cmd.Clip)
-				}
-				continue
-			}
-			runIndex = appendTexRun(&textured, runIndex, cmd.Texture)
-			AppendImage(&textured[runIndex], c, cmd, texW, texH)
-		case render.DrawImageQuad:
-			screen, _, valid := imageQuadProjection(c, cmd.Corners)
-			if !valid {
-				continue
-			}
-			texW, texH, ok := sizes.Lookup(cmd.Texture)
-			if !ok {
-				appendMissingTexture(&solid, c, screen, cmd.Clip)
-				continue
-			}
-			runIndex = appendTexRun(&textured, runIndex, cmd.Texture)
-			AppendImageQuad(&textured[runIndex], c, cmd, texW, texH)
-		}
-	}
-
-	return solid, textured, text
+// DrawRun contains commands that can be submitted together while preserving
+// painter order between different WebGPU pipelines. Runs are split whenever
+// the pipeline changes, and textured runs are also split when their texture
+// changes.
+type DrawRun struct {
+	Kind     DrawRunKind
+	Solid    Mesh
+	Textured TexMesh
+	Text     TextMesh
 }
 
-// appendTexRun returns the index within runs that a command drawing texture
-// id should append its vertices to. It reuses the currently open run
-// (current) when its texture matches id, otherwise it starts a new run.
-func appendTexRun(runs *[]TexMesh, current int, id render.TextureID) int {
-	if current >= 0 && (*runs)[current].Texture == id {
-		return current
+// Build tessellates frame commands into ordered, heterogeneous WebGPU runs.
+// render.Each owns layer sorting and command dispatch; this sink only maps
+// each command to the appropriate tessellation pipeline.
+func Build(frame runtime.Frame, w, h int, atlas *Atlas, sizes TexSizes) []DrawRun {
+	sink := buildSink{
+		ctx: ctx{
+			cam: frame.Camera,
+			w:   float64(w),
+			h:   float64(h),
+		},
+		atlas: atlas,
+		sizes: sizes,
 	}
-	*runs = append(*runs, TexMesh{Texture: id})
-	return len(*runs) - 1
+	render.Each(frame.Commands, &sink)
+	return sink.runs
+}
+
+type buildSink struct {
+	ctx   ctx
+	atlas *Atlas
+	sizes TexSizes
+	runs  []DrawRun
+
+	lastKind    DrawRunKind
+	lastTexture render.TextureID
+	hasLast     bool
+}
+
+func (s *buildSink) run(kind DrawRunKind, texture render.TextureID) *DrawRun {
+	if s.hasLast && s.lastKind == kind && (kind != DrawRunTextured || s.lastTexture == texture) {
+		return &s.runs[len(s.runs)-1]
+	}
+	s.runs = append(s.runs, DrawRun{Kind: kind})
+	s.lastKind = kind
+	s.lastTexture = texture
+	s.hasLast = true
+	return &s.runs[len(s.runs)-1]
+}
+
+func (s *buildSink) VisitRect(cmd render.DrawRect) {
+	AppendRect(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitCircle(cmd render.DrawCircle) {
+	AppendCircle(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitPoint(cmd render.DrawPoint) {
+	AppendPoint(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitLine(cmd render.DrawLine) {
+	AppendLine(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitArc(cmd render.DrawArc) {
+	AppendArc(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitPolygon(cmd render.DrawPolygon) {
+	AppendPolygon(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitText(cmd render.DrawText) {
+	if s.atlas == nil {
+		return
+	}
+	AppendText(&s.run(DrawRunText, 0).Text, s.ctx, cmd, s.atlas)
+}
+
+func (s *buildSink) VisitImage(cmd render.DrawImage) {
+	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
+	if !ok {
+		if corners, ok := destCorners(s.ctx, cmd.Dest, cmd.Rotation); ok {
+			appendMissingTexture(&s.run(DrawRunSolid, 0).Solid, s.ctx, corners, cmd.Clip)
+		}
+		return
+	}
+	run := s.run(DrawRunTextured, cmd.Texture)
+	run.Textured.Texture = cmd.Texture
+	AppendImage(&run.Textured, s.ctx, cmd, texW, texH)
+}
+
+func (s *buildSink) VisitImageQuad(cmd render.DrawImageQuad) {
+	screen, _, valid := imageQuadProjection(s.ctx, cmd.Corners)
+	if !valid {
+		return
+	}
+	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
+	if !ok {
+		appendMissingTexture(&s.run(DrawRunSolid, 0).Solid, s.ctx, screen, cmd.Clip)
+		return
+	}
+	run := s.run(DrawRunTextured, cmd.Texture)
+	run.Textured.Texture = cmd.Texture
+	AppendImageQuad(&run.Textured, s.ctx, cmd, texW, texH)
 }
 
 // appendMissingTexture emits a solid magenta quad from screen-space corners

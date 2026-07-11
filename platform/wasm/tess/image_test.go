@@ -278,12 +278,12 @@ func TestBuildSkipsNonConvexImageQuadBeforeTextureLookup(t *testing.T) {
 	}
 
 	for _, sizes := range []TexSizes{nil, {{0, 0}, {16, 16}}} {
-		solid, textured, _ := Build(runtime.Frame{
+		runs := Build(runtime.Frame{
 			Camera:   testCamera(),
 			Commands: []render.Command{bowtie},
 		}, 100, 100, nil, sizes)
-		if len(solid.Vertices) != 0 || len(textured) != 0 {
-			t.Fatalf("invalid quad produced %d solid vertices and %d texture runs", len(solid.Vertices), len(textured))
+		if len(runs) != 0 {
+			t.Fatalf("invalid quad produced %d runs", len(runs))
 		}
 	}
 }
