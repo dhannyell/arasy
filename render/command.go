@@ -3,14 +3,19 @@ package render
 import "github.com/dhannyell/frameforge/math2d"
 
 type TextAlign uint8
+type TextBaseline uint8
+
+// FontID identifies a font declared in the game's asset manifest. Zero
+// means the built-in engine font. Like TextureID, values are stable only
+// for the current run — never persist a FontID; resolve by name through
+// the manifest.
+type FontID uint32
 
 const (
 	AlignLeft TextAlign = iota
 	AlignCenter
 	AlignRight
 )
-
-type TextBaseline uint8
 
 const (
 	BaselineAlphabetic TextBaseline = iota
@@ -87,6 +92,7 @@ type DrawText struct {
 	Text     string
 	Color    Color
 	Size     float64
+	FontID   FontID
 	Align    TextAlign
 	Baseline TextBaseline
 

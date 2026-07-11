@@ -10,8 +10,10 @@ import (
 	"sync"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -34,6 +36,17 @@ type Renderer struct {
 	// Textures resolves TextureIDs to decoded pixels. Nil is valid:
 	// every DrawImage then renders the missing-texture placeholder.
 	Textures pixel.Registry
+	Fonts    typeface.Registry
+
+	// faceCache memoizes opentype faces per font and pixel size. Lazily
+	// initialized; the Renderer is used from a single goroutine (offline
+	// Run and tests), so no locking.
+	faceCache map[faceKey]font.Face
+}
+
+type faceKey struct {
+	id render.FontID
+	px int
 }
 
 // Render draws commands into a new RGBA image.
@@ -45,6 +58,28 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 	render.Each(commands, rasterSink{renderer: r, image: img})
 
 	return img
+}
+
+func (r *Renderer) face(id render.FontID, px int) font.Face {
+	tf := r.Fonts.Lookup(id)
+	if tf == nil {
+		return nil
+	}
+	if r.faceCache == nil {
+		r.faceCache = map[faceKey]font.Face{}
+	}
+	key := faceKey{id: id, px: px}
+	if f, ok := r.faceCache[key]; ok {
+		return f
+	}
+	f, err := opentype.NewFace(tf.Font(), &opentype.FaceOptions{
+		Size: float64(px), DPI: 72, Hinting: font.HintingNone,
+	})
+	if err != nil {
+		return nil
+	} // fall back to built-in font
+	r.faceCache[key] = f
+	return f
 }
 
 type rasterSink struct {
@@ -209,6 +244,11 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 		return
 	}
 
+	var glyphs *image.RGBA
+	var drawer *font.Drawer
+	var destWidth, destHeight, offsetX, offsetY, destX, destY float64
+
+	screenPos := r.Camera.WorldToScreen(command.Position)
 	metrics := textFace.Metrics()
 	nativeHeight := float64(metrics.Height.Ceil())
 	nativeAscent := float64(metrics.Ascent.Ceil())
@@ -216,52 +256,98 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	if nativeWidth <= 0 {
 		return
 	}
-
 	size := command.Size
 	if size <= 0 {
 		size = nativeHeight
 	}
 
-	measured := render.MeasureText(command.Text, size)
-	destWidth := r.Camera.WorldScalarToScreen(measured.X)
-	destHeight := r.Camera.WorldScalarToScreen(measured.Y)
-	if destWidth <= 0 || destHeight <= 0 {
-		return
+	if command.FontID != 0 {
+		px := int(math.Round(r.Camera.WorldScalarToScreen(size)))
+		if px <= 0 {
+			return
+		}
+		face := r.face(command.FontID, px)
+		if face == nil {
+			face = textFace
+		}
+		adv := font.MeasureString(face, command.Text)
+		met := face.Metrics()
+		glyphs = image.NewRGBA(image.Rect(0, 0, adv.Ceil(), (met.Ascent + met.Descent).Ceil()))
+
+		drawer = &font.Drawer{
+			Dst:  glyphs,
+			Src:  image.NewUniform(toRGBA(command.Color)),
+			Face: face,
+			Dot:  fixed.P(0, met.Ascent.Ceil()),
+		}
+		drawer.DrawString(command.Text)
+
+		destWidth = float64(adv.Ceil())
+		destHeight = float64(glyphs.Bounds().Dy())
+
+		switch command.Align {
+		case render.AlignCenter:
+			offsetX = -destWidth / 2
+		case render.AlignRight:
+			offsetX = -destWidth
+		case render.AlignLeft:
+			offsetX = 0
+		}
+
+		switch command.Baseline {
+		case render.BaselineTop:
+			offsetY = 0
+		case render.BaselineMiddle:
+			offsetY = -destHeight / 2
+		case render.BaselineBottom:
+			offsetY = -destHeight
+		case render.BaselineAlphabetic:
+			offsetY = -float64(met.Ascent.Ceil())
+		default: // BaselineAlphabetic
+			offsetY = -(nativeAscent / nativeHeight) * destHeight
+		}
+	} else {
+		measured := render.MeasureText(command.Text, size)
+		destWidth = r.Camera.WorldScalarToScreen(measured.X)
+		destHeight = r.Camera.WorldScalarToScreen(measured.Y)
+		if destWidth <= 0 || destHeight <= 0 {
+			return
+		}
+
+		glyphs = image.NewRGBA(image.Rect(0, 0, int(math.Ceil(nativeWidth)), int(math.Ceil(nativeHeight))))
+		drawer = &font.Drawer{
+			Dst:  glyphs,
+			Src:  image.NewUniform(toRGBA(command.Color)),
+			Face: textFace,
+			Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
+		}
+
+		switch command.Align {
+		case render.AlignCenter:
+			offsetX = -destWidth / 2
+		case render.AlignRight:
+			offsetX = -destWidth
+		case render.AlignLeft:
+			offsetX = 0
+		}
+
+		switch command.Baseline {
+		case render.BaselineTop:
+			offsetY = 0
+		case render.BaselineMiddle:
+			offsetY = -destHeight / 2
+		case render.BaselineBottom:
+			offsetY = -destHeight
+		default: // BaselineAlphabetic
+			offsetY = -(nativeAscent / nativeHeight) * destHeight
+		}
+
+		destX = screenPos.X + offsetX
+		destY = screenPos.Y + offsetY
 	}
 
-	glyphs := image.NewRGBA(image.Rect(0, 0, int(math.Ceil(nativeWidth)), int(math.Ceil(nativeHeight))))
-	drawer := &font.Drawer{
-		Dst:  glyphs,
-		Src:  image.NewUniform(toRGBA(command.Color)),
-		Face: textFace,
-		Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
-	}
 	drawer.DrawString(command.Text)
 
-	screenPos := r.Camera.WorldToScreen(command.Position)
-
-	offsetX := 0.0
-	switch command.Align {
-	case render.AlignCenter:
-		offsetX = -destWidth / 2
-	case render.AlignRight:
-		offsetX = -destWidth
-	}
-
-	offsetY := 0.0
-	switch command.Baseline {
-	case render.BaselineTop:
-		offsetY = 0
-	case render.BaselineMiddle:
-		offsetY = -destHeight / 2
-	case render.BaselineBottom:
-		offsetY = -destHeight
-	default: // BaselineAlphabetic
-		offsetY = -(nativeAscent / nativeHeight) * destHeight
-	}
-
-	destX := screenPos.X + offsetX
-	destY := screenPos.Y + offsetY
 	bounds := r.clipBounds(img, rotatedRectBounds(screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation), command.Clip)
 
 	if command.Rotation == 0 {

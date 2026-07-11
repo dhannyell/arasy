@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -48,6 +49,11 @@ func Run(game runtime.Game, opts Options) error {
 		log.Error("build texture registry", "error", err)
 	}
 
+	fonts, err := typeface.BuildRegistry(cfg.Assets)
+	if err != nil {
+		log.Error("build font registry", "error", err)
+	}
+
 	cam := cfg.Camera
 	cam.Viewport = math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(opts.Width), Y: float64(opts.Height)})
 
@@ -57,6 +63,7 @@ func Run(game runtime.Game, opts Options) error {
 		Camera:   cam,
 		Clear:    cfg.Clear,
 		Textures: textures,
+		Fonts:    fonts,
 	}
 
 	if opts.PNG != "" {

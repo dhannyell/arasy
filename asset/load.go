@@ -15,6 +15,7 @@ type manifestFile struct {
 	Textures []textureEntry `json:"textures"`
 	Dynamic  []dynamicEntry `json:"dynamic"`
 	Sprites  []spriteEntry  `json:"sprites"`
+	Fonts    []fontEntry    `json:"fonts"`
 	Audio    []audioEntry   `json:"audio"`
 }
 
@@ -45,6 +46,11 @@ type audioEntry struct {
 	File string `json:"file"`
 }
 
+type fontEntry struct {
+	Name string `json:"name"`
+	File string `json:"file"`
+}
+
 // Load reads manifest.json from the given FS layers and resolves every
 // declared asset. Later layers take priority ("last wins"), at two levels:
 //   - manifest entries: a texture/sprite name redeclared in a later layer
@@ -62,6 +68,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 
 	texByName := map[string]textureEntry{}
 	sprByName := map[string]spriteEntry{}
+	fntByName := map[string]fontEntry{}
 	audioByID := map[string]audioEntry{}
 	sawManifest := false
 
@@ -86,6 +93,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		if err := validateSpriteEntries(mf.Sprites); err != nil {
 			return Manifest{}, err
 		}
+		if err := validateFontEntries(mf.Fonts); err != nil {
+			return Manifest{}, err
+		}
 		if err := validateDynamicEntries(mf.Dynamic); err != nil {
 			return Manifest{}, err
 		}
@@ -101,6 +111,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		for _, entry := range mf.Sprites {
 			sprByName[entry.Name] = entry
 		}
+		for _, entry := range mf.Fonts {
+			fntByName[entry.Name] = fontEntry{Name: entry.Name, File: entry.File}
+		}
 		for _, entry := range mf.Audio {
 			audioByID[entry.ID] = entry
 		}
@@ -115,6 +128,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 	// read the winning bytes for each declared texture.
 	textures := make(map[string]TextureDecl, len(texByName))
 	sprites := make(map[string]Sprite, len(sprByName))
+	fonts := make(map[string]FontDecl, len(fntByName))
 	clips := make(map[audio.ClipID]audio.Clip, len(audioByID))
 	for name, entry := range texByName {
 		if entry.File == "" {
@@ -127,6 +141,16 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 		textures[name] = TextureDecl{Data: data}
 	}
+	for name, entry := range fntByName {
+		if entry.File == "" {
+			continue
+		}
+		data, err := readLayered(layers, entry.File)
+		if err != nil {
+			return Manifest{}, fmt.Errorf("asset: font %q: %w", name, err)
+		}
+		fonts[name] = FontDecl{Data: data}
+	}
 	for id, entry := range audioByID {
 		// Audio bytes stay on disk: the host resolves and streams them (HTTP on
 		// web, embed on wasm). Only confirm the winning layer has the file so a
@@ -137,7 +161,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		clips[audio.ClipID(id)] = audio.Clip{ID: audio.ClipID(id), Path: entry.File}
 	}
 
-	manifest := newManifest(textures, nil, clips)
+	manifest := newManifest(textures, nil, clips, fonts)
 	for name, s := range sprByName {
 		texID, ok := manifest.byName[s.Texture]
 		if !ok {
@@ -171,6 +195,17 @@ func validateSpriteEntries(entries []spriteEntry) error {
 	for _, entry := range entries {
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate sprite %q in manifest.json", entry.Name)
+		}
+		seen[entry.Name] = struct{}{}
+	}
+	return nil
+}
+
+func validateFontEntries(entries []fontEntry) error {
+	seen := map[string]struct{}{}
+	for _, entry := range entries {
+		if _, ok := seen[entry.Name]; ok {
+			return fmt.Errorf("asset: duplicate font %q in manifest.json", entry.Name)
 		}
 		seen[entry.Name] = struct{}{}
 	}
