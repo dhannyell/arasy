@@ -2,6 +2,7 @@ package tess
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"math"
@@ -155,7 +156,6 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 	if err != nil {
 		return nil, err
 	}
-	defer fontFace.Close()
 
 	requested := make(map[rune]struct{}, atlasLastRune-atlasFirstRune+1+len(runes))
 	for r := rune(atlasFirstRune); r <= rune(atlasLastRune); r++ {
@@ -234,13 +234,17 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 	}
 
 	metrics := fontFace.Metrics()
-	return &Atlas{
+	atlas := &Atlas{
 		Key:    AtlasKey{Font: fontID, PX: px},
 		Image:  img,
 		Glyphs: glyphs,
 		Ascent: fixedFloat(metrics.Ascent),
 		Height: fixedFloat(metrics.Height),
-	}, nil
+	}
+	if err := fontFace.Close(); err != nil {
+		return nil, fmt.Errorf("create font atlas: close font face: %w", err)
+	}
+	return atlas, nil
 }
 
 func fixedFloat(v fixed.Int26_6) float64 { return float64(v) / 64 }
