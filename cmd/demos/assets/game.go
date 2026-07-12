@@ -49,7 +49,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 var heatmapCount int
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	commands := make([]render.Command, 0, 7)
+	commands := make([]render.Command, 0, 10)
 	heatmapCount++
 	heatmapTex := ctx.Assets.Texture("heatmap")
 	// Generate a procedural heatmap every frame
@@ -115,6 +115,33 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 			{X: 42, Y: 52}, {X: 58, Y: 52}, {X: 63, Y: 72}, {X: 37, Y: 72},
 		},
 	})
+
+	heading := ctx.Assets.Font("heading")
+	commands = append(commands,
+		render.DrawText{
+			BaseCommand: render.BaseCommand{LayerValue: 2},
+			Position:    math2d.Vec2{X: 4, Y: 20},
+			Text:        "Built-in bitmap font",
+			Color:       render.RGBA(0.75, 0.82, 0.9, 1),
+			Size:        4,
+		},
+		render.DrawText{
+			BaseCommand: render.BaseCommand{LayerValue: 2},
+			Position:    math2d.Vec2{X: 4, Y: 27},
+			Text:        "Manifest Go Regular: AV iii MMM",
+			Color:       render.RGBA(1, 0.84, 0.35, 1),
+			Size:        4,
+			Font:        heading,
+		},
+		render.DrawText{
+			BaseCommand: render.BaseCommand{LayerValue: 2},
+			Position:    math2d.Vec2{X: 4, Y: 33},
+			Text:        "Unknown name falls back to font zero",
+			Color:       render.RGBA(0.55, 0.9, 0.65, 1),
+			Size:        3,
+			Font:        ctx.Assets.Font("missing-font"),
+		},
+	)
 
 	return commands
 }

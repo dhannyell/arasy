@@ -47,6 +47,7 @@ func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
 			Text:        label,
 			Color:       style.TextColor,
 			Size:        u.sizeToWorld(style.TextSize, space),
+			Font:        u.theme.Font,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		})
@@ -105,6 +106,7 @@ func (u *UI) LabelIn(text string, pos math2d.Vec2, space Space) {
 		Text:        text,
 		Color:       u.theme.Label.Color,
 		Size:        u.sizeToWorld(u.theme.Label.Size, space),
+		Font:        u.theme.Font,
 		Align:       render.AlignCenter,
 		Baseline:    render.BaselineMiddle,
 	})

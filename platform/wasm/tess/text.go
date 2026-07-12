@@ -3,8 +3,6 @@ package tess
 import (
 	"math"
 
-	"golang.org/x/image/font/basicfont"
-
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 )
@@ -21,19 +19,46 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 
 	start := len(m.Vertices)
 
-	face := basicfont.Face7x13
-	metrics := face.Metrics()
-	nativeHeight := float64(metrics.Height.Ceil())
-	nativeAscent := float64(metrics.Ascent.Ceil())
-
-	size := cmd.Size
-	if size <= 0 {
-		size = nativeHeight
+	nativeHeight := atlas.Height
+	if nativeHeight <= 0 {
+		return
+	}
+	nativeAscent := atlas.Ascent
+	scale := 1.0
+	builtin := atlas.Key.Font == 0
+	if builtin {
+		size := cmd.Size
+		if size <= 0 {
+			size = nativeHeight
+		}
+		measured := render.MeasureText(cmd.Text, size)
+		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
 	}
 
-	measured := render.MeasureText(cmd.Text, size)
-	destWidth := c.cam.WorldScalarToScreen(measured.X)
-	destHeight := c.cam.WorldScalarToScreen(measured.Y)
+	runes := []rune(cmd.Text)
+	glyphs := make([]Glyph, len(runes))
+	destWidth := 0.0
+	for i, r := range runes {
+		glyph, ok := atlas.Glyphs[r]
+		if !ok {
+			glyph, ok = atlas.Glyphs['?']
+			if !ok {
+				continue
+			}
+		}
+		glyphs[i] = glyph
+		destWidth += glyph.Advance * scale
+	}
+	destHeight := nativeHeight * scale
+	if builtin {
+		size := cmd.Size
+		if size <= 0 {
+			size = nativeHeight
+		}
+		measured := render.MeasureText(cmd.Text, size)
+		destWidth = c.cam.WorldScalarToScreen(measured.X)
+		destHeight = c.cam.WorldScalarToScreen(measured.Y)
+	}
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
@@ -60,26 +85,26 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		offsetY = -(nativeAscent / nativeHeight) * destHeight
 	}
 
-	runes := []rune(cmd.Text)
-	glyphAdvance := destWidth / float64(len(runes))
-	glyphTopLeft := math2d.Vec2{
-		X: screenPos.X + offsetX,
-		Y: screenPos.Y + offsetY,
-	}
-
-	for i, r := range runes {
-		uv, ok := atlas.uv[r]
-		if !ok {
-			uv, ok = atlas.uv['?']
-			if !ok {
-				continue
-			}
+	baseline := screenPos.Y + offsetY + nativeAscent*scale
+	penX := screenPos.X + offsetX
+	for _, glyph := range glyphs {
+		if glyph.Width <= 0 || glyph.Height <= 0 {
+			penX += glyph.Advance * scale
+			continue
 		}
 
-		x0 := glyphTopLeft.X + float64(i)*glyphAdvance
-		y0 := glyphTopLeft.Y
-		x1 := x0 + glyphAdvance
-		y1 := y0 + destHeight
+		x0 := penX + glyph.OffsetX*scale
+		y0 := baseline + glyph.OffsetY*scale
+		x1 := x0 + glyph.Width*scale
+		y1 := y0 + glyph.Height*scale
+		advance := glyph.Advance * scale
+		if builtin {
+			advance = destWidth / float64(len(glyphs))
+			x0 = penX
+			y0 = screenPos.Y + offsetY
+			x1 = x0 + advance
+			y1 = y0 + destHeight
+		}
 
 		a := math2d.Vec2{X: x0, Y: y0}
 		b := math2d.Vec2{X: x1, Y: y0}
@@ -93,7 +118,8 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 			d = rotateScreenPoint(d, screenPos, cmd.Rotation)
 		}
 
-		pushTextQuad(m, c, a, b, cc, d, uv, cmd.Color)
+		pushTextQuad(m, c, a, b, cc, d, glyph.UV, cmd.Color)
+		penX += advance
 	}
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {

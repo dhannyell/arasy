@@ -1,11 +1,12 @@
 package breakout
 
 import (
+	"embed"
 	"fmt"
+	"io/fs"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/audio"
-	"github.com/dhannyell/frameforge/cmd/demos/breakout/audioassets"
 	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -15,8 +16,19 @@ import (
 	"github.com/dhannyell/frameforge/ui"
 )
 
+//go:embed assets
+var assetsFS embed.FS
+
+func loadManifest() (asset.Manifest, error) {
+	sub, err := fs.Sub(assetsFS, "assets")
+	if err != nil {
+		return asset.Manifest{}, err
+	}
+	return asset.Load(sub)
+}
+
 func (b *Breakout) Setup() runtime.Config {
-	assets, err := asset.Load(audioassets.FS())
+	assets, err := loadManifest()
 	if err != nil {
 		panic(err)
 	}

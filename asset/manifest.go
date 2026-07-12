@@ -1,6 +1,7 @@
 package asset
 
 import (
+	"io/fs"
 	"sort"
 
 	"github.com/dhannyell/frameforge/audio"
@@ -32,13 +33,28 @@ type TextureDecl struct {
 	W, H    int
 }
 
+// FontDecl is one declared font with its raw TTF/OTF bytes.
+type FontDecl struct {
+	ID   render.FontID
+	Name string
+	Data []byte
+}
+
 // Manifest is the resolved, immutable asset declaration set. The zero value
 // is a valid empty manifest (games without assets never touch it).
 type Manifest struct {
-	textures []TextureDecl // index i holds ID i+1
-	byName   map[string]render.TextureID
-	sprites  map[string]Sprite
-	audio    []audio.Clip
+	textures   []TextureDecl // index i holds ID i+1
+	byName     map[string]render.TextureID
+	sprites    map[string]Sprite
+	audio      []audio.Clip
+	fonts      []FontDecl
+	fontByName map[string]render.FontID
+
+	// fsLayers are the FS layers Load was called with, retained so hosts can
+	// read audio bytes (and any other path-addressed asset) from the same
+	// source the manifest itself was resolved from, without a second
+	// out-of-band FS. See FS().
+	fsLayers []fs.FS
 }
 
 // Texture resolves a texture name to its handle. Unknown names return 0,
@@ -59,10 +75,21 @@ func (m Manifest) Sprite(name string) Sprite {
 	return m.sprites[name]
 }
 
+func (m Manifest) Font(name string) render.FontID {
+	if m.fontByName == nil {
+		return 0
+	}
+	return m.fontByName[name]
+}
+
 // Textures returns the declarations ordered by ID (1..N). The returned slice
 // is shared - callers must not mutate it.
 func (m Manifest) Textures() []TextureDecl {
 	return m.textures
+}
+
+func (m Manifest) Fonts() []FontDecl {
+	return m.fonts
 }
 
 // TextureDecl returns the declaration for a texture ID, or false if unknown.
@@ -85,10 +112,23 @@ func (m Manifest) AudioClips() []audio.Clip {
 	return m.audio
 }
 
-func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, clips map[audio.ClipID]audio.Clip) Manifest {
+// FS returns a merged, read-only view of the FS layers this Manifest was
+// loaded from, honoring the same last-layer-wins semantics as Load: a path
+// present in more than one layer resolves to the last layer that has it.
+// Hosts use this to read audio.Clip.Path bytes without needing a separate
+// FS wired in out-of-band. The zero-value Manifest returns a safe, always
+// fs.ErrNotExist FS rather than panicking.
+func (m Manifest) FS() fs.FS {
+	return layeredFS{layers: m.fsLayers}
+}
+
+func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, clips map[audio.ClipID]audio.Clip, fonts map[string]FontDecl) Manifest {
 	byName := make(map[string]render.TextureID, len(textures))
 	decls := make([]TextureDecl, 0, len(textures))
 	names := make([]string, 0, len(textures))
+	byFontName := make(map[string]render.FontID, len(fonts))
+	fontDecls := make([]FontDecl, 0, len(fonts))
+	fontNames := make([]string, 0, len(fonts))
 	for name := range textures {
 		names = append(names, name)
 	}
@@ -101,6 +141,18 @@ func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, cli
 		byName[name] = decl.ID
 	}
 
+	for fontName := range fonts {
+		fontNames = append(fontNames, fontName)
+	}
+	sort.Strings(fontNames)
+	for i, name := range fontNames {
+		decl := fonts[name]
+		decl.ID = render.FontID(i + 1)
+		decl.Name = name
+		fontDecls = append(fontDecls, decl)
+		byFontName[name] = decl.ID
+	}
+
 	audioIDs := make([]string, 0, len(clips))
 	for id := range clips {
 		audioIDs = append(audioIDs, string(id))
@@ -111,5 +163,12 @@ func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, cli
 		audioClips = append(audioClips, clips[audio.ClipID(id)])
 	}
 
-	return Manifest{textures: decls, byName: byName, sprites: sprites, audio: audioClips}
+	return Manifest{
+		textures:   decls,
+		byName:     byName,
+		sprites:    sprites,
+		audio:      audioClips,
+		fonts:      fontDecls,
+		fontByName: byFontName,
+	}
 }

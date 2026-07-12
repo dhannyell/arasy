@@ -33,7 +33,6 @@ type webgpuRenderer struct {
 	// the next. Boot-time only, used by generateMipmaps.
 	mipPipeline js.Value
 
-	atlasBind js.Value
 	// texSampler is shared by every declared texture: linear filtering in
 	// every dimension plus anisotropy, unlike the font atlas's nearest
 	// sampler which wants pixel-sharp text.
@@ -49,7 +48,8 @@ type webgpuRenderer struct {
 	textCap     int
 	texCap      int
 
-	atlas *tess.Atlas
+	fontProvider *fontAtlasProvider
+	textAtlases  map[tess.AtlasKey]gpuTextAtlas
 
 	// texSizes maps TextureID to pixel dimensions for the textured
 	// pipeline, populated from the asset manifest in newWebGPU.
@@ -61,6 +61,10 @@ type webgpuRenderer struct {
 }
 
 func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*webgpuRenderer, error) {
+	fontProvider, err := newFontAtlasProvider(manifest)
+	if err != nil {
+		return nil, err
+	}
 	gpu := js.Global().Get("navigator").Get("gpu")
 	if gpu.IsUndefined() || gpu.IsNull() {
 		return nil, errWebGPUUnavailable
@@ -92,22 +96,22 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*w
 	})
 
 	r := &webgpuRenderer{
-		canvas:   canvas,
-		clear:    clear,
-		manifest: manifest,
-		gpu:      gpu,
-		device:   device,
-		queue:    device.Get("queue"),
-		context:  context,
-		format:   format,
-		atlas:    tess.NewAtlas(),
+		canvas:       canvas,
+		clear:        clear,
+		manifest:     manifest,
+		gpu:          gpu,
+		device:       device,
+		queue:        device.Get("queue"),
+		context:      context,
+		format:       format,
+		fontProvider: fontProvider,
+		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
 	}
 
 	r.solidPipeline = r.createSolidPipeline()
 	r.textPipeline = r.createTextPipeline()
 	r.texturedPipeline = r.createTexturedPipeline()
 	r.mipPipeline = r.createMipPipeline()
-	r.atlasBind = r.createAtlasBindGroup()
 	r.texSampler = r.createTextureSampler()
 	r.mipSampler = r.createMipSampler()
 	r.solidBuffer, r.solidCap = r.createVertexBuffer(64 * 1024)
@@ -126,7 +130,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		return
 	}
 
-	runs := tess.Build(frame, w, h, r.atlas, r.texSizes)
+	runs := tess.Build(frame, w, h, r.fontProvider, r.texSizes)
 
 	var solidBytes []byte
 	var texBytes []byte
@@ -166,9 +170,10 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			textBytes = append(textBytes, tess.TextBytes(run.Text)...)
 			drawRuns = append(drawRuns, gpuDrawRun{
-				kind:   tess.DrawRunText,
-				offset: textOffset,
-				count:  len(run.Text.Vertices),
+				kind:     tess.DrawRunText,
+				atlasKey: run.AtlasKey,
+				offset:   textOffset,
+				count:    len(run.Text.Vertices),
 			})
 			textOffset += len(run.Text.Vertices)
 		}
@@ -219,8 +224,12 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			pass.Call("setBindGroup", 0, gt.bindGroup)
 			pass.Call("draw", run.count, 1, run.offset, 0)
 		case tess.DrawRunText:
+			atlas, ok := r.textAtlasFor(run.atlasKey)
+			if !ok {
+				continue
+			}
 			pass.Call("setPipeline", r.textPipeline)
-			pass.Call("setBindGroup", 0, r.atlasBind)
+			pass.Call("setBindGroup", 0, atlas.bindGroup)
 			pass.Call("setVertexBuffer", 0, r.textBuffer)
 			pass.Call("draw", run.count, 1, run.offset, 0)
 		}
@@ -232,10 +241,11 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 }
 
 type gpuDrawRun struct {
-	kind    tess.DrawRunKind
-	texture render.TextureID
-	offset  int
-	count   int
+	kind     tess.DrawRunKind
+	texture  render.TextureID
+	atlasKey tess.AtlasKey
+	offset   int
+	count    int
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {
@@ -377,8 +387,29 @@ func (r *webgpuRenderer) createMipSampler() js.Value {
 	})
 }
 
-func (r *webgpuRenderer) createAtlasBindGroup() js.Value {
-	bounds := r.atlas.Image.Bounds()
+type gpuTextAtlas struct {
+	atlas     *tess.Atlas
+	texture   js.Value
+	bindGroup js.Value
+}
+
+func (r *webgpuRenderer) textAtlasFor(key tess.AtlasKey) (gpuTextAtlas, bool) {
+	atlas, err := r.fontProvider.AtlasFor(key.Font, key.PX, "")
+	if err != nil || atlas == nil {
+		return gpuTextAtlas{}, false
+	}
+	if cached, ok := r.textAtlases[key]; ok && cached.atlas == atlas {
+		return cached, true
+	} else if ok && !cached.texture.IsUndefined() && !cached.texture.IsNull() {
+		cached.texture.Call("destroy")
+	}
+	gpuAtlas := r.createTextAtlas(atlas)
+	r.textAtlases[key] = gpuAtlas
+	return gpuAtlas, true
+}
+
+func (r *webgpuRenderer) createTextAtlas(atlas *tess.Atlas) gpuTextAtlas {
+	bounds := atlas.Image.Bounds()
 	width := bounds.Dx()
 	height := bounds.Dy()
 
@@ -391,7 +422,7 @@ func (r *webgpuRenderer) createAtlasBindGroup() js.Value {
 	r.queue.Call(
 		"writeTexture",
 		map[string]any{"texture": texture},
-		bytesToJS(r.atlas.Image.Pix),
+		bytesToJS(atlas.Image.Pix),
 		map[string]any{
 			"bytesPerRow":  width,
 			"rowsPerImage": height,
@@ -410,13 +441,14 @@ func (r *webgpuRenderer) createAtlasBindGroup() js.Value {
 
 	layout := r.textPipeline.Call("getBindGroupLayout", 0)
 
-	return r.device.Call("createBindGroup", map[string]any{
+	bindGroup := r.device.Call("createBindGroup", map[string]any{
 		"layout": layout,
 		"entries": []any{
 			map[string]any{"binding": 0, "resource": texture.Call("createView")},
 			map[string]any{"binding": 1, "resource": sampler},
 		},
 	})
+	return gpuTextAtlas{atlas: atlas, texture: texture, bindGroup: bindGroup}
 }
 
 func (r *webgpuRenderer) createVertexBuffer(size int) (js.Value, int) {

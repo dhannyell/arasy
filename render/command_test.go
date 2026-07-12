@@ -35,6 +35,14 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 	}
 }
 
+func TestDrawTextHasExpectedZeroValue(t *testing.T) {
+	command := render.DrawText{}
+
+	if command.Font != 0 {
+		t.Fatalf("Font = %d, want built-in font 0", command.Font)
+	}
+}
+
 func TestDrawImageHasExpectedZeroValue(t *testing.T) {
 	command := render.DrawImage{}
 

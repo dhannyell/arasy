@@ -12,14 +12,20 @@ import (
 	"testing"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
 func assertGolden(t *testing.T, name string, img *image.RGBA) {
+	assertGoldenTolerance(t, name, img, 0)
+}
+
+func assertGoldenTolerance(t *testing.T, name string, img *image.RGBA, channelTolerance uint8) {
 	t.Helper()
 	path := filepath.Join("testdata", "golden", name+".png")
 
@@ -31,7 +37,7 @@ func assertGolden(t *testing.T, name string, img *image.RGBA) {
 
 	want := decodePNG(t, path)
 
-	diff := countPixelDiff(want, img)
+	diff := countPixelDiff(want, img, channelTolerance)
 	if diff.count == 0 {
 		return
 	}
@@ -93,7 +99,7 @@ type pixelDiff struct {
 	first image.Point
 }
 
-func countPixelDiff(want, got *image.RGBA) pixelDiff {
+func countPixelDiff(want, got *image.RGBA, channelTolerance uint8) pixelDiff {
 	if want.Bounds() != got.Bounds() {
 		return pixelDiff{count: 1, first: got.Bounds().Min}
 	}
@@ -102,7 +108,7 @@ func countPixelDiff(want, got *image.RGBA) pixelDiff {
 	bounds := want.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			if want.RGBAAt(x, y) == got.RGBAAt(x, y) {
+			if colorsWithinTolerance(want.RGBAAt(x, y), got.RGBAAt(x, y), channelTolerance) {
 				continue
 			}
 			if diff.count == 0 {
@@ -112,6 +118,20 @@ func countPixelDiff(want, got *image.RGBA) pixelDiff {
 		}
 	}
 	return diff
+}
+
+func colorsWithinTolerance(want, got color.RGBA, tolerance uint8) bool {
+	return channelWithinTolerance(want.R, got.R, tolerance) &&
+		channelWithinTolerance(want.G, got.G, tolerance) &&
+		channelWithinTolerance(want.B, got.B, tolerance) &&
+		channelWithinTolerance(want.A, got.A, tolerance)
+}
+
+func channelWithinTolerance(want, got, tolerance uint8) bool {
+	if want > got {
+		return want-got <= tolerance
+	}
+	return got-want <= tolerance
 }
 
 func TestGoldenRects(t *testing.T) {
@@ -301,6 +321,74 @@ func TestGoldenText(t *testing.T) {
 	assertGolden(t, "text", img)
 }
 
+func TestGoldenTypeface(t *testing.T) {
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatalf("parse goregular: %v", err)
+	}
+	renderer := goldenRenderer()
+	renderer.Fonts = typeface.Registry{nil, face}
+	img := renderer.Render([]render.Command{
+		render.DrawText{
+			Position: math2d.Vec2{X: 7, Y: 8},
+			Text:     "Go Regular 6",
+			Color:    render.RGBA(0.92, 0.95, 1, 1),
+			Size:     6,
+			Font:     1,
+			Baseline: render.BaselineTop,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 50, Y: 24},
+			Text:     "Center 10",
+			Color:    render.RGBA(0.3, 0.88, 1, 1),
+			Size:     10,
+			Font:     1,
+			Align:    render.AlignCenter,
+			Baseline: render.BaselineMiddle,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 93, Y: 45},
+			Text:     "Right 16",
+			Color:    render.RGBA(1, 0.72, 0.25, 1),
+			Size:     16,
+			Font:     1,
+			Align:    render.AlignRight,
+			Baseline: render.BaselineBottom,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 23, Y: 49},
+			Text:     "Rotate",
+			Color:    render.RGBA(1, 0.42, 0.63, 0.9),
+			Size:     9,
+			Font:     1,
+			Align:    render.AlignCenter,
+			Baseline: render.BaselineMiddle,
+			Rotation: -math.Pi / 7,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 7, Y: 68},
+			Text:     "builtin 0",
+			Color:    render.RGBA(0.62, 1, 0.48, 1),
+			Size:     6,
+			Baseline: render.BaselineBottom,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 93, Y: 67},
+			Text:     "fallback 99",
+			Color:    render.RGBA(0.82, 0.72, 1, 1),
+			Size:     6,
+			Font:     99,
+			Align:    render.AlignRight,
+			Baseline: render.BaselineBottom,
+		},
+	})
+
+	// x/image's anti-aliased glyph rasterizer can round edge coverage by one
+	// channel value across platforms. Keep this tolerance local to the external
+	// typeface golden; the remaining raster goldens stay pixel-exact.
+	assertGoldenTolerance(t, "typeface", img, 1)
+}
+
 func TestGoldenPolygons(t *testing.T) {
 	img := goldenRenderer().Render([]render.Command{
 		render.DrawPolygon{
@@ -451,7 +539,7 @@ func TestGoldenCameraAspect(t *testing.T) {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, 260, 150))
-	left := Renderer{
+	leftRenderer := Renderer{
 		Width:  260,
 		Height: 150,
 		Camera: render.Camera{
@@ -460,8 +548,9 @@ func TestGoldenCameraAspect(t *testing.T) {
 			Aspect:   render.AspectFit,
 		},
 		Clear: goldenClear,
-	}.Render(commands)
-	right := Renderer{
+	}
+	left := leftRenderer.Render(commands)
+	rightRenderer := Renderer{
 		Width:  260,
 		Height: 150,
 		Camera: render.Camera{
@@ -470,7 +559,8 @@ func TestGoldenCameraAspect(t *testing.T) {
 			Aspect:   render.AspectExpand,
 		},
 		Clear: render.RGBA(0, 0, 0, 0),
-	}.Render(commands)
+	}
+	right := rightRenderer.Render(commands)
 
 	copy(img.Pix, left.Pix)
 	for y := 0; y < img.Bounds().Dy(); y++ {
@@ -484,8 +574,8 @@ func TestGoldenCameraAspect(t *testing.T) {
 
 var goldenClear = render.RGBA(0.055, 0.065, 0.075, 1)
 
-func goldenRenderer() Renderer {
-	return Renderer{
+func goldenRenderer() *Renderer {
+	return &Renderer{
 		Width:  200,
 		Height: 150,
 		Camera: render.Camera{
@@ -679,4 +769,29 @@ func TestGoldenImageQuads(t *testing.T) {
 	})
 
 	assertGolden(t, "image_quads", img)
+}
+
+func TestCountPixelDiffHonorsChannelTolerance(t *testing.T) {
+	want := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	got := image.NewRGBA(want.Bounds())
+	want.SetRGBA(0, 0, color.RGBA{R: 10, G: 20, B: 30, A: 40})
+	got.SetRGBA(0, 0, color.RGBA{R: 11, G: 19, B: 30, A: 41})
+	want.SetRGBA(1, 0, color.RGBA{R: 100, G: 110, B: 120, A: 130})
+	got.SetRGBA(1, 0, color.RGBA{R: 100, G: 112, B: 120, A: 130})
+
+	diff := countPixelDiff(want, got, 1)
+	if diff.count != 1 || diff.first != (image.Point{X: 1, Y: 0}) {
+		t.Fatalf("countPixelDiff() = %+v, want one diff at (1,0)", diff)
+	}
+}
+
+func TestCountPixelDiffRemainsExactAtZeroTolerance(t *testing.T) {
+	want := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	got := image.NewRGBA(want.Bounds())
+	want.SetRGBA(0, 0, color.RGBA{R: 10, G: 20, B: 30, A: 40})
+	got.SetRGBA(0, 0, color.RGBA{R: 11, G: 20, B: 30, A: 40})
+
+	if diff := countPixelDiff(want, got, 0); diff.count != 1 {
+		t.Fatalf("countPixelDiff() count = %d, want 1", diff.count)
+	}
 }

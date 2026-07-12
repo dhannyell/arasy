@@ -10,8 +10,10 @@ import (
 	"sync"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"golang.org/x/image/font"
 	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -34,10 +36,21 @@ type Renderer struct {
 	// Textures resolves TextureIDs to decoded pixels. Nil is valid:
 	// every DrawImage then renders the missing-texture placeholder.
 	Textures pixel.Registry
+	Fonts    typeface.Registry
+
+	// faceCache memoizes opentype faces per font and pixel size. Lazily
+	// initialized; the Renderer is used from a single goroutine (offline
+	// Run and tests), so no locking.
+	faceCache map[faceKey]font.Face
+}
+
+type faceKey struct {
+	id render.FontID
+	px int
 }
 
 // Render draws commands into a new RGBA image.
-func (r Renderer) Render(commands []render.Command) *image.RGBA {
+func (r *Renderer) Render(commands []render.Command) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
 
 	fillRect(img, img.Bounds(), toRGBA(r.Clear))
@@ -47,8 +60,30 @@ func (r Renderer) Render(commands []render.Command) *image.RGBA {
 	return img
 }
 
+func (r *Renderer) face(id render.FontID, px int) font.Face {
+	tf := r.Fonts.Lookup(id)
+	if tf == nil {
+		return nil
+	}
+	if r.faceCache == nil {
+		r.faceCache = map[faceKey]font.Face{}
+	}
+	key := faceKey{id: id, px: px}
+	if f, ok := r.faceCache[key]; ok {
+		return f
+	}
+	f, err := opentype.NewFace(tf.Font(), &opentype.FaceOptions{
+		Size: float64(px), DPI: 72, Hinting: font.HintingNone,
+	})
+	if err != nil {
+		return nil
+	} // fall back to built-in font
+	r.faceCache[key] = f
+	return f
+}
+
 type rasterSink struct {
-	renderer Renderer
+	renderer *Renderer
 	image    *image.RGBA
 }
 
@@ -88,7 +123,7 @@ func (s rasterSink) VisitImageQuad(command render.DrawImageQuad) {
 	s.renderer.drawImageQuad(s.image, command)
 }
 
-func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
+func (r *Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 	screenMin := r.Camera.WorldToScreen(command.Rect.Min)
 	screenMax := r.Camera.WorldToScreen(command.Rect.Max)
 
@@ -118,7 +153,7 @@ func (r Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 	}
 }
 
-func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
+func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
@@ -134,7 +169,7 @@ func (r Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	}
 }
 
-func (r Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
+func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 	center := r.Camera.WorldToScreen(command.Center)
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
 	bounds := r.clipBounds(img, circleBounds(center, radius), command.Clip)
@@ -142,7 +177,7 @@ func (r Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 	fillCircle(img, center, radius, bounds, toRGBA(command.Color))
 }
 
-func (r Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
+func (r *Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 	from := r.Camera.WorldToScreen(command.From)
 	to := r.Camera.WorldToScreen(command.To)
 
@@ -188,7 +223,7 @@ func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, bounds image
 	}
 }
 
-func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
+func (r *Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
@@ -204,64 +239,121 @@ func (r Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 // DrawText.Size, so text grows/shrinks with the camera like other shapes.
 var textFace = basicfont.Face7x13
 
-func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
+func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	if command.Text == "" || command.Color.A <= 0 {
 		return
 	}
 
-	metrics := textFace.Metrics()
-	nativeHeight := float64(metrics.Height.Ceil())
-	nativeAscent := float64(metrics.Ascent.Ceil())
-	nativeWidth := float64(font.MeasureString(textFace, command.Text).Ceil())
-	if nativeWidth <= 0 {
-		return
-	}
-
-	size := command.Size
-	if size <= 0 {
-		size = nativeHeight
-	}
-
-	measured := render.MeasureText(command.Text, size)
-	destWidth := r.Camera.WorldScalarToScreen(measured.X)
-	destHeight := r.Camera.WorldScalarToScreen(measured.Y)
-	if destWidth <= 0 || destHeight <= 0 {
-		return
-	}
-
-	glyphs := image.NewRGBA(image.Rect(0, 0, int(math.Ceil(nativeWidth)), int(math.Ceil(nativeHeight))))
-	drawer := &font.Drawer{
-		Dst:  glyphs,
-		Src:  image.NewUniform(toRGBA(command.Color)),
-		Face: textFace,
-		Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
-	}
-	drawer.DrawString(command.Text)
+	var destWidth, destHeight, offsetX, offsetY, destX, destY float64
 
 	screenPos := r.Camera.WorldToScreen(command.Position)
+	size := command.Size
 
-	offsetX := 0.0
-	switch command.Align {
-	case render.AlignCenter:
-		offsetX = -destWidth / 2
-	case render.AlignRight:
-		offsetX = -destWidth
+	face := font.Face(nil)
+	if command.Font != 0 {
+		px := int(math.Round(r.Camera.WorldScalarToScreen(size)))
+		if px <= 0 {
+			return
+		}
+		face = r.face(command.Font, px)
 	}
 
-	offsetY := 0.0
-	switch command.Baseline {
-	case render.BaselineTop:
-		offsetY = 0
-	case render.BaselineMiddle:
-		offsetY = -destHeight / 2
-	case render.BaselineBottom:
-		offsetY = -destHeight
-	default: // BaselineAlphabetic
-		offsetY = -(nativeAscent / nativeHeight) * destHeight
+	var glyphs *image.RGBA
+	var drawer *font.Drawer
+	if face != nil {
+		adv := font.MeasureString(face, command.Text)
+		met := face.Metrics()
+		glyphWidth := adv.Ceil()
+		glyphHeight := (met.Ascent + met.Descent).Ceil()
+		if glyphWidth <= 0 || glyphHeight <= 0 {
+			return
+		}
+		glyphs = image.NewRGBA(image.Rect(0, 0, glyphWidth, glyphHeight))
+
+		drawer = &font.Drawer{
+			Dst:  glyphs,
+			Src:  image.NewUniform(toRGBA(command.Color)),
+			Face: face,
+			Dot:  fixed.P(0, met.Ascent.Ceil()),
+		}
+
+		destWidth = float64(glyphWidth)
+		destHeight = float64(glyphHeight)
+
+		switch command.Align {
+		case render.AlignCenter:
+			offsetX = -destWidth / 2
+		case render.AlignRight:
+			offsetX = -destWidth
+		case render.AlignLeft:
+			offsetX = 0
+		}
+
+		switch command.Baseline {
+		case render.BaselineTop:
+			offsetY = 0
+		case render.BaselineMiddle:
+			offsetY = -destHeight / 2
+		case render.BaselineBottom:
+			offsetY = -destHeight
+		case render.BaselineAlphabetic:
+			offsetY = -float64(met.Ascent.Ceil())
+		default:
+			offsetY = -float64(met.Ascent.Ceil())
+		}
+	} else {
+		metrics := textFace.Metrics()
+		nativeHeight := float64(metrics.Height.Ceil())
+		nativeAscent := float64(metrics.Ascent.Ceil())
+		nativeWidth := float64(font.MeasureString(textFace, command.Text).Ceil())
+		if nativeWidth <= 0 {
+			return
+		}
+		if size <= 0 {
+			size = nativeHeight
+		}
+
+		measured := render.MeasureText(command.Text, size)
+		destWidth = r.Camera.WorldScalarToScreen(measured.X)
+		destHeight = r.Camera.WorldScalarToScreen(measured.Y)
+		if destWidth <= 0 || destHeight <= 0 {
+			return
+		}
+
+		glyphs = image.NewRGBA(image.Rect(0, 0, int(math.Ceil(nativeWidth)), int(math.Ceil(nativeHeight))))
+		drawer = &font.Drawer{
+			Dst:  glyphs,
+			Src:  image.NewUniform(toRGBA(command.Color)),
+			Face: textFace,
+			Dot:  fixed.Point26_6{X: 0, Y: metrics.Ascent},
+		}
+
+		switch command.Align {
+		case render.AlignCenter:
+			offsetX = -destWidth / 2
+		case render.AlignRight:
+			offsetX = -destWidth
+		case render.AlignLeft:
+			offsetX = 0
+		}
+
+		switch command.Baseline {
+		case render.BaselineTop:
+			offsetY = 0
+		case render.BaselineMiddle:
+			offsetY = -destHeight / 2
+		case render.BaselineBottom:
+			offsetY = -destHeight
+		default: // BaselineAlphabetic
+			offsetY = -(nativeAscent / nativeHeight) * destHeight
+		}
+
 	}
 
-	destX := screenPos.X + offsetX
-	destY := screenPos.Y + offsetY
+	destX = screenPos.X + offsetX
+	destY = screenPos.Y + offsetY
+	drawer.DrawString(command.Text)
+
 	bounds := r.clipBounds(img, rotatedRectBounds(screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation), command.Clip)
 
 	if command.Rotation == 0 {
@@ -272,7 +364,7 @@ func (r Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	blitScaledRotated(img, glyphs, glyphs.Bounds(), screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation, bounds, noTint)
 }
 
-func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
+func (r *Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
 	if len(command.Points) < 3 {
 		return
 	}
@@ -300,7 +392,7 @@ func (r Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
 
 // Rotation pivots on the destination center, mirroring how
 // rotated text anchors on its position.
-func (r Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
+func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 	screenMin := r.Camera.WorldToScreen(command.Dest.Min)
 	screenMax := r.Camera.WorldToScreen(command.Dest.Max)
 
@@ -369,7 +461,7 @@ var (
 // the (u,v) coordinate in the source unit square and nearest-neighbor
 // samples the texture there. A plain axis-aligned, unrotated quad degenerates
 // to the same per-pixel math as drawImage's affine blit.
-func (r Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) {
+func (r *Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) {
 	var corners [4]math2d.Vec2
 	for i, corner := range command.Corners {
 		corners[i] = r.Camera.WorldToScreen(corner)
@@ -820,7 +912,7 @@ func clampRoundedRectRadius(rect image.Rectangle, radius float64) float64 {
 	return radius
 }
 
-func (r Renderer) clipBounds(img *image.RGBA, bounds image.Rectangle, clip math2d.Rect) image.Rectangle {
+func (r *Renderer) clipBounds(img *image.RGBA, bounds image.Rectangle, clip math2d.Rect) image.Rectangle {
 	bounds = bounds.Intersect(img.Bounds())
 	if isZeroRect(clip) {
 		return bounds

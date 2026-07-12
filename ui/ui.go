@@ -13,6 +13,7 @@ type UI struct {
 	camera    render.Camera
 	reference math2d.Rect
 	theme     Theme
+	font      render.FontID
 	frame     input.PointerFrame
 	layer     int
 	inside    bool
@@ -36,6 +37,7 @@ func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, th
 		inside:    inside,
 		camera:    cam,
 		theme:     theme,
+		font:      theme.Font,
 		reference: reference,
 		store:     store,
 		dt:        dt,
@@ -56,6 +58,7 @@ func NewUpdate(state *State, frame input.PointerFrame, cam render.Camera, theme 
 		inside:    frame.Inside,
 		camera:    cam,
 		theme:     theme,
+		font:      theme.Font,
 		reference: reference,
 		layer:     LayerBase,
 	}

@@ -4,6 +4,11 @@ import "github.com/dhannyell/frameforge/render"
 
 // Theme groups widget styles used by runtime.Config.
 type Theme struct {
+	// Font is the manifest FontID every themed widget paints its text with.
+	// Zero keeps the built-in engine font, so an unset theme renders exactly
+	// as before. Games resolve the id from their manifest (ctx.Assets.Font)
+	// and set it once here.
+	Font     render.FontID
 	Button   ButtonTheme
 	Label    LabelTheme
 	Panel    PanelTheme

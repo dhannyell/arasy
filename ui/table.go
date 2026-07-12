@@ -85,6 +85,7 @@ func (u *UI) BadgeIn(text string, center math2d.Vec2, bg render.Color, space Spa
 			Text:        text,
 			Color:       badge.TextColor,
 			Size:        u.sizeToWorld(badge.TextSize, space),
+			Font:        u.theme.Font,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		},
@@ -181,6 +182,7 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 			Text:        cols[col].Title,
 			Color:       u.theme.Header.TextColor,
 			Size:        u.sizeToWorld(tableTextSize, space),
+			Font:        u.theme.Font,
 			Align:       cols[col].Align,
 			Baseline:    render.BaselineMiddle,
 		})
@@ -231,6 +233,7 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 				Text:        cell(row, col),
 				Color:       textColor,
 				Size:        u.sizeToWorld(tableTextSize, space),
+				Font:        u.theme.Font,
 				Align:       cols[col].Align,
 				Baseline:    render.BaselineMiddle,
 			})
