@@ -22,7 +22,11 @@ type Canvas2D struct {
 	clear     render.Color
 	textures  map[render.TextureID]js.Value
 	tintCache map[string]js.Value
-	log       *slog.Logger
+	// fonts maps a manifest FontID to the CSS font-family registered with the
+	// browser once its FontFace has loaded. A missing entry means the font is
+	// still loading or unavailable, and DrawText falls back to monospace.
+	fonts map[render.FontID]string
+	log   *slog.Logger
 }
 
 func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) *Canvas2D {
@@ -35,10 +39,14 @@ func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, l
 		clear:     clear,
 		textures:  make(map[render.TextureID]js.Value),
 		tintCache: make(map[string]js.Value),
+		fonts:     make(map[render.FontID]string),
 		log:       log,
 	}
 	for _, decl := range manifest.Textures() {
 		c.loadTexture(decl)
+	}
+	for _, decl := range manifest.Fonts() {
+		c.loadFont(decl)
 	}
 	return c
 }
@@ -76,6 +84,41 @@ func (c *Canvas2D) loadTexture(decl asset.TextureDecl) {
 		return nil
 	})
 	promise.Call("then", resolve).Call("catch", reject)
+}
+
+// loadFont registers a manifest font with the browser's FontFace API so
+// DrawText can paint with it. Loading is asynchronous; until the FontFace
+// resolves, DrawText falls back to monospace. The family is namespaced
+// ("ff-<name>") to avoid clashing with system-installed fonts. Metrics still
+// come from asset/typeface on the deterministic side (the browser font is only
+// used to paint here, never to measure), matching the WebGPU backend.
+func (c *Canvas2D) loadFont(decl asset.FontDecl) {
+	fontFaceCtor := js.Global().Get("FontFace")
+	if fontFaceCtor.IsUndefined() {
+		c.log.Warn("Canvas2D FontFace unavailable; text will use monospace", "font", decl.Name)
+		return
+	}
+
+	family := "ff-" + decl.Name
+	face := fontFaceCtor.New(family, bytesToJS(decl.Data))
+
+	var resolve, reject js.Func
+	release := func() {
+		resolve.Release()
+		reject.Release()
+	}
+	resolve = js.FuncOf(func(this js.Value, args []js.Value) any {
+		js.Global().Get("document").Get("fonts").Call("add", face)
+		c.fonts[decl.ID] = family
+		release()
+		return nil
+	})
+	reject = js.FuncOf(func(this js.Value, args []js.Value) any {
+		c.log.Warn("Canvas2D font load failed; using monospace", "font", decl.Name)
+		release()
+		return nil
+	})
+	face.Call("load").Call("then", resolve).Call("catch", reject)
 }
 
 func (c *Canvas2D) UpdateTextures(updates []runtime.TextureUpdate) {
@@ -490,7 +533,17 @@ func (c *Canvas2D) drawText(cmd render.DrawText, camera render.Camera) {
 
 	pos := camera.WorldToScreen(cmd.Position)
 	c.ctx.Set("fillStyle", cssColor(cmd.Color))
-	c.ctx.Set("font", fmt.Sprintf("%gpx monospace", screenSize))
+	// Font 0 (or a font whose FontFace has not loaded yet) paints with the
+	// system monospace font. WebGPU remains the backend with authoritative
+	// external-font parity via per-FontID glyph atlases; here the browser only
+	// paints the loaded FontFace, and monospace is the fallback family.
+	family := "monospace"
+	if cmd.Font != 0 {
+		if name, ok := c.fonts[cmd.Font]; ok {
+			family = fmt.Sprintf("%q, monospace", name)
+		}
+	}
+	c.ctx.Set("font", fmt.Sprintf("%gpx %s", screenSize, family))
 	c.ctx.Set("textAlign", canvasTextAlign(cmd.Align))
 	c.ctx.Set("textBaseline", canvasTextBaseline(cmd.Baseline))
 

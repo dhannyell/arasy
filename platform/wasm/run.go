@@ -4,7 +4,6 @@ package wasm
 
 import (
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"syscall/js"
 
@@ -35,8 +34,6 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
-	// AudioFS provides bytes for Config.Assets.AudioClips paths. Nil disables audio.
-	AudioFS fs.FS
 }
 
 type host struct {
@@ -91,8 +88,8 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	h.resize()
 	h.registerResizeListener()
 	h.registerInputListeners()
-	if opts.AudioFS != nil {
-		h.audio = newAudioSink(cfg.Assets.AudioClips(), opts.AudioFS, log)
+	if len(cfg.Assets.AudioClips()) > 0 {
+		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), log)
 	}
 	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, log)
 	var replayFactory func() runtime.Game

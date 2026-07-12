@@ -1,6 +1,8 @@
 package tess
 
 import (
+	"math"
+
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
@@ -70,87 +72,155 @@ type DrawRun struct {
 	Solid    Mesh
 	Textured TexMesh
 	Text     TextMesh
+	AtlasKey AtlasKey
 }
 
 // Build tessellates frame commands into ordered, heterogeneous WebGPU runs.
 // render.Each owns layer sorting and command dispatch; this sink only maps
 // each command to the appropriate tessellation pipeline.
-func Build(frame runtime.Frame, w, h int, atlas *Atlas, sizes TexSizes) []DrawRun {
+func Build(frame runtime.Frame, w, h int, provider AtlasProvider, sizes TexSizes) []DrawRun {
+	buildCtx := ctx{
+		cam: frame.Camera,
+		w:   float64(w),
+		h:   float64(h),
+	}
 	sink := buildSink{
-		ctx: ctx{
-			cam: frame.Camera,
-			w:   float64(w),
-			h:   float64(h),
-		},
-		atlas: atlas,
-		sizes: sizes,
+		ctx:     buildCtx,
+		atlases: resolveFrameAtlases(frame.Commands, buildCtx, provider),
+		sizes:   sizes,
 	}
 	render.Each(frame.Commands, &sink)
 	return sink.runs
 }
 
 type buildSink struct {
-	ctx   ctx
-	atlas *Atlas
-	sizes TexSizes
-	runs  []DrawRun
+	ctx     ctx
+	atlases map[AtlasKey]*Atlas
+	sizes   TexSizes
+	runs    []DrawRun
 
 	lastKind    DrawRunKind
 	lastTexture render.TextureID
+	lastAtlas   AtlasKey
 	hasLast     bool
 }
 
-func (s *buildSink) run(kind DrawRunKind, texture render.TextureID) *DrawRun {
-	if s.hasLast && s.lastKind == kind && (kind != DrawRunTextured || s.lastTexture == texture) {
+func (s *buildSink) run(kind DrawRunKind, texture render.TextureID, atlas AtlasKey) *DrawRun {
+	if s.hasLast && s.lastKind == kind &&
+		(kind != DrawRunTextured || s.lastTexture == texture) &&
+		(kind != DrawRunText || s.lastAtlas == atlas) {
 		return &s.runs[len(s.runs)-1]
 	}
-	s.runs = append(s.runs, DrawRun{Kind: kind})
+	s.runs = append(s.runs, DrawRun{Kind: kind, AtlasKey: atlas})
 	s.lastKind = kind
 	s.lastTexture = texture
+	s.lastAtlas = atlas
 	s.hasLast = true
 	return &s.runs[len(s.runs)-1]
 }
 
 func (s *buildSink) VisitRect(cmd render.DrawRect) {
-	AppendRect(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendRect(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitCircle(cmd render.DrawCircle) {
-	AppendCircle(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendCircle(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitPoint(cmd render.DrawPoint) {
-	AppendPoint(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendPoint(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitLine(cmd render.DrawLine) {
-	AppendLine(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendLine(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitArc(cmd render.DrawArc) {
-	AppendArc(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendArc(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitPolygon(cmd render.DrawPolygon) {
-	AppendPolygon(&s.run(DrawRunSolid, 0).Solid, s.ctx, cmd)
+	AppendPolygon(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
 func (s *buildSink) VisitText(cmd render.DrawText) {
-	if s.atlas == nil {
+	size := cmd.Size
+	if size <= 0 {
+		size = glyphHeight
+	}
+	px := int(math.Round(s.ctx.cam.WorldScalarToScreen(size)))
+	if px <= 0 {
 		return
 	}
-	AppendText(&s.run(DrawRunText, 0).Text, s.ctx, cmd, s.atlas)
+	atlas := s.atlases[AtlasKey{Font: cmd.Font, PX: px}]
+	if atlas == nil {
+		return
+	}
+	AppendText(&s.run(DrawRunText, 0, atlas.Key).Text, s.ctx, cmd, atlas)
+}
+
+// resolveFrameAtlases groups text by requested key before tessellation. This
+// matters for on-demand Unicode: every command using one (font, px) sees the
+// same atlas layout, even when the provider creates a fresh atlas per call.
+func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider) map[AtlasKey]*Atlas {
+	if provider == nil {
+		return nil
+	}
+	type request struct {
+		key  AtlasKey
+		text string
+	}
+	requests := make([]request, 0)
+	indices := make(map[AtlasKey]int)
+	for _, command := range commands {
+		cmd, ok := command.(render.DrawText)
+		if !ok || cmd.Text == "" || cmd.Color.A <= 0 {
+			continue
+		}
+		size := cmd.Size
+		if size <= 0 {
+			size = glyphHeight
+		}
+		px := int(math.Round(c.cam.WorldScalarToScreen(size)))
+		if px <= 0 {
+			continue
+		}
+		key := AtlasKey{Font: cmd.Font, PX: px}
+		if i, exists := indices[key]; exists {
+			requests[i].text += cmd.Text
+			continue
+		}
+		indices[key] = len(requests)
+		requests = append(requests, request{key: key, text: cmd.Text})
+	}
+
+	resolved := make(map[AtlasKey]*Atlas, len(requests))
+	var builtin *Atlas
+	for _, request := range requests {
+		atlas, err := provider.AtlasFor(request.key.Font, request.key.PX, request.text)
+		if err != nil || atlas == nil {
+			if builtin == nil {
+				builtin, _ = provider.AtlasFor(0, glyphHeight, request.text)
+				if builtin == nil {
+					builtin = NewAtlas()
+				}
+			}
+			atlas = builtin
+		}
+		resolved[request.key] = atlas
+	}
+	return resolved
 }
 
 func (s *buildSink) VisitImage(cmd render.DrawImage) {
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
 		if corners, ok := destCorners(s.ctx, cmd.Dest, cmd.Rotation); ok {
-			appendMissingTexture(&s.run(DrawRunSolid, 0).Solid, s.ctx, corners, cmd.Clip)
+			appendMissingTexture(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, corners, cmd.Clip)
 		}
 		return
 	}
-	run := s.run(DrawRunTextured, cmd.Texture)
+	run := s.run(DrawRunTextured, cmd.Texture, AtlasKey{})
 	run.Textured.Texture = cmd.Texture
 	AppendImage(&run.Textured, s.ctx, cmd, texW, texH)
 }
@@ -162,10 +232,10 @@ func (s *buildSink) VisitImageQuad(cmd render.DrawImageQuad) {
 	}
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
-		appendMissingTexture(&s.run(DrawRunSolid, 0).Solid, s.ctx, screen, cmd.Clip)
+		appendMissingTexture(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, screen, cmd.Clip)
 		return
 	}
-	run := s.run(DrawRunTextured, cmd.Texture)
+	run := s.run(DrawRunTextured, cmd.Texture, AtlasKey{})
 	run.Textured.Texture = cmd.Texture
 	AppendImageQuad(&run.Textured, s.ctx, cmd, texW, texH)
 }
