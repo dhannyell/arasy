@@ -16,11 +16,12 @@ Current capabilities:
 - 2D vector and rectangle math.
 - Fixed timestep helper.
 - Camera with aspect-ratio modes (stretch, fit, expand).
-- Backend-agnostic render commands: rectangles, circles, lines, arcs, points, and text, with layer-based draw ordering.
+- Backend-agnostic render commands: rectangles, circles, lines, arcs, points, images, and text, with layer-based draw ordering and manifest-selected TTF/OTF fonts.
 - Runtime package with a portable `Game` contract, automatic fixed-timestep world stepping, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
 - Backend-agnostic audio intents with deterministic one-shot cues, continuous tracks, and Web Audio playback in the web canvas host.
 - Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
-- Raster renderer using Go's standard `image` packages, including text rendering and alpha blending.
+- Raster renderer using Go's standard `image` packages, including proportional OpenType text rendering and alpha blending.
+- WASM/WebGPU renderer with per-font, per-pixel-size glyph atlases; the built-in bitmap font remains the zero-value fallback.
 - Scene world with entities and components: transform, circle/rect sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle/rect collider.
 - Physics step pipeline: acceleration → integration → bounds bounce (per-side open mask + optional wall restitution) → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
 - Deterministic simulation: sorted broad-phase pairs and a per-tick world checksum for sync verification.
@@ -57,6 +58,10 @@ audio/
   Backend-agnostic audio vocabulary for clip IDs, one-shot cues, continuous
   tracks, and rewindable track state. Clip paths are declared in asset
   manifests.
+
+asset/
+  Layered data-driven manifests for textures, sprites, fonts, and audio.
+  The typeface subpackage parses TTF/OTF and provides deterministic metrics.
 
 runtime/
   Orchestration hub: platform-agnostic Game contract, Context, Driver,

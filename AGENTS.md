@@ -72,8 +72,8 @@ platform/* -> asset/pixel -> asset
 | Package | Role |
 |---|---|
 | `math2d/` | Pure 2D math (`Vec2`, `Rect`). Zero engine deps. |
-| `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`, `CommandSink` and stable `Each` dispatch; `DrawImageQuad` maps a texture onto a convex projective quad. Raster is the geometry/color reference; Canvas2D hosts approximate quads with an affine grid. |
-| `asset/` | Data-driven texture/sprite/audio declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` stable per-run, resolved by name, never persisted. `asset/pixel` subpackage owns shared image decode for native backends; `runtime` carries only the resolved `asset.Manifest`. |
+| `render/` | Backend-agnostic commands, `Color`, `MeasureText`, `Camera`, `CommandSink` and stable `Each` dispatch; `DrawText.Font` selects a per-run `FontID`, and `DrawImageQuad` maps a texture onto a convex projective quad. Raster is the geometry/color reference; Canvas2D hosts approximate quads with an affine grid. |
+| `asset/` | Data-driven texture/sprite/font/audio declarations from layered `fs.FS` manifests (last layer wins). `render.TextureID` and `render.FontID` are stable per-run, resolved by name, and never persisted. `asset/pixel` owns shared image decode; `asset/typeface` owns deterministic SFNT/OpenType metrics and parsing; `runtime` carries only the resolved `asset.Manifest`. |
 | `audio/` | Backend-agnostic audio vocabulary: clip IDs, one-shot cues, continuous tracks, and rewindable track state. Hosts decode/play; runtime only transports intent. |
 | `scene/` | ECS world + simulation tick. `EntityID` (uint32). Step pipeline: acceleration -> integrate -> bounce -> grid broad-phase -> contact resolution -> damping. `World.Checksum()` for determinism. |
 | `input/` | `Source`/`Action`/`Binding`/`Mapper`/`Buffer` + pointer types. `Mapper.EndFrame()` called by driver at tick end. |
@@ -82,7 +82,7 @@ platform/* -> asset/pixel -> asset
 | `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
 | `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
 | `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas, plus `/assets/manifest` and `/assets/textures/{id}` for browser-side texture registration. Not a distribution target. |
-| `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. WebGPU uploads manifest textures, generates mip chains at boot, and uses linear anisotropic sampling; Canvas2D approximates projective image quads with a grid. Dev panel (backtick key) for debug controls. |
+| `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. WebGPU uploads manifest textures and per-`(FontID, pixelSize)` `r8unorm` glyph atlases (`FontID(0)` remains the built-in bitmap font), generates texture mip chains at boot, and uses linear anisotropic image sampling; Canvas2D approximates projective image quads with a grid and paints external fonts through the browser FontFace API (monospace until the FontFace loads or when it is unavailable). Dev panel (backtick key) for debug controls. |
 | `platform/web/canvas/internal/dto/` | Converts `render.Command` -> JSON DTOs for the web canvas host. |
 | `cmd/` | Demos and tools. Game code lives here, not in engine packages. |
 
