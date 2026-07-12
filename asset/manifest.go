@@ -1,6 +1,7 @@
 package asset
 
 import (
+	"io/fs"
 	"sort"
 
 	"github.com/dhannyell/frameforge/audio"
@@ -48,6 +49,12 @@ type Manifest struct {
 	audio      []audio.Clip
 	fonts      []FontDecl
 	fontByName map[string]render.FontID
+
+	// fsLayers are the FS layers Load was called with, retained so hosts can
+	// read audio bytes (and any other path-addressed asset) from the same
+	// source the manifest itself was resolved from, without a second
+	// out-of-band FS. See FS().
+	fsLayers []fs.FS
 }
 
 // Texture resolves a texture name to its handle. Unknown names return 0,
@@ -103,6 +110,16 @@ func (m Manifest) IsDynamic(id render.TextureID) bool {
 // slice is shared - callers must not mutate it.
 func (m Manifest) AudioClips() []audio.Clip {
 	return m.audio
+}
+
+// FS returns a merged, read-only view of the FS layers this Manifest was
+// loaded from, honoring the same last-layer-wins semantics as Load: a path
+// present in more than one layer resolves to the last layer that has it.
+// Hosts use this to read audio.Clip.Path bytes without needing a separate
+// FS wired in out-of-band. The zero-value Manifest returns a safe, always
+// fs.ErrNotExist FS rather than panicking.
+func (m Manifest) FS() fs.FS {
+	return layeredFS{layers: m.fsLayers}
 }
 
 func newManifest(textures map[string]TextureDecl, sprites map[string]Sprite, clips map[audio.ClipID]audio.Clip, fonts map[string]FontDecl) Manifest {

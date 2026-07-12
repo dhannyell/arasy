@@ -25,6 +25,13 @@ type Face struct {
 	buf sfnt.Buffer
 }
 
+type metricsFont interface {
+	GlyphIndex(*sfnt.Buffer, rune) (sfnt.GlyphIndex, error)
+	GlyphAdvance(*sfnt.Buffer, sfnt.GlyphIndex, fixed.Int26_6, font.Hinting) (fixed.Int26_6, error)
+	Kern(*sfnt.Buffer, sfnt.GlyphIndex, sfnt.GlyphIndex, fixed.Int26_6, font.Hinting) (fixed.Int26_6, error)
+	Metrics(*sfnt.Buffer, fixed.Int26_6, font.Hinting) (font.Metrics, error)
+}
+
 type Registry []*Face
 
 // BuildRegistry decodes every font in the manifest. A font that fails
@@ -47,7 +54,7 @@ func BuildRegistry(m asset.Manifest) (Registry, error) {
 	return reg, errors.Join(errs...)
 }
 
-// Lookup returns the pixels for id, or nil when the id is unknown.
+// Lookup returns the parsed Face for id, or nil when id is 0 or unknown.
 func (r Registry) Lookup(id render.FontID) *Face {
 	if id == 0 || int(id) >= len(r) {
 		return nil
@@ -72,22 +79,34 @@ func (f *Face) Font() *sfnt.Font {
 // table is applied between consecutive glyphs. Unknown runes fall back to
 // the font's NotDef glyph advance.
 func (f *Face) Measure(text string, size float64) math2d.Vec2 {
+	return measure(f.font, &f.buf, text, size)
+}
+
+func measure(fontMetrics metricsFont, buf *sfnt.Buffer, text string, size float64) math2d.Vec2 {
+	if size <= 0 {
+		return math2d.Vec2{}
+	}
+
 	ppem := fixed.Int26_6(size * 64)
 	var width fixed.Int26_6
 	var prev sfnt.GlyphIndex
 	hasPrev := false
 	for _, r := range text {
-		g, err := f.font.GlyphIndex(&f.buf, r)
+		g, err := fontMetrics.GlyphIndex(buf, r)
 		if err != nil || g == 0 {
 			g = 0
 		}
 
-		adv, _ := f.font.GlyphAdvance(&f.buf, g, ppem, font.HintingNone)
+		adv, err := fontMetrics.GlyphAdvance(buf, g, ppem, font.HintingNone)
+		if err != nil && g != 0 {
+			g = 0
+			adv, _ = fontMetrics.GlyphAdvance(buf, g, ppem, font.HintingNone)
+		}
 		width += adv
 
 		if hasPrev {
-			k, err := f.font.Kern(&f.buf, prev, g, ppem, font.HintingNone)
-			if err != nil {
+			k, err := fontMetrics.Kern(buf, prev, g, ppem, font.HintingNone)
+			if err == nil {
 				width += k
 			}
 		}
@@ -96,19 +115,28 @@ func (f *Face) Measure(text string, size float64) math2d.Vec2 {
 		hasPrev = true
 	}
 
-	met, _ := f.font.Metrics(&f.buf, ppem, font.HintingNone)
-	lineHeight := met.Ascent - met.Descent + met.CapHeight
+	met, err := fontMetrics.Metrics(buf, ppem, font.HintingNone)
+	if err != nil {
+		return math2d.Vec2{X: fromFixed(width)}
+	}
 
 	return math2d.Vec2{
 		X: fromFixed(width),
-		Y: fromFixed(lineHeight),
+		Y: fromFixed(met.Height),
 	}
 }
 
 // Ascent returns the ascent at size, for baseline placement.
 func (f *Face) Ascent(size float64) float64 {
+	if size <= 0 {
+		return 0
+	}
+
 	ppem := fixed.Int26_6(size * 64)
-	met, _ := f.font.Metrics(&f.buf, ppem, font.HintingNone)
+	met, err := f.font.Metrics(&f.buf, ppem, font.HintingNone)
+	if err != nil {
+		return 0
+	}
 	return fromFixed(met.Ascent)
 }
 

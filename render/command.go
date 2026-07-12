@@ -92,7 +92,7 @@ type DrawText struct {
 	Text     string
 	Color    Color
 	Size     float64
-	FontID   FontID
+	Font     FontID
 	Align    TextAlign
 	Baseline TextBaseline
 
