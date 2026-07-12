@@ -65,6 +65,7 @@ type Drawer interface {
 	DrawText(text string, pos math2d.Vec2, color render.Color, size float64, align render.TextAlign, baseline render.TextBaseline)
 	DrawTextIn(text string, pos math2d.Vec2, color render.Color, size float64, align render.TextAlign, baseline render.TextBaseline, space Space)
 	DrawTextRotIn(text string, pos math2d.Vec2, color render.Color, size, rotation float64, align render.TextAlign, baseline render.TextBaseline, space Space)
+	SetFont(id render.FontID)
 	DrawCircle(center math2d.Vec2, radius float64, fill, stroke render.Color, strokeWidth float64)
 	DrawCircleIn(center math2d.Vec2, radius float64, fill, stroke render.Color, strokeWidth float64, space Space)
 	DrawLine(from, to math2d.Vec2, width float64, color render.Color)

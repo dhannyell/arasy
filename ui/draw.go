@@ -39,10 +39,20 @@ func (u *UI) DrawTextRotIn(text string, pos math2d.Vec2, color render.Color, siz
 		Text:        text,
 		Color:       color,
 		Size:        u.sizeToWorld(size, space),
+		Font:        u.font,
 		Align:       align,
 		Baseline:    baseline,
 		Rotation:    rotation,
 	})
+}
+
+// SetFont selects the font used by the raw DrawText primitives from this call
+// onward, without adding a font argument to every draw signature (ImGui-style
+// current-font state). It starts at the theme's Font each frame; pass zero to
+// go back to the built-in engine font. Themed widgets (Label, Button, Badge,
+// ...) always use Theme.Font and ignore this override.
+func (u *UI) SetFont(id render.FontID) {
+	u.font = id
 }
 
 // DrawCircle draws a circle with optional fill and/or stroke.

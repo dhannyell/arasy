@@ -151,6 +151,7 @@ func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastO
 			Text:        text,
 			Color:       multiplyAlpha(opts.Style.TextColor, alpha),
 			Size:        fx.ui.sizeToWorld(opts.Style.TextSize*scale, space),
+			Font:        fx.ui.theme.Font,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		},
