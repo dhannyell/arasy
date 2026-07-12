@@ -12,9 +12,11 @@ import (
 	"testing"
 
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -301,6 +303,71 @@ func TestGoldenText(t *testing.T) {
 	assertGolden(t, "text", img)
 }
 
+func TestGoldenTypeface(t *testing.T) {
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatalf("parse goregular: %v", err)
+	}
+	renderer := goldenRenderer()
+	renderer.Fonts = typeface.Registry{nil, face}
+	img := renderer.Render([]render.Command{
+		render.DrawText{
+			Position: math2d.Vec2{X: 7, Y: 8},
+			Text:     "Go Regular 6",
+			Color:    render.RGBA(0.92, 0.95, 1, 1),
+			Size:     6,
+			Font:     1,
+			Baseline: render.BaselineTop,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 50, Y: 24},
+			Text:     "Center 10",
+			Color:    render.RGBA(0.3, 0.88, 1, 1),
+			Size:     10,
+			Font:     1,
+			Align:    render.AlignCenter,
+			Baseline: render.BaselineMiddle,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 93, Y: 45},
+			Text:     "Right 16",
+			Color:    render.RGBA(1, 0.72, 0.25, 1),
+			Size:     16,
+			Font:     1,
+			Align:    render.AlignRight,
+			Baseline: render.BaselineBottom,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 23, Y: 49},
+			Text:     "Rotate",
+			Color:    render.RGBA(1, 0.42, 0.63, 0.9),
+			Size:     9,
+			Font:     1,
+			Align:    render.AlignCenter,
+			Baseline: render.BaselineMiddle,
+			Rotation: -math.Pi / 7,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 7, Y: 68},
+			Text:     "builtin 0",
+			Color:    render.RGBA(0.62, 1, 0.48, 1),
+			Size:     6,
+			Baseline: render.BaselineBottom,
+		},
+		render.DrawText{
+			Position: math2d.Vec2{X: 93, Y: 67},
+			Text:     "fallback 99",
+			Color:    render.RGBA(0.82, 0.72, 1, 1),
+			Size:     6,
+			Font:     99,
+			Align:    render.AlignRight,
+			Baseline: render.BaselineBottom,
+		},
+	})
+
+	assertGolden(t, "typeface", img)
+}
+
 func TestGoldenPolygons(t *testing.T) {
 	img := goldenRenderer().Render([]render.Command{
 		render.DrawPolygon{
@@ -451,7 +518,7 @@ func TestGoldenCameraAspect(t *testing.T) {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, 260, 150))
-	left := Renderer{
+	leftRenderer := Renderer{
 		Width:  260,
 		Height: 150,
 		Camera: render.Camera{
@@ -460,8 +527,9 @@ func TestGoldenCameraAspect(t *testing.T) {
 			Aspect:   render.AspectFit,
 		},
 		Clear: goldenClear,
-	}.Render(commands)
-	right := Renderer{
+	}
+	left := leftRenderer.Render(commands)
+	rightRenderer := Renderer{
 		Width:  260,
 		Height: 150,
 		Camera: render.Camera{
@@ -470,7 +538,8 @@ func TestGoldenCameraAspect(t *testing.T) {
 			Aspect:   render.AspectExpand,
 		},
 		Clear: render.RGBA(0, 0, 0, 0),
-	}.Render(commands)
+	}
+	right := rightRenderer.Render(commands)
 
 	copy(img.Pix, left.Pix)
 	for y := 0; y < img.Bounds().Dy(); y++ {
@@ -484,8 +553,8 @@ func TestGoldenCameraAspect(t *testing.T) {
 
 var goldenClear = render.RGBA(0.055, 0.065, 0.075, 1)
 
-func goldenRenderer() Renderer {
-	return Renderer{
+func goldenRenderer() *Renderer {
+	return &Renderer{
 		Width:  200,
 		Height: 150,
 		Camera: render.Camera{

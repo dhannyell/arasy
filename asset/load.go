@@ -59,8 +59,10 @@ type fontEntry struct {
 //     LAST layer that contains it, so a mod layer can replace a PNG
 //     without shipping its own manifest.json.
 //
-// A layer without manifest.json is valid (file-override-only layer), but at
-// least one layer must declare one.
+// Fonts are optional manifest entries with a non-empty name and file path;
+// their raw TTF/OTF bytes are loaded with the same last-layer-wins rule as
+// textures. A layer without manifest.json is valid (file-override-only layer),
+// but at least one layer must declare one.
 func Load(layers ...fs.FS) (Manifest, error) {
 	if len(layers) == 0 {
 		return Manifest{}, errors.New("asset: Load needs at least one FS layer")
@@ -142,12 +144,12 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		textures[name] = TextureDecl{Data: data}
 	}
 	for name, entry := range fntByName {
-		if entry.File == "" {
-			continue
-		}
 		data, err := readLayered(layers, entry.File)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: font %q: %w", name, err)
+		}
+		if len(data) == 0 {
+			return Manifest{}, fmt.Errorf("asset: font %q: file %q is empty", name, entry.File)
 		}
 		fonts[name] = FontDecl{Data: data}
 	}
@@ -162,6 +164,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 	}
 
 	manifest := newManifest(textures, nil, clips, fonts)
+	manifest.fsLayers = layers
 	for name, s := range sprByName {
 		texID, ok := manifest.byName[s.Texture]
 		if !ok {
@@ -204,6 +207,12 @@ func validateSpriteEntries(entries []spriteEntry) error {
 func validateFontEntries(entries []fontEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if entry.Name == "" {
+			return errors.New("asset: font name must not be empty in manifest.json")
+		}
+		if entry.File == "" {
+			return fmt.Errorf("asset: font %q has an empty file path in manifest.json", entry.Name)
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate font %q in manifest.json", entry.Name)
 		}
