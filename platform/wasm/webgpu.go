@@ -16,6 +16,12 @@ import (
 
 var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
+// msaaSampleCount is the multisample count for the main render pass. 4 is the
+// value WebGPU guarantees is supported on every adapter; it smooths geometry
+// edges (circles, rounded corners, polygon silhouettes) that would otherwise
+// rasterize with hard, aliased edges at one sample per pixel.
+const msaaSampleCount = 4
+
 type webgpuRenderer struct {
 	canvas   js.Value
 	clear    render.Color
@@ -26,6 +32,11 @@ type webgpuRenderer struct {
 	queue   js.Value
 	context js.Value
 	format  js.Value
+
+	msaaTexture js.Value
+	msaaView    js.Value
+	msaaWidth   int
+	msaaHeight  int
 
 	solidPipeline    js.Value
 	textPipeline     js.Value
@@ -228,15 +239,18 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		r.queue.Call("writeBuffer", r.texBuffer, 0, bytesToJS(texBytes))
 	}
 
+	r.ensureMSAATarget(w, h)
+
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
 
 	pass := encoder.Call("beginRenderPass", map[string]any{
 		"colorAttachments": []any{map[string]any{
-			"view":       textureView,
-			"loadOp":     "clear",
-			"storeOp":    "store",
-			"clearValue": clearValue(r.clear),
+			"view":          r.msaaView,
+			"resolveTarget": textureView,
+			"loadOp":        "clear",
+			"storeOp":       "discard",
+			"clearValue":    clearValue(r.clear),
 		}},
 	})
 
@@ -337,6 +351,9 @@ func (r *webgpuRenderer) createSolidPipeline() js.Value {
 		"primitive": map[string]any{
 			"topology": "triangle-list",
 		},
+		"multisample": map[string]any{
+			"count": msaaSampleCount,
+		},
 	})
 }
 
@@ -368,6 +385,9 @@ func (r *webgpuRenderer) createTextPipeline() js.Value {
 		"primitive": map[string]any{
 			"topology": "triangle-list",
 		},
+		"multisample": map[string]any{
+			"count": msaaSampleCount,
+		},
 	})
 }
 
@@ -398,6 +418,9 @@ func (r *webgpuRenderer) createTexturedPipeline() js.Value {
 		},
 		"primitive": map[string]any{
 			"topology": "triangle-list",
+		},
+		"multisample": map[string]any{
+			"count": msaaSampleCount,
 		},
 	})
 }
@@ -519,6 +542,26 @@ func (r *webgpuRenderer) createVertexBuffer(size int) (js.Value, int) {
 		"size":  size,
 		"usage": usage.Get("VERTEX").Int() | usage.Get("COPY_DST").Int(),
 	}), size
+}
+
+// ensureMSAATarget (re)creates the multisampled color target when the canvas
+// dimensions change.
+func (r *webgpuRenderer) ensureMSAATarget(w, h int) {
+	if r.msaaWidth == w && r.msaaHeight == h &&
+		!r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
+		return
+	}
+	if !r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
+		r.msaaTexture.Call("destroy")
+	}
+	r.msaaTexture = r.device.Call("createTexture", map[string]any{
+		"size":        []any{w, h},
+		"sampleCount": msaaSampleCount,
+		"format":      r.format,
+		"usage":       textureUsageRenderAttachment(),
+	})
+	r.msaaView = r.msaaTexture.Call("createView")
+	r.msaaWidth, r.msaaHeight = w, h
 }
 
 func (r *webgpuRenderer) ensureSolidBuffer(size int) {
