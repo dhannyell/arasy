@@ -1,11 +1,12 @@
 const { defineConfig, devices } = require('@playwright/test');
 
+const headedWebGPU = process.env.WASM_GOLDEN_HEADED === '1';
 const webGPUArgs = process.platform === 'linux'
   ? [
       '--enable-unsafe-webgpu',
       '--use-angle=vulkan',
       '--enable-features=Vulkan',
-      '--disable-vulkan-surface',
+      ...(headedWebGPU ? [] : ['--disable-vulkan-surface']),
     ]
   : ['--enable-unsafe-webgpu'];
 
@@ -45,6 +46,7 @@ module.exports = defineConfig({
         ...devices['Desktop Chrome'],
         browserName: 'chromium',
         channel: 'chromium',
+        headless: !headedWebGPU,
         deviceScaleFactor: 1,
         viewport: { width: 320, height: 240 },
         launchOptions: {
