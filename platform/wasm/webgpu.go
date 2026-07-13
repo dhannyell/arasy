@@ -58,6 +58,7 @@ type webgpuRenderer struct {
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
 	textures []gpuTexture
+	ready    bool
 }
 
 func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*webgpuRenderer, error) {
@@ -238,6 +239,10 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	pass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	if !r.ready {
+		r.canvas.Call("setAttribute", "data-frameforge-ready", "webgpu")
+		r.ready = true
+	}
 }
 
 type gpuDrawRun struct {
