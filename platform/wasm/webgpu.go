@@ -57,8 +57,9 @@ type webgpuRenderer struct {
 
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
-	textures []gpuTexture
-	ready    bool
+	textures     []gpuTexture
+	ready        bool
+	readyPending bool
 }
 
 func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*webgpuRenderer, error) {
@@ -239,10 +240,34 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	pass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
-	if !r.ready {
-		r.canvas.Call("setAttribute", "data-frameforge-ready", "webgpu")
-		r.ready = true
+	r.signalReadyAfterPresent()
+}
+
+// signalReadyAfterPresent marks the canvas ready only after the browser has had
+// two animation frames in which to present the first submission. queue.submit
+// only enqueues work, while onSubmittedWorkDone may remain pending indefinitely
+// on continuously-rendering software GPU backends.
+func (r *webgpuRenderer) signalReadyAfterPresent() {
+	if r.ready || r.readyPending {
+		return
 	}
+	r.readyPending = true
+
+	var firstFrame js.Func
+	firstFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+		firstFrame.Release()
+
+		var secondFrame js.Func
+		secondFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+			secondFrame.Release()
+			r.canvas.Call("setAttribute", "data-frameforge-ready", "webgpu")
+			r.ready = true
+			return nil
+		})
+		js.Global().Call("requestAnimationFrame", secondFrame)
+		return nil
+	})
+	js.Global().Call("requestAnimationFrame", firstFrame)
 }
 
 type gpuDrawRun struct {

@@ -15,5 +15,6 @@ test('renders the canonical WASM frame', async ({ page }, testInfo) => {
 
   const canvas = page.locator('#ff-canvas');
   await expect(canvas).toHaveAttribute('data-frameforge-ready', expectedRenderer);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   await expect(canvas).toHaveScreenshot('frame.png');
 });
