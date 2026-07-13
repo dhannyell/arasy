@@ -104,9 +104,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - name: wasm visual golden tests
-        env:
-          WASM_GOLDEN_HEADED: "1"
-        run: xvfb-run --auto-servernum npm run test:wasm-golden
+        run: npm run test:wasm-golden
       - name: upload wasm golden failures
         if: failure()
         uses: actions/upload-artifact@v4
