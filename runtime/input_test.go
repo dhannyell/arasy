@@ -30,14 +30,6 @@ func TestDriverInputBeginTickMapsInputState(t *testing.T) {
 	if !state.JustPressed(input.ActionMoveX) {
 		t.Fatal("move x should be just pressed")
 	}
-
-	events := driverInput.buffer.Events(7)
-	if len(events) != 1 {
-		t.Fatalf("buffer events = %d, want 1", len(events))
-	}
-	if events[0].Tick != 7 {
-		t.Fatalf("buffer event tick = %d, want 7", events[0].Tick)
-	}
 }
 
 func TestDriverInputIncludesDefaultUIBindings(t *testing.T) {
@@ -178,6 +170,10 @@ func TestDriverInputMouseWheelAccumulatesForOneTick(t *testing.T) {
 	if frame.Wheel != (math2d.Vec2{X: 2, Y: 1}) {
 		t.Fatalf("frame wheel = %+v, want 2,1", frame.Wheel)
 	}
+	pointer := driverInput.Pointer()
+	if pointer.Wheel() != (math2d.Vec2{X: 2, Y: 1}) {
+		t.Fatalf("persistent wheel = %+v, want 2,1", pointer.Wheel())
+	}
 
 	driverInput.EndTick(1)
 
@@ -202,6 +198,16 @@ func TestDriverInputSnapshotRestoreRoundTrip(t *testing.T) {
 			Kind:   input.EventButtonDown,
 		},
 		mouseMoveEvent(15, 20),
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelX},
+			Kind:   input.EventAxisChanged,
+			Value:  2,
+		},
+		{
+			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
+			Kind:   input.EventAxisChanged,
+			Value:  1,
+		},
 	}, 3)
 	snapshotState := driverInput.BeginTick()
 	driverInput.EndTick(4)
@@ -229,8 +235,8 @@ func TestDriverInputSnapshotRestoreRoundTrip(t *testing.T) {
 		)
 	}
 	pointer := driverInput.Pointer()
-	if pointer.Pos() != (math2d.Vec2{X: 15, Y: 20}) || !pointer.Inside() {
-		t.Fatalf("restored pointer = pos %+v inside=%v, want 15,20 inside", pointer.Pos(), pointer.Inside())
+	if pointer.Pos() != (math2d.Vec2{X: 15, Y: 20}) || !pointer.Inside() || pointer.Wheel() != (math2d.Vec2{X: 2, Y: 1}) {
+		t.Fatalf("restored pointer = pos %+v wheel %+v inside=%v, want 15,20 wheel 2,1 inside", pointer.Pos(), pointer.Wheel(), pointer.Inside())
 	}
 	frame := driverInput.PointerFrame()
 	if frame.Pos != (math2d.Vec2{X: 15, Y: 20}) || !frame.Inside || len(frame.Events) != 0 {

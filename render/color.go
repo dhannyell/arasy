@@ -36,8 +36,8 @@ func RGBA8(r, g, b, a uint8) Color {
 	return Color{
 		R: float64(r) / 255.0,
 		G: float64(g) / 255.0,
-		B: float64(b / 255.0),
-		A: float64(a / 255.0),
+		B: float64(b) / 255.0,
+		A: float64(a) / 255.0,
 	}
 }
 

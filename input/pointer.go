@@ -82,6 +82,7 @@ func (p *PointerState) Clone() PointerState {
 	return PointerState{
 		pos:    p.Pos(),
 		button: p.button,
+		wheel:  p.wheel,
 		inside: p.inside,
 	}
 }
