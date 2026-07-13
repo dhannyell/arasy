@@ -17,9 +17,22 @@ import (
 	"github.com/dhannyell/frameforge/render"
 )
 
+const (
+	maxImageDimension = 8192
+	maxImagePixels    = 16 << 20
+)
+
 // DecodeRGBA decodes PNG or JPEG bytes into a premultiplied-alpha RGBA
 // image anchored at the origin.
 func DecodeRGBA(data []byte) (*image.RGBA, error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	if err := validateImageDimensions(config.Width, config.Height); err != nil {
+		return nil, err
+	}
+
 	src, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil, err
@@ -44,6 +57,10 @@ func BuildRegistry(m asset.Manifest) (Registry, error) {
 	var errs []error
 	for _, d := range decls {
 		if d.Dynamic {
+			if err := validateImageDimensions(d.W, d.H); err != nil {
+				errs = append(errs, fmt.Errorf("allocate dynamic texture %q: %w", d.Name, err))
+				continue
+			}
 			reg[d.ID] = image.NewRGBA(image.Rect(0, 0, d.W, d.H))
 			continue
 		}
@@ -55,6 +72,19 @@ func BuildRegistry(m asset.Manifest) (Registry, error) {
 		reg[d.ID] = img
 	}
 	return reg, errors.Join(errs...)
+}
+
+func validateImageDimensions(width, height int) error {
+	if width <= 0 || height <= 0 {
+		return fmt.Errorf("image dimensions %dx%d must be positive", width, height)
+	}
+	if width > maxImageDimension || height > maxImageDimension {
+		return fmt.Errorf("image dimensions %dx%d exceed per-side limit %d", width, height, maxImageDimension)
+	}
+	if width > maxImagePixels/height {
+		return fmt.Errorf("image dimensions %dx%d exceed pixel limit %d", width, height, maxImagePixels)
+	}
+	return nil
 }
 
 // Lookup returns the pixels for id, or nil when the id is unknown.

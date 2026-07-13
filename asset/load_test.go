@@ -2,12 +2,15 @@ package asset_test
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
+	"io/fs"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/dhannyell/frameforge/asset"
 )
@@ -215,3 +218,161 @@ func TestDynamicTextureRejectsBadDimensions(t *testing.T) {
 		t.Fatal("Load() error = nil, want error")
 	}
 }
+
+func TestLoadRejectsInvalidAssetPathsBeforeFilesystemAccess(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest string
+		want     string
+	}{
+		{
+			name:     "texture traversal",
+			manifest: `{"version":1,"textures":[{"name":"ball","file":"../escape.png"}]}`,
+			want:     `texture "ball" has invalid file path`,
+		},
+		{
+			name:     "font root",
+			manifest: `{"version":1,"fonts":[{"name":"body","file":"."}]}`,
+			want:     `font "body" has invalid file path`,
+		},
+		{
+			name:     "audio absolute",
+			manifest: `{"version":1,"audio":[{"id":"theme","file":"/theme.wav"}]}`,
+			want:     `audio "theme" has invalid file path`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := &sizeOnlyFS{sizes: map[string]int64{"../escape.png": 1, ".": 1, "/theme.wav": 1}}
+			_, err := asset.Load(fstest.MapFS{"manifest.json": {Data: []byte(tt.manifest)}}, files)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Load() error = %v, want %q", err, tt.want)
+			}
+			if len(files.reads) != 0 {
+				t.Fatalf("filesystem reads = %v, want no asset reads", files.reads)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsOversizedEncodedAssetsBeforeRead(t *testing.T) {
+	tests := []struct {
+		name     string
+		manifest string
+		path     string
+		want     string
+	}{
+		{
+			name:     "texture",
+			manifest: `{"version":1,"textures":[{"name":"ball","file":"textures/ball.png"}]}`,
+			path:     "textures/ball.png",
+			want:     `texture "ball"`,
+		},
+		{
+			name:     "font",
+			manifest: `{"version":1,"fonts":[{"name":"body","file":"fonts/body.ttf"}]}`,
+			path:     "fonts/body.ttf",
+			want:     `font "body"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			files := &sizeOnlyFS{sizes: map[string]int64{tt.path: 20 << 20}}
+			_, err := asset.Load(fstest.MapFS{"manifest.json": {Data: []byte(tt.manifest)}}, files)
+			if err == nil || !strings.Contains(err.Error(), tt.want) || !strings.Contains(err.Error(), "exceeds limit") {
+				t.Fatalf("Load() error = %v, want oversized %s error", err, tt.name)
+			}
+			if len(files.reads) != 0 {
+				t.Fatalf("filesystem reads = %v, want no reads before size rejection", files.reads)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsOversizedAudioAndAggregate(t *testing.T) {
+	t.Run("individual clip", func(t *testing.T) {
+		files := &sizeOnlyFS{sizes: map[string]int64{"audio/theme.wav": 20 << 20}}
+		_, err := asset.Load(fstest.MapFS{
+			"manifest.json": {Data: []byte(`{"version":1,"audio":[{"id":"theme","file":"audio/theme.wav"}]}`)},
+		}, files)
+		if err == nil || !strings.Contains(err.Error(), `audio "theme"`) || !strings.Contains(err.Error(), "exceeds limit") {
+			t.Fatalf("Load() error = %v, want oversized audio error", err)
+		}
+	})
+
+	t.Run("aggregate", func(t *testing.T) {
+		files := &sizeOnlyFS{sizes: map[string]int64{
+			"audio/a.wav": 15 << 20,
+			"audio/b.wav": 15 << 20,
+			"audio/c.wav": 15 << 20,
+			"audio/d.wav": 15 << 20,
+			"audio/e.wav": 15 << 20,
+		}}
+		_, err := asset.Load(fstest.MapFS{
+			"manifest.json": {Data: []byte(`{"version":1,"audio":[
+				{"id":"a","file":"audio/a.wav"},{"id":"b","file":"audio/b.wav"},
+				{"id":"c","file":"audio/c.wav"},{"id":"d","file":"audio/d.wav"},
+				{"id":"e","file":"audio/e.wav"}]}`)},
+		}, files)
+		if err == nil || !strings.Contains(err.Error(), "total audio size exceeds limit") {
+			t.Fatalf("Load() error = %v, want aggregate audio limit error", err)
+		}
+	})
+}
+
+func TestLoadAudioSizeUsesWinningLayer(t *testing.T) {
+	override := &sizeOnlyFS{sizes: map[string]int64{"audio/theme.wav": 20 << 20}}
+	_, err := asset.Load(fstest.MapFS{
+		"manifest.json":   {Data: []byte(`{"version":1,"audio":[{"id":"theme","file":"audio/theme.wav"}]}`)},
+		"audio/theme.wav": {Data: []byte("small base")},
+	}, override)
+	if err == nil || !strings.Contains(err.Error(), "exceeds limit") {
+		t.Fatalf("Load() error = %v, want winning-layer size error", err)
+	}
+}
+
+type sizeOnlyFS struct {
+	sizes map[string]int64
+	reads []string
+}
+
+func (f *sizeOnlyFS) Open(name string) (fs.File, error) {
+	size, ok := f.sizes[name]
+	if !ok {
+		return nil, fs.ErrNotExist
+	}
+	return &sizeOnlyFile{owner: f, name: name, size: size}, nil
+}
+
+type sizeOnlyFile struct {
+	owner *sizeOnlyFS
+	name  string
+	size  int64
+}
+
+func (f *sizeOnlyFile) Stat() (fs.FileInfo, error) {
+	return sizeOnlyFileInfo{name: f.name, size: f.size}, nil
+}
+
+func (f *sizeOnlyFile) Read([]byte) (int, error) {
+	f.owner.reads = append(f.owner.reads, f.name)
+	return 0, errors.New("unexpected file read")
+}
+
+func (*sizeOnlyFile) Close() error { return nil }
+
+type sizeOnlyFileInfo struct {
+	name string
+	size int64
+}
+
+func (i sizeOnlyFileInfo) Name() string       { return i.name }
+func (i sizeOnlyFileInfo) Size() int64        { return i.size }
+func (i sizeOnlyFileInfo) Mode() fs.FileMode  { return 0o444 }
+func (i sizeOnlyFileInfo) ModTime() time.Time { return time.Time{} }
+func (i sizeOnlyFileInfo) IsDir() bool        { return false }
+func (i sizeOnlyFileInfo) Sys() any           { return nil }
+
+var _ fs.File = (*sizeOnlyFile)(nil)

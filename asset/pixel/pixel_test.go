@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -33,6 +34,18 @@ func TestDecodeRGBAPremultipliesAlpha(t *testing.T) {
 func TestDecodeRGBARejectsInvalidBytes(t *testing.T) {
 	if _, err := pixel.DecodeRGBA([]byte("not-an-image")); err == nil {
 		t.Fatal("DecodeRGBA() error = nil, want decode failure")
+	}
+}
+
+func TestDecodeRGBARejectsOversizedDimensions(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 9000, 1))); err != nil {
+		t.Fatalf("png.Encode() error = %v", err)
+	}
+
+	_, err := pixel.DecodeRGBA(buf.Bytes())
+	if err == nil || !strings.Contains(err.Error(), "per-side limit") {
+		t.Fatalf("DecodeRGBA() error = %v, want dimension-limit error", err)
 	}
 }
 
@@ -99,5 +112,31 @@ func TestBuildRegistryReportsCorruptedTexture(t *testing.T) {
 	brokenID := m.Texture("broken")
 	if got := reg.Lookup(brokenID); got != nil {
 		t.Fatalf("Lookup(broken) = %v, want nil for the corrupted texture", got)
+	}
+}
+
+func TestBuildRegistryPreservesValidTextureWhenDynamicTextureExceedsPixelLimit(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatalf("png.Encode() error = %v", err)
+	}
+
+	m, err := asset.Load(fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"textures":[{"name":"ball","file":"ball.png"}],"dynamic":[{"name":"huge","w":8192,"h":8192}]}`)},
+		"ball.png":      {Data: buf.Bytes()},
+	})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	reg, err := pixel.BuildRegistry(m)
+	if err == nil || !strings.Contains(err.Error(), `dynamic texture "huge"`) || !strings.Contains(err.Error(), "pixel limit") {
+		t.Fatalf("BuildRegistry() error = %v, want huge dynamic texture error", err)
+	}
+	if got := reg.Lookup(m.Texture("ball")); got == nil {
+		t.Fatal("Lookup(ball) = nil, want valid texture despite dynamic sibling failure")
+	}
+	if got := reg.Lookup(m.Texture("huge")); got != nil {
+		t.Fatalf("Lookup(huge) = %v, want nil oversized dynamic texture", got)
 	}
 }
