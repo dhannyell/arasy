@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/dhannyell/frameforge/cmd/demos/uimanager"
+	"github.com/dhannyell/frameforge/examples/uimanager"
 	"github.com/dhannyell/frameforge/platform/wasm"
 )
 

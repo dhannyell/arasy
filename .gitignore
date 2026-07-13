@@ -50,6 +50,7 @@ skills-lock.json
 qodana.yaml
 .harper*
 *.ffrp
+*.wasm
 
 # Benchmark runs (ad-hoc); only committed baselines are versioned.
 benchmarks/runs/

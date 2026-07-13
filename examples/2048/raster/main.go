@@ -1,7 +1,7 @@
 package main
 
 import (
-	twenty48 "github.com/dhannyell/frameforge/cmd/demos/2048"
+	"github.com/dhannyell/frameforge/examples/2048"
 	"github.com/dhannyell/frameforge/platform/raster"
 )
 
