@@ -1,6 +1,7 @@
 package scene
 
 import (
+	"cmp"
 	"math"
 	"slices"
 
@@ -445,10 +446,11 @@ func (w *World) resolveContacts(contacts []Contact) {
 		correctionA := contact.Depth * (bodyA.InvMass / totalInvMass)
 		correctionB := contact.Depth * (bodyB.InvMass / totalInvMass)
 
-		transformA.Position.X -= contact.Normal.X * correctionA
-		transformA.Position.Y -= contact.Normal.Y * correctionA
-		transformB.Position.X += contact.Normal.X * correctionB
-		transformB.Position.Y += contact.Normal.Y * correctionB
+		// The explicit float64 conversion on the product prevents FMA fusion on arm64.
+		transformA.Position.X -= float64(contact.Normal.X * correctionA)
+		transformA.Position.Y -= float64(contact.Normal.Y * correctionA)
+		transformB.Position.X += float64(contact.Normal.X * correctionB)
+		transformB.Position.Y += float64(contact.Normal.Y * correctionB)
 
 		w.transforms.set(contact.A, transformA)
 		w.transforms.set(contact.B, transformB)
@@ -614,11 +616,10 @@ func (g *spatialHashGrid) sortedCells() []gridCell {
 	}
 
 	slices.SortFunc(cells, func(a, b gridCell) int {
-		if a.X != b.X {
-			return a.X - b.X
+		if c := cmp.Compare(a.X, b.X); c != 0 {
+			return c
 		}
-
-		return a.Y - b.Y
+		return cmp.Compare(a.Y, b.Y)
 	})
 
 	return cells

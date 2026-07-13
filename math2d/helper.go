@@ -30,8 +30,10 @@ func Frac(x float64) float64 {
 	return x - float64(int(x))
 }
 
+// Lerp linearly interpolates between a and b by t.
+// The explicit float64 conversion on the product prevents FMA fusion on arm64.
 func Lerp(a, b, t float64) float64 {
-	return a + (b-a)*t
+	return a + float64((b-a)*t)
 }
 
 func GeneratePolygonPoints(sides int, radius float64, center Vec2) []Vec2 {
