@@ -80,14 +80,12 @@ func TestTwenty48ScrubDeterministic(t *testing.T) {
 		t.Fatalf("after Play click: phase = %v, want phasePlaying (%v)", game.state.State.phase, phasePlaying)
 	}
 
-	// One keypress per turn, released on the next tick, then enough idle
-	// ticks for the turn animation to clear so the next press is not
-	// swallowed by the animation gate in Update.
-	keys := []input.SourceCode{
-		input.KeyArrowLeft, input.KeyArrowUp, input.KeyArrowRight, input.KeyArrowDown,
+	// Slow half: one keypress per turn, released on the next tick, then
+	// enough idle ticks for the turn animation to expire on its own.
+	slowKeys := []input.SourceCode{
 		input.KeyArrowLeft, input.KeyArrowUp, input.KeyArrowRight, input.KeyArrowDown,
 	}
-	for _, key := range keys {
+	for _, key := range slowKeys {
 		driver.ApplyInput([]input.Event{keyEvent(key, input.EventButtonDown)})
 		driver.Step()
 		snapshots = append(snapshots, game.state.State)
@@ -100,6 +98,28 @@ func TestTwenty48ScrubDeterministic(t *testing.T) {
 			driver.Step()
 			snapshots = append(snapshots, game.state.State)
 		}
+	}
+
+	// Fast half: moves at a two-tick cadence, well inside the animation
+	// window, so each valid move replaces the previous in-flight animation.
+	fastKeys := []input.SourceCode{
+		input.KeyArrowLeft, input.KeyArrowUp, input.KeyArrowRight, input.KeyArrowDown,
+	}
+	interrupted := false
+	for _, key := range fastKeys {
+		if game.state.State.animation.Active {
+			interrupted = true
+		}
+		driver.ApplyInput([]input.Event{keyEvent(key, input.EventButtonDown)})
+		driver.Step()
+		snapshots = append(snapshots, game.state.State)
+
+		driver.ApplyInput([]input.Event{keyEvent(key, input.EventButtonUp)})
+		driver.Step()
+		snapshots = append(snapshots, game.state.State)
+	}
+	if !interrupted {
+		t.Fatal("fast half never pressed a key while an animation was in flight")
 	}
 
 	if game.state.State.board == snapshots[1].board {
@@ -119,8 +139,10 @@ func TestTwenty48ScrubDeterministic(t *testing.T) {
 		t.Fatal("no snapshot captured an active turn animation")
 	}
 
+	// Targets cover both halves: 55 and 58 land inside the fast half
+	// (ticks 54-61), where moves interrupted each other.
 	lastTick := uint64(len(snapshots) - 1)
-	targets := []uint64{40, 9, midAnimation, lastTick, 1, 55, 0, 97}
+	targets := []uint64{40, 9, midAnimation, lastTick, 1, 55, 0, 58}
 
 	// best is a high-water mark kept outside the StateSlot: replaying from
 	// tick 0 re-runs Updates on the same game value, so a backward scrub

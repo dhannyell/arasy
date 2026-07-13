@@ -94,17 +94,20 @@ func (g *Game2048) Init(ctx *runtime.UpdateContext) {
 func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 	ctx.HoldSimulation()
 
+	g.expireAnimation(ctx)
+
 	if g.state.State.phase == phasePlaying && ctx.UI.ClickedIn("btn_new", hudNewRect(), ui.SpaceRef) {
 		g.restart(ctx)
 		return
 	}
 
-	if g.updateAnimation(ctx) {
-		return
-	}
-
 	switch g.state.State.phase {
 	case phaseMenu, phaseGameOver, phaseWon:
+		// The overlay stays hidden while the final turn animation plays out,
+		// so clicks must not reach its buttons until it clears.
+		if g.state.State.animation.Active {
+			return
+		}
 		g.handleOverlayClicks(ctx)
 		return
 	}
@@ -179,17 +182,15 @@ func (g *Game2048) tryMove(ctx *runtime.UpdateContext, dir direction) {
 	}
 }
 
-func (g *Game2048) updateAnimation(ctx *runtime.UpdateContext) bool {
+// expireAnimation clears a finished turn animation. It never gates input:
+// a new move during an in-flight animation simply replaces it in tryMove,
+// so the tiles snap to their destinations and the new slide starts — the
+// same feel as the original 2048, where input is never dropped or delayed.
+func (g *Game2048) expireAnimation(ctx *runtime.UpdateContext) {
 	animation := g.state.State.animation
-	if !animation.Active {
-		return false
+	if animation.Active && ctx.Tick >= animation.StartTick+animationTicks {
+		g.state.State.animation = turnAnimation{}
 	}
-	if ctx.Tick < animation.StartTick+animationTicks {
-		return true
-	}
-
-	g.state.State.animation = turnAnimation{}
-	return true
 }
 
 func (g *Game2048) handleOverlayClicks(ctx *runtime.UpdateContext) {

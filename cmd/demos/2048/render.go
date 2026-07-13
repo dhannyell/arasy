@@ -3,6 +3,7 @@ package twenty48
 import (
 	"strconv"
 
+	"github.com/dhannyell/frameforge/ease"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
@@ -76,7 +77,7 @@ func tileCommands(board board, animation turnAnimation, progress float64) []rend
 		return cmds
 	}
 	if progress < slideFraction {
-		slideProgress := progress / slideFraction
+		slideProgress := ease.Apply(ease.InOutQuad, progress/slideFraction)
 		for i := 0; i < animation.MotionCount; i++ {
 			motion := animation.Motions[i]
 			cmds = append(cmds, drawTile(motion.Value, movingTileRect(motion.From, motion.To, slideProgress), 1, layerMovingTile, layerMovingTileText)...)
@@ -85,14 +86,16 @@ func tileCommands(board board, animation turnAnimation, progress float64) []rend
 	}
 
 	popProgress := math2d.Clamp((progress-slideFraction)/(1-slideFraction), 0, 1)
-	mergeScale := 1.16 - 0.16*popProgress
+	mergeScale := 1.16 - 0.16*ease.Apply(ease.OutQuad, popProgress)
 	for index, merged := range animation.Merges {
 		if merged {
 			cmds = append(cmds, drawTile(board[index], cellRect(index), mergeScale, layerMovingTile, layerMovingTileText)...)
 		}
 	}
 	if animation.HasSpawn {
-		spawnScale := 0.72 + 0.28*popProgress
+		// OutBack overshoots ~10% at its peak, so the spawn scale tops out
+		// near 1.03 — a subtle pop that stays inside the cell gap.
+		spawnScale := 0.72 + 0.28*ease.Apply(ease.OutBack, popProgress)
 		cmds = append(cmds, drawTile(board[animation.SpawnIndex], cellRect(animation.SpawnIndex), spawnScale, layerMovingTile, layerMovingTileText)...)
 	}
 	return cmds
