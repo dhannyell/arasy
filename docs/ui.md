@@ -425,7 +425,7 @@ os valores de `DefaultTheme()`. Isso permite que jogos antigos personalizem
 apenas `Button` ou `Panel` sem precisar preencher os slots novos usados por
 scroll, tabela e foco.
 
-## Plataforma web/canvas
+## Plataforma wasm
 
 No canvas web, o browser envia eventos de mouse em backing pixels:
 

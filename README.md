@@ -157,23 +157,31 @@ g.State.Score++
 ```
 
 Run the game through a platform package, such as `platform/raster` for offline
-PNG/frame output or `platform/web/canvas` for an interactive browser canvas.
+PNG/frame output or `platform/wasm` for an interactive browser canvas.
 
 ```go
+//go:build js && wasm
+
 package main
 
 import (
 	"log/slog"
-	"os"
 
-	"github.com/dhannyell/frameforge/platform/web/canvas"
+	"github.com/dhannyell/frameforge/cmd/demos/breakout"
+	"github.com/dhannyell/frameforge/platform/wasm"
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := canvas.Run(&Game{}, canvas.Options{Addr: ":8080", Log: log}); err != nil {
-		log.Error("server failed", "err", err)
-		os.Exit(1)
+	log := wasm.NewConsoleLogger(slog.LevelInfo)
+	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
+		DevTools:      true,
+		Log:           log,
+		RecordReplay:  true,
+		ForceCanvas2D: false,
+		GameFactory:   func() runtime.Game { return &breakout.Breakout{} },
+	}); err != nil {
+		log.Error("wasm host failed", "err", err)
 	}
 }
 ```

@@ -31,7 +31,6 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
-go test ./platform/web/canvas/internal/dto -run TestGolden -update
 ```
 
 Golden PRs must explain the visual/DTO change; unexplained diffs are regressions.
@@ -49,8 +48,7 @@ foundation:     math2d
 vocabulary:     render, input, ui, audio
 simulation:     scene
 orchestration:  runtime
-hosts:          platform/raster, platform/web/canvas, platform/wasm
-adapters:       platform/web/canvas/internal/dto
+hosts:          platform/raster, platform/wasm
 apps:           cmd/
 ```
 
@@ -119,8 +117,7 @@ platform/* -> asset/pixel -> asset
 ## Render Interpolation
 
 The engine provides built-in render interpolation for official platforms (WASM,
-offline raster, future native). The platform/web/canvas debug tool does NOT
-receive interpolation.
+offline raster, future native).
 
 - runtime.Config.RenderInterpolation (default false) enables the feature.
 - runtime.RenderContext.Alpha exposes the [0, 1) fraction between ticks.
