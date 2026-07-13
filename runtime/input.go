@@ -5,11 +5,8 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 )
 
-const inputRetainedTicks = 120
-
 type driverInput struct {
 	mapper    *input.Mapper
-	buffer    *input.Buffer
 	pointer   input.PointerState
 	frame     input.PointerFrame
 	lastInput input.State
@@ -24,7 +21,6 @@ type driverInputSnapshot struct {
 func newDriverInput(bindings []input.Binding) *driverInput {
 	i := &driverInput{
 		mapper:    input.NewMapper(withDefaultUIBindings(bindings)),
-		buffer:    input.NewBuffer(),
 		lastInput: input.NewState(),
 	}
 	i.resetFrame()
@@ -43,7 +39,6 @@ func withDefaultUIBindings(bindings []input.Binding) []input.Binding {
 func (i *driverInput) Apply(events []input.Event, tick uint64) {
 	for _, event := range events {
 		event.Tick = tick
-		i.buffer.Push(event)
 
 		if event.Kind != input.EventPointerMove && event.Kind != input.EventPointerLeave {
 			i.mapper.Apply(event)
@@ -67,7 +62,6 @@ func (i *driverInput) PointerFrame() input.PointerFrame {
 func (i *driverInput) EndTick(tick uint64) {
 	i.resetFrame()
 	i.mapper.EndFrame()
-	i.buffer.ClearBefore(inputRetainFrom(tick, inputRetainedTicks))
 }
 
 func (i *driverInput) Pointer() input.PointerState {
@@ -160,10 +154,10 @@ func (i *driverInput) accumulatePointer(e input.Event) {
 		switch e.Source.Code {
 		case input.MouseWheelX:
 			i.frame.Wheel.X += e.Value
-			i.pointer.SetWheel(math2d.Vec2{X: i.frame.Wheel.X})
+			i.pointer.SetWheel(i.frame.Wheel)
 		case input.MouseWheelY:
 			i.frame.Wheel.Y += e.Value
-			i.pointer.SetWheel(math2d.Vec2{Y: i.frame.Wheel.Y})
+			i.pointer.SetWheel(i.frame.Wheel)
 		default:
 			i.frame.Inside = false
 		}
@@ -183,11 +177,4 @@ func mouseButton(code input.SourceCode) (input.PointerButton, bool) {
 	default:
 		return input.PointerUnknown, false
 	}
-}
-
-func inputRetainFrom(tick, retainedTicks uint64) uint64 {
-	if tick <= retainedTicks {
-		return 0
-	}
-	return tick - retainedTicks
 }

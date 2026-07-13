@@ -73,12 +73,27 @@ func TestColorFromHexInvalid(t *testing.T) {
 }
 
 func TestRGBA8(t *testing.T) {
-	got := render.RGBA8(255, 128, 0, 255)
+	tests := []struct {
+		name       string
+		r, g, b, a uint8
+	}{
+		{name: "opaque", r: 255, g: 128, b: 0, a: 255},
+		{name: "intermediate blue and alpha", r: 10, g: 20, b: 128, a: 230},
+	}
 
-	want := render.Color{R: 1, G: 0.5019607843137255, B: 0, A: 1}
-
-	if got != want {
-		t.Fatalf("got: %v, want: %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := render.RGBA8(tt.r, tt.g, tt.b, tt.a)
+			want := render.Color{
+				R: float64(tt.r) / 255.0,
+				G: float64(tt.g) / 255.0,
+				B: float64(tt.b) / 255.0,
+				A: float64(tt.a) / 255.0,
+			}
+			if got != want {
+				t.Fatalf("got: %v, want: %v", got, want)
+			}
+		})
 	}
 }
 
