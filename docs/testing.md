@@ -39,7 +39,7 @@ Exemplos atuais:
 ```text
 runtime -> package runtime
 ui      -> package ui
-platform/web/canvas -> package canvas
+platform/wasm -> package canvas
 ```
 
 Essa escolha deve ser intencional. Ao adicionar um novo arquivo de teste em um

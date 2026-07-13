@@ -35,7 +35,7 @@ cmd/* -> platform/* -> runtime -> { scene, render, input } -> math2d
 Isso significa:
 
 - `runtime` pode importar `scene`, `render` e `input`.
-- `platform/web/canvas` pode importar `runtime`.
+- `platform/wasm` pode importar `runtime`.
 - `platform/raster` pode importar `runtime`.
 - `runtime` nao importa nenhuma plataforma.
 - `scene`, `render`, `math2d` e `input` nao importam `runtime`.
@@ -43,7 +43,7 @@ Isso significa:
 Essa separacao permite que o mesmo jogo rode em mais de uma saida:
 
 ```text
-cmd/demos/football/webCanvas  -> platform/web/canvas -> runtime
+cmd/demos/football/wasm  -> platform/wasm -> runtime
 cmd/demos/football/raster     -> platform/raster     -> runtime
 futuro native                 -> platform/native     -> runtime
 futuro wasm/webgpu            -> platform/...        -> runtime

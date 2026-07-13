@@ -31,7 +31,6 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
-go test ./platform/web/canvas/internal/dto -run TestGolden -update
 ```
 
 Golden PRs must explain the visual/DTO change; unexplained diffs are regressions.
@@ -49,8 +48,7 @@ foundation:     math2d
 vocabulary:     render, input, ui, audio
 simulation:     scene
 orchestration:  runtime
-hosts:          platform/raster, platform/web/canvas, platform/wasm
-adapters:       platform/web/canvas/internal/dto
+hosts:          platform/raster, platform/wasm
 apps:           cmd/
 ```
 
@@ -81,9 +79,7 @@ platform/* -> asset/pixel -> asset
 | `runtime/` | Orchestration hub. Owns `Game` contract, `Driver` (fixed timestep, dev controls, rewind), `FrameTimer`, `RunTick`, `StateSlot[T]`, and `ConsumeAudio`. Defines *what a tick is* -- platforms must not duplicate. |
 | `loop/` | Fixed timestep step planner. Runtime clock uses it; platforms never choose `dt`. |
 | `platform/raster/` | Software renderer -> `image.RGBA`. Offline host (PNG/GIF via `Driver`). |
-| `platform/web/canvas/` | Dev/visualization tool: HTTP+WS -> JSON frames to browser canvas, plus `/assets/manifest` and `/assets/textures/{id}` for browser-side texture registration. Not a distribution target. |
 | `platform/wasm/` | Browser host (`GOOS=js`): `requestAnimationFrame`, WebGPU (default) + Canvas2D fallback. WebGPU uploads manifest textures and per-`(FontID, pixelSize)` `r8unorm` glyph atlases (`FontID(0)` remains the built-in bitmap font), generates texture mip chains at boot, and uses linear anisotropic image sampling; Canvas2D approximates projective image quads with a grid and paints external fonts through the browser FontFace API (monospace until the FontFace loads or when it is unavailable). Dev panel (backtick key) for debug controls. |
-| `platform/web/canvas/internal/dto/` | Converts `render.Command` -> JSON DTOs for the web canvas host. |
 | `cmd/` | Demos and tools. Game code lives here, not in engine packages. |
 
 ### Runtime Tick Semantics
@@ -121,8 +117,7 @@ platform/* -> asset/pixel -> asset
 ## Render Interpolation
 
 The engine provides built-in render interpolation for official platforms (WASM,
-offline raster, future native). The platform/web/canvas debug tool does NOT
-receive interpolation.
+offline raster, future native).
 
 - runtime.Config.RenderInterpolation (default false) enables the feature.
 - runtime.RenderContext.Alpha exposes the [0, 1) fraction between ticks.

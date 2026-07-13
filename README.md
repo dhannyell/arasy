@@ -72,31 +72,14 @@ runtime/
 platform/raster/
   Software renderer that draws render commands into image.RGBA, plus an
   offline runner producing PNG/GIF/frame-sequence output.
+  
+platform/wasm/
+    Web Assembly platform that draws render commands into browser canvas using
+    WebGPU. Automatic fallback to software rendering if GPU is not available or 
+    not supported.
 
-platform/web/canvas/
-  HTTP + WebSocket server that streams JSON frames to a browser canvas and
-  translates browser input/control messages back into the runtime.
-
-platform/web/canvas/internal/dto/
-  JSON DTO conversion of render commands and camera for the web canvas.
-
-cmd/demos/football/
-  Top-down football demo: controlled player, ball physics, goals, score
-  HUD, and camera shake.
-
-cmd/demos/football/raster/
-  Offline render of the football demo (PNG + frame-by-frame PNG sequence).
-
-cmd/demos/football/webCanvas/
-  Browser-based football demo with live simulation and debug visualization.
-
-cmd/demos/breakout/
-  Breakout demo: paddle input, brick collisions, menu/game-over states, and
-  UI overlays, playable in the browser via cmd/demos/breakout/canvas/.
-
-cmd/demos/uimanager/
-  "Matchday" football manager demo: dashboard, league table, squad, and
-  calendar screens driven by deterministic data and immediate-mode UI.
+cmd/demos/
+  A collection of simple demos covering various engine capabilities for a quick start. 
 
 cmd/benchsave/
   Cross-platform helper that runs Go benchmarks and saves a Markdown report.
@@ -174,23 +157,31 @@ g.State.Score++
 ```
 
 Run the game through a platform package, such as `platform/raster` for offline
-PNG/frame output or `platform/web/canvas` for an interactive browser canvas.
+PNG/frame output or `platform/wasm` for an interactive browser canvas.
 
 ```go
+//go:build js && wasm
+
 package main
 
 import (
 	"log/slog"
-	"os"
 
-	"github.com/dhannyell/frameforge/platform/web/canvas"
+	"github.com/dhannyell/frameforge/cmd/demos/breakout"
+	"github.com/dhannyell/frameforge/platform/wasm"
+	"github.com/dhannyell/frameforge/runtime"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := canvas.Run(&Game{}, canvas.Options{Addr: ":8080", Log: log}); err != nil {
-		log.Error("server failed", "err", err)
-		os.Exit(1)
+	log := wasm.NewConsoleLogger(slog.LevelInfo)
+	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
+		DevTools:      true,
+		Log:           log,
+		RecordReplay:  true,
+		ForceCanvas2D: false,
+		GameFactory:   func() runtime.Game { return &breakout.Breakout{} },
+	}); err != nil {
+		log.Error("wasm host failed", "err", err)
 	}
 }
 ```
@@ -222,16 +213,20 @@ The PNG is a static high-resolution render. The frame sequence is used to valida
 
 ## Running The Browser Demos
 
-Start the WebSocket server for one of the demos:
+Compile the demo for WASM:
 
 ```powershell
 # Football: WASD or arrow keys move the controlled player
-go run ./cmd/demos/football/webCanvas
+$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/football/app.wasm ./cmd/demos/football/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH                                                 
 
 # Breakout: A/D or arrow keys move the paddle, Space launches the ball
-go run ./cmd/demos/breakout/canvas
+$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/breakout/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH                                                 
 ```
 
+Run the Wasm server, pointing it to the generated Wasm file.
+```powershell
+ go run ./cmd/wasmserve -dir .\output\wasm\breakout\ -title "frameforge wasm" -addr 127.0.0.1:8080   
+```
 Then open `http://localhost:8080` in your browser.
 Both demos include a screen-space UI overlay (score panel, reset button) and
 the dev control bar: pause, single-step, speed, rewind, and debug overlay
