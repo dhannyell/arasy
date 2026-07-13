@@ -1,13 +1,11 @@
 const { defineConfig, devices } = require('@playwright/test');
 
-const webGPUArgs = process.platform === 'linux'
-  ? [
-      '--enable-unsafe-webgpu',
-      '--enable-features=Vulkan',
-      '--use-webgpu-adapter=swiftshader',
-      '--enable-dawn-backend-validation',
-    ]
-  : ['--enable-unsafe-webgpu'];
+const webGPUArgs = [
+  '--enable-unsafe-webgpu',
+  '--use-webgpu-adapter=swiftshader',
+  '--enable-dawn-backend-validation',
+  ...(process.platform === 'linux' ? ['--enable-features=Vulkan'] : []),
+];
 
 module.exports = defineConfig({
   testDir: '.',

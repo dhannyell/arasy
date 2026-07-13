@@ -113,7 +113,7 @@ func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear, manifest)
+	r, err := newWebGPU(canvas, clear, manifest, log)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r
