@@ -39,7 +39,7 @@ Exemplos atuais:
 ```text
 runtime -> package runtime
 ui      -> package ui
-platform/wasm -> package canvas
+platform/wasm -> package wasm
 ```
 
 Essa escolha deve ser intencional. Ao adicionar um novo arquivo de teste em um
@@ -148,6 +148,23 @@ renderer_benchmark_test.go
 Mantenha assertions de pixel em helpers pequenos, mas deixe o comando render
 visivel no teste. Isso torna falhas visuais mais faceis de entender.
 
+### `platform/wasm`
+
+O pipeline WebGPU separa a tessellacao pura em `platform/wasm/tess`; mantenha
+ali testes semanticos de vertices, clipping, atlas e painter order. Canvas2D e
+WebGPU tambem possuem goldens visuais executados no Chromium por Playwright:
+
+```powershell
+npm ci
+npx playwright install chromium # uma vez por ambiente
+npm run test:wasm-golden
+npm run update:wasm-golden # somente apos mudanca visual intencional
+```
+
+Os projetos `canvas2d` e `webgpu` usam baselines separados. O teste WebGPU deve
+falhar se o host cair silenciosamente para Canvas2D. Artefatos de diferenca
+ficam em `test-results/` e nao devem ser commitados.
+
 ### `render`
 
 Separe transformacao de camera, aspect ratio, cores e comandos:
@@ -193,7 +210,7 @@ jogo completo, deixe isso claro no nome:
 scrub_integration_test.go
 ```
 
-Se esses testes ficarem lentos ou instaveis, use build tag:
+Se testes Go de integracao ficarem lentos ou instaveis, use build tag:
 
 ```go
 //go:build integration
@@ -203,11 +220,15 @@ Nesse caso, o fluxo passa a ser:
 
 ```powershell
 go test ./...
-go test -tags=integration ./platform/web/canvas
+go test -tags=integration ./caminho/do/pacote
 ```
 
 Nao use build tag cedo demais. Enquanto a suite completa continuar rapida e
 estavel, manter tudo em `go test ./...` e melhor para feedback.
+
+Testes que precisam de DOM, Canvas2D ou WebGPU nao usam `go_js_wasm_exec`, que
+nao fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
+comando `npm run test:wasm-golden`.
 
 ## Benchmarks
 
@@ -243,6 +264,7 @@ Antes de finalizar mudancas de teste:
 ```powershell
 gofmt -w <arquivos alterados>
 go test ./...
+npm run test:wasm-golden
 ```
 
 Para checar cobertura de um pacote especifico:

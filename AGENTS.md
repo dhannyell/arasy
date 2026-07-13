@@ -31,9 +31,10 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
+npm run update:wasm-golden
 ```
 
-Golden PRs must explain the visual/DTO change; unexplained diffs are regressions.
+Golden PRs must explain the visual change; unexplained diffs are regressions.
 
 ## Architecture
 
@@ -158,7 +159,7 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 | `test` | `gofmt`, `go vet`, `go test ./...` (x86-64) |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` (Windows compat) |
-| `wasm` | `GOOS=js go test ./scene/... ./runtime/... ./math2d/... ./ease/...` via `go_js_wasm_exec` |
+| `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` + Canvas2D/WebGPU visual goldens |
 | `arm64` | `go test ./...` (native arm64) |
 
 `wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes.
