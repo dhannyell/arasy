@@ -3,8 +3,12 @@ const { defineConfig, devices } = require('@playwright/test');
 const webGPUArgs = [
   '--enable-unsafe-webgpu',
   '--use-webgpu-adapter=swiftshader',
-  '--enable-dawn-backend-validation',
-  ...(process.platform === 'linux' ? ['--enable-features=Vulkan'] : []),
+  '--enable-dawn-features=allow_unsafe_apis',
+  '--disable-dawn-features=use_dxc',
+  '--enable-webgpu-developer-features',
+  '--use-gpu-in-tests',
+  '--enable-accelerated-2d-canvas',
+  '--enable-unsafe-swiftshader',
 ];
 
 module.exports = defineConfig({
