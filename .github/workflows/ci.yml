@@ -104,7 +104,7 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - name: wasm visual golden tests
-        run: npm run test:wasm-golden
+        run: npm run test:wasm-golden -- --project=canvas2d
       - name: upload wasm golden failures
         if: failure()
         uses: actions/upload-artifact@v4

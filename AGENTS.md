@@ -159,7 +159,7 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 | `test` | `gofmt`, `go vet`, `go test ./...` (x86-64) |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` (Windows compat) |
-| `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` + Canvas2D/WebGPU visual goldens |
+| `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` + Canvas2D visual golden; WebGPU golden remains a local/browser gate |
 | `arm64` | `go test ./...` (native arm64) |
 
 `wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes.
