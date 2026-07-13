@@ -10,6 +10,13 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 )
 
+const (
+	maxEncodedTextureBytes int64 = 16 << 20
+	maxFontBytes           int64 = 16 << 20
+	maxAudioClipBytes      int64 = 16 << 20
+	maxTotalAudioBytes     int64 = 64 << 20
+)
+
 type manifestFile struct {
 	Version  int            `json:"version"`
 	Textures []textureEntry `json:"textures"`
@@ -137,14 +144,14 @@ func Load(layers ...fs.FS) (Manifest, error) {
 			textures[name] = TextureDecl{Dynamic: true, W: entry.W, H: entry.H}
 			continue
 		}
-		data, err := readLayered(layers, entry.File)
+		data, err := readLayered(layers, entry.File, maxEncodedTextureBytes)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: texture %q: %w", name, err)
 		}
 		textures[name] = TextureDecl{Data: data}
 	}
 	for name, entry := range fntByName {
-		data, err := readLayered(layers, entry.File)
+		data, err := readLayered(layers, entry.File, maxFontBytes)
 		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: font %q: %w", name, err)
 		}
@@ -153,13 +160,22 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 		fonts[name] = FontDecl{Data: data}
 	}
+	var totalAudioBytes int64
 	for id, entry := range audioByID {
 		// Audio bytes stay on disk: the host resolves and streams them (HTTP on
 		// web, embed on wasm). Only confirm the winning layer has the file so a
 		// bad path fails at load, not at first playback.
-		if err := statLayered(layers, entry.File); err != nil {
+		info, err := statLayered(layers, entry.File)
+		if err != nil {
 			return Manifest{}, fmt.Errorf("asset: audio %q: %w", id, err)
 		}
+		if err := validateFileSize(entry.File, info.Size(), maxAudioClipBytes); err != nil {
+			return Manifest{}, fmt.Errorf("asset: audio %q: %w", id, err)
+		}
+		if totalAudioBytes > maxTotalAudioBytes-info.Size() {
+			return Manifest{}, fmt.Errorf("asset: total audio size exceeds limit %d bytes", maxTotalAudioBytes)
+		}
+		totalAudioBytes += info.Size()
 		clips[audio.ClipID(id)] = audio.Clip{ID: audio.ClipID(id), Path: entry.File}
 	}
 
@@ -188,6 +204,11 @@ func validateManifestEntries(entries []textureEntry) error {
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate texture %q in manifest.json", entry.Name)
 		}
+		if entry.File != "" {
+			if err := validateAssetPath("texture", entry.Name, entry.File); err != nil {
+				return err
+			}
+		}
 		seen[entry.Name] = struct{}{}
 	}
 	return nil
@@ -213,6 +234,9 @@ func validateFontEntries(entries []fontEntry) error {
 		if entry.File == "" {
 			return fmt.Errorf("asset: font %q has an empty file path in manifest.json", entry.Name)
 		}
+		if err := validateAssetPath("font", entry.Name, entry.File); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate font %q in manifest.json", entry.Name)
 		}
@@ -224,10 +248,26 @@ func validateFontEntries(entries []fontEntry) error {
 func validateAudioEntries(entries []audioEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if entry.ID == "" {
+			return errors.New("asset: audio id must not be empty in manifest.json")
+		}
+		if entry.File == "" {
+			return fmt.Errorf("asset: audio %q has an empty file path in manifest.json", entry.ID)
+		}
+		if err := validateAssetPath("audio", entry.ID, entry.File); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.ID]; ok {
 			return fmt.Errorf("asset: duplicate audio %q in manifest.json", entry.ID)
 		}
 		seen[entry.ID] = struct{}{}
+	}
+	return nil
+}
+
+func validateAssetPath(kind, name, path string) error {
+	if path == "." || !fs.ValidPath(path) {
+		return fmt.Errorf("asset: %s %q has invalid file path %q", kind, name, path)
 	}
 	return nil
 }
@@ -241,25 +281,39 @@ func validateDynamicEntries(entries []dynamicEntry) error {
 	return nil
 }
 
-// statLayered reports whether path exists in any layer (last wins), without
-// reading its bytes — used to validate declarations the host loads lazily.
-func statLayered(layers []fs.FS, path string) error {
+// statLayered returns metadata for the winning file layer without reading its
+// bytes. Audio stays lazy, so Load uses this to validate declared clip sizes.
+func statLayered(layers []fs.FS, path string) (fs.FileInfo, error) {
 	for i := len(layers) - 1; i >= 0; i-- {
-		_, err := fs.Stat(layers[i], path)
+		info, err := fs.Stat(layers[i], path)
 		if err == nil {
-			return nil
+			return info, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return err
+			return nil, err
 		}
 	}
-	return fmt.Errorf("%w: %s", fs.ErrNotExist, path)
+	return nil, fmt.Errorf("%w: %s", fs.ErrNotExist, path)
 }
 
-func readLayered(layers []fs.FS, path string) ([]byte, error) {
+func readLayered(layers []fs.FS, path string, maxBytes int64) ([]byte, error) {
 	for i := len(layers) - 1; i >= 0; i-- {
+		info, err := fs.Stat(layers[i], path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := validateFileSize(path, info.Size(), maxBytes); err != nil {
+			return nil, err
+		}
+
 		data, err := fs.ReadFile(layers[i], path)
 		if err == nil {
+			if int64(len(data)) > maxBytes {
+				return nil, fmt.Errorf("asset file %q exceeds limit %d bytes", path, maxBytes)
+			}
 			return data, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -267,4 +321,14 @@ func readLayered(layers []fs.FS, path string) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("%w: %s", fs.ErrNotExist, path)
+}
+
+func validateFileSize(path string, size, maxBytes int64) error {
+	if size < 0 {
+		return fmt.Errorf("asset file %q has invalid negative size %d", path, size)
+	}
+	if size > maxBytes {
+		return fmt.Errorf("asset file %q exceeds limit %d bytes", path, maxBytes)
+	}
+	return nil
 }
