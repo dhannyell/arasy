@@ -14,7 +14,10 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-const imageQuadGridSize = 16
+const (
+	imageQuadGridSize        = 16
+	imageQuadTriangleOverlap = 0.25
+)
 
 type Canvas2D struct {
 	ctx       js.Value
@@ -27,6 +30,9 @@ type Canvas2D struct {
 	// still loading or unavailable, and DrawText falls back to monospace.
 	fonts map[render.FontID]string
 	log   *slog.Logger
+
+	pendingTextures int
+	ready           bool
 }
 
 func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) *Canvas2D {
@@ -60,12 +66,14 @@ func (c *Canvas2D) loadTexture(decl asset.TextureDecl) {
 		c.log.Warn("Canvas2D ImageBitmap unavailable; texture will use placeholder", "texture", decl.Name)
 		return
 	}
+	c.pendingTextures++
 
 	blob := js.Global().Get("Blob").New([]any{bytesToJS(decl.Data)})
 	promise := createImageBitmap.Invoke(blob)
 
 	var resolve, reject js.Func
 	release := func() {
+		c.pendingTextures--
 		resolve.Release()
 		reject.Release()
 	}
@@ -165,6 +173,10 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 	}
 
 	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
+	if !c.ready && c.pendingTextures == 0 {
+		c.canvas.Call("setAttribute", "data-frameforge-ready", "canvas2d")
+		c.ready = true
+	}
 }
 
 type canvasSink struct {
@@ -284,6 +296,17 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 		alpha = cmd.Tint.A
 		source = c.tintedBitmap(bitmap, cmd.Texture, cmd.Tint)
 	}
+	c.ctx.Call("save")
+	c.ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+	c.ctx.Call("beginPath")
+	c.ctx.Call("moveTo", corners[0].X, corners[0].Y)
+	for _, corner := range corners[1:] {
+		c.ctx.Call("lineTo", corner.X, corner.Y)
+	}
+	c.ctx.Call("closePath")
+	c.ctx.Call("clip")
+	defer c.ctx.Call("restore")
+
 	for row := 0; row < imageQuadGridSize; row++ {
 		v0 := float64(row) / imageQuadGridSize
 		v1 := float64(row+1) / imageQuadGridSize
@@ -349,15 +372,17 @@ func (c *Canvas2D) drawTexturedTriangle(bitmap js.Value, alpha float64, s0, s1, 
 	if !ok {
 		return
 	}
+	clip := inflateTriangle([3]math2d.Vec2{d0, d1, d2}, imageQuadTriangleOverlap)
 	c.ctx.Call("save")
 	c.ctx.Set("globalAlpha", alpha)
-	c.ctx.Call("setTransform", a, b, cc, d, e, f)
+	c.ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
 	c.ctx.Call("beginPath")
-	c.ctx.Call("moveTo", s0.X, s0.Y)
-	c.ctx.Call("lineTo", s1.X, s1.Y)
-	c.ctx.Call("lineTo", s2.X, s2.Y)
+	c.ctx.Call("moveTo", clip[0].X, clip[0].Y)
+	c.ctx.Call("lineTo", clip[1].X, clip[1].Y)
+	c.ctx.Call("lineTo", clip[2].X, clip[2].Y)
 	c.ctx.Call("closePath")
 	c.ctx.Call("clip")
+	c.ctx.Call("setTransform", a, b, cc, d, e, f)
 	c.ctx.Call("drawImage", bitmap, 0, 0)
 	c.ctx.Call("restore")
 }

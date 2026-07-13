@@ -5,6 +5,7 @@ package wasm
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/asset"
@@ -57,10 +58,14 @@ type webgpuRenderer struct {
 
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
-	textures []gpuTexture
+	textures     []gpuTexture
+	ready        bool
+	readyPending bool
+	errorCb      js.Func
+	lostCb       js.Func
 }
 
-func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*webgpuRenderer, error) {
+func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) (*webgpuRenderer, error) {
 	fontProvider, err := newFontAtlasProvider(manifest)
 	if err != nil {
 		return nil, err
@@ -107,6 +112,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*w
 		fontProvider: fontProvider,
 		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
 	}
+	r.observeDeviceErrors(log)
 
 	r.solidPipeline = r.createSolidPipeline()
 	r.textPipeline = r.createTextPipeline()
@@ -121,6 +127,34 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest) (*w
 	r.textures, r.texSizes = r.buildTextures(manifest)
 
 	return r, nil
+}
+
+func (r *webgpuRenderer) observeDeviceErrors(log *slog.Logger) {
+	r.errorCb = js.FuncOf(func(this js.Value, args []js.Value) any {
+		message := "unknown WebGPU error"
+		if len(args) > 0 {
+			err := args[0].Get("error")
+			if !err.IsUndefined() && !err.IsNull() {
+				message = err.Get("message").String()
+			}
+		}
+		log.Error("webgpu uncaptured error", "error", message)
+		return nil
+	})
+	r.device.Call("addEventListener", "uncapturederror", r.errorCb)
+
+	r.lostCb = js.FuncOf(func(this js.Value, args []js.Value) any {
+		reason := "unknown"
+		message := ""
+		if len(args) > 0 {
+			info := args[0]
+			reason = info.Get("reason").String()
+			message = info.Get("message").String()
+		}
+		log.Error("webgpu device lost", "reason", reason, "message", message)
+		return nil
+	})
+	r.device.Get("lost").Call("then", r.lostCb)
 }
 
 func (r *webgpuRenderer) Render(frame runtime.Frame) {
@@ -238,6 +272,34 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	pass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	r.signalReadyAfterPresent()
+}
+
+// signalReadyAfterPresent marks the canvas ready only after the browser has had
+// two animation frames in which to present the first submission. queue.submit
+// only enqueues work, while onSubmittedWorkDone may remain pending indefinitely
+// on continuously-rendering software GPU backends.
+func (r *webgpuRenderer) signalReadyAfterPresent() {
+	if r.ready || r.readyPending {
+		return
+	}
+	r.readyPending = true
+
+	var firstFrame js.Func
+	firstFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+		firstFrame.Release()
+
+		var secondFrame js.Func
+		secondFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+			secondFrame.Release()
+			r.canvas.Call("setAttribute", "data-frameforge-ready", "webgpu")
+			r.ready = true
+			return nil
+		})
+		js.Global().Call("requestAnimationFrame", secondFrame)
+		return nil
+	})
+	js.Global().Call("requestAnimationFrame", firstFrame)
 }
 
 type gpuDrawRun struct {
