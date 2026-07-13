@@ -16,7 +16,7 @@ func Steps(speed float64, renderDT, simulationDT float64, accumulator *float64, 
 		return StepPlan{}
 	}
 
-	*accumulator += renderDT * speed
+	*accumulator += float64(renderDT * speed)
 
 	steps := int(math.Floor(*accumulator / simulationDT))
 	if max > 0 && steps > max {
@@ -27,7 +27,7 @@ func Steps(speed float64, renderDT, simulationDT float64, accumulator *float64, 
 		}
 	}
 
-	*accumulator -= float64(steps) * simulationDT
+	*accumulator -= float64(float64(steps) * simulationDT)
 
 	return StepPlan{
 		Steps: steps,

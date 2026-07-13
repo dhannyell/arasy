@@ -11,12 +11,14 @@ type Color struct {
 	R, G, B, A float64
 }
 
+// Lerp linearly interpolates between RGBA color by a scalar value t.
+// The explicit float64 conversion on the product prevents FMA fusion on arm64.
 func (c *Color) Lerp(c2 Color, t float64) Color {
 	return Color{
-		R: c.R + (c2.R-c.R)*t,
-		G: c.G + (c2.G-c.G)*t,
-		B: c.B + (c2.B-c.B)*t,
-		A: c.A + (c2.A-c.A)*t,
+		R: c.R + float64((c2.R-c.R)*t),
+		G: c.G + float64((c2.G-c.G)*t),
+		B: c.B + float64((c2.B-c.B)*t),
+		A: c.A + float64((c2.A-c.A)*t),
 	}
 }
 
