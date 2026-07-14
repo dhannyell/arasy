@@ -1,8 +1,7 @@
-package main
+package wasmserve
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"html"
 	"log/slog"
@@ -13,48 +12,51 @@ import (
 	"strings"
 )
 
-type serverOptions struct {
+type ServerOptions struct {
 	Dir          string
 	Title        string
 	WASMFile     string
 	WASMExecPath string
+	Addr         string
 }
 
-func main() {
-	addr := flag.String("addr", "127.0.0.1:8090", "HTTP listen address")
-	dir := flag.String("dir", "cmd/demos/breakout/wasm/web", "directory to serve")
-	title := flag.String("title", "frameforge wasm", "HTML page title")
-	wasmFile := flag.String("wasm", "app.wasm", "WASM file served from -dir and loaded by the shell")
-	wasmExec := flag.String("wasm-exec", "", "path to wasm_exec.js (default: current Go toolchain)")
-	flag.Parse()
+func NewServerOptions(dir, title, file, execPath, addr string) *ServerOptions {
+	return &ServerOptions{
+		Dir:          dir,
+		Title:        title,
+		WASMFile:     file,
+		WASMExecPath: execPath,
+		Addr:         addr,
+	}
+}
 
+func Start(opts *ServerOptions) {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
-	wasmExecPath := *wasmExec
-	if wasmExecPath == "" {
+	if opts.WASMExecPath == "" {
 		var err error
-		wasmExecPath, err = defaultWASMExecPath()
+		opts.WASMExecPath, err = defaultWASMExecPath()
 		if err != nil {
 			log.Error("wasm_exec.js not found", "err", err)
 			os.Exit(1)
 		}
 	}
 
-	handler := newHandler(serverOptions{
-		Dir:          *dir,
-		Title:        *title,
-		WASMFile:     *wasmFile,
-		WASMExecPath: wasmExecPath,
+	handler := newHandler(ServerOptions{
+		Dir:          opts.Dir,
+		Title:        opts.Title,
+		WASMFile:     opts.WASMFile,
+		WASMExecPath: opts.WASMExecPath,
 	})
 
-	log.Info("listening", "addr", *addr, "dir", *dir, "wasm", *wasmFile, "wasm_exec", wasmExecPath)
-	if err := http.ListenAndServe(*addr, handler); err != nil {
+	log.Info("listening", "addr", opts.Addr, "dir", opts.Dir, "wasm", opts.WASMFile, "wasm_exec", opts.WASMExecPath)
+	if err := http.ListenAndServe(opts.Addr, handler); err != nil {
 		log.Error("server failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func newHandler(opts serverOptions) http.Handler {
+func newHandler(opts ServerOptions) http.Handler {
 	files := http.FileServer(http.Dir(opts.Dir))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +71,7 @@ func newHandler(opts serverOptions) http.Handler {
 	})
 }
 
-func serveIndex(w http.ResponseWriter, opts serverOptions) {
+func serveIndex(w http.ResponseWriter, opts ServerOptions) {
 	wasmFile, err := json.Marshal(opts.WASMFile)
 	if err != nil {
 		http.Error(w, "invalid wasm file", http.StatusInternalServerError)

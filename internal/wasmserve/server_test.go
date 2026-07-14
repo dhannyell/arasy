@@ -1,4 +1,4 @@
-package main
+package wasmserve
 
 import (
 	"net/http"
@@ -16,7 +16,7 @@ func TestHandlerServesGeneratedIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newHandler(serverOptions{
+	handler := newHandler(ServerOptions{
 		Dir:          dir,
 		Title:        "frameforge test",
 		WASMFile:     "demo.wasm",
@@ -46,7 +46,7 @@ func TestHandlerServesWASMExecFromConfiguredPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newHandler(serverOptions{
+	handler := newHandler(ServerOptions{
 		Dir:          dir,
 		Title:        "frameforge test",
 		WASMFile:     "app.wasm",
@@ -75,7 +75,7 @@ func TestHandlerServesArtifactsFromDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := newHandler(serverOptions{
+	handler := newHandler(ServerOptions{
 		Dir:          dir,
 		Title:        "frameforge test",
 		WASMFile:     "app.wasm",
