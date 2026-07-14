@@ -39,6 +39,33 @@ func keyEvent(code input.SourceCode, kind input.EventKind) input.Event {
 	}
 }
 
+func TestTwenty48PrimaryMouseDragMovesTile(t *testing.T) {
+	game := &Game2048{}
+	driver := runtime.NewDriver(game, slog.Default())
+	game.state.State = matchState{phase: phasePlaying}
+	game.state.State.board[1] = 2
+
+	cam := game.Setup().Camera
+	start := cam.WorldToScreen(cellCenter(1))
+	end := cam.WorldToScreen(cellCenter(1).Sub(math2d.Vec2{X: dragThreshold + 1}))
+
+	driver.ApplyInput([]input.Event{mouseDown(start.X, start.Y)})
+	driver.Step()
+	if game.state.State.board[1] != 2 {
+		t.Fatal("mouse press moved a tile before a drag")
+	}
+
+	driver.ApplyInput([]input.Event{
+		mouseMove(end.X, end.Y),
+		mouseUp(end.X, end.Y),
+	})
+	driver.Step()
+
+	if game.state.State.board[0] != 2 {
+		t.Fatalf("left drag did not move tile to index 0: board = %v", game.state.State.board)
+	}
+}
+
 // TestTwenty48ScrubDeterministic replays the full user flow — click Play,
 // make several moves, let each turn animation run out — then scrubs the
 // timeline and verifies every jump restores the exact original game state.

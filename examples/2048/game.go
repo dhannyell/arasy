@@ -30,6 +30,7 @@ const (
 	cellGap               = 2.0
 	rngSeed               = 0x2048_0607
 	animationTicks uint64 = 10
+	dragThreshold         = 3.0
 )
 
 var demoAssets = loadDemoAssets()
@@ -40,6 +41,14 @@ type matchState struct {
 	phase     phase
 	continued bool
 	animation turnAnimation
+	drag      dragState
+}
+
+// dragState is gameplay state rather than transient host state: a drag can
+// begin on one tick and finish on another, including across a rewind.
+type dragState struct {
+	Active bool
+	Start  math2d.Vec2
 }
 
 // turnAnimation is kept by value inside matchState so a rewind or replay
@@ -128,6 +137,8 @@ func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 			g.tryMove(ctx, dirDown)
 		}
 	}
+
+	g.handlePointerDrag(ctx)
 }
 
 func (g *Game2048) Render(ctx *runtime.RenderContext) []render.Command {
@@ -180,6 +191,68 @@ func (g *Game2048) tryMove(ctx *runtime.UpdateContext, dir direction) {
 	} else if !g.state.State.board.canMove() {
 		g.state.State.phase = phaseGameOver
 	}
+}
+
+// handlePointerDrag accepts a primary-button drag that starts on the board.
+// It deliberately reads PointerFrame instead of mapped actions: keyboard
+// arrows remain directional buttons, while a mouse drag is a pointer gesture.
+func (g *Game2048) handlePointerDrag(ctx *runtime.UpdateContext) {
+	for _, event := range ctx.Pointer.Events {
+		if event.Button != input.PointerPrimary {
+			continue
+		}
+
+		switch event.Kind {
+		case input.EventButtonDown:
+			start := ctx.Camera().ScreenToWorld(event.Pos)
+			g.state.State.drag = dragState{
+				Active: boardRect().Contains(start),
+				Start:  start,
+			}
+		case input.EventButtonUp:
+			g.finishPointerDrag(ctx, event.Pos)
+			g.state.State.drag = dragState{}
+		}
+	}
+
+	if g.state.State.drag.Active && ctx.Pointer.Buttons[input.PointerPrimary] {
+		g.finishPointerDrag(ctx, ctx.Pointer.Pos)
+	}
+}
+
+func (g *Game2048) finishPointerDrag(ctx *runtime.UpdateContext, screenEnd math2d.Vec2) {
+	drag := g.state.State.drag
+	if !drag.Active {
+		return
+	}
+
+	end := ctx.Camera().ScreenToWorld(screenEnd)
+	delta := end.Sub(drag.Start)
+	if delta.LenSq() < dragThreshold*dragThreshold {
+		return
+	}
+
+	g.state.State.drag = dragState{}
+	if abs(delta.X) > abs(delta.Y) {
+		if delta.X < 0 {
+			g.tryMove(ctx, dirLeft)
+			return
+		}
+		g.tryMove(ctx, dirRight)
+		return
+	}
+	if delta.Y < 0 {
+		g.tryMove(ctx, dirUp)
+		return
+	}
+	g.tryMove(ctx, dirDown)
+}
+
+func abs(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 // expireAnimation clears a finished turn animation. It never gates input:

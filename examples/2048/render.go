@@ -35,7 +35,7 @@ func boardBackgroundCommands() []render.Command {
 	cmds := make([]render.Command, 0, 1+gridSize*gridSize)
 	cmds = append(cmds, render.DrawRect{
 		BaseCommand:  render.BaseCommand{LayerValue: layerBoardBackground},
-		Rect:         math2d.NewRect(math2d.Vec2{X: boardMarginX, Y: boardTop}, math2d.Vec2{X: boardSize, Y: boardSize}),
+		Rect:         boardRect(),
 		Fill:         boardColor,
 		CornerRadius: 2,
 	})
@@ -48,6 +48,10 @@ func boardBackgroundCommands() []render.Command {
 		})
 	}
 	return cmds
+}
+
+func boardRect() math2d.Rect {
+	return math2d.NewRect(math2d.Vec2{X: boardMarginX, Y: boardTop}, math2d.Vec2{X: boardSize, Y: boardSize})
 }
 
 func tileCommands(board board, animation turnAnimation, progress float64) []render.Command {
