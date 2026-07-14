@@ -5,7 +5,7 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/cmd/demos/assets"
+	"github.com/dhannyell/frameforge/examples/assets"
 	"github.com/dhannyell/frameforge/platform/wasm"
 	"github.com/dhannyell/frameforge/runtime"
 )

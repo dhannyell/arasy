@@ -5,19 +5,18 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/cmd/demos/breakout"
+	"github.com/dhannyell/frameforge/examples/2048"
 	"github.com/dhannyell/frameforge/platform/wasm"
 	"github.com/dhannyell/frameforge/runtime"
 )
 
 func main() {
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
-	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
-		DevTools:      true,
-		Log:           log,
-		RecordReplay:  true,
-		ForceCanvas2D: true,
-		GameFactory:   func() runtime.Game { return &breakout.Breakout{} },
+	if err := wasm.Run(&twenty48.Game2048{}, wasm.Options{
+		DevTools:     true,
+		Log:          log,
+		RecordReplay: true,
+		GameFactory:  func() runtime.Game { return &twenty48.Game2048{} },
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)
 	}

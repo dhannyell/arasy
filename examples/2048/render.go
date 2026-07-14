@@ -1,6 +1,7 @@
 package twenty48
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/dhannyell/frameforge/ease"
@@ -35,7 +36,7 @@ func boardBackgroundCommands() []render.Command {
 	cmds := make([]render.Command, 0, 1+gridSize*gridSize)
 	cmds = append(cmds, render.DrawRect{
 		BaseCommand:  render.BaseCommand{LayerValue: layerBoardBackground},
-		Rect:         math2d.NewRect(math2d.Vec2{X: boardMarginX, Y: boardTop}, math2d.Vec2{X: boardSize, Y: boardSize}),
+		Rect:         boardRect(),
 		Fill:         boardColor,
 		CornerRadius: 2,
 	})
@@ -48,6 +49,10 @@ func boardBackgroundCommands() []render.Command {
 		})
 	}
 	return cmds
+}
+
+func boardRect() math2d.Rect {
+	return math2d.NewRect(math2d.Vec2{X: boardMarginX, Y: boardTop}, math2d.Vec2{X: boardSize, Y: boardSize})
 }
 
 func tileCommands(board board, animation turnAnimation, progress float64) []render.Command {
@@ -143,6 +148,10 @@ func (g *Game2048) drawHUD(ctx *runtime.RenderContext) {
 	drawScore(ctx, "BEST", g.best, 465)
 	if g.state.State.phase == phasePlaying {
 		ctx.UI.ButtonIn("btn_new", "New", hudNewRect(), ui.SpaceRef)
+	}
+	if g.state.State.undo.usable() {
+		ctx.UI.ButtonIn("btn_undo", fmt.Sprintf("Undoes: %d", g.state.State.undo.Left),
+			powerButtonRect(0, 1), ui.SpaceRef)
 	}
 }
 
@@ -247,4 +256,11 @@ func tileTextSize(value uint64) float64 {
 	default:
 		return 6
 	}
+}
+
+func powerButtonRect(index, count int) math2d.Rect {
+	const width, height, gap = 110.0, 48.0, 12.0
+	total := float64(count)*width + float64(count-1)*gap
+	x := (viewportSize-total)/2 + float64(index)*(width+gap)
+	return math2d.NewRect(math2d.Vec2{X: x, Y: powersBarY}, math2d.Vec2{X: width, Y: height})
 }

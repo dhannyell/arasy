@@ -24,12 +24,15 @@ const (
 const (
 	viewportSize          = 720.0
 	worldSize             = 100.0
-	boardMarginX          = 10.0
-	boardTop              = boardMarginX
+	boardMarginX          = 13.0
+	boardTop              = 10.0
 	boardPad              = 3.0
 	cellGap               = 2.0
 	rngSeed               = 0x2048_0607
 	animationTicks uint64 = 10
+	powersBarY            = 640.0
+	dragThreshold         = 3.0
+	undoCharges           = 3
 )
 
 var demoAssets = loadDemoAssets()
@@ -40,6 +43,30 @@ type matchState struct {
 	phase     phase
 	continued bool
 	animation turnAnimation
+	drag      dragState
+	rand      runtime.Rand
+	undo      undoState
+}
+
+type turnSnapshot struct {
+	Board     board
+	Score     uint64
+	Phase     phase
+	Continued bool
+	Rand      runtime.Rand
+}
+
+type undoState struct {
+	Stack [undoCharges]turnSnapshot
+	Depth int
+	Left  int
+}
+
+// dragState is gameplay state rather than transient host state: a drag can
+// begin on one tick and finish on another, including across a rewind.
+type dragState struct {
+	Active bool
+	Start  math2d.Vec2
 }
 
 // turnAnimation is kept by value inside matchState so a rewind or replay
@@ -86,9 +113,7 @@ func (g *Game2048) Setup() runtime.Config {
 }
 
 func (g *Game2048) Init(ctx *runtime.UpdateContext) {
-	g.state.State = matchState{phase: phaseMenu}
-	spawnTile(ctx, &g.state.State)
-	spawnTile(ctx, &g.state.State)
+	g.newMatch(ctx, phaseMenu)
 }
 
 func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
@@ -128,6 +153,15 @@ func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 			g.tryMove(ctx, dirDown)
 		}
 	}
+
+	if g.state.State.undo.usable() &&
+		(ctx.UI.ClickedIn("btn_undo", powerButtonRect(0, 1), ui.SpaceRef) ||
+			ctx.Input.JustPressed(input.ActionCancel)) {
+		g.tryUndo()
+		return
+	}
+
+	g.handlePointerDrag(ctx)
 }
 
 func (g *Game2048) Render(ctx *runtime.RenderContext) []render.Command {
@@ -158,13 +192,15 @@ func (g *Game2048) tryMove(ctx *runtime.UpdateContext, dir direction) {
 		return
 	}
 
+	g.pushUndo()
+
 	g.state.State.board = next
 	g.state.State.score += gained
 	if g.state.State.score > g.best {
 		g.best = g.state.State.score
 	}
 
-	spawnIndex, spawned := spawnTile(ctx, &g.state.State)
+	spawnIndex, spawned := spawnTile(&g.state.State)
 	g.state.State.animation = turnAnimation{
 		Active:      true,
 		StartTick:   ctx.Tick + 1,
@@ -180,6 +216,92 @@ func (g *Game2048) tryMove(ctx *runtime.UpdateContext, dir direction) {
 	} else if !g.state.State.board.canMove() {
 		g.state.State.phase = phaseGameOver
 	}
+}
+
+func (g *Game2048) pushUndo() {
+	s := &g.state.State
+	snapshot := turnSnapshot{Board: s.board, Score: s.score, Phase: s.phase, Continued: s.continued, Rand: s.rand}
+	if s.undo.Depth == len(s.undo.Stack) {
+		copy(s.undo.Stack[:], s.undo.Stack[1:])
+		s.undo.Depth--
+	}
+	s.undo.Stack[s.undo.Depth] = snapshot
+	s.undo.Depth++
+}
+
+func (g *Game2048) tryUndo() {
+	s := &g.state.State
+	if !s.undo.usable() {
+		return
+	}
+	s.undo.Depth--
+	s.undo.Left--
+	top := s.undo.Stack[s.undo.Depth]
+	s.board, s.score, s.phase, s.continued, s.rand =
+		top.Board, top.Score, top.Phase, top.Continued, top.Rand
+	s.animation = turnAnimation{}
+}
+
+// handlePointerDrag accepts a primary-button drag that starts on the board.
+// It deliberately reads PointerFrame instead of mapped actions: keyboard
+// arrows remain directional buttons, while a mouse drag is a pointer gesture.
+func (g *Game2048) handlePointerDrag(ctx *runtime.UpdateContext) {
+	for _, event := range ctx.Pointer.Events {
+		if event.Button != input.PointerPrimary {
+			continue
+		}
+
+		switch event.Kind {
+		case input.EventButtonDown:
+			start := ctx.Camera().ScreenToWorld(event.Pos)
+			g.state.State.drag = dragState{
+				Active: boardRect().Contains(start),
+				Start:  start,
+			}
+		case input.EventButtonUp:
+			g.finishPointerDrag(ctx, event.Pos)
+			g.state.State.drag = dragState{}
+		}
+	}
+
+	if g.state.State.drag.Active && ctx.Pointer.Buttons[input.PointerPrimary] {
+		g.finishPointerDrag(ctx, ctx.Pointer.Pos)
+	}
+}
+
+func (g *Game2048) finishPointerDrag(ctx *runtime.UpdateContext, screenEnd math2d.Vec2) {
+	drag := g.state.State.drag
+	if !drag.Active {
+		return
+	}
+
+	end := ctx.Camera().ScreenToWorld(screenEnd)
+	delta := end.Sub(drag.Start)
+	if delta.LenSq() < dragThreshold*dragThreshold {
+		return
+	}
+
+	g.state.State.drag = dragState{}
+	if abs(delta.X) > abs(delta.Y) {
+		if delta.X < 0 {
+			g.tryMove(ctx, dirLeft)
+			return
+		}
+		g.tryMove(ctx, dirRight)
+		return
+	}
+	if delta.Y < 0 {
+		g.tryMove(ctx, dirUp)
+		return
+	}
+	g.tryMove(ctx, dirDown)
+}
+
+func abs(value float64) float64 {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 // expireAnimation clears a finished turn animation. It never gates input:
@@ -215,20 +337,30 @@ func (g *Game2048) handleOverlayClicks(ctx *runtime.UpdateContext) {
 	}
 }
 
-func (g *Game2048) restart(ctx *runtime.UpdateContext) {
-	g.state.State = matchState{phase: phasePlaying}
-	spawnTile(ctx, &g.state.State)
-	spawnTile(ctx, &g.state.State)
+func (u undoState) usable() bool { return u.Left > 0 && u.Depth > 0 }
+
+func (g *Game2048) newMatch(ctx *runtime.UpdateContext, p phase) {
+	g.state.State = matchState{
+		phase: p,
+		rand:  runtime.NewRand(ctx.Rand.Uint64()),
+		undo:  undoState{Left: undoCharges},
+	}
+	spawnTile(&g.state.State)
+	spawnTile(&g.state.State)
 }
 
-func spawnTile(ctx *runtime.UpdateContext, state *matchState) (int, bool) {
+func (g *Game2048) restart(ctx *runtime.UpdateContext) {
+	g.newMatch(ctx, phasePlaying)
+}
+
+func spawnTile(state *matchState) (int, bool) {
 	empties := state.board.emptyCells()
 	if len(empties) == 0 {
 		return 0, false
 	}
-	idx := empties[ctx.Rand.IntN(len(empties))]
+	idx := empties[state.rand.IntN(len(empties))]
 	value := uint64(4)
-	if ctx.Rand.IntN(10) < 9 {
+	if state.rand.IntN(10) < 9 {
 		value = 2
 	}
 	state.board[idx] = value

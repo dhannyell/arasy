@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/cmd/demos/wasmgolden"
+	"github.com/dhannyell/frameforge/cmd/wasmgolden"
 	"github.com/dhannyell/frameforge/platform/wasm"
 )
 
