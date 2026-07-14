@@ -6,7 +6,7 @@ mkdirSync('output/wasm/golden', { recursive: true });
 
 const result = spawnSync(
   'go',
-  ['build', '-o', output, './cmd/demos/wasmgolden/wasm'],
+  ['build', '-o', output, './cmd/wasmgolden/wasm'],
   {
     env: { ...process.env, GOOS: 'js', GOARCH: 'wasm' },
     stdio: 'inherit',

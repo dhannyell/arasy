@@ -16,7 +16,7 @@ module.exports = defineConfig({
   },
   snapshotPathTemplate: 'platform/wasm/testdata/golden/{projectName}/{arg}{ext}',
   webServer: {
-    command: 'go run ./cmd/wasmserve -dir output/wasm/golden -addr 127.0.0.1:8090',
+    command: 'go run ./cmd/frameforge/ dev -s output/wasm/golden/ -a 127.0.0.1:8090',
     url: 'http://127.0.0.1:8090',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
