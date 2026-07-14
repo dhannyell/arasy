@@ -1,3 +1,4 @@
+// Package wasmserve create a simple HTTP server to run a compiled wasm file in browser
 package wasmserve
 
 import (
