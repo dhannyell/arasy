@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "dynamic": [
+    { "name": "fire_sim", "w": 96, "h": 128 }
+  ],
+  "textures": [
+    { "name": "stage", "file": "textures/stage.png" },
+    { "name": "highway", "file": "textures/highway.png" },
+    { "name": "note", "file": "textures/note.png" },
+    { "name": "special", "file": "textures/special.png" },
+    { "name": "circle", "file": "textures/circle.png" }
+  ],
+  "audio": [
+    { "id": "song", "file": "audio/panferov_fight.mp3" },
+    { "id": "hit_high", "file": "audio/hit_high.wav" },
+    { "id": "hit_low", "file": "audio/hit_low.wav" },
+    { "id": "miss", "file": "audio/miss.wav" },
+    { "id": "start", "file": "audio/start.wav" }
+  ]
+}
