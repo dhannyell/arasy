@@ -3,7 +3,6 @@ package rhythm
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/runtime"
 )
 
@@ -73,23 +72,6 @@ func TestHoldCompletesAtEnd(t *testing.T) {
 		game.finishHolds(ctx, 1800)
 		if got := game.State.Results[0]; got != resultPerfect {
 			t.Fatalf("completed hold = %d, want perfect", got)
-		}
-	})
-}
-
-func TestCircleRequiresPointerInsideRadius(t *testing.T) {
-	withTestChart(t, func() {
-		chart[0] = chartObject{ID: 0, Kind: objectCircle, TimeMS: 1000, Lane: -1, Pos: math2d.Vec2{X: 40, Y: 30}, Radius: 3}
-		game := testGameWithOnlyPending(0)
-		ctx := &runtime.UpdateContext{}
-
-		game.tryHitCircle(ctx, math2d.Vec2{X: 44, Y: 30}, 1000)
-		if got := game.State.Results[0]; got != resultPending {
-			t.Fatalf("outside click = %d, want pending", got)
-		}
-		game.tryHitCircle(ctx, math2d.Vec2{X: 42, Y: 30}, 1000)
-		if got := game.State.Results[0]; got != resultMarvelous {
-			t.Fatalf("inside click = %d, want marvelous", got)
 		}
 	})
 }

@@ -44,7 +44,6 @@ func drawBackground(ctx *runtime.RenderContext) []render.Command {
 func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []render.Command {
 	noteTex := ctx.Assets.Texture("note")
 	specialTex := ctx.Assets.Texture("special")
-	circleTex := ctx.Assets.Texture("circle")
 	cmds := make([]render.Command, 0, len(chart))
 
 	for _, obj := range chart {
@@ -61,18 +60,6 @@ func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []re
 		if obj.Kind == objectSpecial && obj.Lane < 0 {
 			continue
 		}
-		if obj.Kind == objectCircle {
-			cmds = append(cmds, render.DrawImage{
-				BaseCommand: render.BaseCommand{LayerValue: 11},
-				Texture:     circleTex,
-				Dest: math2d.NewRect(
-					math2d.Vec2{X: obj.Pos.X - obj.Radius, Y: obj.Pos.Y - obj.Radius},
-					math2d.Vec2{X: obj.Radius * 2, Y: obj.Radius * 2},
-				),
-			})
-			continue
-		}
-
 		p := math2d.Clamp((float64(obj.TimeMS)-nowMS)/approachMS, 0, 1)
 
 		y := noteY(p)
@@ -294,7 +281,7 @@ func holdPulse(time float64) float64 {
 func lanePromptLevel(state MatchState, nowMS, lane int) int {
 	level := 0
 	for i, obj := range chart {
-		if obj.Kind == objectCircle || (obj.Kind == objectSpecial && obj.Lane < 0) || obj.Lane != lane || state.Results[i] != resultPending {
+		if (obj.Kind == objectSpecial && obj.Lane < 0) || obj.Lane != lane || state.Results[i] != resultPending {
 			continue
 		}
 		delta := absInt(nowMS - obj.TimeMS)

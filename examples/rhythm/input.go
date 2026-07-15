@@ -2,7 +2,6 @@ package rhythm
 
 import (
 	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/runtime"
 )
 
@@ -18,34 +17,5 @@ func (g *Game) handleLaneInput(ctx *runtime.UpdateContext, nowMS int) {
 		if ctx.Input.JustReleased(action) {
 			g.releaseLane(ctx, lane, nowMS)
 		}
-	}
-}
-
-func (g *Game) handlePointerInput(ctx *runtime.UpdateContext, nowMS int) {
-	for _, event := range ctx.Pointer.Events {
-		if event.Kind != input.EventButtonDown || event.Button != input.PointerPrimary {
-			continue
-		}
-		g.tryHitCircle(ctx, ctx.Camera().ScreenToWorld(event.Pos), nowMS)
-	}
-}
-
-func (g *Game) tryHitCircle(ctx *runtime.UpdateContext, pos math2d.Vec2, nowMS int) {
-	bestID := -1
-	bestAbs := missWindowMS + 1
-	for i, obj := range chart {
-		if obj.Kind != objectCircle || g.State.Results[i] != resultPending {
-			continue
-		}
-		delta := nowMS - obj.TimeMS
-		absolute := absInt(delta)
-		if absolute > missWindowMS || pos.Sub(obj.Pos).LenSq() > obj.Radius*obj.Radius || absolute >= bestAbs {
-			continue
-		}
-		bestID = i
-		bestAbs = absolute
-	}
-	if bestID >= 0 {
-		g.applyJudgement(ctx, bestID, judgeDelta(nowMS-chart[bestID].TimeMS))
 	}
 }

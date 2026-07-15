@@ -35,7 +35,7 @@ func (g *Game) tryHitLane(ctx *runtime.UpdateContext, lane, nowMS int) {
 	bestID := -1
 	bestAbs := missWindowMS + 1
 	for i, obj := range chart {
-		if obj.Kind == objectCircle || obj.Lane != lane || g.State.Results[i] != resultPending {
+		if obj.Lane != lane || g.State.Results[i] != resultPending {
 			continue
 		}
 		delta := nowMS - obj.TimeMS

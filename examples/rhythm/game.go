@@ -200,7 +200,6 @@ func (g *Game) handleInputs(ctx *runtime.UpdateContext) {
 	case phasePlaying:
 		nowMS := songTimeMS(g.State, ctx.Tick)
 		g.handleLaneInput(ctx, nowMS)
-		g.handlePointerInput(ctx, nowMS)
 		g.finishHolds(ctx, nowMS)
 		g.updateMisses(ctx, nowMS)
 		if nowMS > chartEndMS()+2500 || g.State.Health <= 0 {
