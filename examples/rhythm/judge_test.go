@@ -126,21 +126,6 @@ func TestLaneHasActiveHold(t *testing.T) {
 	})
 }
 
-func TestChartNoteSuppressedDuringEarlierHoldOnSameLane(t *testing.T) {
-	withTestChart(t, func() {
-		chart[0] = chartObject{ID: 0, Kind: objectHold, TimeMS: 1000, EndMS: 1800, Lane: 1}
-		chart[1] = chartObject{ID: 1, Kind: objectTap, TimeMS: 1200, Lane: 1}
-		chart[2] = chartObject{ID: 2, Kind: objectTap, TimeMS: 1200, Lane: 2}
-
-		if !chartNoteSuppressed(1) {
-			t.Fatal("tap on an active hold lane was not suppressed")
-		}
-		if chartNoteSuppressed(2) {
-			t.Fatal("tap on a different lane was suppressed")
-		}
-	})
-}
-
 func TestSpecialPhraseDoesNotCauseMiss(t *testing.T) {
 	withTestChart(t, func() {
 		chart[0] = chartObject{ID: 0, Kind: objectSpecial, TimeMS: 1000, EndMS: 1600, Lane: -1}
@@ -187,23 +172,4 @@ func TestLightningOnlyStartsComboOrHitsSpecial(t *testing.T) {
 			t.Fatalf("combo start lightning = active:%t lane:%d, want active lane 3", comboStart.State.LightningActive, comboStart.State.LightningLane)
 		}
 	})
-}
-
-func testGameWithOnlyPending(ids ...int) *Game {
-	game := &Game{}
-	game.State.Health = 100
-	for i := range game.State.Results {
-		game.State.Results[i] = resultMiss
-	}
-	for _, id := range ids {
-		game.State.Results[id] = resultPending
-	}
-	return game
-}
-
-func withTestChart(t *testing.T, fn func()) {
-	t.Helper()
-	original := chart
-	t.Cleanup(func() { chart = original })
-	fn()
 }

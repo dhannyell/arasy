@@ -47,8 +47,9 @@ func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []re
 	circleTex := ctx.Assets.Texture("circle")
 	cmds := make([]render.Command, 0, len(chart))
 
-	for i, obj := range chart {
-		if chartNoteSuppressed(i) {
+	for _, obj := range chart {
+		result := state.Results[obj.ID]
+		if result != resultPending && !(isHold(obj) && result == resultHeld) {
 			continue
 		}
 		if float64(renderEndMS(obj)) < nowMS-despawnAfterMS ||
@@ -204,25 +205,6 @@ func laneHasActiveHold(state MatchState, lane int) bool {
 	return false
 }
 
-// chartNoteSuppressed is a defensive counterpart to the converter rule. It
-// prevents old generated charts from showing or judging another note on a
-// lane while an earlier hold on that same lane still owns the key.
-func chartNoteSuppressed(index int) bool {
-	note := chart[index]
-	if note.Kind == objectCircle || (note.Kind == objectSpecial && note.Lane < 0) {
-		return false
-	}
-	for i, hold := range chart {
-		if i == index || !isHold(hold) || hold.Lane != note.Lane {
-			continue
-		}
-		if hold.TimeMS < note.TimeMS && note.TimeMS < hold.EndMS {
-			return true
-		}
-	}
-	return false
-}
-
 func renderEndMS(obj chartObject) int {
 	if isHold(obj) {
 		return obj.EndMS
@@ -312,7 +294,7 @@ func holdPulse(time float64) float64 {
 func lanePromptLevel(state MatchState, nowMS, lane int) int {
 	level := 0
 	for i, obj := range chart {
-		if chartNoteSuppressed(i) || obj.Kind == objectCircle || (obj.Kind == objectSpecial && obj.Lane < 0) || obj.Lane != lane || state.Results[i] != resultPending {
+		if obj.Kind == objectCircle || (obj.Kind == objectSpecial && obj.Lane < 0) || obj.Lane != lane || state.Results[i] != resultPending {
 			continue
 		}
 		delta := absInt(nowMS - obj.TimeMS)

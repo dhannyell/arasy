@@ -35,7 +35,7 @@ func (g *Game) tryHitLane(ctx *runtime.UpdateContext, lane, nowMS int) {
 	bestID := -1
 	bestAbs := missWindowMS + 1
 	for i, obj := range chart {
-		if chartNoteSuppressed(i) || obj.Kind == objectCircle || obj.Lane != lane || g.State.Results[i] != resultPending {
+		if obj.Kind == objectCircle || obj.Lane != lane || g.State.Results[i] != resultPending {
 			continue
 		}
 		delta := nowMS - obj.TimeMS
@@ -90,7 +90,7 @@ func (g *Game) finishHolds(ctx *runtime.UpdateContext, nowMS int) {
 
 func (g *Game) updateMisses(ctx *runtime.UpdateContext, nowMS int) {
 	for i, obj := range chart {
-		if chartNoteSuppressed(i) || (obj.Kind == objectSpecial && obj.Lane < 0) || g.State.Results[i] != resultPending {
+		if (obj.Kind == objectSpecial && obj.Lane < 0) || g.State.Results[i] != resultPending {
 			continue
 		}
 		if nowMS > obj.TimeMS+missWindowMS {

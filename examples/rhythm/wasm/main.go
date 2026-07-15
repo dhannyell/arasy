@@ -11,22 +11,23 @@ import (
 )
 
 func main() {
-	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	game, err := rhythm.NewGame()
 	if err != nil {
-		log.Error("Failed to create game", "error", err)
+		panic(err)
 	}
+
+	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
 		DevTools:      true,
 		Log:           log,
 		RecordReplay:  true,
 		ForceCanvas2D: false,
 		GameFactory: func() runtime.Game {
-			game, err := rhythm.NewGame()
+			replayGame, err := rhythm.NewGame()
 			if err != nil {
-				log.Error("Failed to create game", "error", err)
+				panic(err)
 			}
-			return game
+			return replayGame
 		},
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)

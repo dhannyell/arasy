@@ -38,11 +38,13 @@ func hash01(seed uint64) float64 {
 // into the fire_sim dynamic texture and drawn as flame bands on both sides
 // of the highway.
 const (
-	fireW          = 96
-	fireH          = 128
-	fireStepHz     = 30
-	fireBaseWidth  = 27.0
-	fireBaseHeight = 36.0
+	fireW      = 96
+	fireH      = 128
+	fireStepHz = 30
+	// The low-combo fire is a continuous band under the highway, rather than
+	// two side strips with a gap in the middle.
+	fireBaseWidth  = worldW
+	fireBaseHeight = 18.0
 	fireMaxCombo   = 100
 	fireTallCombo  = 80
 
@@ -73,9 +75,6 @@ func newFireSim() *fireSim {
 	}
 	for x := range f.edge {
 		f.edge[x] = 256
-		if x >= fireW-12 {
-			f.edge[x] = uint16((fireW - 1 - x) * 256 / 12)
-		}
 	}
 	// Pre-run so flames are fully developed on the first visible frame.
 	for range fireH {
@@ -100,11 +99,11 @@ func fireStyle(combo int) (scale, colorShift float64) {
 }
 
 // firePaletteEntry maps normalized heat to a premultiplied RGBA color. Low
-// combo starts as a light, cool flame and progresses to saturated yellow as
-// the combo charges, while retaining the heat detail in the texture.
+// combo starts in the stage's light crimson/red family and progresses to
+// saturated yellow as the combo charges, retaining the heat detail.
 func firePaletteEntry(t, colorShift float64) [4]uint8 {
 	a := math.Min(math.Max((t-0.06)*2.2, 0), 1)
-	lightR, lightG, lightB := 0.50+0.50*t, 0.64+0.36*t, 0.92+0.08*t
+	lightR, lightG, lightB := 0.72+0.28*t, 0.08+0.20*t, 0.17+0.35*t
 	yellowR, yellowG, yellowB := 1.0, 0.42+0.55*t, 0.02+0.25*t
 	r := lightR + (yellowR-lightR)*colorShift
 	g := lightG + (yellowG-lightG)*colorShift
@@ -272,7 +271,7 @@ func (g *Game) drawFire(ctx *runtime.RenderContext, combo int) []render.Command 
 	}
 
 	scale, _ := fireStyle(combo)
-	width := fireBaseWidth * scale
+	width := fireBaseWidth
 	height := fireBaseHeight * scale
 	top := worldH - height
 	cmds := []render.Command{
@@ -280,17 +279,6 @@ func (g *Game) drawFire(ctx *runtime.RenderContext, combo int) []render.Command 
 			BaseCommand: render.BaseCommand{LayerValue: fireLayer},
 			Texture:     texID,
 			Dest:        math2d.NewRect(math2d.Vec2{X: 0, Y: top}, math2d.Vec2{X: width, Y: height}),
-		},
-		render.DrawImageQuad{
-			BaseCommand: render.BaseCommand{LayerValue: fireLayer},
-			Texture:     texID,
-			// Left/right world corners swapped to mirror the texture.
-			Corners: [4]math2d.Vec2{
-				{X: 100, Y: top},
-				{X: 100 - width, Y: top},
-				{X: 100 - width, Y: worldH},
-				{X: 100, Y: worldH},
-			},
 		},
 	}
 	return append(cmds, fireBoltCommands(combo, ctx.Time, width, height)...)
@@ -318,13 +306,13 @@ func fireBoltCommands(combo int, renderTime, width, height float64) []render.Com
 	fromY := centerY + boltHeight*0.5
 	toY := centerY - boltHeight*0.5
 
-	leftX := width * (0.38 + hash01(seed)*0.20)
-	cmds := fireBoltStroke(fireBoltPath(leftX, fromY, toY, width, seed), pulse, intensity)
-	// At high combo, a mirrored second arc makes the stage visibly more
-	// charged without turning every pulse into permanent lightning.
+	x := width * (0.18 + hash01(seed)*0.64)
+	cmds := fireBoltStroke(fireBoltPath(x, fromY, toY, width, seed), pulse, intensity)
+	// At high combo, a second arc spreads the charge across the full fire
+	// band without turning every pulse into permanent lightning.
 	if intensity >= 0.65 {
-		rightX := 100 - width*(0.38+hash01(seed^0x517cc1b727220a95)*0.20)
-		cmds = append(cmds, fireBoltStroke(fireBoltPath(rightX, fromY, toY, width, seed^0x517cc1b727220a95), pulse, intensity)...)
+		secondX := width * (0.18 + hash01(seed^0x517cc1b727220a95)*0.64)
+		cmds = append(cmds, fireBoltStroke(fireBoltPath(secondX, fromY, toY, width, seed^0x517cc1b727220a95), pulse, intensity)...)
 	}
 	return cmds
 }
