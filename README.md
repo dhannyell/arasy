@@ -28,7 +28,7 @@ Current capabilities:
 - Debug overlays: colliders, contacts, spatial grid, velocities, entity IDs, input state, and a runtime stats HUD.
 - WebSocket canvas platform with live simulation, browser input, and dev controls including rewind (back, back-to-tick, back-seconds).
 - Offline raster platform producing PNG, animated GIF, and frame-by-frame sequences.
-- Playable demos: football, breakout, and the UI-focused manager demo.
+- Playable demos: football, breakout, 2048, Rhythm, and the UI-focused manager demo.
 
 ## Project Structure
 
@@ -210,6 +210,16 @@ output/frames/frame-0001.png
 ```
 
 The PNG is a static high-resolution render. The frame sequence is used to validate movement and rendering, and can be combined into a video with external tools such as `ffmpeg`.
+
+Rhythm also has an offline smoke render:
+
+```powershell
+go run ./examples/rhythm/raster
+```
+
+For the interactive demo, build the WASM entry point and serve `output/wasm/rhythm`
+with the local development server. Use `D`, `F`, `J`, and `K` for the four lanes;
+left/right arrows adjust the deterministic calibration offset.
 
 ## Running The Browser Demos
 

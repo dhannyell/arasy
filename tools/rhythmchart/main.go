@@ -127,7 +127,12 @@ func run(chartPath, outPath, packageName, difficulty string, maxMS, minGapMS, sy
 	if err != nil {
 		return err
 	}
-	defer in.Close()
+	defer func(in *os.File) {
+		err := in.Close()
+		if err != nil {
+			fmt.Printf("error %s", err)
+		}
+	}(in)
 
 	chart, err := parseDifficulty(in, difficulty)
 	if err != nil {
