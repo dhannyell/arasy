@@ -78,7 +78,7 @@ type Game struct {
 	runtime.StateSlot[MatchState]
 	assets asset.Manifest
 	best   int
-	fire   *fireSim // render-only, never snapshotted
+	fire   *fireSim // cosmetic state advanced only by Update
 }
 
 func NewGame() (*Game, error) {
@@ -90,7 +90,7 @@ func NewGame() (*Game, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Game{assets: m}, nil
+	return &Game{assets: m, fire: newFireSim()}, nil
 }
 
 func (g *Game) Setup() runtime.Config {
@@ -120,6 +120,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	ctx.HoldSimulation()
 
 	g.handleInputs(ctx)
+	g.fire.update(dt, g.State.Combo)
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {

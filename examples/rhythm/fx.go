@@ -9,9 +9,9 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// Fire and lightning are render-only effects. Everything derives from the
-// render clock, the current tick, and MatchState fields that already exist,
-// so no effect state enters snapshots, recordings, or checksums.
+// Fire and lightning are cosmetic effects. Fire advances in Update using
+// private state; bolts derive from render time, the current tick, and
+// MatchState. Neither effect can change gameplay state or checksums.
 
 const (
 	fireLayer      = 2
@@ -61,7 +61,6 @@ type fireSim struct {
 	palette    [256][4]uint8 // premultiplied RGBA
 	accum      float64
 	rng        uint64
-	uploaded   bool
 	styleCombo int
 }
 
@@ -117,9 +116,8 @@ func firePaletteEntry(t, colorShift float64) [4]uint8 {
 }
 
 // setCombo refreshes the palette only when the visible combo changes.
-// The fire remains render-only; MatchState continues to be the sole gameplay
-// source of truth.
-func (f *fireSim) setCombo(combo int) bool {
+// MatchState remains the sole gameplay source of truth.
+func (f *fireSim) setCombo(combo int) {
 	if combo < 0 {
 		combo = 0
 	}
@@ -127,7 +125,7 @@ func (f *fireSim) setCombo(combo int) bool {
 		combo = fireMaxCombo
 	}
 	if combo == f.styleCombo {
-		return false
+		return
 	}
 	previousCombo := f.styleCombo
 	f.styleCombo = combo
@@ -146,7 +144,18 @@ func (f *fireSim) setCombo(combo int) bool {
 	} else if combo >= fireTallCombo && previousCombo < fireTallCombo {
 		f.settle(fireH)
 	}
-	return true
+}
+
+// update advances the cosmetic simulation from the fixed-timestep Update
+// path. Render can therefore be called repeatedly without consuming random
+// values or changing the image it is about to draw.
+func (f *fireSim) update(dt float64, combo int) {
+	f.setCombo(combo)
+	f.accum += dt
+	for f.accum >= 1.0/fireStepHz {
+		f.accum -= 1.0 / fireStepHz
+		f.step()
+	}
 }
 
 func (f *fireSim) settle(steps int) {
@@ -248,27 +257,12 @@ func (f *fireSim) image() *image.RGBA {
 	return img
 }
 
-// drawFire advances the simulation with the render clock and draws the fire
-// texture on both stage sides, mirrored on the right via quad corners. The
-// simulation is render-only state: it never enters snapshots or replays.
+// drawFire publishes the current fire image and draws it behind the highway.
+// The effect is advanced by Update, so this function does not mutate Game.
 func (g *Game) drawFire(ctx *runtime.RenderContext, combo int) []render.Command {
-	if g.fire == nil {
-		g.fire = newFireSim()
-	}
 	f := g.fire
-	paletteChanged := f.setCombo(combo)
-	f.accum += ctx.Dt
-	stepped := false
-	for i := 0; f.accum >= 1.0/fireStepHz && i < 4; i++ {
-		f.accum -= 1.0 / fireStepHz
-		f.step()
-		stepped = true
-	}
 	texID := ctx.Assets.Texture("fire_sim")
-	if stepped || paletteChanged || !f.uploaded {
-		ctx.UpdateTexture(texID, f.image())
-		f.uploaded = true
-	}
+	ctx.UpdateTexture(texID, f.image())
 
 	scale, _ := fireStyle(combo)
 	width := fireBaseWidth
