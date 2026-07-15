@@ -159,10 +159,6 @@ func run(chartPath, outPath, packageName, difficulty string, maxMS, minGapMS, sy
 	return os.WriteFile(outPath, data, 0o644)
 }
 
-func parse(r io.Reader) (sourceChart, error) {
-	return parseDifficulty(r, "expert")
-}
-
 func parseDifficulty(r io.Reader, difficulty string) (sourceChart, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
