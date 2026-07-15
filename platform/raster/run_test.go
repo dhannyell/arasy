@@ -1,13 +1,17 @@
 package raster_test
 
 import (
+	"image"
+	"image/color"
 	"image/png"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/raster"
 	"github.com/dhannyell/frameforge/render"
@@ -148,5 +152,71 @@ func TestRunMapsCommandsToOutputImageSize(t *testing.T) {
 		t.Fatalf("pixel at output center (20,20) = rgb(%d,%d,%d), want red — commands were mapped using the "+
 			"declared 4x4 viewport instead of the actual 40x40 output image",
 			r>>8, g>>8, b>>8)
+	}
+}
+
+type dynamicTextureGame struct {
+	assets asset.Manifest
+}
+
+func (g dynamicTextureGame) Setup() runtime.Config {
+	return runtime.Config{
+		Camera: render.Camera{
+			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+		},
+		Clear:  render.RGBA(0, 0, 0, 1),
+		Assets: g.assets,
+	}
+}
+
+func (dynamicTextureGame) Init(ctx *runtime.UpdateContext)               {}
+func (dynamicTextureGame) Update(ctx *runtime.UpdateContext, dt float64) {}
+
+func (g dynamicTextureGame) Render(ctx *runtime.RenderContext) []render.Command {
+	texture := ctx.Assets.Texture("dynamic")
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 2; x++ {
+			img.SetRGBA(x, y, color.RGBA{R: 255, A: 255})
+		}
+	}
+	ctx.UpdateTexture(texture, img)
+	return []render.Command{render.DrawImage{
+		Texture: texture,
+		Dest:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+	}}
+}
+
+func TestRunAppliesDynamicTextureBeforeFirstPNGRender(t *testing.T) {
+	manifest, err := asset.Load(fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"dynamic":[{"name":"dynamic","w":2,"h":2}]}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngPath := filepath.Join(t.TempDir(), "dynamic.png")
+
+	err = raster.Run(dynamicTextureGame{assets: manifest}, raster.Options{
+		Width:  2,
+		Height: 2,
+		PNG:    pngPath,
+		Log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	f, err := os.Open(pngPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	img, err := png.Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := color.RGBAModel.Convert(img.At(1, 1)).(color.RGBA); got != (color.RGBA{R: 255, A: 255}) {
+		t.Fatalf("first-frame dynamic texture pixel = %v, want red", got)
 	}
 }

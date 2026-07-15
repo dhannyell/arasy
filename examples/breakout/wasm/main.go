@@ -16,7 +16,7 @@ func main() {
 		DevTools:      true,
 		Log:           log,
 		RecordReplay:  true,
-		ForceCanvas2D: true,
+		ForceCanvas2D: false,
 		GameFactory:   func() runtime.Game { return &breakout.Breakout{} },
 	}); err != nil {
 		log.Error("wasm host failed", "err", err)

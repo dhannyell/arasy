@@ -29,6 +29,11 @@ go run ./cmd/demos/breakout/canvas                # browser WS :8080
 # WASM build then serve:
 go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
+# Rhythm: offline smoke render, then WASM build and local dev server.
+go run ./examples/rhythm/raster
+# $env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/rhythm/app.wasm ./examples/rhythm/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
+# go run ./cmd/frameforge dev -s output/wasm/rhythm -a 127.0.0.1:8090
+
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
 npm run update:wasm-golden

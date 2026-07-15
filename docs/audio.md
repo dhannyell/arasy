@@ -45,6 +45,12 @@ func (g *Game) PostStep(ctx *runtime.UpdateContext, stats scene.StepStats) {
 `Gain` e linear. O valor zero significa 1.0, para manter structs zero-value
 uteis. `Pan` fica em `[-1, 1]`.
 
+`Track.StartTick` agenda o inicio da faixa em um tick futuro. O runtime entrega
+o tick corrente ao host, que converte apenas a diferenca para seu relogio de
+audio preciso; nenhum timestamp do dispositivo entra na simulacao. Zero inicia
+imediatamente. Se a decodificacao terminar atrasada, o host avanca o playhead
+pelo atraso em vez de reiniciar a timeline.
+
 ## Contrato de host
 
 Hosts chamam `Driver.ConsumeAudio()` depois de avancar a simulacao, no mesmo

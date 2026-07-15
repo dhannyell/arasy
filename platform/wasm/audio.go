@@ -14,9 +14,13 @@ type audioSink struct {
 	ctx      js.Value
 	buffers  map[audio.ClipID]js.Value
 	active   map[audio.TrackID]activeTrack
+	pending  map[audio.TrackID]pendingTrack
 	desired  map[audio.TrackID]audio.Track
 	log      *slog.Logger
 	unlocked bool
+	tick     uint64
+	alpha    float64
+	tickSec  float64
 
 	callbacks []js.Func
 }
@@ -25,9 +29,15 @@ type activeTrack struct {
 	source js.Value
 	gain   js.Value
 	clip   audio.ClipID
+	start  float64
 }
 
-func newAudioSink(clips []audio.Clip, files fs.FS, log *slog.Logger) *audioSink {
+type pendingTrack struct {
+	clip  audio.ClipID
+	start float64
+}
+
+func newAudioSink(clips []audio.Clip, files fs.FS, simulationHz int, log *slog.Logger) *audioSink {
 	audioContext := js.Global().Get("AudioContext")
 	if audioContext.IsUndefined() {
 		audioContext = js.Global().Get("webkitAudioContext")
@@ -41,8 +51,10 @@ func newAudioSink(clips []audio.Clip, files fs.FS, log *slog.Logger) *audioSink 
 		ctx:     audioContext.New(),
 		buffers: make(map[audio.ClipID]js.Value),
 		active:  make(map[audio.TrackID]activeTrack),
+		pending: make(map[audio.TrackID]pendingTrack),
 		desired: make(map[audio.TrackID]audio.Track),
 		log:     log,
+		tickSec: 1 / float64(simulationHz),
 	}
 	s.registerUnlock()
 	for _, clip := range clips {
@@ -106,6 +118,8 @@ func (s *audioSink) loadClip(files fs.FS, clip audio.Clip) {
 
 func (s *audioSink) consume(out audio.Output) {
 	s.playCues(out.Cues)
+	s.tick = out.Tick
+	s.alpha = out.Alpha
 	s.desired = out.Tracks
 	s.reconcileTracks()
 }
@@ -148,40 +162,77 @@ func (s *audioSink) reconcileTracks() {
 			delete(s.active, id)
 		}
 	}
+	for id := range s.pending {
+		if _, ok := s.desired[id]; !ok {
+			delete(s.pending, id)
+		}
+	}
 
 	for id, track := range s.desired {
-		buffer, ok := s.buffers[track.Clip]
-		if !ok {
-			continue
-		}
 		current, active := s.active[id]
 		fadeSec := track.FadeSec
 		gainValue := track.Gain
 
-		if !active || current.clip != track.Clip {
-			if active {
-				s.fadeAndStop(current, now, fadeSec)
+		if active && current.clip == track.Clip {
+			s.retuneTrack(current, gainValue, fadeSec, now)
+			continue
+		}
+		if active {
+			s.fadeAndStop(current, now, fadeSec)
+			delete(s.active, id)
+		}
+
+		waiting, ok := s.pending[id]
+		if !ok || waiting.clip != track.Clip {
+			waiting = pendingTrack{
+				clip:  track.Clip,
+				start: scheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
 			}
-			source := s.ctx.Call("createBufferSource")
-			source.Set("buffer", buffer)
-			source.Set("loop", track.Loop)
-			gain := s.ctx.Call("createGain")
-			gain.Get("gain").Call("setValueAtTime", 0, now)
-			gain.Get("gain").Call("linearRampToValueAtTime", gainValue, now+fadeSec)
-			source.Call("connect", gain)
-			gain.Call("connect", s.ctx.Get("destination"))
-			source.Call("start", 0)
-			s.active[id] = activeTrack{source: source, gain: gain, clip: track.Clip}
+			s.pending[id] = waiting
+		}
+
+		buffer, ok := s.buffers[track.Clip]
+		if !ok {
+			continue
+		}
+		start, offset, expired := scheduledPlayback(now, waiting.start, buffer.Get("duration").Float(), track.Loop)
+		if expired {
 			continue
 		}
 
-		current.gain.Get("gain").Call("setValueAtTime", current.gain.Get("gain").Get("value").Float(), now)
-		current.gain.Get("gain").Call("linearRampToValueAtTime", gainValue, now+0.05)
+		source := s.ctx.Call("createBufferSource")
+		source.Set("buffer", buffer)
+		source.Set("loop", track.Loop)
+		gain := s.ctx.Call("createGain")
+		gain.Get("gain").Call("setValueAtTime", 0, start)
+		gain.Get("gain").Call("linearRampToValueAtTime", gainValue, start+fadeSec)
+		source.Call("connect", gain)
+		gain.Call("connect", s.ctx.Get("destination"))
+		source.Call("start", start, offset)
+		s.active[id] = activeTrack{source: source, gain: gain, clip: track.Clip, start: start}
+		delete(s.pending, id)
 	}
+}
+
+func (s *audioSink) retuneTrack(track activeTrack, gainValue, fadeSec, now float64) {
+	gain := track.gain.Get("gain")
+	gain.Call("cancelScheduledValues", now)
+	if now < track.start {
+		gain.Call("setValueAtTime", 0, track.start)
+		gain.Call("linearRampToValueAtTime", gainValue, track.start+fadeSec)
+		return
+	}
+	gain.Call("setValueAtTime", gain.Get("value").Float(), now)
+	gain.Call("linearRampToValueAtTime", gainValue, now+0.05)
 }
 
 func (s *audioSink) fadeAndStop(track activeTrack, now, fadeSec float64) {
 	gain := track.gain.Get("gain")
+	gain.Call("cancelScheduledValues", now)
+	if now < track.start {
+		track.source.Call("stop", now)
+		return
+	}
 	gain.Call("setValueAtTime", gain.Get("value").Float(), now)
 	gain.Call("linearRampToValueAtTime", 0, now+fadeSec)
 	track.source.Call("stop", now+fadeSec)

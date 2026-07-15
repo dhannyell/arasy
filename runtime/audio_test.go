@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/audio"
@@ -45,7 +46,7 @@ func (g *audioGame) Setup() runtime.Config {
 
 func (g *audioGame) Init(ctx *runtime.UpdateContext) {
 	g.player = ctx.World.Spawn()
-	ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Gain: 0.5, Loop: true, FadeSec: 0.5})
+	ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Gain: 0.5, Loop: true, FadeSec: 0.5, StartTick: 30})
 }
 
 func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -104,6 +105,12 @@ func TestAudioCueStampedAndDrainedOnce(t *testing.T) {
 	if out1.Tracks["music"].Clip != "music" {
 		t.Errorf("expected track 'music' Clip == 'music', got %s", out1.Tracks["music"].Clip)
 	}
+	if out1.Tick != 5 {
+		t.Errorf("expected audio output tick 5, got %d", out1.Tick)
+	}
+	if out1.Tracks["music"].StartTick != 30 {
+		t.Errorf("expected track start tick 30, got %d", out1.Tracks["music"].StartTick)
+	}
 
 	// Second consume: cues must be empty (drained), tracks unchanged.
 	out2 := driver.ConsumeAudio()
@@ -113,6 +120,19 @@ func TestAudioCueStampedAndDrainedOnce(t *testing.T) {
 	}
 	if out2.Tracks["music"].Clip != "music" {
 		t.Errorf("expected track 'music' to remain after drain, got %s", out2.Tracks["music"].Clip)
+	}
+}
+
+func TestAudioOutputCarriesCurrentTickFraction(t *testing.T) {
+	driver := runtime.NewDriver(&audioGame{}, slog.New(slog.DiscardHandler))
+	driver.AdvanceTime(time.Second / 120)
+
+	out := driver.ConsumeAudio()
+	if out.Tick != 0 {
+		t.Fatalf("audio output tick = %d, want 0", out.Tick)
+	}
+	if out.Alpha < 0.49 || out.Alpha > 0.51 {
+		t.Fatalf("audio output alpha = %f, want approximately 0.5", out.Alpha)
 	}
 }
 

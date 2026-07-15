@@ -12,6 +12,7 @@ const sampleRate = 44100
 
 func main() {
 	out := flag.String("out", "", "output directory")
+	preset := flag.String("preset", "breakout", "sound set to generate: breakout or rhythm")
 	flag.Parse()
 	if *out == "" {
 		panic("-out is required")
@@ -20,10 +21,73 @@ func main() {
 		panic(err)
 	}
 
-	mustWrite(filepath.Join(*out, "paddle.wav"), tone(440, 0.08, 0.8))
-	mustWrite(filepath.Join(*out, "brick.wav"), tone(880, 0.06, 0.7))
-	mustWrite(filepath.Join(*out, "lost.wav"), sweep(300, 120, 0.35, 0.75))
-	mustWrite(filepath.Join(*out, "music.wav"), arpeggio())
+	switch *preset {
+	case "breakout":
+		generateBreakout(*out)
+	case "rhythm":
+		generateRhythm(*out)
+	default:
+		panic("-preset must be breakout or rhythm")
+	}
+}
+
+func generateBreakout(out string) {
+	mustWrite(filepath.Join(out, "paddle.wav"), tone(440, 0.08, 0.8))
+	mustWrite(filepath.Join(out, "brick.wav"), tone(880, 0.06, 0.7))
+	mustWrite(filepath.Join(out, "lost.wav"), sweep(300, 120, 0.35, 0.75))
+	mustWrite(filepath.Join(out, "music.wav"), arpeggio())
+}
+
+func generateRhythm(out string) {
+	mustWrite(filepath.Join(out, "hit_high.wav"), rhythmHitHigh())
+	mustWrite(filepath.Join(out, "hit_low.wav"), rhythmHitLow())
+	mustWrite(filepath.Join(out, "miss.wav"), rhythmMiss())
+	mustWrite(filepath.Join(out, "start.wav"), rhythmStart())
+}
+
+func rhythmHitHigh() []int16 {
+	return synth(0.11, func(t, p float64) float64 {
+		env := math.Exp(-26 * p)
+		return env * (0.55*math.Sin(2*math.Pi*1046.5*t) + 0.3*math.Sin(2*math.Pi*1568*t))
+	})
+}
+
+func rhythmHitLow() []int16 {
+	return synth(0.13, func(t, p float64) float64 {
+		env := math.Exp(-18 * p)
+		return env * (0.68*math.Sin(2*math.Pi*261.63*t) + 0.2*math.Sin(2*math.Pi*392*t))
+	})
+}
+
+func rhythmMiss() []int16 {
+	return synth(0.22, func(t, p float64) float64 {
+		freq := 340 - 180*p
+		env := math.Exp(-4 * p)
+		return env * (0.55*math.Sin(2*math.Pi*freq*t) + 0.2*math.Sin(2*math.Pi*freq*0.5*t))
+	})
+}
+
+func rhythmStart() []int16 {
+	return synth(0.24, func(t, p float64) float64 {
+		freq := 523.25
+		local := p / 0.45
+		if p >= 0.45 {
+			freq = 783.99
+			local = (p - 0.45) / 0.55
+		}
+		env := math.Sin(math.Pi * local)
+		return env * (0.52*math.Sin(2*math.Pi*freq*t) + 0.16*math.Sin(2*math.Pi*freq*2*t))
+	})
+}
+
+func synth(seconds float64, fn func(t, progress float64) float64) []int16 {
+	n := int(seconds * sampleRate)
+	samples := make([]int16, n)
+	for i := range samples {
+		t := float64(i) / sampleRate
+		samples[i] = sample(fn(t, float64(i)/float64(n)))
+	}
+	return samples
 }
 
 func mustWrite(path string, samples []int16) {

@@ -354,7 +354,7 @@ func (d *Driver) Frame(elapsed time.Duration) Frame {
 }
 
 func (d *Driver) ConsumeAudio() audio.Output {
-	return d.audio.consume()
+	return d.audio.consume(d.tick, d.clock.Alpha())
 }
 
 func (d *Driver) debugCommands(gameCmds []render.Command, cam render.Camera) []render.Command {

@@ -16,4 +16,8 @@ type Track struct {
 	// FadeSec is the fade-in/out the sink applies when this track starts or
 	// stops. Zero = no fade.
 	FadeSec float64
+	// StartTick is the simulation tick at which playback should begin.
+	// Audio-capable hosts translate it to their own precise clock. Zero starts
+	// immediately, preserving the useful zero value.
+	StartTick uint64
 }
