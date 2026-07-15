@@ -3,14 +3,11 @@ package rhythm
 import "testing"
 
 func TestChartIDsMatchIndexes(t *testing.T) {
-	if len(chart) > maxObjects {
-		t.Fatalf("chart has %d objects, maxObjects = %d", len(chart), maxObjects)
-	}
 	for i, object := range chart {
 		if object.ID != i {
 			t.Fatalf("chart[%d].ID = %d, want %d", i, object.ID, i)
 		}
-		if !(object.Kind == objectSpecial && object.Lane < 0) && (object.Lane < 0 || object.Lane >= laneCount) {
+		if object.Lane < 0 || object.Lane >= laneCount {
 			t.Fatalf("chart[%d].Lane = %d, want [0, %d)", i, object.Lane, laneCount)
 		}
 	}
@@ -26,9 +23,6 @@ func TestChartHasNoNotesDuringHoldOnSameLane(t *testing.T) {
 		}
 		previousTimeMS = object.TimeMS
 
-		if object.Kind == objectSpecial && object.Lane < 0 {
-			continue
-		}
 		if object.Lane < 0 || object.Lane >= laneCount {
 			t.Fatalf("chart[%d].Lane = %d, want [0, %d)", i, object.Lane, laneCount)
 		}

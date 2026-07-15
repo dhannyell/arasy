@@ -2,7 +2,7 @@
 
 ## Music
 
-`audio/panferov-fight.mp3` is an excerpt from **"Fight music theme01"** by
+`audio/panferov_fight.mp3` is an excerpt from **"Fight music theme01"** by
 **GTDStudio aka Palrom**.
 
 - Source: <https://opengameart.org/content/fight-music-theme01>
@@ -23,3 +23,6 @@ tool.
 `hit_high.wav`, `hit_low.wav`, `miss.wav`, and `start.wav` are original
 procedurally synthesized effects. Their reproducible generator is
 `tools/wavgen -preset rhythm`.
+
+## Texture
+Created by the demo's author and made freely available under the MIT license.

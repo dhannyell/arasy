@@ -108,18 +108,6 @@ func TestLaneHasActiveHold(t *testing.T) {
 	})
 }
 
-func TestSpecialPhraseDoesNotCauseMiss(t *testing.T) {
-	withTestChart(t, func() {
-		chart[0] = chartObject{ID: 0, Kind: objectSpecial, TimeMS: 1000, EndMS: 1600, Lane: -1}
-		game := testGameWithOnlyPending(0)
-
-		game.updateMisses(&runtime.UpdateContext{}, 2000)
-		if got := game.State.Results[0]; got != resultPending {
-			t.Fatalf("special phrase result = %d, want pending metadata", got)
-		}
-	})
-}
-
 func TestLightningOnlyStartsComboOrHitsSpecial(t *testing.T) {
 	withTestChart(t, func() {
 		ctx := &runtime.UpdateContext{}

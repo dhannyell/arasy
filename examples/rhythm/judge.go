@@ -53,7 +53,6 @@ func (g *Game) tryHitLane(ctx *runtime.UpdateContext, lane, nowMS int) {
 	result := judgeDelta(nowMS - obj.TimeMS)
 	if isHold(obj) && result != resultMiss {
 		g.State.Results[bestID] = resultHeld
-		g.State.HoldOK[bestID] = true
 		g.triggerSpecialLightning(bestID, nowMS)
 		playCue(ctx, "hit_low", 0.65)
 		return
@@ -90,7 +89,7 @@ func (g *Game) finishHolds(ctx *runtime.UpdateContext, nowMS int) {
 
 func (g *Game) updateMisses(ctx *runtime.UpdateContext, nowMS int) {
 	for i, obj := range chart {
-		if (obj.Kind == objectSpecial && obj.Lane < 0) || g.State.Results[i] != resultPending {
+		if g.State.Results[i] != resultPending {
 			continue
 		}
 		if nowMS > obj.TimeMS+missWindowMS {
@@ -102,7 +101,6 @@ func (g *Game) updateMisses(ctx *runtime.UpdateContext, nowMS int) {
 func (g *Game) applyMiss(ctx *runtime.UpdateContext, id int) {
 	if g.State.Results[id] == resultHeld {
 		g.State.Results[id] = resultPending
-		g.State.HoldOK[id] = false
 	}
 	g.applyJudgement(ctx, id, resultMiss)
 }
@@ -184,9 +182,6 @@ func isHold(obj chartObject) bool {
 func chartEndMS() int {
 	end := 0
 	for _, obj := range chart {
-		if obj.Kind == objectSpecial && obj.Lane < 0 {
-			continue
-		}
 		at := obj.TimeMS
 		if obj.EndMS > at {
 			at = obj.EndMS

@@ -166,9 +166,6 @@ func newRhythmGameplaySequence(t *testing.T, songStartTick uint64) rhythmGamepla
 	t.Helper()
 	sequence := rhythmGameplaySequence{tapID: -1, holdID: -1, missID: -1}
 	for i, object := range chart {
-		if object.Kind == objectSpecial && object.Lane < 0 {
-			continue
-		}
 		if sequence.tapID < 0 && object.Kind == objectTap {
 			sequence.tapID = i
 		}

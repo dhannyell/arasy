@@ -55,24 +55,12 @@ func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []re
 			float64(obj.TimeMS) > nowMS+approachMS {
 			continue
 		}
-		// Older generated charts encoded a whole special phrase as a metadata
-		// object with no lane. New charts mark the playable gems in a phrase.
-		if obj.Kind == objectSpecial && obj.Lane < 0 {
-			continue
-		}
 		p := math2d.Clamp((float64(obj.TimeMS)-nowMS)/approachMS, 0, 1)
 
 		y := noteY(p)
 		halfRoad := roadHalfAt(y)
 		laneWidth := (halfRoad * 2) / chartLaneCount
-		x := roadCenterX
-		noteWidth := halfRoad * 1.6
 		noteHeight := laneWidth * 0.8
-		if obj.Lane != chartOpenLane {
-			x = roadCenterX - halfRoad + (float64(obj.Lane)+0.5)*laneWidth
-			noteWidth = laneWidth * 0.8
-			noteHeight = noteWidth
-		}
 
 		noteTexture := noteTex
 		if obj.Kind == objectSpecial {
@@ -86,18 +74,6 @@ func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []re
 				cmds = append(cmds, drawHoldLine(obj.Lane, endY, y, held)...)
 			}
 			cmds = append(cmds, drawHoldEndMarker(noteTexture, obj.Lane, endY, held))
-		}
-
-		if obj.Lane == chartOpenLane {
-			cmds = append(cmds, render.DrawImage{
-				BaseCommand: render.BaseCommand{LayerValue: 11},
-				Texture:     noteTexture,
-				Dest: math2d.NewRect(
-					math2d.Vec2{X: x - noteWidth/2, Y: y - noteHeight/2},
-					math2d.Vec2{X: noteWidth, Y: noteHeight},
-				),
-			})
-			continue
 		}
 
 		topY := y - noteHeight/2
@@ -281,7 +257,7 @@ func holdPulse(time float64) float64 {
 func lanePromptLevel(state MatchState, nowMS, lane int) int {
 	level := 0
 	for i, obj := range chart {
-		if (obj.Kind == objectSpecial && obj.Lane < 0) || obj.Lane != lane || state.Results[i] != resultPending {
+		if obj.Lane != lane || state.Results[i] != resultPending {
 			continue
 		}
 		delta := absInt(nowMS - obj.TimeMS)

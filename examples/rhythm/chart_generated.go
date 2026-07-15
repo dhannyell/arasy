@@ -5,11 +5,7 @@
 // Taps followed by at least 500ms of silence were synthesized into holds.
 package rhythm
 
-const (
-	chartLaneCount  = 4
-	chartOpenLane   = chartLaneCount
-	chartDifficulty = "expert-adapted"
-)
+const chartLaneCount = 4
 
 var chart = [...]chartObject{
 	{ID: 0, Kind: objectTap, TimeMS: 40, EndMS: 0, Lane: 2},

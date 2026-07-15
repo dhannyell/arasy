@@ -49,7 +49,6 @@ type MatchState struct {
 
 	SongStartTick uint64
 	Started       bool
-	Finished      bool
 
 	CalibrationMS    int
 	Score            int
@@ -71,7 +70,6 @@ type MatchState struct {
 	SpecialHit       [maxObjects]bool
 
 	Results [maxObjects]objectResult
-	HoldOK  [maxObjects]bool
 }
 
 type Game struct {
@@ -177,7 +175,6 @@ func (g *Game) start(ctx *runtime.UpdateContext) {
 
 func (g *Game) finish(ctx *runtime.UpdateContext) {
 	g.State.Phase = phaseResults
-	g.State.Finished = true
 	ctx.Audio.StopTrack("music")
 }
 
@@ -242,7 +239,6 @@ func bindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyJ), Action: actionLane2, Scale: 1},
 		{Source: input.Keyboard(input.KeyK), Action: actionLane3, Scale: 1},
 		{Source: input.Keyboard(input.KeySpace), Action: input.ActionConfirm, Scale: 1},
-		{Source: input.Keyboard(input.KeyEscape), Action: input.ActionCancel, Scale: 1},
 		{Source: input.Keyboard(input.KeyArrowLeft), Action: actionOffsetDown, Scale: 1},
 		{Source: input.Keyboard(input.KeyArrowRight), Action: actionOffsetUp, Scale: 1},
 	}
