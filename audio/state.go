@@ -17,6 +17,13 @@ func (s State) Clone() State {
 // Output is one delivery to a platform sink: the one-shot cues fired since
 // the last delivery plus a snapshot of the desired continuous tracks.
 type Output struct {
+	// Tick is the simulation tick represented by this delivery. Hosts use it
+	// with Track.StartTick to schedule continuous audio without feeding a
+	// device clock back into deterministic simulation.
+	Tick uint64
+	// Alpha is the elapsed fraction toward Tick+1 at delivery time. It lets
+	// hosts remove sub-tick scheduling jitter while remaining presentation-only.
+	Alpha  float64
 	Cues   []Cue
 	Tracks map[TrackID]Track
 }

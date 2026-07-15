@@ -166,6 +166,12 @@ func (g *Game) start(ctx *runtime.UpdateContext) {
 		CalibrationMS: g.State.CalibrationMS,
 	}
 	ctx.Audio.PlayWith("start", audio.CueOptions{Gain: 0.7})
+	ctx.Audio.SetTrack("music", audio.Track{
+		Clip:      "song",
+		Gain:      0.40,
+		FadeSec:   0.05,
+		StartTick: g.State.SongStartTick,
+	})
 }
 
 func (g *Game) finish(ctx *runtime.UpdateContext) {
@@ -190,7 +196,6 @@ func (g *Game) handleInputs(ctx *runtime.UpdateContext) {
 	case phaseCountdown:
 		if ctx.Tick >= g.State.SongStartTick {
 			g.State.Phase = phasePlaying
-			ctx.Audio.SetTrack("music", audio.Track{Clip: "song", Loop: false, Gain: 0.40, FadeSec: 0.05})
 		}
 	case phasePlaying:
 		nowMS := songTimeMS(g.State, ctx.Tick)

@@ -74,8 +74,10 @@ func (a *driverAudio) reset() {
 	a.suppressCues = false
 }
 
-func (a *driverAudio) consume() audio.Output {
+func (a *driverAudio) consume(tick uint64, alpha float64) audio.Output {
 	output := audio.Output{
+		Tick:   tick,
+		Alpha:  alpha,
 		Cues:   a.pending,
 		Tracks: maps.Clone(a.state.Tracks),
 	}

@@ -89,7 +89,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	h.registerResizeListener()
 	h.registerInputListeners()
 	if len(cfg.Assets.AudioClips()) > 0 {
-		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), log)
+		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, log)
 	}
 	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, log)
 	var replayFactory func() runtime.Game
