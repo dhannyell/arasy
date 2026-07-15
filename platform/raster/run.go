@@ -67,8 +67,7 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	if opts.PNG != "" {
-		img := r.Render(driver.Frame(0).Commands)
-		applyTextureUpdates(textures, driver.ConsumeTextureUpdates())
+		img := renderFrame(&r, driver, textures, 0)
 		if err := writeFile(opts.PNG, func(f *os.File) error {
 			return png.Encode(f, img)
 		}); err != nil {
@@ -90,8 +89,7 @@ func Run(game runtime.Game, opts Options) error {
 		}
 		frameDur := time.Duration(opts.FrameDT * float64(time.Second))
 		for frame := range opts.Frames {
-			img := r.Render(driver.Frame(frameDur).Commands)
-			applyTextureUpdates(textures, driver.ConsumeTextureUpdates())
+			img := renderFrame(&r, driver, textures, frameDur)
 			if opts.FramesDir != "" {
 				if err := writeFramePNG(opts.FramesDir, frame, img); err != nil {
 					return err
@@ -113,6 +111,12 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	return nil
+}
+
+func renderFrame(r *Renderer, driver *runtime.Driver, textures pixel.Registry, elapsed time.Duration) *image.RGBA {
+	frame := driver.Frame(elapsed)
+	applyTextureUpdates(textures, driver.ConsumeTextureUpdates())
+	return r.Render(frame.Commands)
 }
 
 func applyTextureUpdates(reg pixel.Registry, updates []runtime.TextureUpdate) {
