@@ -62,6 +62,19 @@ type fireSim struct {
 	accum      float64
 	rng        uint64
 	styleCombo int
+
+	// Dirty marks that the rendered image can differ from the last publish
+	// (a step advanced the heat field, or setCombo rebuilt the palette/heat).
+	// This is render-only cosmetic bookkeeping, same as the rest of fireSim:
+	// it never enters snapshots, checksums, or recordings.
+	dirty bool
+	// Buffers double-buffers the published image: UpdateTexture documents that
+	// ownership of the *image.RGBA transfers to the engine, so a single
+	// reusable image cannot be safely rewritten in place after publishing.
+	// Alternating between two preallocated images avoids allocating on every
+	// dirty frame while still respecting that ownership transfer.
+	buffers [2]*image.RGBA
+	next    int
 }
 
 func newFireSim() *fireSim {
@@ -75,10 +88,15 @@ func newFireSim() *fireSim {
 	for x := range f.edge {
 		f.edge[x] = 256
 	}
+	f.buffers[0] = image.NewRGBA(image.Rect(0, 0, fireW, fireH))
+	f.buffers[1] = image.NewRGBA(image.Rect(0, 0, fireW, fireH))
 	// Pre-run so flames are fully developed on the first visible frame.
 	for range fireH {
 		f.step()
 	}
+	// The sim always starts dirty so the first frame publishes, regardless of
+	// the pre-run above (which also marks dirty via step).
+	f.dirty = true
 	return f
 }
 
@@ -133,6 +151,7 @@ func (f *fireSim) setCombo(combo int) {
 	for i := range f.palette {
 		f.palette[i] = firePaletteEntry(float64(i)/255, colorShift)
 	}
+	f.dirty = true
 	// Rebuild the heat field when entering/leaving the tall-flame range.
 	// Without this catch-up, the 30 Hz cellular simulation would need several
 	// seconds to carry heat through the newly visible top of the texture.
@@ -175,6 +194,7 @@ func (f *fireSim) rand() uint64 {
 // below plus lateral wind jitter and mild random cooling, then evolves the
 // bottom-row source so tongues stay coherent instead of per-pixel noise.
 func (f *fireSim) step() {
+	f.dirty = true
 	for y := 1; y < fireH; y++ {
 		row := y * fireW
 		for x := 0; x < fireW; x++ {
@@ -244,8 +264,13 @@ func (f *fireSim) cooling(random uint64) int {
 	return cooling
 }
 
+// Image renders the current heat field into the next free double-buffer
+// slot and alternates it for next time. A fresh buffer is required each call
+// because UpdateTexture takes ownership of the returned image; reusing a
+// single buffer in place would risk mutating an image the engine still holds.
 func (f *fireSim) image() *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, fireW, fireH))
+	img := f.buffers[f.next]
+	f.next = (f.next + 1) % len(f.buffers)
 	for i, heat := range f.heat {
 		c := f.palette[heat]
 		k := f.edge[i%fireW]
@@ -257,12 +282,25 @@ func (f *fireSim) image() *image.RGBA {
 	return img
 }
 
-// drawFire publishes the current fire image and draws it behind the highway.
-// The effect is advanced by Update, so this function does not mutate Game.
+// consumeDirty reports whether the rendered image changed since the last
+// call and clears the flag. drawFire uses this to skip republishing the fire
+// texture on frames where the 30 Hz simulation hasn't stepped and the combo
+// palette hasn't changed.
+func (f *fireSim) consumeDirty() bool {
+	dirty := f.dirty
+	f.dirty = false
+	return dirty
+}
+
+// drawFire publishes the current fire image (only when it changed since the
+// last frame) and draws it behind the highway. The effect is advanced by
+// Update, so this function does not mutate Game.
 func (g *Game) drawFire(ctx *runtime.RenderContext, combo int) []render.Command {
 	f := g.fire
 	texID := ctx.Assets.Texture("fire_sim")
-	ctx.UpdateTexture(texID, f.image())
+	if f.consumeDirty() {
+		ctx.UpdateTexture(texID, f.image())
+	}
 
 	scale, _ := fireStyle(combo)
 	width := fireBaseWidth
