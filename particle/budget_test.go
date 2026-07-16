@@ -41,6 +41,54 @@ func TestNewBudgetPanicsOnInvalidParameters(t *testing.T) {
 	}
 }
 
+func TestBudgetSetCeiling(t *testing.T) {
+	t.Run("raising unconstrained budget opens new capacity", func(t *testing.T) {
+		b := particle.NewBudget(0.02, 100, 1000)
+
+		b.SetCeiling(2000)
+
+		if got := b.Cap(); got != 2000 {
+			t.Fatalf("Cap() after raising ceiling = %d, want 2000", got)
+		}
+	})
+
+	t.Run("raising constrained budget preserves cap and EMA", func(t *testing.T) {
+		b := particle.NewBudget(0.02, 100, 1000)
+		b.Observe(0.04) // cap 850; EMA 40 ms, above target
+
+		b.SetCeiling(2000)
+		if got := b.Cap(); got != 850 {
+			t.Fatalf("Cap() after raising constrained ceiling = %d, want 850", got)
+		}
+
+		b.Observe(0.001)
+		if got := b.Cap(); got != 722 {
+			t.Fatalf("Cap() after retained high EMA observation = %d, want 722", got)
+		}
+	})
+
+	t.Run("lowering ceiling clamps cap", func(t *testing.T) {
+		b := particle.NewBudget(0.02, 100, 1000)
+
+		b.SetCeiling(400)
+
+		if got := b.Cap(); got != 400 {
+			t.Fatalf("Cap() after lowering ceiling = %d, want 400", got)
+		}
+	})
+
+	t.Run("ceiling below floor panics", func(t *testing.T) {
+		b := particle.NewBudget(0.02, 100, 1000)
+		defer func() {
+			if recover() == nil {
+				t.Fatal("SetCeiling below floor did not panic")
+			}
+		}()
+
+		b.SetCeiling(99)
+	})
+}
+
 func TestBudgetObserveIgnoresNonPositiveAndNonFiniteSamples(t *testing.T) {
 	tests := []struct {
 		name string

@@ -45,6 +45,27 @@ func NewBudget(target float64, floor, ceiling int) *Budget {
 	}
 }
 
+// SetCeiling updates the maximum global particle count without resetting the
+// frame-time EMA or an adaptive reduction already in effect.
+//
+// Raising an unconstrained budget (Cap == the old ceiling) opens the new
+// capacity immediately. Raising a budget that was reduced under pressure
+// preserves its current absolute cap; subsequent observations recover it
+// gradually. Lowering the ceiling clamps the cap to the new range.
+func (b *Budget) SetCeiling(ceiling int) {
+	if ceiling < b.floor {
+		panic("particle: budget ceiling must not be below floor")
+	}
+
+	wasAtCeiling := b.cap >= float64(b.ceiling)
+	b.ceiling = ceiling
+
+	if wasAtCeiling {
+		b.cap = float64(ceiling)
+	}
+	b.cap = max(float64(b.floor), min(b.cap, float64(ceiling)))
+}
+
 // Observe records one render-frame duration in seconds.
 //
 // It must be called exactly once per rendered frame, not once per emitter.
