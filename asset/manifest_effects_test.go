@@ -44,7 +44,8 @@ const effectsManifestJSON = `{
 		{
 			"name": "flame",
 			"capacity": 200,
-			"lifetime": [0.5, 0.5]
+			"lifetime": [0.5, 0.5],
+			"size_start": [2, 2]
 		}
 	]
 }`
@@ -100,7 +101,7 @@ func TestLoadEffectsResolvesByNameAssignsAlphabeticalIDsAndConvertsUnits(t *test
 		SizeEnd:    particle.Range{Min: 1, Max: 2},
 		ColorStart: [4]float64{1, 0.6, 0.2, 1},
 		ColorEnd:   [4]float64{1, 0.2, 0, 0},
-		Spin:       2.0,
+		Spin:       2.0 * math.Pi / 180,
 		Rotation:   particle.Range{Min: 0, Max: math.Pi},
 		WobbleAmp:  0.5,
 		WobbleFreq: 1.5,
@@ -113,12 +114,16 @@ func TestLoadEffectsResolvesByNameAssignsAlphabeticalIDsAndConvertsUnits(t *test
 		t.Fatal("EffectDecl(flame) ok = false, want true")
 	}
 	wantFlame := particle.EffectDecl{
-		Name:     "flame",
-		Blend:    particle.BlendAlpha, // omitted blend defaults to alpha
-		Capacity: 200,
-		Lifetime: particle.Range{Min: 0.5, Max: 0.5},
-		Shape:    particle.EmitPoint, // omitted shape defaults to point
-		VelMode:  particle.VelCone,   // omitted velocity_mode defaults to cone
+		Name:       "flame",
+		Blend:      particle.BlendAlpha, // omitted blend defaults to alpha
+		Capacity:   200,
+		Lifetime:   particle.Range{Min: 0.5, Max: 0.5},
+		Shape:      particle.EmitPoint, // omitted shape defaults to point
+		VelMode:    particle.VelCone,   // omitted velocity_mode defaults to cone
+		Drag:       1.0,                // omitted drag defaults to 1 (no drag)
+		SizeStart:  particle.Range{Min: 2, Max: 2},
+		ColorStart: [4]float64{1, 1, 1, 1}, // omitted color_start defaults to opaque white
+		ColorEnd:   [4]float64{1, 1, 1, 1}, // omitted color_end defaults to opaque white
 	}
 	assertEffectDeclNear(t, flame, wantFlame)
 
@@ -138,58 +143,83 @@ func TestLoadEffectsRejectsInvalidDeclarations(t *testing.T) {
 	}{
 		{
 			name:     "capacity zero",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":0,"lifetime":[1,1]}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":0,"lifetime":[1,1],"size_start":[1,1]}]}`,
 			want:     "capacity",
 		},
 		{
 			name:     "capacity above MaxCapacity",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":70000,"lifetime":[1,1]}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":70000,"lifetime":[1,1],"size_start":[1,1]}]}`,
 			want:     "capacity",
 		},
 		{
 			name:     "lifetime min zero",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[0,1]}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[0,1],"size_start":[1,1]}]}`,
 			want:     "lifetime.min",
 		},
 		{
 			name:     "unknown texture",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"texture":"missing"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"texture":"missing"}]}`,
 			want:     "unknown texture",
 		},
 		{
 			name:     "disc without emit_radius",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"shape":"disc"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"shape":"disc"}]}`,
 			want:     "emit_radius",
 		},
 		{
 			name:     "ring without emit_radius",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"shape":"ring"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"shape":"ring"}]}`,
 			want:     "emit_radius",
 		},
 		{
 			name:     "rect without emit_extent",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"shape":"rect"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"shape":"rect"}]}`,
 			want:     "emit_extent",
 		},
 		{
 			name:     "radial velocity mode with point shape",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"velocity_mode":"radial"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"velocity_mode":"radial"}]}`,
 			want:     "non-point shape",
 		},
 		{
 			name:     "tangential velocity mode with point shape",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"velocity_mode":"tangential"}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"velocity_mode":"tangential"}]}`,
 			want:     "non-point shape",
 		},
 		{
 			name:     "fade_in equal to one",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"fade_in":1}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"fade_in":1}]}`,
 			want:     "fade_in",
 		},
 		{
 			name:     "negative wobble_freq",
-			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"wobble_freq":-0.5}]}`,
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"wobble_freq":-0.5}]}`,
 			want:     "wobble_freq",
+		},
+		{
+			name:     "drag below zero",
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"drag":-0.1}]}`,
+			want:     "drag",
+		},
+		{
+			name:     "drag above one",
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"drag":1.1}]}`,
+			want:     "drag",
+		},
+		{
+			name:     "size_start missing",
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1]}]}`,
+			want:     "size_start",
+		},
+		{
+			name:     "size_start min zero",
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[0,2]}]}`,
+			want:     "size_start",
+		},
+		{
+			name:     "size_start max negative",
+			manifest: `{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,-2]}]}`,
+			want:     "size_start",
 		},
 	}
 
@@ -208,10 +238,10 @@ func TestLoadEffectsRejectsInvalidDeclarations(t *testing.T) {
 
 func TestLoadEffectsUsesLastLayerForRedeclaredEffect(t *testing.T) {
 	base := fstest.MapFS{
-		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"glow","capacity":100,"lifetime":[1,1]}]}`)},
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"glow","capacity":100,"lifetime":[1,1],"size_start":[1,1]}]}`)},
 	}
 	override := fstest.MapFS{
-		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"glow","capacity":300,"lifetime":[2,2]}]}`)},
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"glow","capacity":300,"lifetime":[2,2],"size_start":[1,1]}]}`)},
 	}
 
 	m, err := asset.Load(base, override)
@@ -228,6 +258,82 @@ func TestLoadEffectsUsesLastLayerForRedeclaredEffect(t *testing.T) {
 	}
 	if decl.Lifetime != (particle.Range{Min: 2, Max: 2}) {
 		t.Fatalf("Lifetime = %+v, want {2 2} (override layer wins)", decl.Lifetime)
+	}
+}
+
+func TestLoadEffectsDefaultsDragToOneWhenOmitted(t *testing.T) {
+	layer := fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1]}]}`)},
+	}
+
+	m, err := asset.Load(layer)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	decl, ok := m.EffectDecl(m.Effect("e"))
+	if !ok {
+		t.Fatal("EffectDecl(e) ok = false, want true")
+	}
+	if decl.Drag != 1.0 {
+		t.Fatalf("Drag = %v, want 1.0 (omitted drag means no drag)", decl.Drag)
+	}
+}
+
+func TestLoadEffectsKeepsExplicitDragValue(t *testing.T) {
+	layer := fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"drag":0.5}]}`)},
+	}
+
+	m, err := asset.Load(layer)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	decl, ok := m.EffectDecl(m.Effect("e"))
+	if !ok {
+		t.Fatal("EffectDecl(e) ok = false, want true")
+	}
+	if decl.Drag != 0.5 {
+		t.Fatalf("Drag = %v, want 0.5", decl.Drag)
+	}
+}
+
+func TestLoadEffectsConvertsSpinDegreesToRadians(t *testing.T) {
+	layer := fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1],"spin":180}]}`)},
+	}
+
+	m, err := asset.Load(layer)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	decl, ok := m.EffectDecl(m.Effect("e"))
+	if !ok {
+		t.Fatal("EffectDecl(e) ok = false, want true")
+	}
+	if math.Abs(decl.Spin-math.Pi) > 1e-9 {
+		t.Fatalf("Spin = %v, want %v (180 degrees/second converted to radians/second)", decl.Spin, math.Pi)
+	}
+}
+
+func TestLoadEffectsDefaultsColorsToOpaqueWhiteWhenOmitted(t *testing.T) {
+	layer := fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"effects":[{"name":"e","capacity":10,"lifetime":[1,1],"size_start":[1,1]}]}`)},
+	}
+
+	m, err := asset.Load(layer)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	decl, ok := m.EffectDecl(m.Effect("e"))
+	if !ok {
+		t.Fatal("EffectDecl(e) ok = false, want true")
+	}
+	wantColor := [4]float64{1, 1, 1, 1}
+	if decl.ColorStart != wantColor {
+		t.Fatalf("ColorStart = %v, want %v (omitted color_start defaults to opaque white)", decl.ColorStart, wantColor)
+	}
+	if decl.ColorEnd != wantColor {
+		t.Fatalf("ColorEnd = %v, want %v (omitted color_end defaults to opaque white)", decl.ColorEnd, wantColor)
 	}
 }
 
@@ -313,8 +419,8 @@ func assertEffectDeclNear(t *testing.T, got, want particle.EffectDecl) {
 	if got.ColorEnd != want.ColorEnd {
 		t.Errorf("ColorEnd = %v, want %v", got.ColorEnd, want.ColorEnd)
 	}
-	if got.Spin != want.Spin {
-		t.Errorf("Spin = %v, want %v", got.Spin, want.Spin)
+	if math.Abs(got.Spin-want.Spin) > eps {
+		t.Errorf("Spin = %v, want %v (degrees converted to radians)", got.Spin, want.Spin)
 	}
 	if math.Abs(got.Rotation.Min-want.Rotation.Min) > eps || math.Abs(got.Rotation.Max-want.Rotation.Max) > eps {
 		t.Errorf("Rotation = %+v, want %+v (degrees converted to radians)", got.Rotation, want.Rotation)

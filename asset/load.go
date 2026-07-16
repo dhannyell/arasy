@@ -62,9 +62,10 @@ type fontEntry struct {
 }
 
 // effectEntry is the JSON shape of one particle effect declaration: authors
-// write angles in degrees and [min, max]/[x, y]/[r, g, b, a] pairs.
-// parseEffectEntry converts it into the resolved particle.EffectDecl
-// (radians, math2d.Vec2, enums).
+// write angles (direction, spread, rotation, spin) in degrees and
+// [min, max]/[x, y]/[r, g, b, a] pairs. wobble_freq is a frequency in hertz,
+// not an angle, and stays as authored. parseEffectEntry converts this shape
+// into the resolved particle.EffectDecl (radians, math2d.Vec2, enums).
 type effectEntry struct {
 	Name         string    `json:"name"`
 	Texture      string    `json:"texture"`
@@ -81,16 +82,19 @@ type effectEntry struct {
 	EmitExtent   []float64 `json:"emit_extent"`
 	VelocityMode string    `json:"velocity_mode"`
 	Gravity      []float64 `json:"gravity"`
-	Drag         float64   `json:"drag"`
-	SizeStart    []float64 `json:"size_start"`
-	SizeEnd      []float64 `json:"size_end"`
-	ColorStart   []float64 `json:"color_start"`
-	ColorEnd     []float64 `json:"color_end"`
-	Spin         float64   `json:"spin"`
-	Rotation     []float64 `json:"rotation"`
-	WobbleAmp    float64   `json:"wobble_amp"`
-	WobbleFreq   float64   `json:"wobble_freq"`
-	FadeIn       float64   `json:"fade_in"`
+	// Drag is a pointer so an omitted "drag" field is distinguishable from an
+	// explicit 0, which would freeze every particle on the first frame (the
+	// sim computes math.Pow(Drag, dt)). Nil defaults to 1 (no drag).
+	Drag       *float64  `json:"drag"`
+	SizeStart  []float64 `json:"size_start"`
+	SizeEnd    []float64 `json:"size_end"`
+	ColorStart []float64 `json:"color_start"`
+	ColorEnd   []float64 `json:"color_end"`
+	Spin       float64   `json:"spin"`
+	Rotation   []float64 `json:"rotation"`
+	WobbleAmp  float64   `json:"wobble_amp"`
+	WobbleFreq float64   `json:"wobble_freq"`
+	FadeIn     float64   `json:"fade_in"`
 }
 
 // Load reads manifest.json from the given FS layers and resolves every
@@ -371,9 +375,15 @@ func parseEffectEntry(entry effectEntry, textures map[string]textureEntry) (part
 	if err != nil {
 		return particle.EffectDecl{}, err
 	}
+	if len(entry.SizeStart) == 0 {
+		return particle.EffectDecl{}, fmt.Errorf("asset: effect %q is missing required field %q", name, "size_start")
+	}
 	sizeStart, err := effectFloatRange(name, "size_start", entry.SizeStart)
 	if err != nil {
 		return particle.EffectDecl{}, err
+	}
+	if sizeStart.Min <= 0 || sizeStart.Max <= 0 {
+		return particle.EffectDecl{}, fmt.Errorf("asset: effect %q has size_start %+v, both elements must be > 0", name, sizeStart)
 	}
 	sizeEnd, err := effectFloatRange(name, "size_end", entry.SizeEnd)
 	if err != nil {
@@ -391,13 +401,20 @@ func parseEffectEntry(entry effectEntry, textures map[string]textureEntry) (part
 	if err != nil {
 		return particle.EffectDecl{}, err
 	}
-	colorStart, err := effectColor(name, "color_start", entry.ColorStart)
+	colorStart, err := effectColor(name, "color_start", entry.ColorStart, [4]float64{1, 1, 1, 1})
 	if err != nil {
 		return particle.EffectDecl{}, err
 	}
-	colorEnd, err := effectColor(name, "color_end", entry.ColorEnd)
+	colorEnd, err := effectColor(name, "color_end", entry.ColorEnd, [4]float64{1, 1, 1, 1})
 	if err != nil {
 		return particle.EffectDecl{}, err
+	}
+	drag := 1.0
+	if entry.Drag != nil {
+		drag = *entry.Drag
+		if drag < 0 || drag > 1 {
+			return particle.EffectDecl{}, fmt.Errorf("asset: effect %q has drag %g outside [0, 1]", name, drag)
+		}
 	}
 
 	if entry.Texture != "" {
@@ -457,12 +474,12 @@ func parseEffectEntry(entry effectEntry, textures map[string]textureEntry) (part
 		EmitExtent: emitExtent,
 		VelMode:    velMode,
 		Gravity:    gravity,
-		Drag:       entry.Drag,
+		Drag:       drag,
 		SizeStart:  sizeStart,
 		SizeEnd:    sizeEnd,
 		ColorStart: colorStart,
 		ColorEnd:   colorEnd,
-		Spin:       entry.Spin,
+		Spin:       effectDegToRad(entry.Spin),
 		Rotation:   particle.Range{Min: effectDegToRad(rotationDeg.Min), Max: effectDegToRad(rotationDeg.Max)},
 		WobbleAmp:  entry.WobbleAmp,
 		WobbleFreq: entry.WobbleFreq,
@@ -500,10 +517,11 @@ func effectVec2(effect, field string, arr []float64) (math2d.Vec2, error) {
 }
 
 // effectColor parses an [r, g, b, a] JSON quadruple. A missing field (nil or
-// empty slice) resolves to zero (transparent black).
-func effectColor(effect, field string, arr []float64) ([4]float64, error) {
+// empty slice) resolves to def, so an author who forgets color_start/color_end
+// gets an opaque, visible default instead of a silently invisible effect.
+func effectColor(effect, field string, arr []float64, def [4]float64) ([4]float64, error) {
 	if len(arr) == 0 {
-		return [4]float64{}, nil
+		return def, nil
 	}
 	if len(arr) != 4 {
 		return [4]float64{}, fmt.Errorf("asset: effect %q field %q must have exactly 4 elements [r, g, b, a], got %d", effect, field, len(arr))
