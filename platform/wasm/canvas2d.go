@@ -14,10 +14,7 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-const (
-	imageQuadGridSize        = 16
-	imageQuadTriangleOverlap = 0.25
-)
+const imageQuadTriangleOverlap = 0.25
 
 type Canvas2D struct {
 	ctx       js.Value
@@ -25,7 +22,11 @@ type Canvas2D struct {
 	clear     render.Color
 	textures  map[render.TextureID]js.Value
 	tintCache map[string]js.Value
-	// fonts maps a manifest FontID to the CSS font-family registered with the
+	// Dynamic holds one persistent offscreen canvas per dynamic texture so
+	// per-frame updates rewrite pixels in place instead of allocating DOM
+	// canvases and ImageBitmaps every frame.
+	dynamic map[render.TextureID]*dynamicTexture
+	// Fonts maps a manifest FontID to the CSS font-family registered with the
 	// browser once its FontFace has loaded. A missing entry means the font is
 	// still loading or unavailable, and DrawText falls back to monospace.
 	fonts map[render.FontID]string
@@ -33,6 +34,16 @@ type Canvas2D struct {
 
 	pendingTextures int
 	ready           bool
+}
+
+// dynamicTexture is the reusable upload target for one dynamic texture: an
+// offscreen canvas (registered in textures as the drawImage source) plus its
+// context and a preallocated ImageData matching the declared size.
+type dynamicTexture struct {
+	canvas  js.Value
+	ctx     js.Value
+	imgData js.Value
+	w, h    int
 }
 
 func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) *Canvas2D {
@@ -45,6 +56,7 @@ func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, l
 		clear:     clear,
 		textures:  make(map[render.TextureID]js.Value),
 		tintCache: make(map[string]js.Value),
+		dynamic:   make(map[render.TextureID]*dynamicTexture),
 		fonts:     make(map[render.FontID]string),
 		log:       log,
 	}
@@ -140,26 +152,31 @@ func (c *Canvas2D) UpdateTextures(updates []runtime.TextureUpdate) {
 }
 
 func (c *Canvas2D) UpdateTexture(id render.TextureID, pix []byte, w, h int) {
-	createImageBitmap := js.Global().Get("createImageBitmap")
-	if createImageBitmap.IsUndefined() {
-		return
-	}
-	canvas := js.Global().Get("document").Call("createElement", "canvas")
-	canvas.Set("width", w)
-	canvas.Set("height", h)
-	ctx := canvas.Call("getContext", "2d")
-	imgData := ctx.Call("createImageData", w, h)
-	// ImageData.data has no setter -- copy into its existing backing array
-	// instead of assigning a new one, or the write is silently dropped.
-	js.CopyBytesToJS(imgData.Get("data"), pix)
-	ctx.Call("putImageData", imgData, 0, 0)
-	createImageBitmap.Invoke(canvas).Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
-		if old, ok := c.textures[id]; ok {
+	dt, ok := c.dynamic[id]
+	if !ok || dt.w != w || dt.h != h {
+		canvas := js.Global().Get("document").Call("createElement", "canvas")
+		canvas.Set("width", w)
+		canvas.Set("height", h)
+		ctx := canvas.Call("getContext", "2d")
+		dt = &dynamicTexture{
+			canvas:  canvas,
+			ctx:     ctx,
+			imgData: ctx.Call("createImageData", w, h),
+			w:       w,
+			h:       h,
+		}
+		c.dynamic[id] = dt
+		// Free the ImageBitmap this canvas replaces (e.g. a decoded manifest
+		// placeholder); canvases from a previous size mismatch have no close.
+		if old, exists := c.textures[id]; exists && old.Get("close").Type() == js.TypeFunction {
 			old.Call("close")
 		}
-		c.textures[id] = args[0]
-		return nil
-	}))
+		c.textures[id] = canvas
+	}
+	// ImageData.data has no setter -- copy into its existing backing array
+	// instead of assigning a new one, or the write is silently dropped.
+	js.CopyBytesToJS(dt.imgData.Get("data"), pix)
+	dt.ctx.Call("putImageData", dt.imgData, 0, 0)
 }
 
 func (c *Canvas2D) Render(frame runtime.Frame) {
@@ -184,7 +201,17 @@ type canvasSink struct {
 	camera render.Camera
 }
 
+// withClip wraps draw in ctx.save()/restore() only when there is an actual
+// clip rect to apply; most render commands carry a zero Clip, and skipping
+// the pair avoids two syscall/js crossings for the common case. Draw methods
+// that mutate persistent context state beyond fillStyle/strokeStyle/lineWidth
+// (e.g. rotated text) must manage their own local save/restore, since this
+// no-clip path never wraps them.
 func (s canvasSink) withClip(clip math2d.Rect, draw func()) {
+	if clip.Width() <= 0 || clip.Height() <= 0 {
+		draw()
+		return
+	}
 	s.canvas.ctx.Call("save")
 	s.canvas.applyClip(clip, s.camera)
 	draw()
@@ -267,6 +294,9 @@ func (c *Canvas2D) drawImage(cmd render.DrawImage, camera render.Camera) {
 // drawImageQuad approximates projective mapping by splitting the source into
 // a grid of affine triangles. This is intentionally a development-host
 // approximation; the raster and WebGPU paths define the exact semantics.
+// Parallelogram quads short-circuit to a single affine drawImage, and the
+// grid is sized adaptively so nearly-affine quads pay for one or two cells
+// instead of a fixed worst-case grid.
 func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera) {
 	var corners [4]math2d.Vec2
 	for i, corner := range cmd.Corners {
@@ -296,6 +326,29 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 		alpha = cmd.Tint.A
 		source = c.tintedBitmap(bitmap, cmd.Texture, cmd.Tint)
 	}
+
+	// An affine map sends the source rect onto the parallelogram exactly, so
+	// one transformed drawImage replaces the triangle grid and its clips.
+	if homography.IsAffine() {
+		a, b, cc, d, e, f, ok := affineFromTriangles(
+			math2d.Vec2{X: sx, Y: sy},
+			math2d.Vec2{X: sx + sw, Y: sy},
+			math2d.Vec2{X: sx, Y: sy + sh},
+			corners[0], corners[1], corners[3],
+		)
+		if !ok {
+			return
+		}
+		c.ctx.Call("save")
+		c.ctx.Set("globalAlpha", alpha)
+		c.ctx.Call("setTransform", a, b, cc, d, e, f)
+		c.ctx.Call("drawImage", source, sx, sy, sw, sh, sx, sy, sw, sh)
+		c.ctx.Call("restore")
+		return
+	}
+
+	grid := imageQuadGridSize(corners, homography)
+
 	c.ctx.Call("save")
 	c.ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
 	c.ctx.Call("beginPath")
@@ -307,12 +360,12 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 	c.ctx.Call("clip")
 	defer c.ctx.Call("restore")
 
-	for row := 0; row < imageQuadGridSize; row++ {
-		v0 := float64(row) / imageQuadGridSize
-		v1 := float64(row+1) / imageQuadGridSize
-		for col := 0; col < imageQuadGridSize; col++ {
-			u0 := float64(col) / imageQuadGridSize
-			u1 := float64(col+1) / imageQuadGridSize
+	for row := 0; row < grid; row++ {
+		v0 := float64(row) / float64(grid)
+		v1 := float64(row+1) / float64(grid)
+		for col := 0; col < grid; col++ {
+			u0 := float64(col) / float64(grid)
+			u1 := float64(col+1) / float64(grid)
 
 			p00 := homography.Apply(math2d.Vec2{X: u0, Y: v0})
 			p10 := homography.Apply(math2d.Vec2{X: u1, Y: v0})
@@ -577,9 +630,14 @@ func (c *Canvas2D) drawText(cmd render.DrawText, camera render.Camera) {
 		return
 	}
 
+	// withClip no longer guarantees an outer save/restore for zero-clip
+	// commands, so the rotation transform needs its own local save/restore
+	// or it would leak into subsequent draw calls.
+	c.ctx.Call("save")
 	c.ctx.Call("translate", pos.X, pos.Y)
 	c.ctx.Call("rotate", cmd.Rotation)
 	c.ctx.Call("fillText", cmd.Text, 0, 0)
+	c.ctx.Call("restore")
 }
 
 func (c *Canvas2D) drawPolygon(cmd render.DrawPolygon, camera render.Camera) {

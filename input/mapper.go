@@ -3,8 +3,17 @@ package input
 type Mapper struct {
 	bindings     []Binding
 	sourceValues map[Source]float64
-	previous     State
-	current      State
+	// latched holds button sources that reported a down event during the
+	// current tick's input batch, even if a later event in that same batch
+	// brought the raw value back to zero. Hosts collect OS/browser events
+	// per render frame and apply them in one batch stamped with the current
+	// tick, so a press+release that both land inside one batch would
+	// otherwise collapse to "never pressed" and silently drop the tap.
+	// The latch guarantees the tap is reported as pressed for exactly one
+	// tick; EndFrame clears it so the release surfaces on the next tick.
+	latched  map[Source]bool
+	previous State
+	current  State
 }
 
 func NewMapper(bindings []Binding) *Mapper {
@@ -18,6 +27,7 @@ func NewMapper(bindings []Binding) *Mapper {
 	return &Mapper{
 		bindings:     validBindings,
 		sourceValues: make(map[Source]float64),
+		latched:      make(map[Source]bool),
 		previous:     NewState(),
 		current:      NewState(),
 	}
@@ -32,9 +42,14 @@ func (m *Mapper) Apply(event Event) {
 		m.sourceValues = make(map[Source]float64)
 	}
 
+	if m.latched == nil {
+		m.latched = make(map[Source]bool)
+	}
+
 	switch event.Kind {
 	case EventButtonDown:
 		m.sourceValues[event.Source] = 1
+		m.latched[event.Source] = true
 	case EventButtonUp:
 		m.sourceValues[event.Source] = 0
 	case EventAxisChanged:
@@ -49,7 +64,12 @@ func (m *Mapper) State() State {
 
 	next := NewState()
 	for _, binding := range m.bindings {
-		value := m.sourceValues[binding.Source] * binding.Scale
+		raw := m.sourceValues[binding.Source]
+		if raw == 0 && m.latched[binding.Source] {
+			raw = 1
+		}
+
+		value := raw * binding.Scale
 		if value == 0 {
 			continue
 		}
@@ -88,10 +108,12 @@ func (m *Mapper) State() State {
 func (m *Mapper) EndFrame() {
 	m.previous = m.current.clone()
 	m.current = NewState()
+	clear(m.latched)
 }
 
 func (m *Mapper) Reset() {
 	m.sourceValues = make(map[Source]float64)
+	m.latched = make(map[Source]bool)
 	m.previous = NewState()
 	m.current = NewState()
 }
@@ -100,12 +122,17 @@ func (m *Mapper) Clone() *Mapper {
 	clone := &Mapper{
 		bindings:     append([]Binding(nil), m.bindings...),
 		sourceValues: make(map[Source]float64, len(m.sourceValues)),
+		latched:      make(map[Source]bool, len(m.latched)),
 		previous:     m.previous.clone(),
 		current:      m.current.clone(),
 	}
 
 	for source, value := range m.sourceValues {
 		clone.sourceValues[source] = value
+	}
+
+	for source, value := range m.latched {
+		clone.latched[source] = value
 	}
 
 	return clone
