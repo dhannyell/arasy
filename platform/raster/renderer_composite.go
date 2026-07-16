@@ -3,6 +3,7 @@ package raster
 import (
 	"image/color"
 
+	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 )
 
@@ -71,4 +72,25 @@ func toByte(v float64) uint8 {
 	}
 
 	return uint8(v*255 + 0.5)
+}
+
+func saturatingAdd(a, b uint8) uint8 {
+	sum := uint16(a) + uint16(b)
+	if sum > 255 {
+		return 255
+	}
+	return uint8(sum)
+}
+
+func blendPixel(dst, src color.RGBA, mode particle.Blend) color.RGBA {
+	if mode == particle.BlendAdditive {
+		return color.RGBA{
+			R: saturatingAdd(dst.R, src.R),
+			G: saturatingAdd(dst.G, src.G),
+			B: saturatingAdd(dst.B, src.B),
+			A: saturatingAdd(dst.A, src.A),
+		}
+	}
+
+	return blendRGBA(dst, src)
 }

@@ -8,16 +8,52 @@ import (
 	"sync"
 
 	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 )
 
 var missingTextureColor = color.RGBA{R: 255, G: 0, B: 255, A: 255}
 
+type resolvedImageDraw struct {
+	texture  *image.RGBA
+	source   image.Rectangle
+	dest     math2d.Rect
+	rotation float64
+	clip     math2d.Rect
+	tint     tintFactors
+	blend    particle.Blend
+}
+
 // Rotation pivots on the destination center, mirroring how
 // rotated text anchors on its position.
 func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
-	screenMin := r.Camera.WorldToScreen(command.Dest.Min)
-	screenMax := r.Camera.WorldToScreen(command.Dest.Max)
+	tex := r.Textures.Lookup(command.Texture)
+	var srcRect image.Rectangle
+	if tex != nil {
+		srcRect = tex.Bounds()
+		if command.Src != (math2d.Rect{}) {
+			srcRect = image.Rect(int(math.Round(command.Src.Min.X)), int(math.Round(command.Src.Min.Y)),
+				int(math.Round(command.Src.Max.X)), int(math.Round(command.Src.Max.Y))).Intersect(tex.Bounds())
+			if srcRect.Empty() {
+				return
+			}
+		}
+	}
+
+	r.drawResolvedImage(img, resolvedImageDraw{
+		texture:  tex,
+		source:   srcRect,
+		dest:     command.Dest,
+		rotation: command.Rotation,
+		clip:     command.Clip,
+		tint:     tintFrom(command.Tint),
+		blend:    particle.BlendAlpha,
+	})
+}
+
+func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw) {
+	screenMin := r.Camera.WorldToScreen(command.dest.Min)
+	screenMax := r.Camera.WorldToScreen(command.dest.Max)
 
 	destX, destY := screenMin.X, screenMin.Y
 	destW, destH := screenMax.X-screenMin.X, screenMax.Y-screenMin.Y
@@ -25,11 +61,10 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 		return
 	}
 
-	tex := r.Textures.Lookup(command.Texture)
-	if tex == nil {
-		if command.Rotation == 0 {
+	if command.texture == nil {
+		if command.rotation == 0 {
 			rect := image.Rect(int(destX), int(destY), int(screenMax.X), int(screenMax.Y))
-			fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.Clip)), missingTextureColor)
+			fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.clip)), missingTextureColor)
 			return
 		}
 
@@ -38,35 +73,37 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 		// about the area it stands in for.
 		anchor := math2d.Vec2{X: destX + destW/2, Y: destY + destH/2}
 		offsetX, offsetY := -destW/2, -destH/2
-		corners := rotatedRectCorners(anchor, offsetX, offsetY, destW, destH, command.Rotation)
-		bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.Rotation), command.Clip)
+		corners := rotatedRectCorners(anchor, offsetX, offsetY, destW, destH, command.rotation)
+		bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.rotation), command.clip)
 		fillPolygon(img, corners[:], bounds, missingTextureColor)
 		return
 	}
 
-	srcRect := tex.Bounds()
-	if command.Src != (math2d.Rect{}) {
-		srcRect = image.Rect(int(math.Round(command.Src.Min.X)), int(math.Round(command.Src.Min.Y)),
-			int(math.Round(command.Src.Max.X)), int(math.Round(command.Src.Max.Y))).Intersect(tex.Bounds())
-		if srcRect.Empty() {
-			return
-		}
-	}
-
-	tint := tintFrom(command.Tint)
-
-	if command.Rotation == 0 {
+	if command.rotation == 0 {
 		bounds := r.clipBounds(img, image.Rect(
 			int(math.Floor(destX)), int(math.Floor(destY)),
-			int(math.Ceil(destX+destW)), int(math.Ceil(destY+destH))), command.Clip)
-		blitScaled(img, tex, srcRect, destX, destY, destW, destH, bounds, tint)
+			int(math.Ceil(destX+destW)), int(math.Ceil(destY+destH))), command.clip)
+		blitScaledMode(img, command.texture, command.source, destX, destY, destW, destH, bounds, command.tint, command.blend)
 		return
 	}
 
 	anchor := math2d.Vec2{X: destX + destW/2, Y: destY + destH/2}
 	offsetX, offsetY := -destW/2, -destH/2
-	bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.Rotation), command.Clip)
-	blitScaledRotated(img, tex, srcRect, anchor, offsetX, offsetY, destW, destH, command.Rotation, bounds, tint)
+	bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.rotation), command.clip)
+	blitScaledRotatedMode(
+		img,
+		command.texture,
+		command.source,
+		anchor,
+		offsetX,
+		offsetY,
+		destW,
+		destH,
+		command.rotation,
+		bounds,
+		command.tint,
+		command.blend,
+	)
 }
 
 // Warnings below fire at most once per process: a bad DrawImageQuad command
@@ -181,6 +218,21 @@ func blitScaled(
 	bounds image.Rectangle,
 	tint tintFactors,
 ) {
+	blitScaledMode(dst, src, srcRect, destX, destY, destWidth, destHeight, bounds, tint, particle.BlendAlpha)
+}
+
+func blitScaledMode(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	destX,
+	destY,
+	destWidth,
+	destHeight float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+	mode particle.Blend,
+) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
@@ -211,7 +263,7 @@ func blitScaled(
 			if c.A == 0 {
 				continue
 			}
-			dst.SetRGBA(x, y, blendRGBA(dst.RGBAAt(x, y), c))
+			dst.SetRGBA(x, y, blendPixel(dst.RGBAAt(x, y), c, mode))
 		}
 	}
 }
@@ -224,6 +276,32 @@ func blitScaledRotated(
 	offsetX, offsetY, destWidth, destHeight, angle float64,
 	bounds image.Rectangle,
 	tint tintFactors,
+) {
+	blitScaledRotatedMode(
+		dst,
+		src,
+		srcRect,
+		anchor,
+		offsetX,
+		offsetY,
+		destWidth,
+		destHeight,
+		angle,
+		bounds,
+		tint,
+		particle.BlendAlpha,
+	)
+}
+
+func blitScaledRotatedMode(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	anchor math2d.Vec2,
+	offsetX, offsetY, destWidth, destHeight, angle float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+	mode particle.Blend,
 ) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
@@ -256,7 +334,7 @@ func blitScaledRotated(
 			if c.A == 0 {
 				continue
 			}
-			dst.SetRGBA(x, y, blendRGBA(dst.RGBAAt(x, y), c))
+			dst.SetRGBA(x, y, blendPixel(dst.RGBAAt(x, y), c, mode))
 		}
 	}
 }

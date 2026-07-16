@@ -3,8 +3,10 @@ package raster
 import (
 	"image"
 
+	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/asset/pixel"
 	"github.com/dhannyell/frameforge/asset/typeface"
+	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 	"golang.org/x/image/font"
 )
@@ -14,25 +16,33 @@ type Renderer struct {
 	Width, Height int
 	Camera        render.Camera
 	Clear         render.Color
+
 	// Textures resolves TextureIDs to decoded pixels. Nil is valid:
 	// every DrawImage then renders the missing-texture placeholder.
 	Textures pixel.Registry
 	Fonts    typeface.Registry
+	Assets   asset.Manifest
 
 	// faceCache memoizes opentype faces per font and pixel size. Lazily
 	// initialized; the Renderer is used from a single goroutine (offline
 	// Run and tests), so no locking.
 	faceCache map[faceKey]font.Face
+
+	particleFrame    uint64
+	particleEmitters map[emitterKey]*rasterEmitter
+	particleScratch  []particle.LiveParticle
 }
 
 // Render draws commands into a new RGBA image.
 func (r *Renderer) Render(commands []render.Command) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
+	r.particleFrame++
 
+	img := image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
 	fillRect(img, img.Bounds(), toRGBA(r.Clear))
 
 	render.Each(commands, rasterSink{renderer: r, image: img})
 
+	r.pruneParticleEmitters()
 	return img
 }
 
