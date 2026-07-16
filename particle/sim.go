@@ -2,6 +2,7 @@ package particle
 
 import (
 	"math"
+	"math/bits"
 
 	"github.com/dhannyell/frameforge/math2d"
 )
@@ -14,6 +15,7 @@ type Emitter struct {
 	Seed      uint64
 	pool      []Particle  // len == capacity after Init
 	free      []int32     // dead-slot stack
+	aliveBits []uint64    // one bit per live pool slot
 	emitAcc   float64     // fractional emission accumulator
 	emitted   uint32      // monotonically increasing spawn counter (hash lane)
 	lastBurst uint32      // last seen cumulative burst counter
@@ -41,16 +43,18 @@ type LiveParticle struct {
 	Color    [4]float64
 }
 
-// NewEmitter builds the CPU-side state for one effect instance. The pool
-// and free list are allocated once here; Step and Alive never allocate.
+// NewEmitter builds the CPU-side state for one effect instance. The pool,
+// free list, and active-slot bitset are allocated once here; Step and Alive
+// never allocate.
 func NewEmitter(decl EffectDecl, seed uint64) *Emitter {
 	c := min(max(decl.Capacity, 1), MaxCapacity)
 	decl.Capacity = c
 	e := &Emitter{
-		Decl: decl,
-		Seed: seed,
-		pool: make([]Particle, c),
-		free: make([]int32, c),
+		Decl:      decl,
+		Seed:      seed,
+		pool:      make([]Particle, c),
+		free:      make([]int32, c),
+		aliveBits: make([]uint64, (c+63)/64),
 	}
 	for i := range e.free {
 		e.free[i] = int32(c - 1 - i)
@@ -104,64 +108,70 @@ func (e *Emitter) Step(pos math2d.Vec2, dirOffset, intensity float64, burst uint
 	gx, gy := e.Decl.Gravity.X*dt, e.Decl.Gravity.Y*dt
 	drag := math.Pow(e.Decl.Drag, dt)
 
-	for i := range e.pool {
-		p := &e.pool[i]
-		if p.Age >= p.Life {
-			continue
-		}
+	for wordIndex, active := range e.aliveBits {
+		for active != 0 {
+			bitIndex := bits.TrailingZeros64(active)
+			slot := wordIndex*64 + bitIndex
+			p := &e.pool[slot]
 
-		p.Age += dt
-		if p.Age >= p.Life {
-			e.free = append(e.free, int32(i))
-			continue
+			p.Age += dt
+			if p.Age >= p.Life {
+				e.markDead(slot)
+				e.free = append(e.free, int32(slot))
+				active &= active - 1
+				continue
+			}
+			p.Vel.X = (p.Vel.X + gx) * drag
+			p.Vel.Y = (p.Vel.Y + gy) * drag
+			p.Pos.X += p.Vel.X * dt
+			p.Pos.Y += p.Vel.Y * dt
+			active &= active - 1
 		}
-		p.Vel.X = (p.Vel.X + gx) * drag
-		p.Vel.Y = (p.Vel.Y + gy) * drag
-		p.Pos.X += p.Vel.X * dt
-		p.Pos.Y += p.Vel.Y * dt
 	}
 }
 
 // Alive appends the live particles to dst and returns it, in stable slot order
 func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
-	for i := range e.pool {
-		p := &e.pool[i]
-		if p.Age >= p.Life {
-			continue
+	for wordIndex, active := range e.aliveBits {
+		for active != 0 {
+			bitIndex := bits.TrailingZeros64(active)
+			slot := wordIndex*64 + bitIndex
+			p := &e.pool[slot]
+
+			progress := p.Age / p.Life
+			size := math2d.Lerp(p.SizeStart, p.SizeEnd, progress)
+
+			rotation := p.Rotation + p.Spin*p.Age
+
+			color := [4]float64{
+				math2d.Lerp(e.Decl.ColorStart[0], e.Decl.ColorEnd[0], progress),
+				math2d.Lerp(e.Decl.ColorStart[1], e.Decl.ColorEnd[1], progress),
+				math2d.Lerp(e.Decl.ColorStart[2], e.Decl.ColorEnd[2], progress),
+				math2d.Lerp(e.Decl.ColorStart[3], e.Decl.ColorEnd[3], progress),
+			}
+
+			if e.Decl.FadeIn > 0 {
+				fade := min(1.0, progress/e.Decl.FadeIn)
+				color[3] *= fade
+			}
+
+			pos := p.Pos
+			if e.Decl.WobbleAmp != 0 && e.Decl.WobbleFreq != 0 {
+				phase := 2*math.Pi*e.Decl.WobbleFreq*p.Age + p.WobblePhase
+				offset := e.Decl.WobbleAmp * math.Sin(phase)
+				pos = pos.Add(p.WobbleAxis.Mul(offset))
+			}
+
+			live := LiveParticle{
+				Pos:      pos,
+				Rotation: rotation,
+				Color:    color,
+				Size:     size,
+			}
+
+			dst = append(dst, live)
+			active &= active - 1
 		}
-
-		progress := p.Age / p.Life
-		size := math2d.Lerp(p.SizeStart, p.SizeEnd, progress)
-
-		rotation := p.Rotation + p.Spin*p.Age
-
-		color := [4]float64{
-			math2d.Lerp(e.Decl.ColorStart[0], e.Decl.ColorEnd[0], progress),
-			math2d.Lerp(e.Decl.ColorStart[1], e.Decl.ColorEnd[1], progress),
-			math2d.Lerp(e.Decl.ColorStart[2], e.Decl.ColorEnd[2], progress),
-			math2d.Lerp(e.Decl.ColorStart[3], e.Decl.ColorEnd[3], progress),
-		}
-
-		if e.Decl.FadeIn > 0 {
-			fade := min(1.0, progress/e.Decl.FadeIn)
-			color[3] *= fade
-		}
-
-		pos := p.Pos
-		if e.Decl.WobbleAmp != 0 && e.Decl.WobbleFreq != 0 {
-			phase := 2*math.Pi*e.Decl.WobbleFreq*p.Age + p.WobblePhase
-			offset := e.Decl.WobbleAmp * math.Sin(phase)
-			pos = pos.Add(p.WobbleAxis.Mul(offset))
-		}
-
-		live := LiveParticle{
-			Pos:      pos,
-			Rotation: rotation,
-			Color:    color,
-			Size:     size,
-		}
-
-		dst = append(dst, live)
 	}
 
 	return dst
@@ -203,6 +213,15 @@ func (e *Emitter) spawn(origin math2d.Vec2, dirOffset float64) {
 			Y: math.Cos(baseAngle),
 		}
 	}
+	e.markAlive(int(slot))
+}
+
+func (e *Emitter) markAlive(slot int) {
+	e.aliveBits[slot/64] |= uint64(1) << uint(slot%64)
+}
+
+func (e *Emitter) markDead(slot int) {
+	e.aliveBits[slot/64] &^= uint64(1) << uint(slot%64)
 }
 
 func spawnOffset(d *EffectDecl, h3 [3]uint32) math2d.Vec2 {
