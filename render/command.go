@@ -159,6 +159,44 @@ type DrawImageQuad struct {
 	Tint Color
 }
 
+// ParticleEffectID identifies a particle effect declared in the asset
+// manifest. Like TextureID, values are stable only for the current run.
+type ParticleEffectID uint32
+
+// EmitterID identifies one live instance of an effect.
+// IDs are chosen by the game, like layers; backends key their
+// per-instance state on (Effect, Emitter).
+type EmitterID uint32
+
+// DrawParticles drives one particle-emitter instance for this frame.
+// Emitting the command each frame keeps the emitter alive and feeds it
+// time; backends that simulate on the GPU never report particle state
+// back. Content is render-only: never captured by snapshots, checksums,
+// replays or recordings. An emitter not commanded for a few seconds is
+// released by backends.
+type DrawParticles struct {
+	BaseCommand
+	Effect  ParticleEffectID
+	Emitter EmitterID
+	// Pos is the emitter origin in world coordinates.
+	Pos math2d.Vec2
+	// Dir rotates the effect's declared emission direction, radians.
+	Dir float64
+	// Intensity scales the declared emit rate; 0 stops continuous
+	// emission (live particles still age out).
+	Intensity float64
+	// Burst is a cumulative trigger counter: each increment emits the
+	// effect's BurstSize particles once. Keep it monotonic.
+	Burst uint32
+	// Time is the render clock (RenderContext.Time).
+	Time float64
+	// Dt is the render frame delta (RenderContext.Dt).
+	Dt float64
+	// Seed differentiates instances; same seed + same command stream =
+	// same spawn sequence on every backend.
+	Seed uint64
+}
+
 func (DrawRect) isRenderCommand()      {}
 func (DrawCircle) isRenderCommand()    {}
 func (DrawPoint) isRenderCommand()     {}
@@ -168,3 +206,4 @@ func (DrawArc) isRenderCommand()       {}
 func (DrawPolygon) isRenderCommand()   {}
 func (DrawImage) isRenderCommand()     {}
 func (DrawImageQuad) isRenderCommand() {}
+func (DrawParticles) isRenderCommand() {}
