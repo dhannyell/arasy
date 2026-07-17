@@ -1,7 +1,10 @@
 package raster
 
 import (
+	"bytes"
+	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -30,6 +33,26 @@ const particleBehaviorManifest = `{
 		"color_end": [1, 1, 1, 1]
 	}]
 }`
+
+func TestParticleMissingEffectWarnsOnlyOnce(t *testing.T) {
+	var logs bytes.Buffer
+	renderer := &Renderer{
+		Width:  16,
+		Height: 16,
+		log: slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{
+			Level: slog.LevelWarn,
+		})),
+	}
+	command := render.DrawParticles{Effect: 99, Emitter: 1}
+
+	renderer.Render([]render.Command{command})
+	renderer.Render([]render.Command{command})
+
+	const message = "DrawParticles references unknown effect"
+	if got := strings.Count(logs.String(), message); got != 1 {
+		t.Fatalf("warning count = %d, want 1; logs:\n%s", got, logs.String())
+	}
+}
 
 func TestParticleEmitterExpiresAfter300FramesWithoutCommand(t *testing.T) {
 	renderer, effect := newParticleBehaviorRenderer(t)
@@ -108,6 +131,48 @@ func TestParticleEmitterIDsKeepIndependentPools(t *testing.T) {
 	renderer.Render([]render.Command{firstCommand})
 	if got := len(second.sim.Alive(nil)); got != 0 {
 		t.Fatalf("advancing first emitter changed second emitter to %d live particles", got)
+	}
+}
+
+func TestParticleEmitterAdvancesOnlyOnceWhenDrawnTwiceInOneFrame(t *testing.T) {
+	single, effect := newParticleBehaviorRenderer(t)
+	duplicate, _ := newParticleBehaviorRenderer(t)
+	command := particleBehaviorCommand(effect, 1, 0.25)
+	command.Intensity = 1
+
+	single.Render([]render.Command{command})
+	duplicate.Render([]render.Command{command, command})
+
+	key := emitterKey{effect: effect, emitter: 1}
+	want := single.particleEmitters[key].sim.Alive(nil)
+	got := duplicate.particleEmitters[key].sim.Alive(nil)
+	if !slices.Equal(got, want) {
+		t.Fatalf("duplicate draw advanced emitter twice:\nsingle:    %+v\nduplicate: %+v", want, got)
+	}
+}
+
+func TestParticleEmitterFirstSeedWinsWithinFrame(t *testing.T) {
+	renderer, effect := newParticleBehaviorRenderer(t)
+	first := particleBehaviorCommand(effect, 1, 0.25)
+	first.Intensity = 1
+	conflicting := first
+	conflicting.Seed = 99
+
+	renderer.Render([]render.Command{first, conflicting})
+
+	key := emitterKey{effect: effect, emitter: 1}
+	state := renderer.particleEmitters[key]
+	if state == nil {
+		t.Fatal("particle emitter was not created")
+	}
+	if got := state.sim.Seed; got != first.Seed {
+		t.Fatalf("seed after conflicting command = %d, want first seed %d", got, first.Seed)
+	}
+
+	renderer.Render([]render.Command{conflicting})
+	state = renderer.particleEmitters[key]
+	if got := state.sim.Seed; got != conflicting.Seed {
+		t.Fatalf("seed on next frame = %d, want replacement seed %d", got, conflicting.Seed)
 	}
 }
 

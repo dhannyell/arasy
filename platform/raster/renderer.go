@@ -2,10 +2,12 @@ package raster
 
 import (
 	"image"
+	"log/slog"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/asset/pixel"
 	"github.com/dhannyell/frameforge/asset/typeface"
+	"github.com/dhannyell/frameforge/internal/diagnostic"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 	"golang.org/x/image/font"
@@ -31,6 +33,8 @@ type Renderer struct {
 	particleFrame    uint64
 	particleEmitters map[emitterKey]*rasterEmitter
 	particleScratch  []particle.LiveParticle
+	diagnostics      diagnostic.Once
+	log              *slog.Logger
 }
 
 // Render draws commands into a new RGBA image.

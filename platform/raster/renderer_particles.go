@@ -2,13 +2,17 @@ package raster
 
 import (
 	"image"
+	"log/slog"
 
+	"github.com/dhannyell/frameforge/internal/diagnostic"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 )
 
 const particleEmitterTTL = 300
+
+const missingParticleEffectDiagnostic = "particle.effect_missing"
 
 type emitterKey struct {
 	effect  render.ParticleEffectID
@@ -24,6 +28,7 @@ type rasterEmitter struct {
 func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	decl, ok := r.Assets.EffectDecl(cmd.Effect)
 	if !ok {
+		r.warnMissingParticleEffect(cmd.Effect)
 		return
 	}
 
@@ -37,24 +42,31 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	}
 
 	state := r.particleEmitters[key]
-	if state == nil || state.sim.Seed != cmd.Seed {
-		state = &rasterEmitter{
-			sim:     particle.NewEmitter(decl, cmd.Seed),
-			texture: r.Assets.Texture(decl.Texture),
+	if state != nil && state.lastSeen == r.particleFrame {
+		// Preserve painter-order duplicates without advancing the emitter twice.
+		// The first command also wins over a conflicting seed for this frame.
+		if state.sim.Seed != cmd.Seed {
+			return
 		}
-		r.particleEmitters[key] = state
+	} else {
+		if state == nil || state.sim.Seed != cmd.Seed {
+			state = &rasterEmitter{
+				sim:     particle.NewEmitter(decl, cmd.Seed),
+				texture: r.Assets.Texture(decl.Texture),
+			}
+			r.particleEmitters[key] = state
+		}
+
+		state.lastSeen = r.particleFrame
+		state.sim.Step(
+			cmd.Pos,
+			cmd.Dir,
+			cmd.Intensity,
+			cmd.Burst,
+			cmd.Dt,
+			decl.Capacity,
+		)
 	}
-
-	state.lastSeen = r.particleFrame
-
-	state.sim.Step(
-		cmd.Pos,
-		cmd.Dir,
-		cmd.Intensity,
-		cmd.Burst,
-		cmd.Dt,
-		decl.Capacity,
-	)
 
 	if cap(r.particleScratch) < decl.Capacity {
 		r.particleScratch = make([]particle.LiveParticle, 0, decl.Capacity)
@@ -77,6 +89,16 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 			decl.Blend,
 		)
 	}
+}
+
+func (r *Renderer) warnMissingParticleEffect(id render.ParticleEffectID) {
+	r.diagnostics.Log(
+		r.log,
+		slog.LevelWarn,
+		diagnostic.Key{Code: missingParticleEffectDiagnostic, ID: uint64(id)},
+		"raster: DrawParticles references unknown effect; command skipped",
+		"effect_id", id,
+	)
 }
 
 func (r *Renderer) drawParticle(

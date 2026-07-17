@@ -2,6 +2,7 @@ package particle
 
 import (
 	"math/bits"
+	"slices"
 	"testing"
 
 	"github.com/dhannyell/frameforge/math2d"
@@ -90,10 +91,5 @@ func assertActiveSlotCount(t *testing.T, emitter *Emitter, want int) {
 }
 
 func containsSlot(slots []int, want int) bool {
-	for _, slot := range slots {
-		if slot == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(slots, want)
 }

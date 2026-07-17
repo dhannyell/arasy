@@ -173,7 +173,9 @@ type EmitterID uint32
 // time; backends that simulate on the GPU never report particle state
 // back. Content is render-only: never captured by snapshots, checksums,
 // replays or recordings. An emitter not commanded for a few seconds is
-// released by backends.
+// released by backends. If (Effect, Emitter) occurs more than once in a
+// frame, the first command advances simulation; later commands with the
+// same Seed only draw that state again, while conflicting seeds are skipped.
 type DrawParticles struct {
 	BaseCommand
 	Effect  ParticleEffectID

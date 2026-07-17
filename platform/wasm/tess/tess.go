@@ -61,6 +61,7 @@ const (
 	DrawRunSolid DrawRunKind = iota
 	DrawRunTextured
 	DrawRunText
+	DrawRunParticles
 )
 
 // DrawRun contains commands that can be submitted together while preserving
@@ -68,11 +69,12 @@ const (
 // the pipeline changes, and textured runs are also split when their texture
 // changes.
 type DrawRun struct {
-	Kind     DrawRunKind
-	Solid    Mesh
-	Textured TexMesh
-	Text     TextMesh
-	AtlasKey AtlasKey
+	Kind      DrawRunKind
+	Solid     Mesh
+	Textured  TexMesh
+	Text      TextMesh
+	Particles render.DrawParticles
+	AtlasKey  AtlasKey
 }
 
 // Build tessellates frame commands into ordered, heterogeneous WebGPU runs.
@@ -141,6 +143,15 @@ func (s *buildSink) VisitArc(cmd render.DrawArc) {
 
 func (s *buildSink) VisitPolygon(cmd render.DrawPolygon) {
 	AppendPolygon(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
+}
+
+func (s *buildSink) VisitParticles(cmd render.DrawParticles) {
+	// Particle commands own GPU simulation and indirect-draw state, so they
+	// always remain one command per run. Reset the merge cursor so equal
+	// geometry kinds on either side cannot merge across this painter-order
+	// boundary.
+	s.runs = append(s.runs, DrawRun{Kind: DrawRunParticles, Particles: cmd})
+	s.hasLast = false
 }
 
 func (s *buildSink) VisitText(cmd render.DrawText) {
