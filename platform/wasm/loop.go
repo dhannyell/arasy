@@ -9,15 +9,6 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// renderer draws one runtime.Frame into the canvas.
-type renderer interface {
-	Render(frame runtime.Frame)
-}
-
-type textureUpdater interface {
-	UpdateTextures(updates []runtime.TextureUpdate)
-}
-
 func (h *host) startLoop() {
 	var frameTimer runtime.FrameTimer
 	var fpsFrames int
@@ -30,17 +21,15 @@ func (h *host) startLoop() {
 		elapsed := frameTimer.ElapsedMillis(ts)
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
+
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
 		h.pending = h.pending[:0]
 		if h.audio != nil {
 			h.audio.consume(audioOut)
 		}
 
-		frame := h.driver.Frame(elapsed)
-		if updater, ok := h.renderer.(textureUpdater); ok {
-			updater.UpdateTextures(h.driver.ConsumeTextureUpdates())
-		}
-		h.renderer.Render(frame)
+		frame := h.driver.RenderFrame(elapsed, h.renderer)
+
 		if h.onFrameMetrics != nil {
 			inputToSubmit, validInput := inputLatencySince(inputAtMillis)
 			if metrics, ready := h.frameMetrics.Observe(elapsed, inputToSubmit, validInput); ready {

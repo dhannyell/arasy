@@ -17,11 +17,6 @@ const defaultSimulationHz = 60
 const defaultFPS = 60
 const defaultKeyframeInterval = 30
 
-type Frame struct {
-	Camera   render.Camera
-	Commands []render.Command
-}
-
 type Driver struct {
 	game     Game
 	cfg      Config

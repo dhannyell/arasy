@@ -53,7 +53,7 @@ type host struct {
 	frameMetrics         frameMetricTracker
 	onFrameMetrics       func(FrameMetrics)
 
-	renderer renderer
+	renderer runtime.FrameRenderer
 
 	// debugPanel is the optional runtime tooling UI; nil when no overlay is enabled.
 	debugPanel *debugPanel
@@ -122,7 +122,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	select {}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D bool, log *slog.Logger) renderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D bool, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
 		return newCanvas2D(canvas, clear, manifest, log)
