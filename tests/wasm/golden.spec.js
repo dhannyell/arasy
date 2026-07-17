@@ -1,12 +1,14 @@
 const { test, expect } = require('@playwright/test');
+const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
 
-test('renders the canonical WASM frame', async ({ page }, testInfo) => {
+async function expectFixtureScreenshot(page, testInfo, fixture, screenshot) {
   const expectedRenderer = testInfo.project.name;
   const messages = [];
   page.on('console', message => messages.push(message.text()));
   page.on('pageerror', error => messages.push(`page error: ${error.message}`));
 
-  await page.goto(`http://127.0.0.1:8090/?renderer=${expectedRenderer}`);
+  const fixtureParam = fixture ? `&fixture=${fixture}` : '';
+  await page.goto(`http://127.0.0.1:${goldenPort}/?renderer=${expectedRenderer}${fixtureParam}`);
 
   await expect.poll(
     () => messages.join('\n'),
@@ -17,8 +19,21 @@ test('renders the canonical WASM frame', async ({ page }, testInfo) => {
   await expect(canvas).toHaveAttribute('data-frameforge-ready', expectedRenderer);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   try {
-    await expect(canvas).toHaveScreenshot('frame.png');
+    await expect(canvas).toHaveScreenshot(screenshot);
   } catch (error) {
     throw new Error(`${error.message}\n\nBrowser log:\n${messages.join('\n')}`);
   }
+}
+
+test('renders the canonical WASM frame', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, '', 'frame.png');
+});
+
+test('renders particle backend semantics', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'particles',
+    'particles.png',
+  );
 });
