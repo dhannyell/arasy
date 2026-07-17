@@ -31,6 +31,14 @@ type Options struct {
 	Log       *slog.Logger
 }
 
+// frameTarget adapts the raster renderer + texture registry to
+// runtime.FrameRenderer; Render captures the output image for encoding.
+type frameTarget struct {
+	r        *Renderer
+	textures pixel.Registry
+	img      *image.RGBA
+}
+
 // Run drives a game through the offline raster target.
 func Run(game runtime.Game, opts Options) error {
 	log := opts.Log
@@ -68,8 +76,10 @@ func Run(game runtime.Game, opts Options) error {
 		log:      log,
 	}
 
+	target := frameTarget{r: &r, img: nil, textures: textures}
 	if opts.PNG != "" {
-		img := renderFrame(&r, driver, textures, 0)
+		driver.RenderFrame(0, &target)
+		img := target.img
 		if err := writeFile(opts.PNG, func(f *os.File) error {
 			return png.Encode(f, img)
 		}); err != nil {
@@ -78,10 +88,7 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	if (opts.GIF != "" || opts.FramesDir != "") && opts.Frames > 0 {
-		delay := int(math.Round(opts.FrameDT * 100))
-		if delay < 1 {
-			delay = 1
-		}
+		delay := max(int(math.Round(opts.FrameDT*100)), 1)
 		var anim *gif.GIF
 		if opts.GIF != "" {
 			anim = &gif.GIF{
@@ -90,8 +97,10 @@ func Run(game runtime.Game, opts Options) error {
 			}
 		}
 		frameDur := time.Duration(opts.FrameDT * float64(time.Second))
+		target.img = nil
 		for frame := range opts.Frames {
-			img := renderFrame(&r, driver, textures, frameDur)
+			driver.RenderFrame(frameDur, &target)
+			img := target.img
 			if opts.FramesDir != "" {
 				if err := writeFramePNG(opts.FramesDir, frame, img); err != nil {
 					return err
@@ -115,19 +124,15 @@ func Run(game runtime.Game, opts Options) error {
 	return nil
 }
 
-func renderFrame(r *Renderer, driver *runtime.Driver, textures pixel.Registry, elapsed time.Duration) *image.RGBA {
-	frame := driver.Frame(elapsed)
-	applyTextureUpdates(textures, driver.ConsumeTextureUpdates())
-	return r.Render(frame.Commands)
-}
-
-func applyTextureUpdates(reg pixel.Registry, updates []runtime.TextureUpdate) {
+func (t *frameTarget) UpdateTextures(updates []runtime.TextureUpdate) {
 	for _, u := range updates {
-		if int(u.ID) < len(reg) && reg[u.ID] != nil && u.Image != nil {
-			draw.Draw(reg[u.ID], reg[u.ID].Bounds(), u.Image, image.Point{}, draw.Src)
+		if int(u.ID) < len(t.textures) && t.textures[u.ID] != nil && u.Image != nil {
+			draw.Draw(t.textures[u.ID], t.textures[u.ID].Bounds(), u.Image, image.Point{}, draw.Src)
 		}
 	}
 }
+
+func (t *frameTarget) Render(frame runtime.Frame) { t.img = t.r.Render(frame.Commands) }
 
 func writeFramePNG(dir string, frame int, img image.Image) error {
 	path := filepath.Join(dir, fmt.Sprintf("frame-%04d.png", frame))
