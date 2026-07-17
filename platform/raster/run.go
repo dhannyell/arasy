@@ -64,6 +64,8 @@ func Run(game runtime.Game, opts Options) error {
 		Clear:    cfg.Clear,
 		Textures: textures,
 		Fonts:    fonts,
+		Assets:   cfg.Assets,
+		log:      log,
 	}
 
 	if opts.PNG != "" {

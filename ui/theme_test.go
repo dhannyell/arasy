@@ -23,6 +23,9 @@ func TestDefaultThemeProvidesManagerSlots(t *testing.T) {
 	if theme.Focus.Width <= 0 {
 		t.Fatal("focus width should have a default")
 	}
+	if theme.Slider.TrackHeight <= 0 || theme.Slider.ThumbRadius <= 0 {
+		t.Fatal("slider geometry should have defaults")
+	}
 }
 
 func TestWithDefaultsFillsMissingThemeSlots(t *testing.T) {
@@ -41,5 +44,8 @@ func TestWithDefaultsFillsMissingThemeSlots(t *testing.T) {
 	}
 	if theme.Row.Height <= 0 {
 		t.Fatal("row theme should be defaulted")
+	}
+	if theme.Slider == (SliderTheme{}) {
+		t.Fatal("slider theme should be defaulted")
 	}
 }

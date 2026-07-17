@@ -37,3 +37,9 @@ var texturedWGSL string
 //
 //go:embed shaders/mipmap.wgsl
 var mipmapWGSL string
+
+//go:embed shaders/particle_compute.wgsl
+var particlesComputeWGSL string
+
+//go:embed shaders/particle_render.wgsl
+var particlesRenderWGSL string

@@ -70,6 +70,7 @@ type webgpuRenderer struct {
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
 	textures     []gpuTexture
+	particles    *gpuParticles
 	ready        bool
 	readyPending bool
 	errorCb      js.Func
@@ -136,8 +137,16 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
 
 	r.textures, r.texSizes = r.buildTextures(manifest)
+	r.particles = newGpuParticles(r)
 
 	return r, nil
+}
+
+func (r *webgpuRenderer) particleGPUBufferBytes() uint64 {
+	if r.particles == nil {
+		return 0
+	}
+	return r.particles.bufferBytes()
 }
 
 func (r *webgpuRenderer) observeDeviceErrors(log *slog.Logger) {
@@ -221,6 +230,11 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 				count:    len(run.Text.Vertices),
 			})
 			textOffset += len(run.Text.Vertices)
+		case tess.DrawRunParticles:
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:      tess.DrawRunParticles,
+				particles: run.Particles,
+			})
 		}
 	}
 
@@ -243,6 +257,15 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
+
+	// Particle simulation writes indirect draw arguments and must complete
+	// before the render pass reads them. All passes share this encoder, so GPU
+	// command order provides the dependency without a readback or fence.
+	for _, run := range drawRuns {
+		if run.kind == tess.DrawRunParticles {
+			r.particles.encodeSim(encoder, run.particles, frame.Camera, w, h)
+		}
+	}
 
 	pass := encoder.Call("beginRenderPass", map[string]any{
 		"colorAttachments": []any{map[string]any{
@@ -280,12 +303,15 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			pass.Call("setBindGroup", 0, atlas.bindGroup)
 			pass.Call("setVertexBuffer", 0, r.textBuffer)
 			pass.Call("draw", run.count, 1, run.offset, 0)
+		case tess.DrawRunParticles:
+			r.particles.draw(pass, run.particles, frame.Camera, w, h)
 		}
 	}
 
 	pass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	r.particles.endFrame()
 	r.signalReadyAfterPresent()
 }
 
@@ -317,11 +343,12 @@ func (r *webgpuRenderer) signalReadyAfterPresent() {
 }
 
 type gpuDrawRun struct {
-	kind     tess.DrawRunKind
-	texture  render.TextureID
-	atlasKey tess.AtlasKey
-	offset   int
-	count    int
+	kind      tess.DrawRunKind
+	texture   render.TextureID
+	atlasKey  tess.AtlasKey
+	particles render.DrawParticles
+	offset    int
+	count     int
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {

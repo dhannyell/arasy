@@ -34,6 +34,11 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
+	// FrameMetrics receives lightweight browser frame telemetry. The callback
+	// runs at most four times per second after a frame has been submitted.
+	// InputToSubmit measures browser-event arrival to render submission; it is
+	// not a display scan-out (input-to-photon) measurement.
+	FrameMetrics func(FrameMetrics)
 }
 
 type host struct {
@@ -43,7 +48,10 @@ type host struct {
 	log    *slog.Logger
 
 	// JS/WASM runs callbacks on the same thread; pending is drained by startLoop.
-	pending []input.Event
+	pending              []input.Event
+	pendingInputAtMillis float64
+	frameMetrics         frameMetricTracker
+	onFrameMetrics       func(FrameMetrics)
 
 	renderer renderer
 
@@ -84,7 +92,14 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 		return fmt.Errorf("canvas element %q not found", canvasID)
 	}
 
-	h := &host{driver: driver, canvas: canvas, cfg: cfg, log: log}
+	h := &host{
+		driver:               driver,
+		canvas:               canvas,
+		cfg:                  cfg,
+		log:                  log,
+		pendingInputAtMillis: -1,
+		onFrameMetrics:       opts.FrameMetrics,
+	}
 	h.resize()
 	h.registerResizeListener()
 	h.registerInputListeners()

@@ -16,6 +16,7 @@ type CommandSink interface {
 	VisitPolygon(DrawPolygon)
 	VisitImage(DrawImage)
 	VisitImageQuad(DrawImageQuad)
+	VisitParticles(DrawParticles)
 }
 
 // Each stable-sorts commands by layer and dispatches each command exactly
@@ -46,6 +47,8 @@ func Each(commands []Command, sink CommandSink) {
 			sink.VisitImage(command)
 		case DrawImageQuad:
 			sink.VisitImageQuad(command)
+		case DrawParticles:
+			sink.VisitParticles(command)
 		}
 	}
 }

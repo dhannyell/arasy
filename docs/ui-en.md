@@ -174,6 +174,10 @@ Available widgets:
 - `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
 - `ProgressBarIn(rect, value, space)`
+- `Slider(id, rect, value, opts)`
+- `SliderIn(id, rect, value, opts, space)`
+- `SliderInput(id, rect, value, opts)`
+- `SliderInputIn(id, rect, value, opts, space)`
 - `Table(id, rect, cols, rowCount, selected, cell)`
 - `TableIn(id, rect, cols, rowCount, selected, cell, space)`
 - `TableStyledIn(id, rect, cols, rowCount, selected, cell, style, space)`
@@ -192,6 +196,31 @@ Available widgets:
 `render.DrawText` with centered alignment and middle baseline.
 
 `ProgressBar` clamps `value` to `[0, 1]`.
+
+`Slider` follows the UI's deterministic two-phase split. The game consumes
+pointer input during `Update` with `SliderInput`, then draws the same ID,
+rectangle, and options during `Render` with `Slider`:
+
+```go
+var volumeSlider = ui.SliderOptions{Min: 0, Max: 1, Step: 0.05}
+
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    if value, changed := ctx.UI.SliderInput("volume", volumeRect, g.Volume, volumeSlider); changed {
+        g.Volume = value
+    }
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    ctx.UI.Slider("volume", volumeRect, g.Volume, volumeSlider)
+    return nil
+}
+```
+
+The value belongs to game state; UI state persists only pointer capture and
+focus. `Step <= 0` keeps the value continuous. A positive `Step` snaps to
+increments measured from `Min`, while keeping `Max` reachable as the final snap
+point. Clicking the track jumps the thumb; dragging
+remains captured outside the rectangle and clamps to `[Min, Max]`.
 
 `Card` draws a rounded panel with an optional accent bar. `Badge` draws a small
 chip sized by `render.MeasureText`.
@@ -416,6 +445,7 @@ The theme defines styles for:
 - labels;
 - panels;
 - progress bars;
+- sliders;
 - cards, rows, headers, badges, text, and focus.
 
 Partial themes are completed by `ui.WithDefaults`: zero-value slots inherit
@@ -495,7 +525,7 @@ ui.UI:
 Clicked:
   deterministic query called in Update
 
-Button/Label/Panel/ProgressBar:
+Button/Label/Panel/ProgressBar/Slider:
   widgets called in Render
 
 Theme:

@@ -23,6 +23,12 @@ var benchSuites = []benchSuite{
 	{Name: "runtime", Pkg: "./runtime", Bench: "."},
 	{Name: "raster", Pkg: "./platform/raster", Bench: "."},
 	{
+		Name:      "particle",
+		Pkg:       "./particle",
+		Bench:     "BenchmarkEmitter(Step|Alive)$",
+		Benchtime: "500ms",
+	},
+	{
 		Name:  "runtime-seek",
 		Pkg:   "./runtime",
 		Bench: "BenchmarkDriver(Step|ScrubToTick)$|BenchmarkReplay$",

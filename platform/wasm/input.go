@@ -5,6 +5,7 @@ package wasm
 import (
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/platform/web/browserinput"
 )
 
@@ -40,7 +41,7 @@ func (h *host) registerInputListeners() {
 		}
 
 		event.Call("preventDefault")
-		h.pending = append(h.pending, keyEvent)
+		h.queueInput(keyEvent, event)
 		return nil
 	}))
 
@@ -56,13 +57,13 @@ func (h *host) registerInputListeners() {
 		}
 
 		event.Call("preventDefault")
-		h.pending = append(h.pending, keyEvent)
+		h.queueInput(keyEvent, event)
 		return nil
 	}))
 
 	addCanvasListener("mousemove", js.FuncOf(func(this js.Value, args []js.Value) any {
 		x, y := h.canvasXY(args[0])
-		h.pending = append(h.pending, browserinput.MouseMoveEvent(x, y))
+		h.queueInput(browserinput.MouseMoveEvent(x, y), args[0])
 		return nil
 	}))
 
@@ -74,7 +75,7 @@ func (h *host) registerInputListeners() {
 		if !ok {
 			return nil
 		}
-		h.pending = append(h.pending, mouseEvent)
+		h.queueInput(mouseEvent, event)
 		return nil
 	}))
 
@@ -86,12 +87,12 @@ func (h *host) registerInputListeners() {
 		if !ok {
 			return nil
 		}
-		h.pending = append(h.pending, mouseEvent)
+		h.queueInput(mouseEvent, event)
 		return nil
 	}))
 
 	addCanvasListener("mouseleave", js.FuncOf(func(this js.Value, args []js.Value) any {
-		h.pending = append(h.pending, browserinput.PointerLeaveEvent())
+		h.queueInput(browserinput.PointerLeaveEvent(), args[0])
 		return nil
 	}))
 
@@ -108,10 +109,26 @@ func (h *host) registerInputListeners() {
 			wheelEvents[i].X = x
 			wheelEvents[i].Y = y
 		}
-		h.pending = append(h.pending, wheelEvents...)
+		for _, wheelEvent := range wheelEvents {
+			h.queueInput(wheelEvent, event)
+		}
 
 		return nil
 	}))
+}
+
+func (h *host) queueInput(inputEvent input.Event, browserEvent js.Value) {
+	if h.onFrameMetrics != nil {
+		stamp := browserEvent.Get("timeStamp")
+		if !stamp.IsUndefined() && !stamp.IsNull() {
+			millis := stamp.Float()
+			now := performanceNowMillis()
+			if millis >= 0 && millis <= now && (h.pendingInputAtMillis < 0 || millis < h.pendingInputAtMillis) {
+				h.pendingInputAtMillis = millis
+			}
+		}
+	}
+	h.pending = append(h.pending, inputEvent)
 }
 
 func (h *host) handleOverlayToggleKey(event js.Value) bool {

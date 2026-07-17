@@ -31,6 +31,16 @@ func drawImage(layer int, texture render.TextureID) render.DrawImage {
 	}
 }
 
+func drawParticles(layer int, emitter render.EmitterID) render.DrawParticles {
+	return render.DrawParticles{
+		BaseCommand: render.BaseCommand{LayerValue: layer},
+		Effect:      1,
+		Emitter:     emitter,
+		Dt:          1.0 / 60.0,
+		Intensity:   1,
+	}
+}
+
 func TestBuildInterleavesKindsInPainterOrderWithinSameLayer(t *testing.T) {
 	sizes := TexSizes{{}, {8, 8}}
 
@@ -151,5 +161,36 @@ func TestBuildInterleavesTextWithSolidsInPainterOrder(t *testing.T) {
 	}
 	if len(runs[1].Text.Vertices) == 0 {
 		t.Fatal("text run has no vertices")
+	}
+}
+
+func TestBuildKeepsEveryParticleCommandInItsOwnPainterOrderedRun(t *testing.T) {
+	runs := Build(runtime.Frame{
+		Camera: testCamera(),
+		Commands: []render.Command{
+			drawRect(0),
+			drawParticles(0, 10),
+			drawParticles(0, 20),
+			drawRect(0),
+		},
+	}, 100, 100, nil, nil)
+
+	wantKinds := []DrawRunKind{
+		DrawRunSolid,
+		DrawRunParticles,
+		DrawRunParticles,
+		DrawRunSolid,
+	}
+	if len(runs) != len(wantKinds) {
+		t.Fatalf("len(runs) = %d, want %d; runs=%+v", len(runs), len(wantKinds), runs)
+	}
+	for i, want := range wantKinds {
+		if runs[i].Kind != want {
+			t.Fatalf("runs[%d].Kind = %v, want %v", i, runs[i].Kind, want)
+		}
+	}
+	if runs[1].Particles.Emitter != 10 || runs[2].Particles.Emitter != 20 {
+		t.Fatalf("particle emitters = (%d, %d), want (10, 20)",
+			runs[1].Particles.Emitter, runs[2].Particles.Emitter)
 	}
 }

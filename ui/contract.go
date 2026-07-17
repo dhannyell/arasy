@@ -18,6 +18,8 @@ type Interactor interface {
 	FocusableIn(id string, rect math2d.Rect, space Space)
 	ScrollOffset(id string, view math2d.Rect, contentH float64) float64
 	ScrollOffsetIn(id string, view math2d.Rect, contentH float64, space Space) float64
+	SliderInput(id string, rect math2d.Rect, value float64, opts SliderOptions) (next float64, changed bool)
+	SliderInputIn(id string, rect math2d.Rect, value float64, opts SliderOptions, space Space) (next float64, changed bool)
 	TableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, space Space) int
 	ListHitIn(id string, rect math2d.Rect, rowH float64, rowCount int, space Space) int
 
@@ -35,6 +37,7 @@ type Drawer interface {
 	Panel(rect math2d.Rect)
 	Label(text string, pos math2d.Vec2)
 	ProgressBar(rect math2d.Rect, value float64)
+	Slider(id string, rect math2d.Rect, value float64, opts SliderOptions)
 	Card(rect math2d.Rect, accent render.Color)
 	Badge(text string, center math2d.Vec2, bg render.Color)
 	Table(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string) int
@@ -43,6 +46,7 @@ type Drawer interface {
 	PanelIn(rect math2d.Rect, space Space)
 	LabelIn(text string, pos math2d.Vec2, space Space)
 	ProgressBarIn(rect math2d.Rect, value float64, space Space)
+	SliderIn(id string, rect math2d.Rect, value float64, opts SliderOptions, space Space)
 	CardIn(rect math2d.Rect, accent render.Color, space Space)
 	BadgeIn(text string, center math2d.Vec2, bg render.Color, space Space)
 	ScrollAreaIn(id string, view math2d.Rect, contentH float64, space Space) (offset float64, clip math2d.Rect)

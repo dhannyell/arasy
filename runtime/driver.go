@@ -123,15 +123,19 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if cfg.KeyframeInterval <= 0 {
 		cfg.KeyframeInterval = defaultKeyframeInterval
 	}
+	if log == nil {
+		log = slog.Default()
+	}
 
 	d := &Driver{
 		game:     game,
 		cfg:      cfg,
-		log:      log.With("scope", "engine"),
 		input:    newDriverInput(cfg.InputBindings),
 		clock:    newClock(cfg.SimulationHz),
 		controls: devControls{speed: 1},
+		log:      log.With("scope", "engine"),
 	}
+
 	d.uiTheme = ui.WithDefaults(cfg.UITheme)
 	if cfg.HistoryLen > 0 {
 		d.recorder = newRecorder(cfg.HistoryLen, cfg.KeyframeInterval)

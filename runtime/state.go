@@ -14,7 +14,8 @@ type StatefulGame interface {
 // fields — those share their backing storage across every boxed copy, so
 // mutating current state after a snapshot corrupts the "historical" one too.
 // Implement Clone() on T to deep-copy such fields; StateSlot uses it when
-// present and falls back to the plain value copy otherwise.
+// present — on capture and on restore — and falls back to the plain value
+// copy otherwise.
 type Cloneable[T any] interface {
 	Clone() T
 }
@@ -44,5 +45,13 @@ func (s *StateSlot[T]) RestoreGameState(state GameState) {
 		return
 	}
 
-	s.State = state.(stateSnapshot[T]).value
+	value := state.(stateSnapshot[T]).value
+	// Clone on restore too: handing the snapshot's reference fields to the
+	// live game would let post-restore mutations corrupt the keyframe the
+	// recorder still holds, so a later seek to the same tick restores
+	// corrupted history. Capture clones for the same reason.
+	if cloneable, ok := any(value).(Cloneable[T]); ok {
+		value = cloneable.Clone()
+	}
+	s.State = value
 }
