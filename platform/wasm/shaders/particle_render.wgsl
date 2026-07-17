@@ -9,6 +9,8 @@ struct Particle {
 struct EmitterUniforms {
   color_start : vec4f, color_end : vec4f,
   to_clip_scale : vec2f, to_clip_offset : vec2f,
+  world_to_screen_scale : vec2f,
+  screen_to_clip_scale : vec2f,
   pos : vec2f, prev_pos : vec2f,
   gravity : vec2f, emit_extent : vec2f, wobble_axis : vec2f,
   dt : f32, drag : f32,
@@ -73,8 +75,15 @@ fn vs_main(@builtin(vertex_index) vi : u32,
   let corner = CORNERS[vi] * half;
   let c = cos(rot);
   let s = sin(rot);
-  let world = center + vec2f(corner.x * c - corner.y * s,
-                             corner.x * s + corner.y * c);
+
+  // Match DrawImage: map the axis-aligned particle size to screen pixels,
+  // then rotate around its screen-space center. Rotating in world space
+  // first would skew the quad under AspectStretch's non-uniform scale.
+  let screen_corner = corner * u.world_to_screen_scale;
+  let rotated_screen = vec2f(screen_corner.x * c - screen_corner.y * s,
+                             screen_corner.x * s + screen_corner.y * c);
+  let center_clip = center * u.to_clip_scale + u.to_clip_offset;
+  let local_clip = rotated_screen * u.screen_to_clip_scale;
 
   var color = mix(u.color_start, u.color_end, progress);
   if (u.fade_in > 0.0) {
@@ -82,7 +91,7 @@ fn vs_main(@builtin(vertex_index) vi : u32,
   }
 
   var out : VSOut;
-  out.pos = vec4f(world * u.to_clip_scale + u.to_clip_offset, 0.0, 1.0);
+  out.pos = vec4f(center_clip + local_clip, 0.0, 1.0);
   out.color = vec4f(color.rgb * color.a, color.a); // premultiplied
   out.uv = CORNERS[vi] * 0.5 + vec2f(0.5);
   return out;
@@ -91,4 +100,11 @@ fn vs_main(@builtin(vertex_index) vi : u32,
 @fragment
 fn fs_main(in : VSOut) -> @location(0) vec4f {
   return textureSample(tex, samp, in.uv) * in.color;
+}
+
+// Missing textures are diagnostic geometry, not effect content. Keep the
+// placeholder visibly magenta regardless of the particle's tint/alpha.
+@fragment
+fn fs_missing(in : VSOut) -> @location(0) vec4f {
+  return vec4f(1.0, 0.0, 1.0, 1.0);
 }

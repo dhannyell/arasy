@@ -108,6 +108,13 @@ func (e *Emitter) Step(pos math2d.Vec2, dirOffset, intensity float64, burst uint
 	}
 }
 
+// AliveCount returns the number of currently live particles in O(1).
+// Backends can use it to size transient presentation buffers to occupancy
+// instead of the emitter's full capacity.
+func (e *Emitter) AliveCount() int {
+	return len(e.pool) - len(e.free)
+}
+
 // Alive appends the live particles to dst and returns it, in stable slot order
 func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
 	for wordIndex, active := range e.aliveBits {

@@ -2,6 +2,7 @@ package raster
 
 import (
 	"image"
+	"image/color"
 	"log/slog"
 
 	"github.com/dhannyell/frameforge/internal/diagnostic"
@@ -9,6 +10,16 @@ import (
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 )
+
+// particleWhiteTexture backs effects declared without a texture: blitting
+// opaque white through the particle tint yields the interpolated particle
+// color, matching the WebGPU backend's white 1×1 binding. A declared
+// texture that fails lookup stays nil and renders the magenta placeholder.
+var particleWhiteTexture = func() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	return img
+}()
 
 const particleEmitterTTL = 300
 
@@ -75,7 +86,7 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	live := state.sim.Alive(r.particleScratch[:0])
 	r.particleScratch = live
 
-	var texture *image.RGBA
+	texture := particleWhiteTexture
 	if decl.Texture != "" {
 		texture = r.Textures.Lookup(state.texture)
 	}

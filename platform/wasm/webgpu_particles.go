@@ -15,7 +15,7 @@ import (
 const (
 	gpuParticleTTL     = 300
 	gpuParticleStride  = 48  // must match the WGSL Particle struct
-	gpuUniformSize     = 192 // must match the WGSL EmitterUniforms struct
+	gpuUniformSize     = 208 // must match the WGSL EmitterUniforms struct
 	particleWorkgroup  = 64
 	dispatchBufferSize = 12 // DispatchWorkgroupsIndirectArgs: {x,y,z}
 	drawBufferSize     = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
@@ -27,6 +27,8 @@ type gpuEmitter struct {
 	emission particle.EmissionState
 	capacity int
 	lastSeen uint64
+	// missingTexture selects the untinted magenta placeholder pipeline.
+	missingTexture bool
 	// simulated marks whether this frame ran the compute passes; a paused
 	// frame (dt <= 0) skips them and must also skip the list swap so the
 	// draw keeps showing the last simulated state (freeze, like the CPU).
@@ -57,6 +59,7 @@ type gpuParticles struct {
 	simulatePipeline js.Value
 	drawAlpha        js.Value // premultiplied source-over, MSAA 4x
 	drawAdditive     js.Value // srcFactor one / dstFactor one, MSAA 4x
+	drawMissing      js.Value // opaque magenta, deliberately ignores tint
 
 	prepareLayout  js.Value
 	simulateLayout js.Value
@@ -194,21 +197,22 @@ func (g *gpuParticles) buildPipelines(format js.Value) {
 	renderLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.renderLayout, g.textureLayout},
 	})
-	pipeline := func(blend map[string]any) js.Value {
+	pipeline := func(fragment string, blend map[string]any) js.Value {
 		return g.device.Call("createRenderPipeline", map[string]any{
 			"layout": renderLayout,
 			"vertex": map[string]any{"module": renderModule, "entryPoint": "vs_main"},
 			"fragment": map[string]any{
 				"module":     renderModule,
-				"entryPoint": "fs_main",
+				"entryPoint": fragment,
 				"targets":    []any{map[string]any{"format": format, "blend": blend}},
 			},
 			"primitive":   map[string]any{"topology": "triangle-list"},
 			"multisample": map[string]any{"count": msaaSampleCount},
 		})
 	}
-	g.drawAlpha = pipeline(premultipliedBlend())
-	g.drawAdditive = pipeline(additiveBlend())
+	g.drawAlpha = pipeline("fs_main", premultipliedBlend())
+	g.drawAdditive = pipeline("fs_main", additiveBlend())
+	g.drawMissing = pipeline("fs_missing", premultipliedBlend())
 }
 
 func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
@@ -266,7 +270,7 @@ func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmi
 		e.simulateBind[o] = g.bindSimulate(e, e.alive[o], e.alive[1-o])
 		e.renderBind[o] = g.bindRender(e, e.alive[1-o])
 	}
-	e.textureBind = g.bindTexture(decl) // white 1×1 when decl.Texture == ""
+	e.textureBind, e.missingTexture = g.bindTexture(decl) // white 1×1 when untextured
 	return e
 }
 
@@ -343,21 +347,25 @@ func (g *gpuParticles) bindRender(e *gpuEmitter, survivors js.Value) js.Value {
 // bindTexture resolves the effect's texture bind group once per emitter.
 // An untextured effect binds the shared white 1×1 so the fragment shader
 // needs no branch: sampling white leaves the interpolated color as-is.
-func (g *gpuParticles) bindTexture(decl particle.EffectDecl) js.Value {
+func (g *gpuParticles) bindTexture(decl particle.EffectDecl) (js.Value, bool) {
 	view := g.whiteTexture.Call("createView")
+	missing := false
 	if decl.Texture != "" {
+		missing = true
 		view = g.missingTexture.Call("createView")
 		if gt, ok := g.renderer.textureFor(g.renderer.manifest.Texture(decl.Texture)); ok {
+			missing = false
 			view = gt.texture.Call("createView")
 		}
 	}
-	return g.device.Call("createBindGroup", map[string]any{
+	bindGroup := g.device.Call("createBindGroup", map[string]any{
 		"layout": g.textureLayout,
 		"entries": []any{
 			map[string]any{"binding": 0, "resource": view},
 			map[string]any{"binding": 1, "resource": g.sampler},
 		},
 	})
+	return bindGroup, missing
 }
 
 // encodeSim updates one emitter's CPU accounting and records its kick, emit
@@ -451,7 +459,9 @@ func (g *gpuParticles) draw(
 	}
 
 	pipeline := g.drawAlpha
-	if e.decl.Blend == particle.BlendAdditive {
+	if e.missingTexture {
+		pipeline = g.drawMissing
+	} else if e.decl.Blend == particle.BlendAdditive {
 		pipeline = g.drawAdditive
 	}
 	renderOrientation := e.front
@@ -523,7 +533,7 @@ func packUniforms(
 	w, h int,
 ) {
 	d := &e.decl
-	scale, offset := worldToClip(camera, w, h)
+	scale, offset, screenScale := worldToClip(camera, w, h)
 	wobbleAxis := math2d.Vec2{}
 	if d.WobbleAmp != 0 {
 		angle := d.Direction + cmd.Dir
@@ -535,6 +545,8 @@ func packUniforms(
 	writer.vec4(d.ColorEnd)
 	writer.vec2(scale)
 	writer.vec2(offset)
+	writer.vec2(screenScale)
+	writer.vec2(math2d.Vec2{X: 2 / float64(w), Y: -2 / float64(h)})
 	writer.vec2(cmd.Pos)
 	writer.vec2(frame.PrevPos)
 	writer.vec2(d.Gravity)
@@ -597,11 +609,12 @@ func (w *particleUniformWriter) vec4(value [4]float64) {
 // worldToClip returns the affine coefficients consumed by the particle
 // vertex shader. It mirrors Camera.WorldToScreen followed by tess's
 // screenToClip conversion, including aspect-fit/expand view resolution.
-func worldToClip(camera render.Camera, w, h int) (scale, offset math2d.Vec2) {
+func worldToClip(camera render.Camera, w, h int) (scale, offset, screenScale math2d.Vec2) {
 	if w <= 0 || h <= 0 {
-		return math2d.Vec2{}, math2d.Vec2{}
+		return math2d.Vec2{}, math2d.Vec2{}, math2d.Vec2{}
 	}
 	resolved := camera.Resolve()
+	screenScale = math2d.Vec2{X: resolved.ScaleX, Y: resolved.ScaleY}
 	scale = math2d.Vec2{
 		X: 2 * resolved.ScaleX / float64(w),
 		Y: -2 * resolved.ScaleY / float64(h),
@@ -610,7 +623,7 @@ func worldToClip(camera render.Camera, w, h int) (scale, offset math2d.Vec2) {
 		X: 2*(resolved.Viewport.Min.X-resolved.World.Min.X*resolved.ScaleX)/float64(w) - 1,
 		Y: 1 - 2*(resolved.Viewport.Min.Y-resolved.World.Min.Y*resolved.ScaleY)/float64(h),
 	}
-	return scale, offset
+	return scale, offset, screenScale
 }
 
 // applyClipScissor maps a world-space clip to WebGPU framebuffer pixels. A

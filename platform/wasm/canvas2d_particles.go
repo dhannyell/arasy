@@ -101,8 +101,9 @@ func (c *Canvas2D) drawParticles(cmd render.DrawParticles, camera render.Camera)
 		)
 	}
 
-	if cap(c.particleScratch) < decl.Capacity {
-		c.particleScratch = make([]particle.LiveParticle, 0, decl.Capacity)
+	aliveCount := state.sim.AliveCount()
+	if cap(c.particleScratch) < aliveCount {
+		c.particleScratch = make([]particle.LiveParticle, 0, aliveCount)
 	}
 	live := state.sim.Alive(c.particleScratch[:0])
 	c.particleScratch = live
