@@ -296,18 +296,6 @@ func visualEmitterTarget(total, index, capacity int) int {
 
 func maximumParticles() int { return maximumEmitters * particlesPerEmitter }
 
-// maximumParticleBufferBytes mirrors the per-emitter WebGPU allocation:
-// particle state, three index lists, counters, indirect args and uniforms.
-func maximumParticleBufferBytes() int {
-	return maximumEmitters*particleBufferBytes(particlesPerEmitter) +
-		emitterCountFor(tracerTargetFor(maximumParticles()), tracerCapacity)*particleBufferBytes(tracerCapacity) +
-		emitterCountFor(sparkTargetFor(maximumParticles()), sparkCapacity)*particleBufferBytes(sparkCapacity)
-}
-
-func particleBufferBytes(capacity int) int {
-	return capacity*(48+3*4) + 224 + 12 + 16 + 16
-}
-
 func nextParticleTarget(current int) int {
 	if current >= maximumParticles() {
 		return maximumParticles()

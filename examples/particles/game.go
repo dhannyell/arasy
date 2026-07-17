@@ -1,3 +1,4 @@
+// Package particles is an example of engine particles system
 package particles
 
 import (
