@@ -36,6 +36,7 @@ type LiveParticle struct {
 	Pos      math2d.Vec2
 	Rotation float64
 	Size     float64
+	ScaleX   float64
 	Color    [4]float64
 	Progress float64 // Age/Life in [0,1); drives size/color interpolation.
 }
@@ -65,6 +66,12 @@ func NewEmitter(decl EffectDecl, seed uint64) *Emitter {
 // this frame (budget); emission past the cap is dropped, not deferred.
 // dt <= 0 neither emits nor integrates (pause/scrub).
 func (e *Emitter) Step(pos math2d.Vec2, dirOffset, intensity float64, burst uint32, dt float64, maxAlive int) {
+	e.StepScaled(pos, math2d.Vec2{X: 1, Y: 1}, dirOffset, intensity, burst, dt, maxAlive)
+}
+
+// StepScaled advances the emitter while scaling its declared spawn shape.
+// It is useful for camera-relative emitters without mutating shared effects.
+func (e *Emitter) StepScaled(pos, emitScale math2d.Vec2, dirOffset, intensity float64, burst uint32, dt float64, maxAlive int) {
 	frame := e.emission.Advance(pos, e.Decl.EmitRate, intensity, e.Decl.BurstSize, burst, dt)
 	if dt <= 0 {
 		return
@@ -77,7 +84,7 @@ func (e *Emitter) Step(pos math2d.Vec2, dirOffset, intensity float64, burst uint
 	for n := 0; n < frame.Count; n++ {
 		t := float64(n+1) / float64(frame.Count)
 		origin := frame.PrevPos.Lerp(pos, t)
-		e.spawn(origin, dirOffset, frame.Base+uint32(n))
+		e.spawn(origin, emitScale, dirOffset, frame.Base+uint32(n))
 	}
 	if frame.Count > 0 {
 		e.emission.Emitted += uint32(frame.Count)
@@ -147,11 +154,18 @@ func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
 				pos = pos.Add(p.WobbleAxis.Mul(offset))
 			}
 
+			scaleX := 1.0
+			if e.Decl.FlipXFreq != 0 {
+				phase := 2*math.Pi*e.Decl.FlipXFreq*p.Age + p.WobblePhase
+				scaleX = math.Cos(phase)
+			}
+
 			live := LiveParticle{
 				Pos:      pos,
 				Rotation: rotation,
 				Color:    color,
 				Size:     size,
+				ScaleX:   scaleX,
 				Progress: math2d.Clamp(progress, 0, 1),
 			}
 
@@ -167,7 +181,7 @@ func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
 // a pure function of (emitted, Seed) — never of the slot — so the GPU emit
 // pass spawns identical particles for the same counter. The lane layout
 // below must mirror the particle WGSL shader exactly.
-func (e *Emitter) spawn(origin math2d.Vec2, dirOffset float64, emitted uint32) {
+func (e *Emitter) spawn(origin, emitScale math2d.Vec2, dirOffset float64, emitted uint32) {
 	h1 := pcg3d([3]uint32{emitted, uint32(e.Seed), uint32(e.Seed >> 32)})
 	h2 := pcg3d(h1)
 	h3 := pcg3d(h2)
@@ -178,6 +192,8 @@ func (e *Emitter) spawn(origin math2d.Vec2, dirOffset float64, emitted uint32) {
 
 	d := &e.Decl
 	offset := spawnOffset(d, h3)
+	offset.X *= emitScale.X
+	offset.Y *= emitScale.Y
 
 	e.pool[slot] = Particle{
 		Pos:         origin.Add(offset),

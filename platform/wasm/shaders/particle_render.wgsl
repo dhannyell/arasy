@@ -12,14 +12,14 @@ struct EmitterUniforms {
   world_to_screen_scale : vec2f,
   screen_to_clip_scale : vec2f,
   pos : vec2f, prev_pos : vec2f,
-  gravity : vec2f, emit_extent : vec2f, wobble_axis : vec2f,
+  gravity : vec2f, emit_extent : vec2f, emit_scale : vec2f, wobble_axis : vec2f,
   dt : f32, drag : f32,
   emit_count : u32, emit_base : u32, seed_lo : u32, seed_hi : u32,
   dir_base : f32, spread : f32,
   speed_min : f32, speed_max : f32, life_min : f32, life_max : f32,
   size0_min : f32, size0_max : f32, size1_min : f32, size1_max : f32,
   spin_max : f32, rot_min : f32, rot_max : f32,
-  wobble_amp : f32, wobble_freq : f32, fade_in : f32,
+  wobble_amp : f32, wobble_freq : f32, fade_in : f32, flip_x_freq : f32,
   shape : u32, vel_mode : u32, emit_radius : f32, capacity : u32,
 }
 
@@ -72,7 +72,11 @@ fn vs_main(@builtin(vertex_index) vi : u32,
   }
 
   let half = mix(p.size0, p.size1, progress) * 0.5;
-  let corner = CORNERS[vi] * half;
+  var flip_x = 1.0;
+  if (u.flip_x_freq != 0.0) {
+    flip_x = cos(TAU * u.flip_x_freq * p.age + TAU * float01(h4.y));
+  }
+  let corner = CORNERS[vi] * vec2f(half * flip_x, half);
   let c = cos(rot);
   let s = sin(rot);
 

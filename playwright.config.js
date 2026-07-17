@@ -1,6 +1,7 @@
 const { defineConfig, devices } = require('@playwright/test');
 
 const webGPUArgs = ['--enable-unsafe-webgpu'];
+const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
 
 module.exports = defineConfig({
   testDir: '.',
@@ -16,8 +17,8 @@ module.exports = defineConfig({
   },
   snapshotPathTemplate: 'platform/wasm/testdata/golden/{projectName}/{arg}{ext}',
   webServer: {
-    command: 'go run ./cmd/frameforge/ dev -s output/wasm/golden/ -a 127.0.0.1:8090',
-    url: 'http://127.0.0.1:8090',
+    command: `go run ./cmd/frameforge/ dev -s output/wasm/golden/ -a 127.0.0.1:${goldenPort}`,
+    url: `http://127.0.0.1:${goldenPort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

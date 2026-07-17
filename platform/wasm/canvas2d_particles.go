@@ -42,6 +42,16 @@ type canvasEmitter struct {
 	lastSeen uint64
 }
 
+func particleEmitScale(scale math2d.Vec2) math2d.Vec2 {
+	if scale.X == 0 {
+		scale.X = 1
+	}
+	if scale.Y == 0 {
+		scale.Y = 1
+	}
+	return scale
+}
+
 func (c *Canvas2D) drawParticles(cmd render.DrawParticles, camera render.Camera) {
 	decl, ok := c.manifest.EffectDecl(cmd.Effect)
 	if !ok {
@@ -91,8 +101,9 @@ func (c *Canvas2D) drawParticles(cmd render.DrawParticles, camera render.Camera)
 			)
 		}
 
-		state.sim.Step(
+		state.sim.StepScaled(
 			cmd.Pos,
+			particleEmitScale(cmd.EmitScale),
 			cmd.Dir,
 			cmd.Intensity,
 			cmd.Burst,
@@ -160,10 +171,15 @@ func (c *Canvas2D) drawTexturedParticle(bitmap js.Value, id render.TextureID, de
 	source := c.tintedBitmap(bitmap, id, tint)
 
 	c.ctx.Set("globalAlpha", p.Color[3])
-	if p.Rotation != 0 {
+	if p.Rotation != 0 || p.ScaleX < 0 {
 		c.ctx.Call("save")
 		c.ctx.Call("translate", x+w/2, y+h/2)
-		c.ctx.Call("rotate", p.Rotation)
+		if p.Rotation != 0 {
+			c.ctx.Call("rotate", p.Rotation)
+		}
+		if p.ScaleX < 0 {
+			c.ctx.Call("scale", -1, 1)
+		}
 		c.ctx.Call("drawImage", source, -w/2, -h/2, w, h)
 		c.ctx.Call("restore")
 		return
@@ -189,10 +205,15 @@ func (c *Canvas2D) drawSolidParticle(decl particle.EffectDecl,
 			R: p.Color[0], G: p.Color[1], B: p.Color[2], A: p.Color[3],
 		}))
 	}
-	if p.Rotation != 0 {
+	if p.Rotation != 0 || p.ScaleX < 0 {
 		c.ctx.Call("save")
 		c.ctx.Call("translate", x+w/2, y+h/2)
-		c.ctx.Call("rotate", p.Rotation)
+		if p.Rotation != 0 {
+			c.ctx.Call("rotate", p.Rotation)
+		}
+		if p.ScaleX < 0 {
+			c.ctx.Call("scale", -1, 1)
+		}
 		c.ctx.Call("fillRect", -w/2, -h/2, w, h)
 		c.ctx.Call("restore")
 		return
@@ -201,10 +222,12 @@ func (c *Canvas2D) drawSolidParticle(decl particle.EffectDecl,
 }
 
 func particleScreenRect(p particle.LiveParticle, camera render.Camera) (x, y, w, h float64, ok bool) {
-	half := p.Size / 2
+	width := p.Size * math.Abs(p.ScaleX)
+	halfWidth := width / 2
+	halfHeight := p.Size / 2
 	x, y, w, h = screenRect(math2d.NewRect(
-		math2d.Vec2{X: p.Pos.X - half, Y: p.Pos.Y - half},
-		math2d.Vec2{X: p.Size, Y: p.Size},
+		math2d.Vec2{X: p.Pos.X - halfWidth, Y: p.Pos.Y - halfHeight},
+		math2d.Vec2{X: width, Y: p.Size},
 	), camera)
 	return x, y, w, h, w > 0 && p.Size > 0
 }

@@ -216,6 +216,30 @@ func TestNewbornParticleAgesByDtOnItsBirthFrame(t *testing.T) {
 	}
 }
 
+func TestStepScaledScalesSpawnShapePerAxis(t *testing.T) {
+	decl := baseDecl()
+	decl.Shape = EmitRect
+	decl.EmitExtent = math2d.Vec2{X: 2, Y: 3}
+	decl.Speed = Range{}
+	decl.BurstSize = 1
+
+	spawn := func(scale math2d.Vec2) Particle {
+		e := NewEmitter(decl, 99)
+		e.StepScaled(math2d.Vec2{}, scale, 0, 0, 0, 0.01, decl.Capacity)
+		e.StepScaled(math2d.Vec2{}, scale, 0, 0, 1, 0.01, decl.Capacity)
+		return onlyAlive(t, e)
+	}
+
+	plain := spawn(math2d.Vec2{X: 1, Y: 1})
+	scaled := spawn(math2d.Vec2{X: 2.5, Y: 4})
+	if math.Abs(scaled.Pos.X-plain.Pos.X*2.5) > 1e-9 {
+		t.Fatalf("scaled X = %v, want %v", scaled.Pos.X, plain.Pos.X*2.5)
+	}
+	if math.Abs(scaled.Pos.Y-plain.Pos.Y*4) > 1e-9 {
+		t.Fatalf("scaled Y = %v, want %v", scaled.Pos.Y, plain.Pos.Y*4)
+	}
+}
+
 // --- Integration: gravity + drag ------------------------------------------
 
 func TestStepIntegratesGravityAndDragAnalytically(t *testing.T) {
@@ -586,6 +610,24 @@ func TestAliveComputesRotationFromInitialRotationPlusSpinTimesAge(t *testing.T) 
 			t.Fatalf("particle %d Rotation = %v, want %v (rot0 + Spin*Age)", idx, live[idx].Rotation, want)
 		}
 		idx++
+	}
+}
+
+func TestAliveComputesFake3DHorizontalFlip(t *testing.T) {
+	decl := baseDecl()
+	decl.BurstSize = 1
+	decl.Lifetime = Range{Min: 10, Max: 10}
+	decl.Speed = Range{}
+	decl.FlipXFreq = 1
+
+	e := NewEmitter(decl, 17)
+	e.Step(math2d.Vec2{}, 0, 0, 0, 0.01, decl.Capacity)
+	e.Step(math2d.Vec2{}, 0, 0, 1, 0.1, decl.Capacity)
+	live := onlyLiveParticle(t, e)
+	p := onlyAlive(t, e)
+	want := math.Cos(2*math.Pi*decl.FlipXFreq*p.Age + p.WobblePhase)
+	if math.Abs(live.ScaleX-want) > 1e-9 {
+		t.Fatalf("ScaleX = %v, want %v", live.ScaleX, want)
 	}
 }
 

@@ -29,14 +29,14 @@ struct EmitterUniforms {
   world_to_screen_scale : vec2f,
   screen_to_clip_scale : vec2f,
   pos : vec2f, prev_pos : vec2f,
-  gravity : vec2f, emit_extent : vec2f, wobble_axis : vec2f,
+  gravity : vec2f, emit_extent : vec2f, emit_scale : vec2f, wobble_axis : vec2f,
   dt : f32, drag : f32,
   emit_count : u32, emit_base : u32, seed_lo : u32, seed_hi : u32,
   dir_base : f32, spread : f32,
   speed_min : f32, speed_max : f32, life_min : f32, life_max : f32,
   size0_min : f32, size0_max : f32, size1_min : f32, size1_max : f32,
   spin_max : f32, rot_min : f32, rot_max : f32,
-  wobble_amp : f32, wobble_freq : f32, fade_in : f32,
+  wobble_amp : f32, wobble_freq : f32, fade_in : f32, flip_x_freq : f32,
   shape : u32, vel_mode : u32, emit_radius : f32, capacity : u32,
 }
 
@@ -112,6 +112,7 @@ fn emit(@builtin(global_invocation_id) gid : vec3u) {
     }
     default: {}
   }
+  offset *= u.emit_scale;
 
   let speed = mix(u.speed_min, u.speed_max, float01(h1.y));
   let base_dir = vec2f(cos(u.dir_base), sin(u.dir_base));

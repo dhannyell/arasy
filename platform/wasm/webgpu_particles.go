@@ -15,7 +15,7 @@ import (
 const (
 	gpuParticleTTL     = 300
 	gpuParticleStride  = 48  // must match the WGSL Particle struct
-	gpuUniformSize     = 208 // must match the WGSL EmitterUniforms struct
+	gpuUniformSize     = 224 // must match the WGSL EmitterUniforms struct
 	particleWorkgroup  = 64
 	dispatchBufferSize = 12 // DispatchWorkgroupsIndirectArgs: {x,y,z}
 	drawBufferSize     = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
@@ -500,6 +500,17 @@ func (g *gpuParticles) endFrame() {
 	g.frame++
 }
 
+func (g *gpuParticles) bufferBytes() uint64 {
+	const perEmitterOverhead = gpuUniformSize + dispatchBufferSize + drawBufferSize + 16 // counters
+	var total uint64
+	for _, emitter := range g.emitters {
+		// Particle state plus current/survivor/dead index lists. This excludes
+		// shared pipelines, textures and browser/driver allocations.
+		total += uint64(emitter.capacity*(gpuParticleStride+3*4) + perEmitterOverhead)
+	}
+	return total
+}
+
 // destroy releases the storage owned by one emitter. Bind groups are GC'd by
 // JavaScript after their buffers become unreachable.
 func (e *gpuEmitter) destroy() {
@@ -551,6 +562,7 @@ func packUniforms(
 	writer.vec2(frame.PrevPos)
 	writer.vec2(d.Gravity)
 	writer.vec2(d.EmitExtent)
+	writer.vec2(particleEmitScale(cmd.EmitScale))
 	writer.vec2(wobbleAxis)
 	writer.f32(cmd.Dt)
 	writer.f32(d.Drag)
@@ -574,6 +586,7 @@ func packUniforms(
 	writer.f32(d.WobbleAmp)
 	writer.f32(d.WobbleFreq)
 	writer.f32(d.FadeIn)
+	writer.f32(d.FlipXFreq)
 	writer.u32(uint32(d.Shape))
 	writer.u32(uint32(d.VelMode))
 	writer.f32(d.EmitRadius)

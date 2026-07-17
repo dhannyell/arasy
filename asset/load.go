@@ -95,6 +95,7 @@ type effectEntry struct {
 	WobbleAmp  float64   `json:"wobble_amp"`
 	WobbleFreq float64   `json:"wobble_freq"`
 	FadeIn     float64   `json:"fade_in"`
+	FlipXFreq  float64   `json:"flip_x_freq"`
 }
 
 // Load reads manifest.json from the given FS layers and resolves every
@@ -457,6 +458,9 @@ func parseEffectEntry(entry effectEntry, textures map[string]textureEntry) (part
 	if entry.WobbleFreq < 0 {
 		return particle.EffectDecl{}, fmt.Errorf("asset: effect %q has negative wobble_freq %g", name, entry.WobbleFreq)
 	}
+	if entry.FlipXFreq < 0 {
+		return particle.EffectDecl{}, fmt.Errorf("asset: effect %q has negative flip_x_freq %g", name, entry.FlipXFreq)
+	}
 
 	return particle.EffectDecl{
 		Name:       name,
@@ -484,6 +488,7 @@ func parseEffectEntry(entry effectEntry, textures map[string]textureEntry) (part
 		WobbleAmp:  entry.WobbleAmp,
 		WobbleFreq: entry.WobbleFreq,
 		FadeIn:     entry.FadeIn,
+		FlipXFreq:  entry.FlipXFreq,
 	}, nil
 }
 

@@ -28,6 +28,8 @@ func (h *host) startLoop() {
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
 		elapsed := frameTimer.ElapsedMillis(ts)
+		inputAtMillis := h.pendingInputAtMillis
+		h.pendingInputAtMillis = -1
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
 		h.pending = h.pending[:0]
 		if h.audio != nil {
@@ -39,6 +41,17 @@ func (h *host) startLoop() {
 			updater.UpdateTextures(h.driver.ConsumeTextureUpdates())
 		}
 		h.renderer.Render(frame)
+		if h.onFrameMetrics != nil {
+			inputToSubmit, validInput := inputLatencySince(inputAtMillis)
+			if metrics, ready := h.frameMetrics.Observe(elapsed, inputToSubmit, validInput); ready {
+				metrics.JSHeapUsed, metrics.JSHeapLimit, metrics.JSHeapSet = browserHeapMetrics()
+				if reporter, ok := h.renderer.(gpuBufferReporter); ok {
+					metrics.GPUBufferBytes = reporter.particleGPUBufferBytes()
+					metrics.GPUBufferSet = true
+				}
+				h.onFrameMetrics(metrics)
+			}
+		}
 
 		fpsFrames++
 		fpsElapsed += elapsed

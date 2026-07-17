@@ -39,7 +39,8 @@ const effectsManifestJSON = `{
 			"rotation": [0, 180],
 			"wobble_amp": 0.5,
 			"wobble_freq": 1.5,
-			"fade_in": 0.2
+			"fade_in": 0.2,
+			"flip_x_freq": 0.75
 		},
 		{
 			"name": "flame",
@@ -106,6 +107,7 @@ func TestLoadEffectsResolvesByNameAssignsAlphabeticalIDsAndConvertsUnits(t *test
 		WobbleAmp:  0.5,
 		WobbleFreq: 1.5,
 		FadeIn:     0.2,
+		FlipXFreq:  0.75,
 	}
 	assertEffectDeclNear(t, ember, wantEmber)
 
@@ -433,5 +435,8 @@ func assertEffectDeclNear(t *testing.T, got, want particle.EffectDecl) {
 	}
 	if got.FadeIn != want.FadeIn {
 		t.Errorf("FadeIn = %v, want %v", got.FadeIn, want.FadeIn)
+	}
+	if got.FlipXFreq != want.FlipXFreq {
+		t.Errorf("FlipXFreq = %v, want %v", got.FlipXFreq, want.FlipXFreq)
 	}
 }

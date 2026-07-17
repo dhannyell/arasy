@@ -142,6 +142,13 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 	return r, nil
 }
 
+func (r *webgpuRenderer) particleGPUBufferBytes() uint64 {
+	if r.particles == nil {
+		return 0
+	}
+	return r.particles.bufferBytes()
+}
+
 func (r *webgpuRenderer) observeDeviceErrors(log *slog.Logger) {
 	r.errorCb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		message := "unknown WebGPU error"

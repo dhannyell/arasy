@@ -49,6 +49,7 @@ type EffectDecl struct {
 	WobbleAmp  float64 // lateral oscillation amplitude, world units
 	WobbleFreq float64 // oscillations per second
 	FadeIn     float64 // fraction of life ramping alpha 0..1 (0 = none)
+	FlipXFreq  float64 // fake 3D flips per second by scaling local X through zero
 }
 
 // EmitShape selects where new particles spawn around the emitter position.

@@ -182,6 +182,9 @@ type DrawParticles struct {
 	Emitter EmitterID
 	// Pos is the emitter origin in world coordinates.
 	Pos math2d.Vec2
+	// EmitScale scales the effect's declared spawn shape per axis. Zero
+	// components default to 1 for backward compatibility.
+	EmitScale math2d.Vec2
 	// Dir rotates the effect's declared emission direction, radians.
 	Dir float64
 	// Intensity scales the declared emit rate; 0 stops continuous

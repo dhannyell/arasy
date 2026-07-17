@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"log/slog"
+	"math"
 
 	"github.com/dhannyell/frameforge/internal/diagnostic"
 	"github.com/dhannyell/frameforge/math2d"
@@ -69,8 +70,9 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 		}
 
 		state.lastSeen = r.particleFrame
-		state.sim.Step(
+		state.sim.StepScaled(
 			cmd.Pos,
+			particleEmitScale(cmd.EmitScale),
 			cmd.Dir,
 			cmd.Intensity,
 			cmd.Burst,
@@ -102,6 +104,16 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	}
 }
 
+func particleEmitScale(scale math2d.Vec2) math2d.Vec2 {
+	if scale.X == 0 {
+		scale.X = 1
+	}
+	if scale.Y == 0 {
+		scale.Y = 1
+	}
+	return scale
+}
+
 func (r *Renderer) warnMissingParticleEffect(id render.ParticleEffectID) {
 	r.diagnostics.Log(
 		r.log,
@@ -123,10 +135,11 @@ func (r *Renderer) drawParticle(
 		return
 	}
 
-	half := p.Size * 0.5
+	halfWidth := p.Size * math.Abs(p.ScaleX) * 0.5
+	halfHeight := p.Size * 0.5
 	dest := math2d.NewRect(
-		math2d.Vec2{X: p.Pos.X - half, Y: p.Pos.Y - half},
-		math2d.Vec2{X: p.Size, Y: p.Size},
+		math2d.Vec2{X: p.Pos.X - halfWidth, Y: p.Pos.Y - halfHeight},
+		math2d.Vec2{X: halfWidth * 2, Y: halfHeight * 2},
 	)
 
 	var source image.Rectangle
