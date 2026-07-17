@@ -9,7 +9,9 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/frameforge/internal/diagnostic"
 	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -29,11 +31,23 @@ type Canvas2D struct {
 	// Fonts maps a manifest FontID to the CSS font-family registered with the
 	// browser once its FontFace has loaded. A missing entry means the font is
 	// still loading or unavailable, and DrawText falls back to monospace.
-	fonts map[render.FontID]string
-	log   *slog.Logger
+	fonts    map[render.FontID]string
+	manifest asset.Manifest
+	log      *slog.Logger
 
 	pendingTextures int
 	ready           bool
+
+	particleEmitters  map[particleKey]*canvasEmitter
+	particleBudget    *particle.Budget
+	particleScratch   []particle.LiveParticle
+	particleFrame     uint64
+	particleFrameSeen uint64 // frame of the last budget bookkeeping
+	// Share needs the frame's total demand before all commands have been
+	// seen, so each frame budgets against the previous frame's total.
+	particleWantPrev    int
+	particleWantCurrent int
+	diagnostics         diagnostic.Once
 }
 
 // dynamicTexture is the reusable upload target for one dynamic texture: an
@@ -58,6 +72,7 @@ func newCanvas2D(canvas js.Value, clear render.Color, manifest asset.Manifest, l
 		tintCache: make(map[string]js.Value),
 		dynamic:   make(map[render.TextureID]*dynamicTexture),
 		fonts:     make(map[render.FontID]string),
+		manifest:  manifest,
 		log:       log,
 	}
 	for _, decl := range manifest.Textures() {
@@ -189,11 +204,14 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.ctx.Call("fillRect", 0, 0, w, h)
 	}
 
+	c.particleFrame++
 	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-frameforge-ready", "canvas2d")
 		c.ready = true
 	}
+
+	c.pruneParticleEmitters()
 }
 
 type canvasSink struct {
@@ -252,6 +270,10 @@ func (s canvasSink) VisitImage(command render.DrawImage) {
 
 func (s canvasSink) VisitImageQuad(command render.DrawImageQuad) {
 	s.withClip(command.Clip, func() { s.canvas.drawImageQuad(command, s.camera) })
+}
+
+func (s canvasSink) VisitParticles(command render.DrawParticles) {
+	s.withClip(command.Clip, func() { s.canvas.drawParticles(command, s.camera) })
 }
 
 // drawImage is the Canvas2D fallback implementation of DrawImage. It matches

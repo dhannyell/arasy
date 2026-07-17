@@ -13,14 +13,10 @@ import (
 type Emitter struct {
 	Decl      EffectDecl
 	Seed      uint64
-	pool      []Particle  // len == capacity after Init
-	free      []int32     // dead-slot stack
-	aliveBits []uint64    // one bit per live pool slot
-	emitAcc   float64     // fractional emission accumulator
-	emitted   uint32      // monotonically increasing spawn counter (hash lane)
-	lastBurst uint32      // last seen cumulative burst counter
-	lastPos   math2d.Vec2 // emitter position on the previous Step (spawn lerp)
-	started   bool
+	pool      []Particle // len == capacity after Init
+	free      []int32    // dead-slot stack
+	aliveBits []uint64   // one bit per live pool slot
+	emission  EmissionState
 }
 
 type Particle struct {
@@ -41,6 +37,7 @@ type LiveParticle struct {
 	Rotation float64
 	Size     float64
 	Color    [4]float64
+	Progress float64 // Age/Life in [0,1); drives size/color interpolation.
 }
 
 // NewEmitter builds the CPU-side state for one effect instance. The pool,
@@ -68,42 +65,23 @@ func NewEmitter(decl EffectDecl, seed uint64) *Emitter {
 // this frame (budget); emission past the cap is dropped, not deferred.
 // dt <= 0 neither emits nor integrates (pause/scrub).
 func (e *Emitter) Step(pos math2d.Vec2, dirOffset, intensity float64, burst uint32, dt float64, maxAlive int) {
-	if !e.started {
-		e.lastBurst = burst
-		e.lastPos = pos
-		e.started = true
-	}
-
-	previousPos := e.lastPos
-
-	if dt <= 0.0 {
-		e.lastPos = pos
+	frame := e.emission.Advance(pos, e.Decl.EmitRate, intensity, e.Decl.BurstSize, burst, dt)
+	if dt <= 0 {
 		return
-	}
-
-	// Emission accounting. The GPU backend keeps this exact arithmetic on
-	// the Go side to size its emit dispatch.
-	e.emitAcc += e.Decl.EmitRate * intensity * dt
-	toEmit := int(e.emitAcc)
-	e.emitAcc -= float64(toEmit)
-
-	if burst > e.lastBurst {
-		toEmit += int(burst-e.lastBurst) * e.Decl.BurstSize
-		e.lastBurst = burst
 	}
 
 	maxAlive = min(max(maxAlive, 0), len(e.pool))
 	alive := len(e.pool) - len(e.free)
-	toEmit = min(toEmit, max(0, maxAlive-alive))
+	frame.Count = min(frame.Count, max(0, maxAlive-alive))
 
-	for n := 0; n < toEmit; n++ {
-		t := float64(n+1) / float64(toEmit)
-		origin := previousPos.Lerp(pos, t)
-		e.spawn(origin, dirOffset)
+	for n := 0; n < frame.Count; n++ {
+		t := float64(n+1) / float64(frame.Count)
+		origin := frame.PrevPos.Lerp(pos, t)
+		e.spawn(origin, dirOffset, frame.Base+uint32(n))
 	}
-
-	// Must update even when toEmit == 0
-	e.lastPos = pos
+	if frame.Count > 0 {
+		e.emission.Emitted += uint32(frame.Count)
+	}
 
 	gx, gy := e.Decl.Gravity.X*dt, e.Decl.Gravity.Y*dt
 	drag := math.Pow(e.Decl.Drag, dt)
@@ -167,6 +145,7 @@ func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
 				Rotation: rotation,
 				Color:    color,
 				Size:     size,
+				Progress: math2d.Clamp(progress, 0, 1),
 			}
 
 			dst = append(dst, live)
@@ -181,12 +160,11 @@ func (e *Emitter) Alive(dst []LiveParticle) []LiveParticle {
 // a pure function of (emitted, Seed) — never of the slot — so the GPU emit
 // pass spawns identical particles for the same counter. The lane layout
 // below must mirror the particle WGSL shader exactly.
-func (e *Emitter) spawn(origin math2d.Vec2, dirOffset float64) {
-	h1 := pcg3d([3]uint32{e.emitted, uint32(e.Seed), uint32(e.Seed >> 32)})
+func (e *Emitter) spawn(origin math2d.Vec2, dirOffset float64, emitted uint32) {
+	h1 := pcg3d([3]uint32{emitted, uint32(e.Seed), uint32(e.Seed >> 32)})
 	h2 := pcg3d(h1)
 	h3 := pcg3d(h2)
 	h4 := pcg3d(h3)
-	e.emitted++
 
 	slot := e.free[len(e.free)-1]
 	e.free = e.free[:len(e.free)-1]

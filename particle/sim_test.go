@@ -75,16 +75,16 @@ func TestStepAccumulatesFractionalEmissionAcrossFrames(t *testing.T) {
 	if got := aliveCount(e); got != 2 {
 		t.Fatalf("aliveCount after first Step = %d, want 2 (floor(2.5))", got)
 	}
-	if diff := math.Abs(e.emitAcc - 0.5); diff > 1e-9 {
-		t.Fatalf("emitAcc after first Step = %v, want 0.5 remainder", e.emitAcc)
+	if diff := math.Abs(e.emission.Acc - 0.5); diff > 1e-9 {
+		t.Fatalf("emission.Acc after first Step = %v, want 0.5 remainder", e.emission.Acc)
 	}
 
 	e.Step(pos, 0, 1, 0, 1.0, decl.Capacity)
 	if got := aliveCount(e); got != 5 {
 		t.Fatalf("aliveCount after second Step = %d, want 5 (2 + floor(0.5+2.5))", got)
 	}
-	if diff := math.Abs(e.emitAcc - 0.0); diff > 1e-9 {
-		t.Fatalf("emitAcc after second Step = %v, want 0", e.emitAcc)
+	if diff := math.Abs(e.emission.Acc - 0.0); diff > 1e-9 {
+		t.Fatalf("emission.Acc after second Step = %v, want 0", e.emission.Acc)
 	}
 }
 
@@ -194,8 +194,8 @@ func TestStepWithNonPositiveDtNeitherEmitsIntegratesNorAgesButUpdatesLastPos(t *
 			if len(e.free) != beforeFreeLen {
 				t.Fatalf("free-list length changed during dt<=0 Step: before=%d after=%d", beforeFreeLen, len(e.free))
 			}
-			if e.lastPos != pos1 {
-				t.Fatalf("lastPos = %v, want %v (lastPos updates even when dt<=0)", e.lastPos, pos1)
+			if e.emission.LastPos != pos1 {
+				t.Fatalf("emission.LastPos = %v, want %v (LastPos updates even when dt<=0)", e.emission.LastPos, pos1)
 			}
 		})
 	}
@@ -255,13 +255,19 @@ func TestStepDropsEmissionAboveMaxAliveWithoutDeferring(t *testing.T) {
 	if got := aliveCount(e); got != 3 {
 		t.Fatalf("aliveCount capped at maxAlive=3 = %d, want 3", got)
 	}
-	if diff := math.Abs(e.emitAcc - 0); diff > 1e-9 {
-		t.Fatalf("emitAcc after capped emission = %v, want 0 (excess discarded, not deferred)", e.emitAcc)
+	if got := e.emission.Emitted; got != 3 {
+		t.Fatalf("emission.Emitted after cap = %d, want 3 accepted spawns", got)
+	}
+	if diff := math.Abs(e.emission.Acc - 0); diff > 1e-9 {
+		t.Fatalf("emission.Acc after capped emission = %v, want 0 (excess discarded, not deferred)", e.emission.Acc)
 	}
 
 	e.Step(pos, 0, 1, 0, 1.0, decl.Capacity)
 	if got := aliveCount(e); got != decl.Capacity {
 		t.Fatalf("aliveCount after raising the cap to capacity = %d, want %d", got, decl.Capacity)
+	}
+	if got := e.emission.Emitted; got != uint32(decl.Capacity) {
+		t.Fatalf("emission.Emitted after filling pool = %d, want %d", got, decl.Capacity)
 	}
 
 	// A third frame at full capacity must not overshoot even though the
