@@ -88,6 +88,9 @@ func assertActiveSlotCount(t *testing.T, emitter *Emitter, want int) {
 	if got := len(emitter.pool) - len(emitter.free); got != want {
 		t.Fatalf("pool/free live count = %d, want %d", got, want)
 	}
+	if got := emitter.AliveCount(); got != want {
+		t.Fatalf("AliveCount() = %d, want %d", got, want)
+	}
 }
 
 func containsSlot(slots []int, want int) bool {

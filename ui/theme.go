@@ -13,6 +13,7 @@ type Theme struct {
 	Label    LabelTheme
 	Panel    PanelTheme
 	Progress ProgressBarTheme
+	Slider   SliderTheme
 	Card     CardTheme
 	Row      RowTheme
 	Header   HeaderTheme
@@ -55,6 +56,19 @@ type ProgressBarTheme struct {
 	Fill        render.Color // preenchimento (0..value)
 	Border      render.Color
 	BorderWidth float64
+}
+
+// SliderTheme defines the horizontal track and thumb appearance.
+type SliderTheme struct {
+	Track        render.Color
+	Fill         render.Color
+	Border       render.Color
+	Thumb        render.Color
+	ThumbHovered render.Color
+	ThumbActive  render.Color
+	TrackHeight  float64
+	ThumbRadius  float64
+	BorderWidth  float64
 }
 
 type CardTheme struct {
@@ -137,6 +151,17 @@ func DefaultTheme() Theme {
 			Border:      subtle,
 			BorderWidth: 1,
 		},
+		Slider: SliderTheme{
+			Track:        render.RGBA(1, 1, 1, 0.10),
+			Fill:         accent,
+			Border:       subtle,
+			Thumb:        white,
+			ThumbHovered: render.RGBA(0.82, 0.91, 1, 1),
+			ThumbActive:  accent,
+			TrackHeight:  6,
+			ThumbRadius:  8,
+			BorderWidth:  1,
+		},
 		Card: CardTheme{
 			Background:   panelBg,
 			Border:       subtle,
@@ -200,6 +225,9 @@ func WithDefaults(theme Theme) Theme {
 	}
 	if theme.Progress == (ProgressBarTheme{}) {
 		theme.Progress = defaults.Progress
+	}
+	if theme.Slider == (SliderTheme{}) {
+		theme.Slider = defaults.Slider
 	}
 	if theme.Card == (CardTheme{}) {
 		theme.Card = defaults.Card

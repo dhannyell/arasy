@@ -174,6 +174,10 @@ Widgets disponiveis:
 - `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
 - `ProgressBarIn(rect, value, space)`
+- `Slider(id, rect, value, opts)`
+- `SliderIn(id, rect, value, opts, space)`
+- `SliderInput(id, rect, value, opts)`
+- `SliderInputIn(id, rect, value, opts, space)`
 - `Table(id, rect, cols, rowCount, selected, cell)`
 - `TableIn(id, rect, cols, rowCount, selected, cell, space)`
 - `TableStyledIn(id, rect, cols, rowCount, selected, cell, style, space)`
@@ -192,6 +196,31 @@ Widgets disponiveis:
 `Button` usam `render.DrawText` com alinhamento central e baseline middle.
 
 `ProgressBar` faz clamp de `value` para `[0, 1]`.
+
+`Slider` segue a separacao deterministica da UI em duas fases. O jogo consome
+o pointer no `Update` com `SliderInput` e desenha o mesmo ID, retangulo e
+opcoes no `Render` com `Slider`:
+
+```go
+var volumeSlider = ui.SliderOptions{Min: 0, Max: 1, Step: 0.05}
+
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    if value, changed := ctx.UI.SliderInput("volume", volumeRect, g.Volume, volumeSlider); changed {
+        g.Volume = value
+    }
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    ctx.UI.Slider("volume", volumeRect, g.Volume, volumeSlider)
+    return nil
+}
+```
+
+O valor pertence ao estado do jogo; a UI persiste somente captura e foco.
+`Step <= 0` deixa o valor continuo. Um `Step` positivo quantiza incrementos a
+partir de `Min`, mantendo `Max` como ponto final alcancavel. Clicar no trilho
+reposiciona o thumb; arrastar continua
+capturado fora do retangulo e faz clamp em `[Min, Max]`.
 
 `Card` desenha um painel arredondado com uma barra de accent opcional. `Badge`
 desenha um chip pequeno dimensionado por `render.MeasureText`.
@@ -418,6 +447,7 @@ O tema define estilos para:
 - labels;
 - panels;
 - progress bars;
+- sliders;
 - cards, rows, headers, badges, texto e foco.
 
 Temas parciais sao completados por `ui.WithDefaults`: slots zero value herdam
@@ -497,7 +527,7 @@ ui.UI:
 Clicked:
   query deterministica chamada no Update
 
-Button/Label/Panel/ProgressBar:
+Button/Label/Panel/ProgressBar/Slider:
   widgets chamados no Render
 
 Theme:
