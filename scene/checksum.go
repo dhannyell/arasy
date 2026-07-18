@@ -15,13 +15,13 @@ const (
 	tagCircleSprite
 	tagCircleSpriteTween
 	tagRectSprite
-	tagImageSprite
 	tagVelocity
 	tagAcceleration
 	tagDamping
 	tagBody
 	tagCircleCollider
 	tagRectCollider
+	tagImageSprite
 )
 
 // ChecksumComponentStores counts the component stores covered by Checksum.
@@ -102,20 +102,6 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], s.Stroke.B)
 		hashF64(h, buf[:], s.Stroke.A)
 	})
-	hashComponent(h, buf[:], tagImageSprite, &w.imageSprites, func(s ImageSprite) {
-		hashU64(h, buf[:], uint64(int64(s.Layer)))
-		hashU64(h, buf[:], uint64(s.Texture))
-		hashF64(h, buf[:], s.Src.Min.X)
-		hashF64(h, buf[:], s.Src.Min.Y)
-		hashF64(h, buf[:], s.Src.Max.X)
-		hashF64(h, buf[:], s.Src.Max.Y)
-		hashF64(h, buf[:], s.Size.X)
-		hashF64(h, buf[:], s.Size.Y)
-		hashF64(h, buf[:], s.Tint.R)
-		hashF64(h, buf[:], s.Tint.G)
-		hashF64(h, buf[:], s.Tint.B)
-		hashF64(h, buf[:], s.Tint.A)
-	})
 	hashComponent(h, buf[:], tagVelocity, &w.velocities, func(v Velocity) {
 		hashF64(h, buf[:], v.Linear.X)
 		hashF64(h, buf[:], v.Linear.Y)
@@ -138,6 +124,22 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], c.HalfExtends.X)
 		hashF64(h, buf[:], c.HalfExtends.Y)
 	})
+	if w.imageSprites.len() > 0 {
+		hashComponent(h, buf[:], tagImageSprite, &w.imageSprites, func(s ImageSprite) {
+			hashU64(h, buf[:], uint64(int64(s.Layer)))
+			hashU64(h, buf[:], uint64(s.Texture))
+			hashF64(h, buf[:], s.Src.Min.X)
+			hashF64(h, buf[:], s.Src.Min.Y)
+			hashF64(h, buf[:], s.Src.Max.X)
+			hashF64(h, buf[:], s.Src.Max.Y)
+			hashF64(h, buf[:], s.Size.X)
+			hashF64(h, buf[:], s.Size.Y)
+			hashF64(h, buf[:], s.Tint.R)
+			hashF64(h, buf[:], s.Tint.G)
+			hashF64(h, buf[:], s.Tint.B)
+			hashF64(h, buf[:], s.Tint.A)
+		})
+	}
 
 	return h.Sum64()
 }
