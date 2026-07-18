@@ -8,51 +8,53 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var platform string
-var projectPath string
-var address string
-var wasmExecPath string
-var execPath string
+var (
+	devPlatform string
+	devAddress  string
+	devTitle    string
+)
 
 var devCmd = &cobra.Command{
-	Use:   "dev",
-	Short: "build and start a development game",
-	Long:  `Start and build a game in development mode`,
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("platform: %s\n", platform)
-
-		switch platform {
-		case "wasm":
-			fmt.Printf("Starting wasm server")
-			if projectPath == "" {
-				currentPath, err := os.Getwd()
-				if err != nil {
-					os.Exit(1)
-				}
-				projectPath = currentPath
-			}
-			wasmserve.Start(wasmserve.NewServerOptions(projectPath, "", "app.wasm", execPath, address))
-		default:
-			fmt.Printf("Error: Unknown '%s' platform.", platform)
+	Use:   "dev [package]",
+	Short: "build and serve a WASM game for development",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := supportedPlatform(devPlatform); err != nil {
+			return err
 		}
+		pkg := packageArg(args)
+		title := devTitle
+		if title == "" {
+			title = defaultTitle(pkg)
+		}
+		dir, err := os.MkdirTemp("", "frameforge-dev-*")
+		if err != nil {
+			return err
+		}
+		if err := rebuildWASM(pkg, dir, title); err != nil {
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err); writeErr != nil {
+				return writeErr
+			}
+		}
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "serving %s at http://%s; reload the browser to rebuild\n", pkg, devAddress); err != nil {
+			return err
+		}
+		wasmserve.Start(&wasmserve.ServerOptions{
+			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
+			Rebuild: func() error { return rebuildWASM(pkg, dir, title) },
+		})
+		return nil
 	},
 }
 
 func init() {
-	devCmd.Flags().StringVarP(&platform, "platform", "p", "wasm", "platform to development build")
-	devCmd.Flags().StringVarP(&projectPath, "project-path", "s", "", "project path")
-	devCmd.Flags().StringVarP(&address, "address", "a", "127.0.0.1:8080", "server address")
-	devCmd.Flags().StringVarP(&wasmExecPath, "wasm-exec-path", "w", ".", "path to wasm executable")
-	devCmd.Flags().StringVarP(&execPath, "exec-path", "e", "", "path to executable")
-
-	err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		options := []string{"wasm"}
-
-		return options, cobra.ShellCompDirectiveDefault
-	})
-	if err != nil {
-		os.Exit(1)
+	devCmd.Flags().StringVarP(&devPlatform, "platform", "p", "wasm", "target platform")
+	devCmd.Flags().StringVarP(&devAddress, "address", "a", "127.0.0.1:8080", "server address")
+	devCmd.Flags().StringVar(&devTitle, "title", "", "HTML page title")
+	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
+	}); err != nil {
+		panic(err)
 	}
-
 	rootCmd.AddCommand(devCmd)
 }

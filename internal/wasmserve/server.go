@@ -19,6 +19,9 @@ type ServerOptions struct {
 	WASMFile     string
 	WASMExecPath string
 	Addr         string
+	// Rebuild runs before serving WASMFile. Development hosts use it to build
+	// on browser reload; a failure is returned to the browser as plain text.
+	Rebuild func() error
 }
 
 func NewServerOptions(dir, title, file, execPath, addr string) *ServerOptions {
@@ -36,7 +39,7 @@ func Start(opts *ServerOptions) {
 
 	if opts.WASMExecPath == "" {
 		var err error
-		opts.WASMExecPath, err = defaultWASMExecPath()
+		opts.WASMExecPath, err = DefaultWASMExecPath()
 		if err != nil {
 			log.Error("wasm_exec.js not found", "err", err)
 			os.Exit(1)
@@ -48,6 +51,7 @@ func Start(opts *ServerOptions) {
 		Title:        opts.Title,
 		WASMFile:     opts.WASMFile,
 		WASMExecPath: opts.WASMExecPath,
+		Rebuild:      opts.Rebuild,
 	})
 
 	log.Info("listening", "addr", opts.Addr, "dir", opts.Dir, "wasm", opts.WASMFile, "wasm_exec", opts.WASMExecPath)
@@ -67,24 +71,42 @@ func newHandler(opts ServerOptions) http.Handler {
 		case "/wasm_exec.js":
 			http.ServeFile(w, r, opts.WASMExecPath)
 		default:
+			if r.URL.Path == "/"+opts.WASMFile && opts.Rebuild != nil {
+				if err := opts.Rebuild(); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+			}
 			files.ServeHTTP(w, r)
 		}
 	})
 }
 
 func serveIndex(w http.ResponseWriter, opts ServerOptions) {
-	wasmFile, err := json.Marshal(opts.WASMFile)
+	body, err := ShellHTML(opts.Title, opts.WASMFile)
 	if err != nil {
 		http.Error(w, "invalid wasm file", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if _, err := fmt.Fprintf(w, wasmShellHTML, html.EscapeString(opts.Title), wasmFile); err != nil {
+	if _, err := w.Write(body); err != nil {
 		slog.Warn("failed to write index response", "err", err)
 	}
 }
 
-func defaultWASMExecPath() (string, error) {
+// ShellHTML returns the browser shell used by both the development server and
+// static builds.
+func ShellHTML(title, wasmFile string) ([]byte, error) {
+	encodedWASMFile, err := json.Marshal(wasmFile)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(fmt.Sprintf(wasmShellHTML, html.EscapeString(title), encodedWASMFile)), nil
+}
+
+// DefaultWASMExecPath finds the Go runtime support script for the Go tool on
+// PATH. It deliberately asks that tool instead of relying on runtime.GOROOT.
+func DefaultWASMExecPath() (string, error) {
 	goroot, err := findGOROOT()
 	if err != nil {
 		return "", err

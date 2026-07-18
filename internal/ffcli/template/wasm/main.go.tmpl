@@ -1,0 +1,24 @@
+//go:build js && wasm
+
+package main
+
+import (
+	"log/slog"
+
+	{{.Name}} "{{.Module}}"
+	"{{.EngineModule}}/platform/wasm"
+	"{{.EngineModule}}/runtime"
+)
+
+func main() {
+	log := wasm.NewConsoleLogger(slog.LevelInfo)
+	if err := wasm.Run(&{{.Name}}.Game{}, wasm.Options{
+		DevTools: true,
+		Log:      log,
+		GameFactory: func() runtime.Game {
+			return &{{.Name}}.Game{}
+		},
+	}); err != nil {
+		log.Error("wasm host failed", "err", err)
+	}
+}

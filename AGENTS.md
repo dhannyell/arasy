@@ -9,6 +9,7 @@ Instructions for IA agents working in this repository.
 go test ./...                          # all tests
 go test ./scene -run TestStep          # single test
 go test ./scene -run="^$" -bench=. -benchmem  # benchmarks
+golangci-lint run ./...                # mandatory before every handoff/commit
 
 # Benchmarks (suite registry: cmd/benchsave/suites.go)
 go run ./cmd/benchsave -list-suites
@@ -29,10 +30,10 @@ go run ./cmd/demos/breakout/canvas                # browser WS :8080
 # WASM build then serve:
 go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
-# Rhythm: offline smoke render, then WASM build and local dev server.
+# Rhythm: offline smoke render, then dev server (builds + rebuilds on browser reload).
 go run ./examples/rhythm/raster
-# $env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/rhythm/app.wasm ./examples/rhythm/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH
-# go run ./cmd/frameforge dev -s output/wasm/rhythm -a 127.0.0.1:8090
+go run ./cmd/frameforge dev ./examples/rhythm/wasm -a 127.0.0.1:8090
+go run ./cmd/frameforge build ./examples/breakout/wasm -o dist/breakout
 
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
@@ -144,7 +145,7 @@ offline raster, future native).
 - Engine packages stay independent of app-specific rules.
 - Prefer small explicit APIs; add complexity under project pressure.
 - Render commands stay backend-agnostic. Measure before optimizing.
-- Stdlib preferred; only dep is `github.com/coder/websocket`.
+- Stdlib preferred; engine packages keep third-party dependencies limited to `golang.org/x/image` where already used. CLI tooling under `internal/ffcli` may use `spf13/cobra`.
 
 ## Float Discipline
 

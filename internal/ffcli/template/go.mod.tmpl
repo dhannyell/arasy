@@ -1,0 +1,8 @@
+module {{.Module}}
+
+go {{.GoVersion}}
+
+require {{.EngineModule}} {{.EngineVersion}}
+{{if .EngineReplace}}
+replace {{.EngineModule}} => {{.EngineReplace}}
+{{end}}
