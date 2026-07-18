@@ -97,6 +97,14 @@ func (b *Budget) Cap() int {
 	return int(b.cap)
 }
 
+// Floor returns the configured minimum global live-particle limit. Callers
+// bookkeeping per-frame demand (EmitterSet) use it as the SetCeiling
+// fallback before any frame has reported a want, instead of an arbitrary
+// per-effect capacity.
+func (b *Budget) Floor() int {
+	return b.floor
+}
+
 // Share returns this emitter's proportional slice of the global cap.
 //
 // Want is this emitter's requested capacity. TotalWant is the sum of all

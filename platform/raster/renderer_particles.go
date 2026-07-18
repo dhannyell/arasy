@@ -22,103 +22,38 @@ var particleWhiteTexture = func() *image.RGBA {
 	return img
 }()
 
-const particleEmitterTTL = 300
-
-const missingParticleEffectDiagnostic = "particle.effect_missing"
-
-type emitterKey struct {
-	effect  render.ParticleEffectID
-	emitter render.EmitterID
-}
-
-type rasterEmitter struct {
-	sim      *particle.Emitter
-	texture  render.TextureID
-	lastSeen uint64
-}
-
 func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	decl, ok := r.Assets.EffectDecl(cmd.Effect)
 	if !ok {
 		r.warnMissingParticleEffect(cmd.Effect)
 		return
 	}
-
-	if r.particleEmitters == nil {
-		r.particleEmitters = make(map[emitterKey]*rasterEmitter)
+	if r.particles == nil {
+		r.particles = particle.NewEmitterSet(nil)
 	}
-
-	key := emitterKey{
-		effect:  cmd.Effect,
-		emitter: cmd.Emitter,
+	res := r.particles.Draw(
+		particle.InstanceKey{Effect: uint32(cmd.Effect), Emitter: uint32(cmd.Emitter)},
+		decl,
+		particle.Input{Pos: cmd.Pos, Dir: cmd.Dir, Intensity: cmd.Intensity,
+			Burst: cmd.Burst, Dt: cmd.Dt, Seed: cmd.Seed},
+	)
+	if res.Skipped {
+		return
 	}
-
-	state := r.particleEmitters[key]
-	if state != nil && state.lastSeen == r.particleFrame {
-		// Preserve painter-order duplicates without advancing the emitter twice.
-		// The first command also wins over a conflicting seed for this frame.
-		if state.sim.Seed != cmd.Seed {
-			return
-		}
-	} else {
-		if state == nil || state.sim.Seed != cmd.Seed {
-			state = &rasterEmitter{
-				sim:     particle.NewEmitter(decl, cmd.Seed),
-				texture: r.Assets.Texture(decl.Texture),
-			}
-			r.particleEmitters[key] = state
-		}
-
-		state.lastSeen = r.particleFrame
-		state.sim.StepScaled(
-			cmd.Pos,
-			particleEmitScale(cmd.EmitScale),
-			cmd.Dir,
-			cmd.Intensity,
-			cmd.Burst,
-			cmd.Dt,
-			decl.Capacity,
-		)
-	}
-
-	if cap(r.particleScratch) < decl.Capacity {
-		r.particleScratch = make([]particle.LiveParticle, 0, decl.Capacity)
-	}
-
-	live := state.sim.Alive(r.particleScratch[:0])
-	r.particleScratch = live
-
 	texture := particleWhiteTexture
 	if decl.Texture != "" {
-		texture = r.Textures.Lookup(state.texture)
+		texture = r.Textures.Lookup(r.Assets.Texture(decl.Texture))
 	}
-
-	for _, p := range live {
-		r.drawParticle(
-			img,
-			texture,
-			p,
-			cmd.Clip,
-			decl.Blend,
-		)
+	for _, p := range res.Live {
+		r.drawParticle(img, texture, p, cmd.Clip, decl.Blend)
 	}
-}
-
-func particleEmitScale(scale math2d.Vec2) math2d.Vec2 {
-	if scale.X == 0 {
-		scale.X = 1
-	}
-	if scale.Y == 0 {
-		scale.Y = 1
-	}
-	return scale
 }
 
 func (r *Renderer) warnMissingParticleEffect(id render.ParticleEffectID) {
 	r.diagnostics.Log(
 		r.log,
 		slog.LevelWarn,
-		diagnostic.Key{Code: missingParticleEffectDiagnostic, ID: uint64(id)},
+		diagnostic.Key{Code: particle.DiagnosticEffectMissing, ID: uint64(id)},
 		"raster: DrawParticles references unknown effect; command skipped",
 		"effect_id", id,
 	)
@@ -163,13 +98,5 @@ func particleTint(c [4]float64) tintFactors {
 		g: c[1] * c[3],
 		b: c[2] * c[3],
 		a: c[3],
-	}
-}
-
-func (r *Renderer) pruneParticleEmitters() {
-	for key, state := range r.particleEmitters {
-		if r.particleFrame-state.lastSeen >= particleEmitterTTL {
-			delete(r.particleEmitters, key)
-		}
 	}
 }

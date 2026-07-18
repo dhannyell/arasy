@@ -2,8 +2,8 @@ package raster
 
 import (
 	"bytes"
+	"image/color"
 	"log/slog"
-	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -54,125 +54,29 @@ func TestParticleMissingEffectWarnsOnlyOnce(t *testing.T) {
 	}
 }
 
-func TestParticleEmitterExpiresAfter300FramesWithoutCommand(t *testing.T) {
+// TestParticleDrawProducesForegroundPixels is a shallow integration check:
+// a valid DrawParticles command must reach particle.EmitterSet and paint
+// something. The lifecycle itself (dedupe, TTL, budget) is covered black-box
+// in particle/emitterset_test.go against the shared module.
+func TestParticleDrawProducesForegroundPixels(t *testing.T) {
 	renderer, effect := newParticleBehaviorRenderer(t)
-	key := emitterKey{effect: effect, emitter: 1}
-
-	renderer.Render([]render.Command{particleBehaviorCommand(effect, 1, 0)})
-	if renderer.particleEmitters[key] == nil {
-		t.Fatal("particle emitter was not created")
-	}
-
-	for range particleEmitterTTL - 1 {
-		renderer.Render(nil)
-	}
-	if renderer.particleEmitters[key] == nil {
-		t.Fatalf("particle emitter expired before %d unseen frames", particleEmitterTTL)
-	}
-
-	renderer.Render(nil)
-	if renderer.particleEmitters[key] != nil {
-		t.Fatalf("particle emitter still exists after %d unseen frames", particleEmitterTTL)
-	}
-}
-
-func TestParticleEmitterDtZeroFreezesLiveParticles(t *testing.T) {
-	renderer, effect := newParticleBehaviorRenderer(t)
-	key := emitterKey{effect: effect, emitter: 1}
-
-	spawn := particleBehaviorCommand(effect, 1, 0.25)
-	spawn.Intensity = 1
-	renderer.Render([]render.Command{spawn})
-
-	state := renderer.particleEmitters[key]
-	if state == nil {
-		t.Fatal("particle emitter was not created")
-	}
-	before := state.sim.Alive(nil)
-	if len(before) == 0 {
-		t.Fatal("particle emitter did not spawn a particle")
-	}
-
-	frozen := particleBehaviorCommand(effect, 1, 0)
-	frozen.Pos = math2d.Vec2{X: 48, Y: 40}
-	frozen.Intensity = 1
-	frozen.Burst = 1
-	renderer.Render([]render.Command{frozen})
-
-	after := state.sim.Alive(nil)
-	if !slices.Equal(after, before) {
-		t.Fatalf("Dt 0 changed live particles:\nbefore: %+v\nafter:  %+v", before, after)
-	}
-}
-
-func TestParticleEmitterIDsKeepIndependentPools(t *testing.T) {
-	renderer, effect := newParticleBehaviorRenderer(t)
-
-	firstCommand := particleBehaviorCommand(effect, 1, 0.25)
-	firstCommand.Intensity = 1
-	secondCommand := particleBehaviorCommand(effect, 2, 0.25)
-	renderer.Render([]render.Command{firstCommand, secondCommand})
-
-	first := renderer.particleEmitters[emitterKey{effect: effect, emitter: 1}]
-	second := renderer.particleEmitters[emitterKey{effect: effect, emitter: 2}]
-	if first == nil || second == nil {
-		t.Fatalf("particle emitters = (%p, %p), want two live states", first, second)
-	}
-	if first.sim == second.sim {
-		t.Fatal("distinct emitter IDs share the same particle pool")
-	}
-	if got := len(first.sim.Alive(nil)); got != 1 {
-		t.Fatalf("first emitter live particles = %d, want 1", got)
-	}
-	if got := len(second.sim.Alive(nil)); got != 0 {
-		t.Fatalf("second emitter live particles = %d, want 0", got)
-	}
-
-	renderer.Render([]render.Command{firstCommand})
-	if got := len(second.sim.Alive(nil)); got != 0 {
-		t.Fatalf("advancing first emitter changed second emitter to %d live particles", got)
-	}
-}
-
-func TestParticleEmitterAdvancesOnlyOnceWhenDrawnTwiceInOneFrame(t *testing.T) {
-	single, effect := newParticleBehaviorRenderer(t)
-	duplicate, _ := newParticleBehaviorRenderer(t)
 	command := particleBehaviorCommand(effect, 1, 0.25)
 	command.Intensity = 1
 
-	single.Render([]render.Command{command})
-	duplicate.Render([]render.Command{command, command})
+	img := renderer.Render([]render.Command{command})
 
-	key := emitterKey{effect: effect, emitter: 1}
-	want := single.particleEmitters[key].sim.Alive(nil)
-	got := duplicate.particleEmitters[key].sim.Alive(nil)
-	if !slices.Equal(got, want) {
-		t.Fatalf("duplicate draw advanced emitter twice:\nsingle:    %+v\nduplicate: %+v", want, got)
+	background := color.RGBA{}
+	foreground := false
+	for y := range img.Rect.Dy() {
+		for x := range img.Rect.Dx() {
+			if c := img.RGBAAt(x, y); c != background {
+				foreground = true
+				break
+			}
+		}
 	}
-}
-
-func TestParticleEmitterFirstSeedWinsWithinFrame(t *testing.T) {
-	renderer, effect := newParticleBehaviorRenderer(t)
-	first := particleBehaviorCommand(effect, 1, 0.25)
-	first.Intensity = 1
-	conflicting := first
-	conflicting.Seed = 99
-
-	renderer.Render([]render.Command{first, conflicting})
-
-	key := emitterKey{effect: effect, emitter: 1}
-	state := renderer.particleEmitters[key]
-	if state == nil {
-		t.Fatal("particle emitter was not created")
-	}
-	if got := state.sim.Seed; got != first.Seed {
-		t.Fatalf("seed after conflicting command = %d, want first seed %d", got, first.Seed)
-	}
-
-	renderer.Render([]render.Command{conflicting})
-	state = renderer.particleEmitters[key]
-	if got := state.sim.Seed; got != conflicting.Seed {
-		t.Fatalf("seed on next frame = %d, want replacement seed %d", got, conflicting.Seed)
+	if !foreground {
+		t.Fatal("DrawParticles command produced no foreground pixels")
 	}
 }
 

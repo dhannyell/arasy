@@ -30,23 +30,22 @@ type Renderer struct {
 	// Run and tests), so no locking.
 	faceCache map[faceKey]font.Face
 
-	particleFrame    uint64
-	particleEmitters map[emitterKey]*rasterEmitter
-	particleScratch  []particle.LiveParticle
-	diagnostics      diagnostic.Once
-	log              *slog.Logger
+	particles   *particle.EmitterSet
+	diagnostics diagnostic.Once
+	log         *slog.Logger
 }
 
 // Render draws commands into a new RGBA image.
 func (r *Renderer) Render(commands []render.Command) *image.RGBA {
-	r.particleFrame++
+	if r.particles != nil {
+		r.particles.BeginFrame()
+	}
 
 	img := image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
 	fillRect(img, img.Bounds(), toRGBA(r.Clear))
 
 	render.Each(commands, rasterSink{renderer: r, image: img})
 
-	r.pruneParticleEmitters()
 	return img
 }
 

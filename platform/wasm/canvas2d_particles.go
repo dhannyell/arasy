@@ -23,24 +23,9 @@ import (
 )
 
 const (
-	canvasParticleTTL   = 300 // frames without a command before state drops
-	particleColorStops  = 16  // gradient quantization; bounds the tint cache
+	particleColorStops  = 16 // gradient quantization; bounds the tint cache
 	particleBudgetFloor = 256
-
-	missingParticleEffectDiagnostic = "particle.effect_missing"
-	particleBudgetReducedDiagnostic = "particle.budget_reduced"
 )
-
-type particleKey struct {
-	effect  render.ParticleEffectID
-	emitter render.EmitterID
-}
-
-type canvasEmitter struct {
-	sim      *particle.Emitter
-	texture  render.TextureID
-	lastSeen uint64
-}
 
 func particleEmitScale(scale math2d.Vec2) math2d.Vec2 {
 	if scale.X == 0 {
@@ -58,84 +43,45 @@ func (c *Canvas2D) drawParticles(cmd render.DrawParticles, camera render.Camera)
 		c.warnMissingParticleEffect(cmd.Effect)
 		return
 	}
-
-	if c.particleEmitters == nil {
-		c.particleEmitters = make(map[particleKey]*canvasEmitter)
-		c.particleBudget = particle.NewBudget(0.020, particleBudgetFloor, particleBudgetFloor)
-	}
-
-	if c.particleFrameSeen != c.particleFrame {
-		c.particleFrameSeen = c.particleFrame
-		c.particleWantPrev = c.particleWantCurrent
-		c.particleWantCurrent = 0
-		c.particleBudget.SetCeiling(max(c.particleWantPrev, particleBudgetFloor))
-		c.particleBudget.Observe(cmd.Dt)
-	}
-	key := particleKey{effect: cmd.Effect, emitter: cmd.Emitter}
-	state := c.particleEmitters[key]
-	if state != nil && state.lastSeen == c.particleFrame {
-		// The first command for an emitter owns simulation this frame. A
-		// matching later command may draw the same particles again in painter
-		// order; a conflicting seed cannot replace state already used here.
-		if state.sim.Seed != cmd.Seed {
-			return
-		}
-	} else {
-		if state == nil || state.sim.Seed != cmd.Seed {
-			state = &canvasEmitter{
-				sim:     particle.NewEmitter(decl, cmd.Seed),
-				texture: c.manifest.Texture(decl.Texture),
-			}
-			c.particleEmitters[key] = state
-		}
-		state.lastSeen = c.particleFrame
-		c.particleWantCurrent += decl.Capacity
-
-		maxAlive := c.particleBudget.Share(decl.Capacity, max(c.particleWantPrev, decl.Capacity))
-		if maxAlive < decl.Capacity {
-			c.diagnostics.Log(
-				c.log,
-				slog.LevelInfo,
-				diagnostic.Key{Code: particleBudgetReducedDiagnostic},
-				"particle budget reduced; canvas2d is the fallback renderer",
-			)
-		}
-
-		state.sim.StepScaled(
-			cmd.Pos,
-			particleEmitScale(cmd.EmitScale),
-			cmd.Dir,
-			cmd.Intensity,
-			cmd.Burst,
-			cmd.Dt,
-			maxAlive,
+	if c.particles == nil {
+		c.particles = particle.NewEmitterSet(
+			particle.NewBudget(0.020, particleBudgetFloor, particleBudgetFloor),
 		)
 	}
-
-	aliveCount := state.sim.AliveCount()
-	if cap(c.particleScratch) < aliveCount {
-		c.particleScratch = make([]particle.LiveParticle, 0, aliveCount)
+	res := c.particles.Draw(
+		particle.InstanceKey{Effect: uint32(cmd.Effect), Emitter: uint32(cmd.Emitter)},
+		decl,
+		particle.Input{Pos: cmd.Pos, Dir: cmd.Dir, Intensity: cmd.Intensity,
+			Burst: cmd.Burst, Dt: cmd.Dt, Seed: cmd.Seed},
+	)
+	if res.BudgetReduced {
+		c.diagnostics.Log(
+			c.log,
+			slog.LevelInfo,
+			diagnostic.Key{Code: particle.DiagnosticBudgetReduced},
+			"particle budget reduced; canvas2d is the fallback renderer",
+		)
 	}
-	live := state.sim.Alive(c.particleScratch[:0])
-	c.particleScratch = live
-	if len(live) == 0 {
+	if res.Skipped {
 		return
 	}
 
 	bitmap, textured := js.Value{}, false
+	var texture render.TextureID
 	if decl.Texture != "" {
-		bitmap, textured = c.textures[state.texture], true
+		texture = c.manifest.Texture(decl.Texture)
+		bitmap, textured = c.textures[texture], true
 	}
 
 	c.ctx.Call("save")
 	if decl.Blend == particle.BlendAdditive {
 		c.ctx.Set("globalCompositeOperation", "lighter")
 	}
-	for _, p := range live {
+	for _, p := range res.Live {
 		if textured && bitmap.Truthy() {
-			c.drawTexturedParticle(bitmap, state.texture, decl, p, camera)
+			c.drawTexturedParticle(bitmap, texture, decl, p, camera)
 		} else {
-			c.drawSolidParticle(decl, p, camera, textured)
+			c.drawSolidParticle(p, camera, textured)
 		}
 	}
 	c.ctx.Call("restore")
@@ -145,7 +91,7 @@ func (c *Canvas2D) warnMissingParticleEffect(id render.ParticleEffectID) {
 	c.diagnostics.Log(
 		c.log,
 		slog.LevelWarn,
-		diagnostic.Key{Code: missingParticleEffectDiagnostic, ID: uint64(id)},
+		diagnostic.Key{Code: particle.DiagnosticEffectMissing, ID: uint64(id)},
 		"canvas2d: DrawParticles references unknown effect; command skipped",
 		"effect_id", id,
 	)
@@ -190,8 +136,7 @@ func (c *Canvas2D) drawTexturedParticle(bitmap js.Value, id render.TextureID, de
 // drawSolidParticle covers both the declared-untextured effect (exact
 // interpolated color) and a texture whose bitmap has not decoded yet
 // (magenta placeholder, matching the raster backend).
-func (c *Canvas2D) drawSolidParticle(decl particle.EffectDecl,
-	p particle.LiveParticle, camera render.Camera, missing bool) {
+func (c *Canvas2D) drawSolidParticle(p particle.LiveParticle, camera render.Camera, missing bool) {
 
 	x, y, w, h, ok := particleScreenRect(p, camera)
 	if !ok {
@@ -230,12 +175,4 @@ func particleScreenRect(p particle.LiveParticle, camera render.Camera) (x, y, w,
 		math2d.Vec2{X: width, Y: p.Size},
 	), camera)
 	return x, y, w, h, w > 0 && p.Size > 0
-}
-
-func (c *Canvas2D) pruneParticleEmitters() {
-	for key, state := range c.particleEmitters {
-		if c.particleFrame-state.lastSeen >= canvasParticleTTL {
-			delete(c.particleEmitters, key)
-		}
-	}
 }
