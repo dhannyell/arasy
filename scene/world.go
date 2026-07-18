@@ -23,6 +23,7 @@ type World struct {
 	circleSprites   store[CircleSprite]
 	circleTweens    store[CircleSpriteTween]
 	rectSprites     store[RectSprite]
+	imageSprites    store[ImageSprite]
 	velocities      store[Velocity]
 	accelerations   store[Acceleration]
 	dampings        store[Damping]
@@ -63,6 +64,7 @@ func (w *World) Clone() *World {
 		circleSprites:    w.circleSprites.clone(),
 		circleTweens:     w.circleTweens.clone(),
 		rectSprites:      w.rectSprites.clone(),
+		imageSprites:     w.imageSprites.clone(),
 		velocities:       w.velocities.clone(),
 		accelerations:    w.accelerations.clone(),
 		dampings:         w.dampings.clone(),
@@ -91,6 +93,7 @@ func (w *World) Despawn(id EntityID) {
 	w.circleSprites.remove(id)
 	w.circleTweens.remove(id)
 	w.rectSprites.remove(id)
+	w.imageSprites.remove(id)
 	w.velocities.remove(id)
 	w.accelerations.remove(id)
 	w.dampings.remove(id)
@@ -229,6 +232,21 @@ func (w *World) RectSprite(id EntityID) (RectSprite, bool) {
 	return sprite, ok
 }
 
+func (w *World) SetImageSprite(id EntityID, sprite ImageSprite) {
+	w.markEntityCountDirty()
+	w.imageSprites.set(id, sprite)
+}
+
+func (w *World) RemoveImageSprite(id EntityID) {
+	w.markEntityCountDirty()
+	w.imageSprites.remove(id)
+}
+
+func (w *World) ImageSprite(id EntityID) (ImageSprite, bool) {
+	sprite, ok := w.imageSprites.get(id)
+	return sprite, ok
+}
+
 func (w *World) SetVelocity(id EntityID, velocity Velocity) {
 	w.markEntityCountDirty()
 	w.velocities.set(id, velocity)
@@ -352,6 +370,9 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.rectSprites.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.imageSprites.ids {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.velocities.ids {

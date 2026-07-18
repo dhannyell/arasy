@@ -24,6 +24,7 @@ func (v WorldView) CircleSpriteTween(id EntityID) (CircleSpriteTween, bool) {
 	return v.w.CircleSpriteTween(id)
 }
 func (v WorldView) RectSprite(id EntityID) (RectSprite, bool)         { return v.w.RectSprite(id) }
+func (v WorldView) ImageSprite(id EntityID) (ImageSprite, bool)       { return v.w.ImageSprite(id) }
 func (v WorldView) Velocity(id EntityID) (Velocity, bool)             { return v.w.Velocity(id) }
 func (v WorldView) Acceleration(id EntityID) (Acceleration, bool)     { return v.w.Acceleration(id) }
 func (v WorldView) Damping(id EntityID) (Damping, bool)               { return v.w.Damping(id) }

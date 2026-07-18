@@ -31,6 +31,19 @@ type RectSprite struct {
 	StrokeWidth float64
 }
 
+// ImageSprite draws a texture, or a sub-rectangle of it, anchored at the
+// entity's Transform. Size is the sprite's width and height in world units at
+// Transform.Scale == {1, 1}; Transform.Rotation rotates it around its center.
+// Texture and Src must already be resolved through asset.Manifest because the
+// scene package stays independent of asset loading.
+type ImageSprite struct {
+	Layer   int
+	Texture render.TextureID
+	Src     math2d.Rect
+	Size    math2d.Vec2
+	Tint    render.Color
+}
+
 type Velocity struct {
 	Linear math2d.Vec2
 }
