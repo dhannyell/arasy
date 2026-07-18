@@ -52,7 +52,7 @@ func TestFXToastEmitsCommandsUntilDone(t *testing.T) {
 
 	store.AdvanceFrame()
 	u := New(&State{}, math2d.Vec2{}, true, testCam(), DefaultTheme(), testCam().Viewport, &store, 0, 0)
-	if !u.FX().Toast("toast", "Hi", rect, opts) {
+	if !(FX{ui: u, space: SpaceRef}).Toast("toast", "Hi", rect, opts) {
 		t.Fatal("Toast should render when just triggered")
 	}
 	commands := u.Commands()
@@ -79,7 +79,7 @@ func TestFXToastEmitsCommandsUntilDone(t *testing.T) {
 
 	store.AdvanceFrame()
 	u = New(&State{}, math2d.Vec2{}, true, testCam(), DefaultTheme(), testCam().Viewport, &store, 2, 2)
-	if u.FX().Toast("toast", "Hi", rect, opts) {
+	if (FX{ui: u, space: SpaceRef}).Toast("toast", "Hi", rect, opts) {
 		t.Fatal("Toast should stop rendering after duration")
 	}
 	if len(u.Commands()) != 0 {
@@ -95,7 +95,7 @@ func TestToastDefaultMotionUnchanged(t *testing.T) {
 	toastCommandsAt := func(renderTime float64) (render.DrawRect, render.DrawText) {
 		store.AdvanceFrame()
 		u := New(&State{}, math2d.Vec2{}, true, testCam(), theme, testCam().Viewport, &store, 0.125, renderTime)
-		if !u.FX().Toast("toast-default-motion", "Hi", rect, ToastOptions{Key: 1, Duration: 1}) {
+		if !(FX{ui: u, space: SpaceRef}).Toast("toast-default-motion", "Hi", rect, ToastOptions{Key: 1, Duration: 1}) {
 			t.Fatalf("Toast at time %v should render", renderTime)
 		}
 		commands := u.Commands()

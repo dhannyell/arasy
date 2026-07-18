@@ -20,7 +20,7 @@ func TestListHitUsesScrollOffsetForClickedRow(t *testing.T) {
 	u := NewUpdate(state, pointerFrame(downUp...), cam, DefaultTheme(), cam.Viewport)
 
 	// (52-10+40)/20 = 4.1 → row 4
-	row := u.ListHitIn("players", rect, rowH, 20, SpaceRef)
+	row := u.listHitIn("players", rect, rowH, 20, SpaceRef)
 	if row != 4 {
 		t.Fatalf("clicked row = %v, want 4", row)
 	}
@@ -35,7 +35,7 @@ func TestListHitReturnsMinusOneOutsideRect(t *testing.T) {
 	}
 	u := NewUpdate(&State{}, pointerFrame(downUp...), cam, DefaultTheme(), cam.Viewport)
 
-	if row := u.ListHitIn("players", rect, 20, 20, SpaceRef); row != -1 {
+	if row := u.listHitIn("players", rect, 20, 20, SpaceRef); row != -1 {
 		t.Fatalf("clicked row = %v, want -1 (click outside rect)", row)
 	}
 }
@@ -49,7 +49,7 @@ func TestListInCullsRowsOutsideVisibleWindow(t *testing.T) {
 	rect := math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 100, Y: 60})
 
 	drawn := map[int]bool{}
-	u.ListIn("rows", rect, rowH, rowCount, -1, func(row int, rowRect math2d.Rect) {
+	u.listIn("rows", rect, rowH, rowCount, -1, func(row int, rowRect math2d.Rect) {
 		drawn[row] = true
 	}, SpaceRef)
 
@@ -74,7 +74,7 @@ func TestListInMarksSelectedRow(t *testing.T) {
 	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 	rect := math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 100, Y: 60})
 
-	u.ListIn("rows", rect, rowH, 3, 1, func(row int, rowRect math2d.Rect) {}, SpaceRef)
+	u.listIn("rows", rect, rowH, 3, 1, func(row int, rowRect math2d.Rect) {}, SpaceRef)
 
 	found := false
 	for _, command := range u.Commands() {
@@ -98,7 +98,7 @@ func TestListInClipsRowContent(t *testing.T) {
 	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 	rect := math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 100, Y: 50}) // 2.5 rows visible
 
-	u.ListIn("rows", rect, rowH, 10, -1, func(row int, rowRect math2d.Rect) {
+	u.listIn("rows", rect, rowH, 10, -1, func(row int, rowRect math2d.Rect) {
 		u.Emit(render.DrawText{Position: rowRect.Center(), Text: "row"})
 	}, SpaceRef)
 

@@ -32,7 +32,7 @@ func TestClickedTrueWhenDownAndUpInsideSameTick(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
 	), cam, DefaultTheme(), cam.Viewport)
 
-	if !u.Clicked("btn", rect) {
+	if !u.clickedIn("btn", rect, SpaceRef) {
 		t.Fatal("expected click when down+up inside the rect in the same tick")
 	}
 	if state.activeID != noID {
@@ -49,7 +49,7 @@ func TestClickedFalseWhenUpOutside(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 10, Y: 10}},
 	), cam, DefaultTheme(), cam.Viewport)
 
-	if u.Clicked("btn", rect) {
+	if u.clickedIn("btn", rect, SpaceRef) {
 		t.Fatal("did not expect click when up is outside the rect")
 	}
 	if state.activeID != noID {
@@ -60,7 +60,7 @@ func TestClickedFalseWhenUpOutside(t *testing.T) {
 func TestClickedFalseWithNoEvents(t *testing.T) {
 	cam := testInteractCamera()
 	u := NewUpdate(&State{}, pointerFrame(), cam, DefaultTheme(), cam.Viewport)
-	if u.Clicked("btn", btnRect()) {
+	if u.clickedIn("btn", btnRect(), SpaceRef) {
 		t.Fatal("did not expect click with no pointer events")
 	}
 }
@@ -75,7 +75,7 @@ func TestClickedIgnoresUnhandledEventKind(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
 	), cam, DefaultTheme(), cam.Viewport)
 
-	if !u.Clicked("btn", rect) {
+	if !u.clickedIn("btn", rect, SpaceRef) {
 		t.Fatal("expected click to still complete when an unhandled event kind is interleaved")
 	}
 }
@@ -89,7 +89,7 @@ func TestClickedIgnoresNonPrimaryButton(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerSecondary, Pos: math2d.Vec2{X: 150, Y: 120}},
 	), cam, DefaultTheme(), cam.Viewport)
 
-	if u.Clicked("btn", rect) {
+	if u.clickedIn("btn", rect, SpaceRef) {
 		t.Fatal("did not expect click from a non-primary button")
 	}
 	if state.activeID != noID {
@@ -102,8 +102,8 @@ func TestFocusableTabCyclesFocusAtEndFrame(t *testing.T) {
 	cam := testInteractCamera()
 	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionFocusNext), cam, DefaultTheme(), cam.Viewport)
 
-	u.Focusable("one", btnRect())
-	u.Focusable("two", btnRect())
+	u.focusableIn("one", btnRect(), SpaceRef)
+	u.focusableIn("two", btnRect(), SpaceRef)
 	u.EndFrame()
 
 	if state.focusID != HashID("two") {
@@ -116,8 +116,8 @@ func TestFocusableTabSelectsFirstWhenNothingFocused(t *testing.T) {
 	cam := testInteractCamera()
 	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionFocusNext), cam, DefaultTheme(), cam.Viewport)
 
-	u.Focusable("one", btnRect())
-	u.Focusable("two", btnRect())
+	u.focusableIn("one", btnRect(), SpaceRef)
+	u.focusableIn("two", btnRect(), SpaceRef)
 	u.EndFrame()
 
 	if state.focusID != HashID("one") {
@@ -130,10 +130,10 @@ func TestActivatedReturnsTrueForFocusedConfirm(t *testing.T) {
 	cam := testInteractCamera()
 	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionConfirm), cam, DefaultTheme(), cam.Viewport)
 
-	if !u.Activated("btn", btnRect()) {
+	if !u.activatedIn("btn", btnRect(), SpaceRef) {
 		t.Fatal("expected focused widget to activate on confirm")
 	}
-	if u.Activated("other", btnRect()) {
+	if u.activatedIn("other", btnRect(), SpaceRef) {
 		t.Fatal("did not expect unfocused widget to activate")
 	}
 }
@@ -143,7 +143,7 @@ func TestCancelClearsFocusAtEndFrame(t *testing.T) {
 	cam := testInteractCamera()
 	u := NewUpdateWithInput(state, pointerFrame(), inputStateJustPressed(input.ActionCancel), cam, DefaultTheme(), cam.Viewport)
 
-	u.Focusable("btn", btnRect())
+	u.focusableIn("btn", btnRect(), SpaceRef)
 	u.EndFrame()
 
 	if state.focusID != noID {
@@ -155,7 +155,7 @@ func TestHoveredTrueWhenCursorInsideRect(t *testing.T) {
 	cam := testInteractCamera()
 	u := New(&State{}, math2d.Vec2{X: 150, Y: 120}, true, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
 
-	if !u.Hovered(btnRect()) {
+	if !u.hoveredIn(btnRect(), SpaceRef) {
 		t.Fatal("expected Hovered to be true when cursor is inside the rect")
 	}
 }
@@ -164,7 +164,7 @@ func TestHoveredFalseWhenCursorOutsideRect(t *testing.T) {
 	cam := testInteractCamera()
 	u := New(&State{}, math2d.Vec2{X: 10, Y: 10}, true, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
 
-	if u.Hovered(btnRect()) {
+	if u.hoveredIn(btnRect(), SpaceRef) {
 		t.Fatal("expected Hovered to be false when cursor is outside the rect")
 	}
 }
@@ -173,7 +173,7 @@ func TestHoveredFalseWhenCursorNotInside(t *testing.T) {
 	cam := testInteractCamera()
 	u := New(&State{}, math2d.Vec2{X: 150, Y: 120}, false, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
 
-	if u.Hovered(btnRect()) {
+	if u.hoveredIn(btnRect(), SpaceRef) {
 		t.Fatal("expected Hovered to be false when pointer is not inside the viewport")
 	}
 }

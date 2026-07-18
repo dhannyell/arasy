@@ -17,7 +17,7 @@ func TestScrollOffsetConsumesWheelInsideViewAndClamps(t *testing.T) {
 		Wheel:  math2d.Vec2{Y: 2},
 	}, cam, DefaultTheme(), cam.Viewport)
 
-	offset := u.ScrollOffset("list", view, 90)
+	offset := u.scrollOffsetIn("list", view, 90, SpaceRef)
 	if offset != 40 {
 		t.Fatalf("offset = %v, want max clamp 40", offset)
 	}
@@ -27,7 +27,7 @@ func TestScrollOffsetConsumesWheelInsideViewAndClamps(t *testing.T) {
 		Inside: true,
 		Wheel:  math2d.Vec2{Y: -10},
 	}, cam, DefaultTheme(), cam.Viewport)
-	offset = u.ScrollOffset("list", view, 90)
+	offset = u.scrollOffsetIn("list", view, 90, SpaceRef)
 	if offset != 0 {
 		t.Fatalf("offset after negative wheel = %v, want 0", offset)
 	}
@@ -43,7 +43,7 @@ func TestScrollOffsetIgnoresWheelOutsideView(t *testing.T) {
 		Wheel:  math2d.Vec2{Y: 1},
 	}, cam, DefaultTheme(), cam.Viewport)
 
-	if got := u.ScrollOffset("list", view, 120); got != 0 {
+	if got := u.scrollOffsetIn("list", view, 120, SpaceRef); got != 0 {
 		t.Fatalf("offset = %v, want 0 outside view", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestScrollAreaReturnsWorldClipAndScrollbarCommands(t *testing.T) {
 	u := New(state, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 	view := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 100, Y: 50})
 
-	offset, clip := u.ScrollAreaIn("list", view, 120, SpaceRef)
+	offset, clip := u.scrollAreaIn("list", view, 120, SpaceRef)
 	if offset != 20 {
 		t.Fatalf("offset = %v, want 20", offset)
 	}

@@ -76,12 +76,12 @@ func (e Effect) Pulse(start, end, amount, frequency float64) float64 {
 	return 1 + amount*math.Sin(e.ui.time*frequency)*hold
 }
 
-// FX is the high-level animation facade for ready-made UI effects.
+// FX is the high-level animation facade for ready-made UI effects, scoped to
+// one coordinate space. Obtained via DrawScope.FX.
 type FX struct {
-	ui *UI
+	ui    *UI
+	space Space
 }
-
-func (u *UI) FX() FX { return FX{ui: u} }
 
 // ToastStyle overrides the toast appearance. The zero value pulls every
 // field from the active Theme (Panel for the box, Label for the text).
@@ -104,16 +104,9 @@ type ToastOptions struct {
 	Style    ToastStyle
 }
 
-// Toast renders a ready-made panel+text callout in reference-canvas space.
-// It returns false when the keyed effect is inactive or done.
+// Toast renders a ready-made panel+text callout in the scope's coordinate
+// space. It returns false when the keyed effect is inactive or done.
 func (fx FX) Toast(id, text string, rect math2d.Rect, opts ToastOptions) bool {
-	return fx.ToastIn(id, text, rect, SpaceRef, opts)
-}
-
-// ToastIn renders a ready-made panel+text callout in the requested UI space.
-// For custom world-space effects, prefer UI.Effect and emit render commands
-// from the game so the commands use the game's camera directly.
-func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastOptions) bool {
 	if fx.ui == nil {
 		return false
 	}
@@ -140,17 +133,17 @@ func (fx FX) ToastIn(id, text string, rect math2d.Rect, space Space, opts ToastO
 	fx.ui.commands = append(fx.ui.commands,
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
-			Rect:        fx.ui.rectToWorld(drawRect, space),
+			Rect:        fx.ui.rectToWorld(drawRect, fx.space),
 			Fill:        multiplyAlpha(opts.Style.Fill, alpha),
 			Stroke:      multiplyAlpha(opts.Style.Border, alpha),
-			StrokeWidth: fx.ui.sizeToWorld(opts.Style.StrokeWidth, space),
+			StrokeWidth: fx.ui.sizeToWorld(opts.Style.StrokeWidth, fx.space),
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
-			Position:    fx.ui.toWorld(drawRect.Center(), space),
+			Position:    fx.ui.toWorld(drawRect.Center(), fx.space),
 			Text:        text,
 			Color:       multiplyAlpha(opts.Style.TextColor, alpha),
-			Size:        fx.ui.sizeToWorld(opts.Style.TextSize*scale, space),
+			Size:        fx.ui.sizeToWorld(opts.Style.TextSize*scale, fx.space),
 			Font:        fx.ui.theme.Font,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
