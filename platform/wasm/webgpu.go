@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"syscall/js"
+	"time"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
@@ -71,13 +73,26 @@ type webgpuRenderer struct {
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
 	textures     []gpuTexture
 	particles    *gpuParticles
+	timing       *gpuTiming // nil when "timestamp-query" was not granted
+
+	// Offscreen particle compositing, active when particleScale > 0: each
+	// contiguous run of particle commands renders into one pooled
+	// single-sample target and is composited back at its painter-order
+	// position by a fullscreen triangle.
+	particleScale     float64
+	compositePipeline js.Value
+	compositeSampler  js.Value
+	particleTargets   []particleTarget
+	particleTargetW   int
+	particleTargetH   int
+
 	ready        bool
 	readyPending bool
 	errorCb      js.Func
 	lostCb       js.Func
 }
 
-func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log *slog.Logger) (*webgpuRenderer, error) {
+func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, log *slog.Logger) (*webgpuRenderer, error) {
 	fontProvider, err := newFontAtlasProvider(manifest)
 	if err != nil {
 		return nil, err
@@ -95,7 +110,14 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 		return nil, errWebGPUUnavailable
 	}
 
-	device, err := awaitPromise(adapter.Call("requestDevice"))
+	// Timestamp queries power the particle GPU-time telemetry, so the feature
+	// is only requested when the host has a FrameMetrics consumer; without
+	// one, per-frame sampling would be pure overhead for every game.
+	deviceOptions := map[string]any{}
+	if wantGPUTiming && adapter.Get("features").Call("has", "timestamp-query").Bool() {
+		deviceOptions["requiredFeatures"] = []any{"timestamp-query"}
+	}
+	device, err := awaitPromise(adapter.Call("requestDevice", deviceOptions))
 	if err != nil {
 		return nil, fmt.Errorf("request webgpu device: %w", err)
 	}
@@ -121,8 +143,9 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 		queue:        device.Get("queue"),
 		context:      context,
 		format:       format,
-		fontProvider: fontProvider,
-		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
+		fontProvider:  fontProvider,
+		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
+		particleScale: particleScale,
 	}
 	r.observeDeviceErrors(log)
 
@@ -137,7 +160,15 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
 
 	r.textures, r.texSizes = r.buildTextures(manifest)
-	r.particles = newGpuParticles(r)
+	r.particles = newGpuParticles(r, particleScale > 0)
+	if particleScale > 0 {
+		r.compositePipeline = r.createCompositePipeline()
+		r.compositeSampler = r.device.Call("createSampler", map[string]any{
+			"magFilter": "linear",
+			"minFilter": "linear",
+		})
+	}
+	r.timing = newGpuTiming(device)
 
 	return r, nil
 }
@@ -261,13 +292,40 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// Particle simulation writes indirect draw arguments and must complete
 	// before the render pass reads them. All passes share this encoder, so GPU
 	// command order provides the dependency without a readback or fence.
-	for _, run := range drawRuns {
-		if run.kind == tess.DrawRunParticles {
-			r.particles.encodeSim(encoder, run.particles, frame.Camera, w, h)
+	if r.timing != nil {
+		r.particles.armTiming(r.timing)
+	}
+	// Contiguous particle runs form composite groups: with offscreen
+	// compositing enabled, each group renders into one pooled target and is
+	// composited once, at the painter-order position of its first run.
+	var particleRuns []render.DrawParticles
+	var groupCmds [][]render.DrawParticles
+	inGroup := false
+	for i := range drawRuns {
+		if drawRuns[i].kind != tess.DrawRunParticles {
+			inGroup = false
+			continue
 		}
+		particleRuns = append(particleRuns, drawRuns[i].particles)
+		if !inGroup {
+			groupCmds = append(groupCmds, nil)
+			inGroup = true
+		}
+		drawRuns[i].group = len(groupCmds) - 1
+		groupCmds[len(groupCmds)-1] = append(groupCmds[len(groupCmds)-1], drawRuns[i].particles)
 	}
 
-	pass := encoder.Call("beginRenderPass", map[string]any{
+	r.particles.encodeSims(encoder, particleRuns, frame.Camera, w, h)
+	// Sample GPU time only on frames whose first particle compute pass wrote
+	// the begin timestamp; otherwise query 0 would hold a stale value.
+	sampleTiming := r.timing != nil && r.particles.timingWrote
+
+	offscreenParticles := r.particleScale > 0 && len(groupCmds) > 0
+	if offscreenParticles {
+		r.encodeParticleOffscreen(encoder, groupCmds, frame.Camera, w, h, sampleTiming)
+	}
+
+	renderPassDesc := map[string]any{
 		"colorAttachments": []any{map[string]any{
 			"view":          r.msaaView,
 			"resolveTarget": textureView,
@@ -275,10 +333,21 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			"storeOp":       "discard",
 			"clearValue":    clearValue(r.clear),
 		}},
-	})
+	}
+	if sampleTiming {
+		// With offscreen compositing the draw interval opens at the first
+		// offscreen particle pass, so the main pass only closes it.
+		if offscreenParticles {
+			renderPassDesc["timestampWrites"] = r.timing.renderEndTimestampWrites()
+		} else {
+			renderPassDesc["timestampWrites"] = r.timing.renderTimestampWrites()
+		}
+	}
+	pass := encoder.Call("beginRenderPass", renderPassDesc)
 
 	// Runs are submitted in painter order. Each pipeline has its own packed
 	// vertex buffer, so the run stores a firstVertex offset into that buffer.
+	lastComposited := -1
 	for _, run := range drawRuns {
 		switch run.kind {
 		case tess.DrawRunSolid:
@@ -304,15 +373,130 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			pass.Call("setVertexBuffer", 0, r.textBuffer)
 			pass.Call("draw", run.count, 1, run.offset, 0)
 		case tess.DrawRunParticles:
-			r.particles.draw(pass, run.particles, frame.Camera, w, h)
+			if !offscreenParticles {
+				r.particles.draw(pass, run.particles, frame.Camera, w, h)
+				continue
+			}
+			if run.group == lastComposited {
+				continue
+			}
+			lastComposited = run.group
+			pass.Call("setPipeline", r.compositePipeline)
+			pass.Call("setBindGroup", 0, r.particleTargets[run.group].bindGroup)
+			pass.Call("draw", 3, 1, 0, 0)
 		}
 	}
 
 	pass.Call("end")
+	timingSlot := -1
+	if sampleTiming {
+		timingSlot = r.timing.encodeResolve(encoder)
+	}
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	if timingSlot >= 0 {
+		r.timing.readback(timingSlot)
+	}
 	r.particles.endFrame()
 	r.signalReadyAfterPresent()
+}
+
+// particleGPUTimings reports the most recent timestamp-query sample: the
+// particle prepare pass (kick + emit), the simulate pass (including the pass
+// boundary before it) and the main render pass. ok is false until the first
+// sample resolves, or always on adapters without "timestamp-query".
+func (r *webgpuRenderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
+	if r.timing == nil || !r.timing.valid {
+		return 0, 0, 0, false
+	}
+	return r.timing.prepare, r.timing.simulate, r.timing.render, true
+}
+
+// encodeParticleOffscreen records one single-sample render pass per composite
+// group, drawing its particle runs into a pooled target cleared to
+// transparent black. Painter order inside the group is preserved; ordering
+// against the rest of the scene is restored by compositing at the group's
+// position in the main pass.
+func (r *webgpuRenderer) encodeParticleOffscreen(
+	encoder js.Value,
+	groups [][]render.DrawParticles,
+	camera render.Camera,
+	w, h int,
+	sampleTiming bool,
+) {
+	ow, oh := particleTargetDims(w, h, r.particleScale)
+	r.ensureParticleTargets(len(groups), ow, oh)
+	for gi, cmds := range groups {
+		desc := map[string]any{
+			"colorAttachments": []any{map[string]any{
+				"view":       r.particleTargets[gi].view,
+				"loadOp":     "clear",
+				"storeOp":    "store",
+				"clearValue": map[string]any{"r": 0, "g": 0, "b": 0, "a": 0},
+			}},
+		}
+		if sampleTiming && gi == 0 {
+			desc["timestampWrites"] = r.timing.renderBeginTimestampWrites()
+		}
+		pass := encoder.Call("beginRenderPass", desc)
+		for _, cmd := range cmds {
+			r.particles.drawTo(pass, cmd, camera, r.particleScale, ow, oh, true)
+		}
+		pass.Call("end")
+	}
+}
+
+func particleTargetDims(w, h int, scale float64) (int, int) {
+	return max(1, int(math.Ceil(float64(w)*scale))), max(1, int(math.Ceil(float64(h)*scale)))
+}
+
+// ensureParticleTargets grows the pooled offscreen targets to n and rebuilds
+// the pool when the composite dimensions change. The pool never shrinks: its
+// high-water mark is the largest number of interleaved particle groups a
+// frame has produced.
+func (r *webgpuRenderer) ensureParticleTargets(n, ow, oh int) {
+	if ow != r.particleTargetW || oh != r.particleTargetH {
+		for _, target := range r.particleTargets {
+			target.texture.Call("destroy")
+		}
+		r.particleTargets = nil
+		r.particleTargetW, r.particleTargetH = ow, oh
+	}
+	layout := r.compositePipeline.Call("getBindGroupLayout", 0)
+	for len(r.particleTargets) < n {
+		texture := r.device.Call("createTexture", map[string]any{
+			"size":   []any{ow, oh},
+			"format": r.format,
+			"usage":  textureUsageRenderAttachment() | textureUsageTextureBinding(),
+		})
+		view := texture.Call("createView")
+		bindGroup := r.device.Call("createBindGroup", map[string]any{
+			"layout": layout,
+			"entries": []any{
+				map[string]any{"binding": 0, "resource": view},
+				map[string]any{"binding": 1, "resource": r.compositeSampler},
+			},
+		})
+		r.particleTargets = append(r.particleTargets, particleTarget{texture: texture, view: view, bindGroup: bindGroup})
+	}
+}
+
+// createCompositePipeline builds the fullscreen-triangle pipeline that blends
+// one particle offscreen target into the MSAA main pass with premultiplied
+// source-over.
+func (r *webgpuRenderer) createCompositePipeline() js.Value {
+	module := r.device.Call("createShaderModule", map[string]any{"code": particlesCompositeWGSL})
+	return r.device.Call("createRenderPipeline", map[string]any{
+		"layout": "auto",
+		"vertex": map[string]any{"module": module, "entryPoint": "vs_main"},
+		"fragment": map[string]any{
+			"module":     module,
+			"entryPoint": "fs_main",
+			"targets":    []any{map[string]any{"format": r.format, "blend": premultipliedBlend()}},
+		},
+		"primitive":   map[string]any{"topology": "triangle-list"},
+		"multisample": map[string]any{"count": msaaSampleCount},
+	})
 }
 
 // signalReadyAfterPresent marks the canvas ready only after the browser has had
@@ -349,6 +533,16 @@ type gpuDrawRun struct {
 	particles render.DrawParticles
 	offset    int
 	count     int
+	// group indexes the composite group this particle run belongs to when
+	// offscreen compositing is active; contiguous particle runs share one.
+	group int
+}
+
+// particleTarget is one pooled offscreen target plus its composite bind group.
+type particleTarget struct {
+	texture   js.Value
+	view      js.Value
+	bindGroup js.Value
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {

@@ -34,6 +34,15 @@ type FrameMetrics struct {
 	// WebGPU API does not expose adapter-wide VRAM use or utilization percent.
 	GPUBufferBytes uint64
 	GPUBufferSet   bool
+	// GPUPrepareTime, GPUSimulateTime and GPURenderTime are the most recent
+	// timestamp-query sample: the particle prepare pass (kick + emit), the
+	// simulate pass and the main render pass. Set only on WebGPU adapters
+	// that grant "timestamp-query", and the sample lags the frame that
+	// produced it because the readback is asynchronous.
+	GPUPrepareTime  time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimingSet    bool
 }
 
 type frameMetricTracker struct {
@@ -116,4 +125,8 @@ func browserHeapMetrics() (used, limit uint64, ok bool) {
 
 type gpuBufferReporter interface {
 	particleGPUBufferBytes() uint64
+}
+
+type gpuTimingReporter interface {
+	particleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
 }

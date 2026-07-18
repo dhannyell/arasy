@@ -106,7 +106,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if len(cfg.Assets.AudioClips()) > 0 {
 		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, log)
 	}
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -122,13 +122,13 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	select {}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D bool, log *slog.Logger) runtime.FrameRenderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear, manifest, log)
+	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, log)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r

@@ -1,9 +1,15 @@
-struct Particle {
+// Mirrors the hot/cold split in particle_compute.wgsl: hot is the simulated
+// state, cold is written once at spawn.
+struct ParticleHot {
   pos : vec2f, vel : vec2f,
   age : f32, life : f32,
+}
+
+struct ParticleCold {
   size0 : f32, size1 : f32,
-  spin : f32, counter : u32,
+  spin : f32, rot0 : f32,
   wobble_axis : vec2f,
+  phase : f32,
 }
 
 struct EmitterUniforms {
@@ -24,27 +30,20 @@ struct EmitterUniforms {
 }
 
 @group(0) @binding(0) var<uniform> u : EmitterUniforms;
-@group(0) @binding(1) var<storage, read> particles : array<Particle>;
+@group(0) @binding(1) var<storage, read> hot : array<ParticleHot>;
 @group(0) @binding(2) var<storage, read> alive_list : array<u32>;
+@group(0) @binding(3) var<storage, read> cold : array<ParticleCold>;
 @group(1) @binding(0) var tex : texture_2d<f32>;
 @group(1) @binding(1) var samp : sampler;
 
-// mirror: particle.pcg3d (hash.go); duplicated per module because compute
-// and render declare the same buffers in different address spaces.
-fn pcg3d(p : vec3u) -> vec3u {
-  var v = p * 1664525u + 1013904223u;
-  v.x += v.y * v.z;  v.y += v.z * v.x;  v.z += v.x * v.y;
-  v ^= v >> vec3u(16u);
-  v.x += v.y * v.z;  v.y += v.z * v.x;  v.z += v.x * v.y;
-  return v;
-}
-fn float01(x : u32) -> f32 { return f32(x) * 2.3283064365386963e-10; }
-
 const TAU = 6.28318530717958647;
 
-const CORNERS = array<vec2f, 6>(
-  vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
-  vec2f(-1.0, -1.0), vec2f(1.0, 1.0),  vec2f(-1.0, 1.0),
+// One oversized triangle circumscribes the unit quad: half the raster setup
+// of a two-triangle quad, which measurement showed is the residual draw cost
+// for pixel-scale particles. The fragment stage masks the overhang back to
+// the quad with an analytically anti-aliased edge.
+const CORNERS = array<vec2f, 3>(
+  vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0),
 );
 
 struct VSOut {
@@ -56,25 +55,26 @@ struct VSOut {
 @vertex
 fn vs_main(@builtin(vertex_index) vi : u32,
            @builtin(instance_index) ii : u32) -> VSOut {
-  let p = particles[alive_list[ii]];
+  let slot = alive_list[ii];
+  let p = hot[slot];
+  let spawn = cold[slot];
   let progress = clamp(p.age / p.life, 0.0, 1.0);
 
-  // Re-derive h4 from the stored spawn counter: initial rotation + wobble
-  // phase (mirror: spawn lane map) without growing the particle struct.
-  let h4 = pcg3d(pcg3d(pcg3d(pcg3d(vec3u(p.counter, u.seed_lo, u.seed_hi)))));
-  let rot = mix(u.rot_min, u.rot_max, float01(h4.x)) + p.spin * p.age;
+  // rot0 and phase were derived from the h4 spawn lanes in the emit pass
+  // (mirror: spawn lane map), so no hashing happens per vertex.
+  let rot = spawn.rot0 + spawn.spin * p.age;
 
   var center = p.pos;
   if (u.wobble_amp != 0.0 && u.wobble_freq != 0.0) {
     // mirror: Emitter.Alive wobble — draw-time only, never integrated
-    let phase = TAU * u.wobble_freq * p.age + TAU * float01(h4.y);
-    center += p.wobble_axis * (u.wobble_amp * sin(phase));
+    let phase = TAU * u.wobble_freq * p.age + TAU * spawn.phase;
+    center += spawn.wobble_axis * (u.wobble_amp * sin(phase));
   }
 
-  let half = mix(p.size0, p.size1, progress) * 0.5;
+  let half = mix(spawn.size0, spawn.size1, progress) * 0.5;
   var flip_x = 1.0;
   if (u.flip_x_freq != 0.0) {
-    flip_x = cos(TAU * u.flip_x_freq * p.age + TAU * float01(h4.y));
+    flip_x = cos(TAU * u.flip_x_freq * p.age + TAU * spawn.phase);
   }
   let corner = CORNERS[vi] * vec2f(half * flip_x, half);
   let c = cos(rot);
@@ -101,14 +101,27 @@ fn vs_main(@builtin(vertex_index) vi : u32,
   return out;
 }
 
+// quad_coverage masks the circumscribing triangle down to the particle quad
+// with an analytically anti-aliased edge about one pixel wide: per-axis
+// distance to the nearest quad edge in uv space, converted to pixel coverage
+// through the fragment's uv footprint.
+fn quad_coverage(uv : vec2f) -> f32 {
+  let fw = max(fwidth(uv), vec2f(1e-6));
+  let d = min(uv, vec2f(1.0) - uv);
+  let cov = clamp(d / fw + vec2f(0.5), vec2f(0.0), vec2f(1.0));
+  return cov.x * cov.y;
+}
+
 @fragment
 fn fs_main(in : VSOut) -> @location(0) vec4f {
-  return textureSample(tex, samp, in.uv) * in.color;
+  // Color is premultiplied, so scaling the whole vector by coverage is the
+  // correct edge attenuation for both source-over and additive blends.
+  return textureSample(tex, samp, in.uv) * in.color * quad_coverage(in.uv);
 }
 
 // Missing textures are diagnostic geometry, not effect content. Keep the
 // placeholder visibly magenta regardless of the particle's tint/alpha.
 @fragment
 fn fs_missing(in : VSOut) -> @location(0) vec4f {
-  return vec4f(1.0, 0.0, 1.0, 1.0);
+  return vec4f(1.0, 0.0, 1.0, 1.0) * quad_coverage(in.uv);
 }

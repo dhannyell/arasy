@@ -43,3 +43,10 @@ var particlesComputeWGSL string
 
 //go:embed shaders/particle_render.wgsl
 var particlesRenderWGSL string
+
+// particlesCompositeWGSL blends one particle offscreen target into the main
+// pass as a fullscreen triangle. Used only when Config.ParticleOffscreenScale
+// enables offscreen particle rendering.
+//
+//go:embed shaders/particle_composite.wgsl
+var particlesCompositeWGSL string

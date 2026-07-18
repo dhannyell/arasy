@@ -38,6 +38,9 @@ func (h *host) startLoop() {
 					metrics.GPUBufferBytes = reporter.particleGPUBufferBytes()
 					metrics.GPUBufferSet = true
 				}
+				if reporter, ok := h.renderer.(gpuTimingReporter); ok {
+					metrics.GPUPrepareTime, metrics.GPUSimulateTime, metrics.GPURenderTime, metrics.GPUTimingSet = reporter.particleGPUTimings()
+				}
 				h.onFrameMetrics(metrics)
 			}
 		}
