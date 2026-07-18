@@ -31,10 +31,9 @@ var serveCmd = &cobra.Command{
 		if _, err := os.Stat(filepath.Join(dir, serveWASM)); err != nil {
 			return fmt.Errorf("build directory %q does not contain %s", dir, serveWASM)
 		}
-		wasmserve.Start(&wasmserve.ServerOptions{
+		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: serveTitle, WASMFile: serveWASM, Addr: serveAddress,
 		})
-		return nil
 	},
 }
 
