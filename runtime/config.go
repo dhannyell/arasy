@@ -43,4 +43,14 @@ type Config struct {
 	RenderInterpolation bool
 
 	DebugOverlay scene.DebugOverlayConfig
+
+	// ParticleOffscreenScale, when > 0, makes GPU-accelerated hosts render
+	// particles into a dedicated non-multisampled offscreen target scaled by
+	// this factor (1 = full resolution, 0.5 = half) and composite each
+	// contiguous particle run back at its painter-order position. This trades
+	// particle edge multisampling — irrelevant for small or textured
+	// particles — for a large fill-rate reduction on heavy effects. Zero, the
+	// default, keeps particles in the main pass; software renderers ignore
+	// this field.
+	ParticleOffscreenScale float64
 }
