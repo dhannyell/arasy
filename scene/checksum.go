@@ -21,11 +21,12 @@ const (
 	tagBody
 	tagCircleCollider
 	tagRectCollider
+	tagImageSprite
 )
 
 // ChecksumComponentStores counts the component stores covered by Checksum.
 // The structural guard test compares it against reflection over World.
-const ChecksumComponentStores = 11
+const ChecksumComponentStores = 12
 
 // Checksum returns a deterministic hash of all entity positions and velocities.
 // Two worlds with identical simulation state always produce the same value.
@@ -123,6 +124,22 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], c.HalfExtends.X)
 		hashF64(h, buf[:], c.HalfExtends.Y)
 	})
+	if w.imageSprites.len() > 0 {
+		hashComponent(h, buf[:], tagImageSprite, &w.imageSprites, func(s ImageSprite) {
+			hashU64(h, buf[:], uint64(int64(s.Layer)))
+			hashU64(h, buf[:], uint64(s.Texture))
+			hashF64(h, buf[:], s.Src.Min.X)
+			hashF64(h, buf[:], s.Src.Min.Y)
+			hashF64(h, buf[:], s.Src.Max.X)
+			hashF64(h, buf[:], s.Src.Max.Y)
+			hashF64(h, buf[:], s.Size.X)
+			hashF64(h, buf[:], s.Size.Y)
+			hashF64(h, buf[:], s.Tint.R)
+			hashF64(h, buf[:], s.Tint.G)
+			hashF64(h, buf[:], s.Tint.B)
+			hashF64(h, buf[:], s.Tint.A)
+		})
+	}
 
 	return h.Sum64()
 }

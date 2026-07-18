@@ -21,11 +21,12 @@ func (w *World) RenderCommands() []render.Command {
 // Interpolation is a presentation cache: it never enters Checksum or recorded
 // replays, though World.Clone preserves it so restored frames avoid smear.
 func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
-	totalSprites := w.circleSprites.len() + w.rectSprites.len()
+	totalSprites := w.circleSprites.len() + w.rectSprites.len() + w.imageSprites.len()
 	ids := make([]EntityID, 0, totalSprites)
 
 	ids = append(ids, w.circleSprites.ids...)
 	ids = append(ids, w.rectSprites.ids...)
+	ids = append(ids, w.imageSprites.ids...)
 	slices.Sort(ids)
 
 	commands := make([]render.Command, 0, totalSprites)
@@ -73,6 +74,27 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 				StrokeWidth: rect.StrokeWidth,
 				BaseCommand: render.BaseCommand{
 					LayerValue: rect.Layer,
+				},
+			})
+		}
+
+		if img, hasImage := w.imageSprites.get(id); hasImage {
+			halfSize := img.Size.Mul(0.5)
+			scaledHalf := math2d.Vec2{
+				X: halfSize.X * interpolated.Scale.X,
+				Y: halfSize.Y * interpolated.Scale.Y,
+			}
+			commands = append(commands, render.DrawImage{
+				Texture: img.Texture,
+				Dest: math2d.NewRectFromCorners(
+					interpolated.Position.Sub(scaledHalf),
+					interpolated.Position.Add(scaledHalf),
+				),
+				Src:      img.Src,
+				Tint:     img.Tint,
+				Rotation: interpolated.Rotation,
+				BaseCommand: render.BaseCommand{
+					LayerValue: img.Layer,
 				},
 			})
 		}

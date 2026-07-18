@@ -6,6 +6,7 @@ type Bundle struct {
 	Transform      *Transform
 	CircleSprite   *CircleSprite
 	RectSprite     *RectSprite
+	ImageSprite    *ImageSprite
 	Velocity       *Velocity
 	Acceleration   *Acceleration
 	Damping        *Damping
@@ -28,6 +29,9 @@ func (w *World) SpawnBundle(b Bundle) EntityID {
 	}
 	if b.RectSprite != nil {
 		w.SetRectSprite(id, *b.RectSprite)
+	}
+	if b.ImageSprite != nil {
+		w.SetImageSprite(id, *b.ImageSprite)
 	}
 	if b.Velocity != nil {
 		w.SetVelocity(id, *b.Velocity)
