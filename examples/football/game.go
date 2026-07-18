@@ -139,7 +139,7 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	if !f.State.Started {
 		ctx.HoldSimulation()
 		_, play := menuLayout()
-		if ctx.UI.Clicked("btn_play", play) {
+		if ctx.UI.In(ui.SpaceRef).Clicked("btn_play", play) {
 			f.State.Started = true
 		}
 
@@ -147,7 +147,7 @@ func (f *Football) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 
 	_, reset := hudLayout()
-	if ctx.UI.Clicked("btn_reset", reset) {
+	if ctx.UI.In(ui.SpaceRef).Clicked("btn_reset", reset) {
 		f.resetMatch(ctx.World)
 	}
 	if f.State.HasGoal && goalBlinkDone(ctx.Tick, f.State.LastGoalTick) {
@@ -210,9 +210,10 @@ func (f *Football) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 	if !f.State.Started {
 		panel, play := menuLayout()
-		ctx.UI.Panel(panel)
-		ctx.UI.Label("Football", panel.Center())
-		ctx.UI.Button("btn_play", "Play", play)
+		d := ctx.UI.In(ui.SpaceRef)
+		d.Panel(panel)
+		d.Label("Football", panel.Center())
+		d.Button("btn_play", "Play", play)
 	}
 
 	cam := ctx.Camera()
@@ -229,9 +230,10 @@ func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 
 	score, reset := hudLayout()
 
-	ctx.UI.Panel(score)
-	ctx.UI.Label(fmt.Sprintf("%d — %d", f.State.ScoreLeft, f.State.ScoreRight), score.Center())
-	ctx.UI.Button("btn_reset", "Reset", reset)
+	hud := ctx.UI.In(ui.SpaceRef)
+	hud.Panel(score)
+	hud.Label(fmt.Sprintf("%d — %d", f.State.ScoreLeft, f.State.ScoreRight), score.Center())
+	hud.Button("btn_reset", "Reset", reset)
 
 	goalKey := uint64(0)
 	if f.State.HasGoal {

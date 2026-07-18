@@ -113,7 +113,7 @@ func (g *Game) Init(*runtime.UpdateContext) {
 }
 
 func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
-	if ctx.UI.ClickedIn("particlebench_restart", benchmarkLayout(ctx.Camera().Viewport).restart, ui.SpaceScreen) {
+	if ctx.UI.In(ui.SpaceScreen).Clicked("particlebench_restart", benchmarkLayout(ctx.Camera().Viewport).restart) {
 		g.restart()
 	}
 }
@@ -159,16 +159,17 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	}
 
 	hud := benchmarkLayout(ctx.Camera().Viewport)
-	ctx.UI.PanelIn(hud.panel, ui.SpaceScreen)
-	ctx.UI.LabelIn("WEBGPU PARTICLE BENCHMARK", hud.title, ui.SpaceScreen)
-	ctx.UI.LabelIn(fmt.Sprintf("target  %s particles  /  %s slots", formatCount(g.targetParticles), formatCount(g.allocatedSlots())), hud.load, ui.SpaceScreen)
-	ctx.UI.LabelIn(fmt.Sprintf("visuals  %s tracers  +  %s sparks", formatCount(tracers), formatCount(sparks)), hud.visuals, ui.SpaceScreen)
-	ctx.UI.LabelIn(fmt.Sprintf("FPS  %5.1f     frame  %5.2f ms     P99  %5.2f ms", g.stats.fps, milliseconds(g.stats.frameTime), milliseconds(g.stats.p99)), hud.frame, ui.SpaceScreen)
-	ctx.UI.LabelIn(g.memoryLabel(), hud.memory, ui.SpaceScreen)
-	ctx.UI.LabelIn(g.inputLagLabel(), hud.input, ui.SpaceScreen)
-	ctx.UI.LabelIn(g.statusLabel(), hud.status, ui.SpaceScreen)
-	ctx.UI.LabelIn("Move or click inside the canvas to sample input-to-submit latency.", hud.help, ui.SpaceScreen)
-	ctx.UI.ButtonIn("particlebench_restart", "RESTART", hud.restart, ui.SpaceScreen)
+	d := ctx.UI.In(ui.SpaceScreen)
+	d.Panel(hud.panel)
+	d.Label("WEBGPU PARTICLE BENCHMARK", hud.title)
+	d.Label(fmt.Sprintf("target  %s particles  /  %s slots", formatCount(g.targetParticles), formatCount(g.allocatedSlots())), hud.load)
+	d.Label(fmt.Sprintf("visuals  %s tracers  +  %s sparks", formatCount(tracers), formatCount(sparks)), hud.visuals)
+	d.Label(fmt.Sprintf("FPS  %5.1f     frame  %5.2f ms     P99  %5.2f ms", g.stats.fps, milliseconds(g.stats.frameTime), milliseconds(g.stats.p99)), hud.frame)
+	d.Label(g.memoryLabel(), hud.memory)
+	d.Label(g.inputLagLabel(), hud.input)
+	d.Label(g.statusLabel(), hud.status)
+	d.Label("Move or click inside the canvas to sample input-to-submit latency.", hud.help)
+	d.Button("particlebench_restart", "RESTART", hud.restart)
 	return commands
 }
 

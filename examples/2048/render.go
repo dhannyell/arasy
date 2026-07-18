@@ -142,24 +142,26 @@ func animationProgress(animation turnAnimation, tick uint64, alpha float64) floa
 }
 
 func (g *Game2048) drawHUD(ctx *runtime.RenderContext) {
-	ctx.UI.FillRectIn(math2d.NewRect(math2d.Vec2{X: 30, Y: 10}, math2d.Vec2{X: 270, Y: 50}), render.RGBA(0.18, 0.16, 0.14, 0.92), ui.SpaceRef)
-	ctx.UI.DrawTextIn("2048", math2d.Vec2{X: 50, Y: 35}, lightText, 32, render.AlignLeft, render.BaselineMiddle, ui.SpaceRef)
+	d := ctx.UI.In(ui.SpaceRef)
+	d.FillRect(math2d.NewRect(math2d.Vec2{X: 30, Y: 10}, math2d.Vec2{X: 270, Y: 50}), render.RGBA(0.18, 0.16, 0.14, 0.92))
+	d.DrawText("2048", math2d.Vec2{X: 50, Y: 35}, lightText, 32, render.AlignLeft, render.BaselineMiddle)
 	drawScore(ctx, "SCORE", g.state.State.score, 340)
 	drawScore(ctx, "BEST", g.best, 465)
 	if g.state.State.phase == phasePlaying {
-		ctx.UI.ButtonIn("btn_new", "New", hudNewRect(), ui.SpaceRef)
+		d.Button("btn_new", "New", hudNewRect())
 	}
 	if g.state.State.undo.usable() {
-		ctx.UI.ButtonIn("btn_undo", fmt.Sprintf("Undoes: %d", g.state.State.undo.Left),
-			powerButtonRect(0, 1), ui.SpaceRef)
+		d.Button("btn_undo", fmt.Sprintf("Undoes: %d", g.state.State.undo.Left),
+			powerButtonRect(0, 1))
 	}
 }
 
 func drawScore(ctx *runtime.RenderContext, label string, value uint64, x float64) {
 	panel := math2d.NewRect(math2d.Vec2{X: x, Y: 10}, math2d.Vec2{X: 105, Y: 50})
-	ctx.UI.FillRectIn(panel, render.RGBA(0.48, 0.43, 0.39, 1), ui.SpaceRef)
-	ctx.UI.DrawTextIn(label, math2d.Vec2{X: panel.Center().X, Y: 26}, lightText, 11, render.AlignCenter, render.BaselineMiddle, ui.SpaceRef)
-	ctx.UI.DrawTextIn(strconv.FormatUint(value, 10), math2d.Vec2{X: panel.Center().X, Y: 44}, lightText, 18, render.AlignCenter, render.BaselineMiddle, ui.SpaceRef)
+	d := ctx.UI.In(ui.SpaceRef)
+	d.FillRect(panel, render.RGBA(0.48, 0.43, 0.39, 1))
+	d.DrawText(label, math2d.Vec2{X: panel.Center().X, Y: 26}, lightText, 11, render.AlignCenter, render.BaselineMiddle)
+	d.DrawText(strconv.FormatUint(value, 10), math2d.Vec2{X: panel.Center().X, Y: 44}, lightText, 18, render.AlignCenter, render.BaselineMiddle)
 }
 
 func (g *Game2048) drawMenuOverlay(ctx *runtime.RenderContext) {
@@ -176,12 +178,13 @@ func (g *Game2048) drawWonOverlay(ctx *runtime.RenderContext) {
 
 func drawOverlay(ctx *runtime.RenderContext, title, subtitle, primaryID, primaryLabel, secondaryID, secondaryLabel string) {
 	panel := overlayPanelRect()
-	ctx.UI.FillRectIn(panel, render.RGBA(0.12, 0.11, 0.10, 0.94), ui.SpaceRef)
-	ctx.UI.DrawTextIn(title, math2d.Vec2{X: 360, Y: 315}, lightText, 38, render.AlignCenter, render.BaselineMiddle, ui.SpaceRef)
-	ctx.UI.DrawTextIn(subtitle, math2d.Vec2{X: 360, Y: 355}, lightText, 18, render.AlignCenter, render.BaselineMiddle, ui.SpaceRef)
-	ctx.UI.ButtonIn(primaryID, primaryLabel, overlayPrimaryButtonRect(), ui.SpaceRef)
+	d := ctx.UI.In(ui.SpaceRef)
+	d.FillRect(panel, render.RGBA(0.12, 0.11, 0.10, 0.94))
+	d.DrawText(title, math2d.Vec2{X: 360, Y: 315}, lightText, 38, render.AlignCenter, render.BaselineMiddle)
+	d.DrawText(subtitle, math2d.Vec2{X: 360, Y: 355}, lightText, 18, render.AlignCenter, render.BaselineMiddle)
+	d.Button(primaryID, primaryLabel, overlayPrimaryButtonRect())
 	if secondaryID != "" {
-		ctx.UI.ButtonIn(secondaryID, secondaryLabel, overlaySecondaryButtonRect(), ui.SpaceRef)
+		d.Button(secondaryID, secondaryLabel, overlaySecondaryButtonRect())
 	}
 }
 

@@ -90,7 +90,7 @@ func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixt
 	cmds = append(cmds, text(arena, v(panel.Min.X+56, panel.Max.Y-panel.Height()*0.128), muted, 16, render.AlignLeft, render.BaselineMiddle, 12)...)
 
 	btnTarget := 1.0
-	if ctx.UI.Hovered(simBtnRect) {
+	if ctx.UI.In(ui.SpaceRef).Hovered(simBtnRect) {
 		btnTarget = 1.08
 	}
 	scaledBtnRect := ctx.UI.SpringScale(idPrefix+"_btn_sim", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, simBtnRect)

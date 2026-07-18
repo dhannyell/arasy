@@ -101,14 +101,14 @@ func (b *Breakout) Update(ctx *runtime.UpdateContext, dt float64) {
 	ctx.Log.Debug("game", "bricks", b.State.bricksLeft)
 
 	_, reset := hudLayout()
-	if ctx.UI.ClickedIn("btn_reset", reset, ui.SpacePlayfield) {
+	if ctx.UI.In(ui.SpacePlayfield).Clicked("btn_reset", reset) {
 		b.State.state = StateMenu
 	}
 
 	if b.State.state == StateMenu || b.State.state == StateGameOver || b.State.state == StateWon {
 		ctx.HoldSimulation()
 		_, _, play := menuLayout()
-		if ctx.UI.Clicked("btn_play", play) {
+		if ctx.UI.In(ui.SpaceRef).Clicked("btn_play", play) {
 			b.State.state = StateReady
 			b.State.lives = 3
 			b.respawnBricks(ctx.World)
@@ -181,9 +181,10 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 
 	score, reset := hudLayout()
 
-	ctx.UI.PanelIn(score, ui.SpacePlayfield)
-	ctx.UI.LabelIn(fmt.Sprintf("Score: %v  Lives: %v", b.State.score, b.State.lives), score.Center(), ui.SpacePlayfield)
-	ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
+	d := ctx.UI.In(ui.SpacePlayfield)
+	d.Panel(score)
+	d.Label(fmt.Sprintf("Score: %v  Lives: %v", b.State.score, b.State.lives), score.Center())
+	d.Button("btn_reset", "Reset", reset)
 	b.renderScreenOverlay(ctx)
 
 	cmds = append(cmds, ctx.World.RenderCommandsInterpolated(ctx.Alpha)...)
@@ -211,19 +212,20 @@ func (b *Breakout) renderScreenOverlay(ctx *runtime.RenderContext) {
 
 func drawScreenOverlay(drawer ui.Drawer, state State) {
 	panel, label, play := menuLayout()
+	d := drawer.In(ui.SpaceRef)
 	switch state {
 	case StateWon:
-		drawer.Panel(panel)
-		drawer.Label("You Win!", label)
-		drawer.Button("btn_play", "Play Again", play)
+		d.Panel(panel)
+		d.Label("You Win!", label)
+		d.Button("btn_play", "Play Again", play)
 	case StateGameOver:
-		drawer.Panel(panel)
-		drawer.Label("Game Over!", label)
-		drawer.Button("btn_play", "Play Again", play)
+		d.Panel(panel)
+		d.Label("Game Over!", label)
+		d.Button("btn_play", "Play Again", play)
 	case StateMenu:
-		drawer.Panel(panel)
-		drawer.Label("Breakout", label)
-		drawer.Button("btn_play", "Play", play)
+		d.Panel(panel)
+		d.Label("Breakout", label)
+		d.Button("btn_play", "Play", play)
 	}
 }
 

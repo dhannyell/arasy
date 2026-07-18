@@ -153,7 +153,7 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 	contentH := float64(len(rows)) * rowH
 
 	// Get the current scroll offset and clip rect (same ID used in Update).
-	offset, clip := ctx.UI.ScrollAreaIn("tbl_standings", bodyRect, contentH, ui.SpaceRef)
+	offset, clip := ctx.UI.In(ui.SpaceRef).ScrollArea("tbl_standings", bodyRect, contentH)
 
 	style := func(row, col int) ui.TableCellStyle {
 		r := rows[row]
@@ -204,7 +204,7 @@ func drawStandingsTable(s ManagerState, ctx *runtime.RenderContext) []render.Com
 		}
 	}
 
-	_ = ctx.UI.TableStyledIn("tbl_standings", tableRect, cols, len(rows), selected, cell, style, ui.SpaceRef)
+	_ = ctx.UI.In(ui.SpaceRef).TableStyled("tbl_standings", tableRect, cols, len(rows), selected, cell, style)
 
 	const badgeW = 46.0
 	const barW = 3.0

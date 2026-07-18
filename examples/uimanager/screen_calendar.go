@@ -54,12 +54,13 @@ func (g *Manager) updateCalendar(ctx *runtime.UpdateContext) {
 	rounds := totalRounds(len(g.State.Clubs))
 	// See the identical comment in updateSquad: Update applies wheel input,
 	// Render's List call only re-reads/clamps the resulting offset.
-	ctx.UI.ScrollOffsetIn("lst_calendar", calendarRoundsBodyRect(), calendarRowH*float64(rounds), ui.SpaceRef)
+	in := ctx.UI.In(ui.SpaceRef)
+	in.ScrollOffset("lst_calendar", calendarRoundsBodyRect(), calendarRowH*float64(rounds))
 
-	if ctx.UI.ClickedIn("btn_sim_cal", calendarSimButtonRect(), ui.SpaceRef) {
+	if in.Clicked("btn_sim_cal", calendarSimButtonRect()) {
 		SimulateRound(&g.State)
 	}
-	if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_cal", calendarSimButtonRect(), ui.SpaceRef) {
+	if seasonEnded(g.State) && in.Clicked("btn_new_season_cal", calendarSimButtonRect()) {
 		g.startNewSeason()
 	}
 }
@@ -78,7 +79,7 @@ func drawCalendarRounds(s ManagerState, ctx *runtime.RenderContext) []render.Com
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab(fmt.Sprintf("SEASON 2026 · ROUNDS %d", rounds), panel.Min.X+24, panel.Min.Y-16, 320, grass)...)
 
-	ctx.UI.List("lst_calendar", calendarRoundsBodyRect(), calendarRowH, rounds, -1, func(i int, rowRect math2d.Rect) {
+	ctx.UI.In(ui.SpaceRef).List("lst_calendar", calendarRoundsBodyRect(), calendarRowH, rounds, -1, func(i int, rowRect math2d.Rect) {
 		round := i + 1
 		fx, ok := fixtureForClubInRound(s.Fixtures, round, 0)
 		if !ok {
