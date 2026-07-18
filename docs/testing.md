@@ -230,6 +230,15 @@ Testes que precisam de DOM, Canvas2D ou WebGPU nao usam `go_js_wasm_exec`, que
 nao fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
 comando `npm run test:wasm-golden`.
 
+## Conformidade cross-backend
+
+`cmd/wasmgolden/conformance_test.go` renderiza a cena canonica do
+`wasmgolden` no raster (in-process, sem browser) e diffa contra os goldens
+Playwright commitados de canvas2d e webgpu, com orcamento de pixels
+divergentes calibrado por fixture. Roda em `go test ./cmd/wasmgolden` em
+toda perna nativa do CI. Regenerou golden do browser
+(`npm run update:wasm-golden`)? Rode a conformidade em seguida.
+
 ## Benchmarks
 
 Benchmarks ficam em arquivos dedicados:
