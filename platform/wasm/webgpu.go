@@ -9,6 +9,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
@@ -30,6 +31,7 @@ type webgpuRenderer struct {
 	gpu     js.Value
 	device  js.Value
 	queue   js.Value
+	dev     gpu.Device
 	context js.Value
 	format  js.Value
 
@@ -124,6 +126,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, log
 		fontProvider: fontProvider,
 		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
 	}
+	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
 
 	r.solidPipeline = r.createSolidPipeline()
@@ -352,151 +355,40 @@ type gpuDrawRun struct {
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {
-	module := r.device.Call("createShaderModule", map[string]any{"code": solidWGSL})
-
-	return r.device.Call("createRenderPipeline", map[string]any{
-		"layout": "auto",
-		"vertex": map[string]any{
-			"module":     module,
-			"entryPoint": "vs_main",
-			"buffers": []any{map[string]any{
-				"arrayStride": 24,
-				"attributes": []any{
-					map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
-					map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
-				},
-			}},
-		},
-		"fragment": map[string]any{
-			"module":     module,
-			"entryPoint": "fs_main",
-			"targets": []any{map[string]any{
-				"format": r.format,
-				"blend":  alphaBlend(),
-			}},
-		},
-		"primitive": map[string]any{
-			"topology": "triangle-list",
-		},
-		"multisample": map[string]any{
-			"count": msaaSampleCount,
-		},
-	})
+	module := r.dev.CreateShaderModule(solidWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createTextPipeline() js.Value {
-	module := r.device.Call("createShaderModule", map[string]any{"code": textWGSL})
-
-	return r.device.Call("createRenderPipeline", map[string]any{
-		"layout": "auto",
-		"vertex": map[string]any{
-			"module":     module,
-			"entryPoint": "vs_main",
-			"buffers": []any{map[string]any{
-				"arrayStride": 32,
-				"attributes": []any{
-					map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
-					map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
-					map[string]any{"shaderLocation": 2, "offset": 24, "format": "float32x2"},
-				},
-			}},
-		},
-		"fragment": map[string]any{
-			"module":     module,
-			"entryPoint": "fs_main",
-			"targets": []any{map[string]any{
-				"format": r.format,
-				"blend":  alphaBlend(),
-			}},
-		},
-		"primitive": map[string]any{
-			"topology": "triangle-list",
-		},
-		"multisample": map[string]any{
-			"count": msaaSampleCount,
-		},
-	})
+	module := r.dev.CreateShaderModule(textWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createTexturedPipeline() js.Value {
-	module := r.device.Call("createShaderModule", map[string]any{"code": texturedWGSL})
-
-	return r.device.Call("createRenderPipeline", map[string]any{
-		"layout": "auto",
-		"vertex": map[string]any{
-			"module":     module,
-			"entryPoint": "vs_main",
-			"buffers": []any{map[string]any{
-				"arrayStride": 40,
-				"attributes": []any{
-					map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
-					map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
-					map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
-				},
-			}},
-		},
-		"fragment": map[string]any{
-			"module":     module,
-			"entryPoint": "fs_main",
-			"targets": []any{map[string]any{
-				"format": r.format,
-				"blend":  premultipliedBlend(),
-			}},
-		},
-		"primitive": map[string]any{
-			"topology": "triangle-list",
-		},
-		"multisample": map[string]any{
-			"count": msaaSampleCount,
-		},
-	})
+	module := r.dev.CreateShaderModule(texturedWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a
 // fullscreen triangle (no vertex buffer) sampling one mip level into the
 // next, one render pass per level.
 func (r *webgpuRenderer) createMipPipeline() js.Value {
-	module := r.device.Call("createShaderModule", map[string]any{"code": mipmapWGSL})
-
-	return r.device.Call("createRenderPipeline", map[string]any{
-		"layout": "auto",
-		"vertex": map[string]any{
-			"module":     module,
-			"entryPoint": "vs_main",
-		},
-		"fragment": map[string]any{
-			"module":     module,
-			"entryPoint": "fs_main",
-			"targets": []any{map[string]any{
-				"format": "rgba8unorm",
-			}},
-		},
-		"primitive": map[string]any{
-			"topology": "triangle-list",
-		},
-	})
+	module := r.dev.CreateShaderModule(mipmapWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.MipPipelineDesc(module)))
 }
 
 // createTextureSampler builds the sampler shared by every declared texture.
 // The WebGPU spec requires magFilter, minFilter and mipmapFilter to all be
 // "linear" whenever maxAnisotropy > 1.
 func (r *webgpuRenderer) createTextureSampler() js.Value {
-	return r.device.Call("createSampler", map[string]any{
-		"magFilter":     "linear",
-		"minFilter":     "linear",
-		"mipmapFilter":  "linear",
-		"maxAnisotropy": 16,
-	})
+	return jsHandle(r.dev.CreateSampler(gpu.TextureSamplerDesc()))
 }
 
 // createMipSampler builds the sampler used only while generating mip
 // chains: each sample reads a single source level, so no anisotropy or
 // mipmap filtering is needed.
 func (r *webgpuRenderer) createMipSampler() js.Value {
-	return r.device.Call("createSampler", map[string]any{
-		"magFilter": "linear",
-		"minFilter": "linear",
-	})
+	return jsHandle(r.dev.CreateSampler(gpu.MipSamplerDesc()))
 }
 
 type gpuTextAtlas struct {
@@ -525,50 +417,17 @@ func (r *webgpuRenderer) createTextAtlas(atlas *tess.Atlas) gpuTextAtlas {
 	width := bounds.Dx()
 	height := bounds.Dy()
 
-	texture := r.device.Call("createTexture", map[string]any{
-		"size":   []any{width, height},
-		"format": "r8unorm",
-		"usage":  textureUsageTextureBinding() | textureUsageCopyDst(),
-	})
-
-	r.queue.Call(
-		"writeTexture",
-		map[string]any{"texture": texture},
-		bytesToJS(atlas.Image.Pix),
-		map[string]any{
-			"bytesPerRow":  width,
-			"rowsPerImage": height,
-		},
-		map[string]any{
-			"width":              width,
-			"height":             height,
-			"depthOrArrayLayers": 1,
-		},
-	)
-
-	sampler := r.device.Call("createSampler", map[string]any{
-		"magFilter": "nearest",
-		"minFilter": "nearest",
-	})
-
-	layout := r.textPipeline.Call("getBindGroupLayout", 0)
-
-	bindGroup := r.device.Call("createBindGroup", map[string]any{
-		"layout": layout,
-		"entries": []any{
-			map[string]any{"binding": 0, "resource": texture.Call("createView")},
-			map[string]any{"binding": 1, "resource": sampler},
-		},
-	})
-	return gpuTextAtlas{atlas: atlas, texture: texture, bindGroup: bindGroup}
+	texture := r.dev.CreateTexture(gpu.R8TextureDesc(width, height))
+	r.dev.WriteTexture(map[string]any{"texture": texture}, atlas.Image.Pix, gpu.TextureWriteLayout(width, height), gpu.TextureWriteSize(width, height))
+	view := r.dev.CreateView(texture, nil)
+	sampler := r.dev.CreateSampler(gpu.NearestSamplerDesc())
+	layout := r.dev.BindGroupLayout(r.textPipeline, 0)
+	bindGroup := r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(layout, view, sampler))
+	return gpuTextAtlas{atlas: atlas, texture: jsHandle(texture), bindGroup: jsHandle(bindGroup)}
 }
 
 func (r *webgpuRenderer) createVertexBuffer(size int) (js.Value, int) {
-	usage := js.Global().Get("GPUBufferUsage")
-	return r.device.Call("createBuffer", map[string]any{
-		"size":  size,
-		"usage": usage.Get("VERTEX").Int() | usage.Get("COPY_DST").Int(),
-	}), size
+	return jsHandle(r.dev.CreateBuffer(gpu.VertexBufferDesc(size))), size
 }
 
 // ensureMSAATarget (re)creates the multisampled color target when the canvas
@@ -581,12 +440,7 @@ func (r *webgpuRenderer) ensureMSAATarget(w, h int) {
 	if !r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
 		r.msaaTexture.Call("destroy")
 	}
-	r.msaaTexture = r.device.Call("createTexture", map[string]any{
-		"size":        []any{w, h},
-		"sampleCount": msaaSampleCount,
-		"format":      r.format,
-		"usage":       textureUsageRenderAttachment(),
-	})
+	r.msaaTexture = jsHandle(r.dev.CreateTexture(gpu.MSAATextureDesc(w, h, r.format.String(), msaaSampleCount)))
 	r.msaaView = r.msaaTexture.Call("createView")
 	r.msaaWidth, r.msaaHeight = w, h
 }
@@ -662,64 +516,6 @@ func growBufferCap(current, required int) int {
 	}
 
 	return current
-}
-
-func bytesToJS(data []byte) js.Value {
-	array := js.Global().Get("Uint8Array").New(len(data))
-	js.CopyBytesToJS(array, data)
-	return array
-}
-
-// alphaBlend is straight-alpha blending for the solid-color pipeline: colors
-// are not premultiplied, so the source contribution is scaled by src-alpha.
-func alphaBlend() map[string]any {
-	return map[string]any{
-		"color": map[string]any{
-			"srcFactor": "src-alpha",
-			"dstFactor": "one-minus-src-alpha",
-			"operation": "add",
-		},
-		"alpha": map[string]any{
-			"srcFactor": "one",
-			"dstFactor": "one-minus-src-alpha",
-			"operation": "add",
-		},
-	}
-}
-
-// premultipliedBlend is premultiplied-alpha blending for the textured
-// pipeline: asset/pixel decodes textures into premultiplied pixels and
-// tess.texTint premultiplies the tint, so the source is already scaled and
-// srcFactor is "one" rather than "src-alpha".
-func premultipliedBlend() map[string]any {
-	return map[string]any{
-		"color": map[string]any{
-			"srcFactor": "one",
-			"dstFactor": "one-minus-src-alpha",
-			"operation": "add",
-		},
-		"alpha": map[string]any{
-			"srcFactor": "one",
-			"dstFactor": "one-minus-src-alpha",
-			"operation": "add",
-		},
-	}
-}
-
-func textureUsageTextureBinding() int {
-	return js.Global().Get("GPUTextureUsage").Get("TEXTURE_BINDING").Int()
-}
-
-func textureUsageCopyDst() int {
-	return js.Global().Get("GPUTextureUsage").Get("COPY_DST").Int()
-}
-
-// textureUsageRenderAttachment is required (alongside TEXTURE_BINDING and
-// COPY_DST) on every declared texture: generateMipmaps renders into each mip
-// level after level 0, which needs RENDER_ATTACHMENT usage on the target
-// view.
-func textureUsageRenderAttachment() int {
-	return js.Global().Get("GPUTextureUsage").Get("RENDER_ATTACHMENT").Int()
 }
 
 func clearValue(clear render.Color) map[string]any {
