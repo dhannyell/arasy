@@ -33,7 +33,9 @@ var packCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer func() { _ = os.RemoveAll(staging) }()
+		defer func() { _ = removeTempDir(staging) }()
+		stopInterruptCleanup := watchTempDirInterrupt(staging)
+		defer stopInterruptCleanup()
 		if err := buildWASM(pkg, staging, title, true, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}

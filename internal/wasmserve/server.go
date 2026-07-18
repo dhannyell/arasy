@@ -34,7 +34,7 @@ func NewServerOptions(dir, title, file, execPath, addr string) *ServerOptions {
 	}
 }
 
-func Start(opts *ServerOptions) {
+func Start(opts *ServerOptions) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
 	if opts.WASMExecPath == "" {
@@ -42,7 +42,7 @@ func Start(opts *ServerOptions) {
 		opts.WASMExecPath, err = DefaultWASMExecPath()
 		if err != nil {
 			log.Error("wasm_exec.js not found", "err", err)
-			os.Exit(1)
+			return err
 		}
 	}
 
@@ -57,8 +57,9 @@ func Start(opts *ServerOptions) {
 	log.Info("listening", "addr", opts.Addr, "dir", opts.Dir, "wasm", opts.WASMFile, "wasm_exec", opts.WASMExecPath)
 	if err := http.ListenAndServe(opts.Addr, handler); err != nil {
 		log.Error("server failed", "err", err)
-		os.Exit(1)
+		return err
 	}
+	return nil
 }
 
 func newHandler(opts ServerOptions) http.Handler {

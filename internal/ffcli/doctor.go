@@ -60,7 +60,9 @@ var doctorCmd = &cobra.Command{
 				}
 				failed = true
 			} else {
-				defer func() { _ = os.RemoveAll(dir) }()
+				defer func() { _ = removeTempDir(dir) }()
+				stopInterruptCleanup := watchTempDirInterrupt(dir)
+				defer stopInterruptCleanup()
 				build := exec.Command("go", "build", "-o", filepath.Join(dir, "app.wasm"), pkg)
 				build.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 				if output, buildErr := build.CombinedOutput(); buildErr != nil {

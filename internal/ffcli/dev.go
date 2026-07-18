@@ -31,6 +31,13 @@ var devCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		defer func() {
+			if cleanupErr := removeTempDir(dir); cleanupErr != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: remove temporary build directory %q: %v\n", dir, cleanupErr)
+			}
+		}()
+		stopInterruptCleanup := watchTempDirInterrupt(dir)
+		defer stopInterruptCleanup()
 		if err := rebuildWASM(pkg, dir, title); err != nil {
 			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err); writeErr != nil {
 				return writeErr
@@ -39,11 +46,10 @@ var devCmd = &cobra.Command{
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "serving %s at http://%s; reload the browser to rebuild\n", pkg, devAddress); err != nil {
 			return err
 		}
-		wasmserve.Start(&wasmserve.ServerOptions{
+		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
 			Rebuild: func() error { return rebuildWASM(pkg, dir, title) },
 		})
-		return nil
 	},
 }
 
