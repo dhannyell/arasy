@@ -23,35 +23,31 @@ import (
 
 // Cross-backend conformance: render the canonical fixtures through the
 // raster reference in-process and diff them against the committed browser
-// goldens (Playwright, 320x240, deviceScaleFactor 1 -- platform/wasm's
-// wasmgolden goldens). Divergence beyond the calibrated budget means a
-// backend drifted from the reference; the failure names which one.
-//
-// Calibration placeholders (Step 1): loose enough to pass while the matrix
-// below is measured; Step 2 replaces these with 2x the measured ratio.
+// goldens. Divergence beyond budget means a backend drifted; the failure
+// names which one.
 const (
-	frameChannelTol     = 32
-	frameBudget         = 0.25
-	particlesChannelTol = 32
-	particlesBudget     = 0.25
+	frameChannelTol         = 32
+	frameCanvas2DBudget     = 0.2454
+	frameWebGPUBudget       = 0.2002
+	particlesChannelTol     = 32
+	particlesCanvas2DBudget = 0.1520
+	particlesWebGPUBudget   = 0.0754
 )
 
-var calibrationTolerances = []uint8{4, 8, 16, 32}
-
 func TestConformanceFrameCanvas2D(t *testing.T) {
-	assertConformance(t, "frame", "canvas2d", 1, frameChannelTol, frameBudget)
+	assertConformance(t, "frame", "canvas2d", 1, frameChannelTol, frameCanvas2DBudget)
 }
 
 func TestConformanceFrameWebGPU(t *testing.T) {
-	assertConformance(t, "frame", "webgpu", 1, frameChannelTol, frameBudget)
+	assertConformance(t, "frame", "webgpu", 1, frameChannelTol, frameWebGPUBudget)
 }
 
 func TestConformanceParticlesCanvas2D(t *testing.T) {
-	assertConformance(t, "particles", "canvas2d", 3, particlesChannelTol, particlesBudget)
+	assertConformance(t, "particles", "canvas2d", 3, particlesChannelTol, particlesCanvas2DBudget)
 }
 
 func TestConformanceParticlesWebGPU(t *testing.T) {
-	assertConformance(t, "particles", "webgpu", 3, particlesChannelTol, particlesBudget)
+	assertConformance(t, "particles", "webgpu", 3, particlesChannelTol, particlesWebGPUBudget)
 }
 
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
@@ -63,11 +59,6 @@ func assertConformance(t *testing.T, fixture, backend string, frames int, channe
 	}
 	rasterImg := rasterFrame(t, game, frames)
 	golden := loadGolden(t, backend, fixture)
-
-	for _, tol := range calibrationTolerances {
-		r, _ := diffRatio(rasterImg, golden, tol)
-		t.Logf("calibration %s x %s: channelTol=%d ratio=%.4f%%", fixture, backend, tol, r*100)
-	}
 
 	ratio, first := diffRatio(rasterImg, golden, channelTol)
 	t.Logf("%s x %s: %.4f%% pixels differ (channelTol=%d, budget=%.4f)", fixture, backend, ratio*100, channelTol, budget)
@@ -101,11 +92,9 @@ func rasterFrame(t *testing.T, game runtime.Game, frames int) *image.RGBA {
 	driver := runtime.NewDriver(game, log)
 	cfg := driver.Config()
 
-	// A texture/font that fails to decode is left nil in the registry
-	// (rendered as the missing-texture placeholder) rather than aborting the
-	// run -- mirrors platform/raster/run.go. The particles fixture relies on
-	// this: it deliberately declares one corrupt texture to characterize the
-	// missing-texture placeholder across backends.
+	// A decode failure leaves that entry nil (missing-texture placeholder)
+	// instead of aborting; the particles fixture relies on this for its
+	// deliberately corrupt texture.
 	textures, err := pixel.BuildRegistry(cfg.Assets)
 	if err != nil {
 		t.Logf("build texture registry (non-fatal, missing-texture placeholder expected): %v", err)
