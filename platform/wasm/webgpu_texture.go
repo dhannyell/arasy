@@ -4,11 +4,11 @@ package wasm
 
 import (
 	"log/slog"
-	"math"
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
@@ -64,42 +64,10 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 // the bind group the textured pipeline expects (binding 0: view, binding 1:
 // the shared linear/anisotropic sampler).
 func (r *webgpuRenderer) createGPUTexture(pix []byte, w, h int) gpuTexture {
-	levels := mipLevelCount(w, h)
-
-	texture := r.device.Call("createTexture", map[string]any{
-		"size":          []any{w, h},
-		"format":        "rgba8unorm",
-		"mipLevelCount": levels,
-		"usage":         textureUsageTextureBinding() | textureUsageCopyDst() | textureUsageRenderAttachment(),
-	})
-
-	r.queue.Call(
-		"writeTexture",
-		map[string]any{"texture": texture},
-		bytesToJS(pix),
-		map[string]any{
-			"bytesPerRow":  4 * w,
-			"rowsPerImage": h,
-		},
-		map[string]any{
-			"width":              w,
-			"height":             h,
-			"depthOrArrayLayers": 1,
-		},
-	)
-
-	r.generateMipmaps(texture, w, h, levels)
-
-	view := texture.Call("createView")
-	bindGroup := r.device.Call("createBindGroup", map[string]any{
-		"layout": r.texturedPipeline.Call("getBindGroupLayout", 0),
-		"entries": []any{
-			map[string]any{"binding": 0, "resource": view},
-			map[string]any{"binding": 1, "resource": r.texSampler},
-		},
-	})
-
-	return gpuTexture{texture: texture, view: view, bindGroup: bindGroup}
+	resources := gpu.BuildTextureResources(r.dev, pix, w, h, r.texturedPipeline, r.texSampler)
+	texture := jsHandle(resources.Texture)
+	r.generateMipmaps(texture, w, h, gpu.MipLevelCount(w, h))
+	return gpuTexture{texture: texture, view: jsHandle(resources.View), bindGroup: jsHandle(resources.BindGroup)}
 }
 
 // generateMipmaps fills mip levels 1..levels-1 of tex by rendering a
@@ -149,19 +117,6 @@ func (r *webgpuRenderer) generateMipmaps(tex js.Value, w, h, levels int) {
 	r.queue.Call("submit", []any{encoder.Call("finish")})
 }
 
-// mipLevelCount returns the full mip chain length for a max(w, h) sized
-// texture: floor(log2(max(w, h))) + 1.
-func mipLevelCount(w, h int) int {
-	max := w
-	if h > max {
-		max = h
-	}
-	if max <= 1 {
-		return 1
-	}
-	return int(math.Floor(math.Log2(float64(max)))) + 1
-}
-
 // textureFor resolves id to its uploaded GPU texture. ok is false when id is
 // out of range or was never built (e.g. a decode failure logged in
 // buildTextures); tess.Build already substitutes a solid magenta placeholder
@@ -177,21 +132,8 @@ func (r *webgpuRenderer) UpdateTextures(updates []runtime.TextureUpdate) {
 		}
 		b := u.Image.Bounds()
 		w, h := b.Dx(), b.Dy()
-		r.queue.Call(
-			"writeTexture",
-			map[string]any{"texture": gt.texture},
-			bytesToJS(u.Image.Pix),
-			map[string]any{
-				"bytesPerRow":  4 * w,
-				"rowsPerImage": h,
-			},
-			map[string]any{
-				"width":              w,
-				"height":             h,
-				"depthOrArrayLayers": 1,
-			},
-		)
-		r.generateMipmaps(gt.texture, w, h, mipLevelCount(w, h))
+		r.dev.WriteTexture(map[string]any{"texture": gt.texture}, u.Image.Pix, gpu.TextureWriteLayout(4*w, h), gpu.TextureWriteSize(w, h))
+		r.generateMipmaps(gt.texture, w, h, gpu.MipLevelCount(w, h))
 	}
 }
 

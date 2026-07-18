@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/render"
 )
 
@@ -59,7 +60,7 @@ type gpuParticles struct {
 	emitPipeline     js.Value
 	simulatePipeline js.Value
 	drawAlpha        js.Value // premultiplied source-over, MSAA 4x
-	drawAdditive     js.Value // srcFactor one / dstFactor one, MSAA 4x
+	drawAdditive     js.Value // additive blending, MSAA 4x
 	drawMissing      js.Value // opaque magenta, deliberately ignores tint
 
 	// Single-sample variants for the particle offscreen target, built only
@@ -197,13 +198,13 @@ func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool) {
 			"multisample": map[string]any{"count": samples},
 		})
 	}
-	g.drawAlpha = pipeline("fs_main", premultipliedBlend(), msaaSampleCount)
+	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend(), msaaSampleCount)
 	g.drawAdditive = pipeline("fs_main", additiveBlend(), msaaSampleCount)
-	g.drawMissing = pipeline("fs_missing", premultipliedBlend(), msaaSampleCount)
+	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend(), msaaSampleCount)
 	if withOffscreen {
-		g.drawAlphaOff = pipeline("fs_main", premultipliedBlend(), 1)
+		g.drawAlphaOff = pipeline("fs_main", gpu.PremultipliedBlend(), 1)
 		g.drawAdditiveOff = pipeline("fs_main", additiveOffscreenBlend(), 1)
-		g.drawMissingOff = pipeline("fs_missing", premultipliedBlend(), 1)
+		g.drawMissingOff = pipeline("fs_missing", gpu.PremultipliedBlend(), 1)
 	}
 }
 
@@ -211,7 +212,7 @@ func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
 	texture := g.device.Call("createTexture", map[string]any{
 		"size":   []any{1, 1},
 		"format": "rgba8unorm",
-		"usage":  textureUsageTextureBinding() | textureUsageCopyDst(),
+		"usage":  gpu.TextureUsageTextureBinding | gpu.TextureUsageCopyDst,
 	})
 	g.queue.Call("writeTexture",
 		map[string]any{"texture": texture},
