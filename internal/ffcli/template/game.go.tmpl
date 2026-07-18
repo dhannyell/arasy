@@ -1,0 +1,59 @@
+package {{.Name}}
+
+import (
+	"embed"
+	"io/fs"
+
+	"{{.EngineModule}}/asset"
+	"{{.EngineModule}}/math2d"
+	"{{.EngineModule}}/render"
+	"{{.EngineModule}}/runtime"
+	"{{.EngineModule}}/scene"
+)
+
+//go:embed assets
+var assetsFS embed.FS
+
+type Game struct {
+	ball scene.EntityID
+}
+
+func (g *Game) Setup() runtime.Config {
+	assets, err := loadManifest()
+	if err != nil {
+		panic(err)
+	}
+	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 16, Y: 9})
+	return runtime.Config{
+		Camera:       render.Camera{World: world, Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})},
+		Bounds:       world,
+		Clear:        render.RGBA(0.04, 0.05, 0.08, 1),
+		SimulationHz: 60,
+		FPS:          60,
+		Assets:       assets,
+	}
+}
+
+func (g *Game) Init(ctx *runtime.UpdateContext) {
+	g.ball = ctx.World.SpawnBundle(scene.Bundle{
+		Transform:      &scene.Transform{Position: math2d.Vec2{X: 8, Y: 4.5}},
+		Velocity:       &scene.Velocity{Linear: math2d.Vec2{X: 3, Y: 2}},
+		CircleSprite:   &scene.CircleSprite{Radius: 0.35, BaseSprite: scene.BaseSprite{Color: render.RGBA(0.3, 0.9, 1, 1)}},
+		CircleCollider: &scene.CircleCollider{Radius: 0.35},
+		Body:           &scene.Body{InvMass: 1, Restitution: 1},
+	})
+}
+
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+	return ctx.World.RenderCommandsInterpolated(ctx.Alpha)
+}
+
+func loadManifest() (asset.Manifest, error) {
+	sub, err := fs.Sub(assetsFS, "assets")
+	if err != nil {
+		return asset.Manifest{}, err
+	}
+	return asset.Load(sub)
+}

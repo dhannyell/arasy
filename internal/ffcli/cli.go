@@ -8,8 +8,8 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "ffcli",
-	Short: "ffcli is a simple command line interface for frameforge",
+	Use:   "frameforge",
+	Short: "frameforge is the command line interface for the frameforge engine",
 }
 
 func Execute() {

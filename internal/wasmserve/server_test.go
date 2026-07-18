@@ -1,6 +1,7 @@
 package wasmserve
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -91,5 +92,33 @@ func TestHandlerServesArtifactsFromDirectory(t *testing.T) {
 	}
 	if got := rec.Body.String(); got != "wasm" {
 		t.Fatalf("app.wasm body = %q", got)
+	}
+}
+
+func TestHandlerRebuildErrorIsReturnedToBrowser(t *testing.T) {
+	dir := t.TempDir()
+	wasmExec := filepath.Join(dir, "wasm_exec.js")
+	if err := os.WriteFile(wasmExec, []byte("class Go {}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	handler := newHandler(ServerOptions{
+		Dir: dir, WASMFile: "app.wasm", WASMExecPath: wasmExec,
+		Rebuild: func() error { return fmt.Errorf("compile failed") },
+	})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app.wasm", nil))
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "compile failed") {
+		t.Fatalf("status/body = %d/%q, want 500 and compile error", rec.Code, rec.Body.String())
+	}
+}
+
+func TestShellHTMLEscapesTitleAndWASMFile(t *testing.T) {
+	body, err := ShellHTML("<unsafe>", `demo".wasm`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(body)
+	if !strings.Contains(got, "&lt;unsafe&gt;") || !strings.Contains(got, `fetch("demo\".wasm")`) {
+		t.Fatalf("unexpected shell: %s", got)
 	}
 }
