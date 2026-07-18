@@ -54,6 +54,10 @@ type frameStats struct {
 	hasJSHeap  bool
 	gpuBuffers uint64
 	hasGPU     bool
+	gpuEmit    time.Duration
+	gpuStep    time.Duration
+	gpuDraw    time.Duration
+	hasGPUTime bool
 }
 
 // Game adds one full 65K emitter at a time after a stable observation period.
@@ -105,6 +109,11 @@ func (g *Game) Setup() runtime.Config {
 		Clear:        render.RGBA8(4, 9, 18, 255),
 		Assets:       g.assets,
 		UITheme:      theme,
+		// Full-resolution offscreen compositing: removes MSAA from the
+		// particle blend (measured 2x draw win). Half-res buys nothing here —
+		// at 1-3 px per particle the residual cost is triangle setup, not
+		// fill — and costs sharpness, so the benchmark stays at 1.0.
+		ParticleOffscreenScale: 1.0,
 	}
 }
 
@@ -165,6 +174,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	d.Label(fmt.Sprintf("target  %s particles  /  %s slots", formatCount(g.targetParticles), formatCount(g.allocatedSlots())), hud.load)
 	d.Label(fmt.Sprintf("visuals  %s tracers  +  %s sparks", formatCount(tracers), formatCount(sparks)), hud.visuals)
 	d.Label(fmt.Sprintf("FPS  %5.1f     frame  %5.2f ms     P99  %5.2f ms", g.stats.fps, milliseconds(g.stats.frameTime), milliseconds(g.stats.p99)), hud.frame)
+	d.Label(g.gpuTimeLabel(), hud.gpuTime)
 	d.Label(g.memoryLabel(), hud.memory)
 	d.Label(g.inputLagLabel(), hud.input)
 	d.Label(g.statusLabel(), hud.status)
@@ -206,11 +216,14 @@ func (g *Game) ObserveFrame(
 	hasJSHeap bool,
 	gpuBuffers uint64,
 	hasGPU bool,
+	gpuEmit, gpuStep, gpuDraw time.Duration,
+	hasGPUTime bool,
 ) {
 	g.stats = frameStats{
 		fps: fps, frameTime: frameTime, p99: p99, inputLag: inputLag, hasInput: hasInput,
 		jsHeap: jsHeap, jsHeapMax: jsHeapMax, hasJSHeap: hasJSHeap,
 		gpuBuffers: gpuBuffers, hasGPU: hasGPU,
+		gpuEmit: gpuEmit, gpuStep: gpuStep, gpuDraw: gpuDraw, hasGPUTime: hasGPUTime,
 	}
 	if g.phase != phaseCalibrating {
 		return
@@ -314,6 +327,20 @@ func (g *Game) inputLagLabel() string {
 	return fmt.Sprintf("input to submit  %.2f ms", milliseconds(g.stats.inputLag))
 }
 
+// gpuTimeLabel splits GPU frame cost between the particle prepare pass
+// (kick + emit), the simulate pass and the render pass, from WebGPU timestamp
+// queries. Browsers quantize the timestamps (Chromium: 100 µs), so treat
+// sub-0.1 ms readings as noise.
+func (g *Game) gpuTimeLabel() string {
+	if !g.stats.hasGPUTime {
+		return "GPU time  unavailable (no timestamp-query)"
+	}
+	return fmt.Sprintf(
+		"GPU  emit  %5.2f ms     step  %5.2f ms     draw  %5.2f ms",
+		milliseconds(g.stats.gpuEmit), milliseconds(g.stats.gpuStep), milliseconds(g.stats.gpuDraw),
+	)
+}
+
 func (g *Game) memoryLabel() string {
 	ram := "RAM JS  unavailable"
 	if g.stats.hasJSHeap {
@@ -369,10 +396,10 @@ func formatBytes(bytes uint64) string {
 }
 
 type benchmarkHUD struct {
-	panel                                              math2d.Rect
-	title, load, visuals, frame, memory, input, status math2d.Vec2
-	help                                               math2d.Vec2
-	restart                                            math2d.Rect
+	panel                                                       math2d.Rect
+	title, load, visuals, frame, gpuTime, memory, input, status math2d.Vec2
+	help                                                        math2d.Vec2
+	restart                                                     math2d.Rect
 }
 
 func benchmarkLayout(viewport math2d.Rect) benchmarkHUD {
@@ -388,9 +415,10 @@ func benchmarkLayout(viewport math2d.Rect) benchmarkHUD {
 		load:    math2d.Vec2{X: x + panelW/2, Y: y + line*1.55},
 		visuals: math2d.Vec2{X: x + panelW/2, Y: y + line*2.45},
 		frame:   math2d.Vec2{X: x + panelW/2, Y: y + line*3.35},
-		memory:  math2d.Vec2{X: x + panelW/2, Y: y + line*4.25},
-		input:   math2d.Vec2{X: x + panelW/2, Y: y + line*5.15},
-		status:  math2d.Vec2{X: x + panelW/2, Y: y + line*6.05},
+		gpuTime: math2d.Vec2{X: x + panelW/2, Y: y + line*4.25},
+		memory:  math2d.Vec2{X: x + panelW/2, Y: y + line*5.15},
+		input:   math2d.Vec2{X: x + panelW/2, Y: y + line*6.05},
+		status:  math2d.Vec2{X: x + panelW/2, Y: y + line*6.95},
 		help:    math2d.Vec2{X: x + panelW/2, Y: y + panelH*0.72},
 		restart: math2d.NewRect(
 			math2d.Vec2{X: x + panelW*0.37, Y: y + panelH*0.86},
