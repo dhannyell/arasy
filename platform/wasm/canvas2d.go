@@ -38,16 +38,8 @@ type Canvas2D struct {
 	pendingTextures int
 	ready           bool
 
-	particleEmitters  map[particleKey]*canvasEmitter
-	particleBudget    *particle.Budget
-	particleScratch   []particle.LiveParticle
-	particleFrame     uint64
-	particleFrameSeen uint64 // frame of the last budget bookkeeping
-	// Share needs the frame's total demand before all commands have been
-	// seen, so each frame budgets against the previous frame's total.
-	particleWantPrev    int
-	particleWantCurrent int
-	diagnostics         diagnostic.Once
+	particles   *particle.EmitterSet
+	diagnostics diagnostic.Once
 }
 
 // dynamicTexture is the reusable upload target for one dynamic texture: an
@@ -204,14 +196,15 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.ctx.Call("fillRect", 0, 0, w, h)
 	}
 
-	c.particleFrame++
+	if c.particles != nil {
+		c.particles.BeginFrame()
+	}
+
 	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-frameforge-ready", "canvas2d")
 		c.ready = true
 	}
-
-	c.pruneParticleEmitters()
 }
 
 type canvasSink struct {
