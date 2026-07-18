@@ -319,9 +319,10 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 
 	r.particles.encodeSims(encoder, particleRuns, frame.Camera, w, h)
-	// Sample GPU time only on frames whose first particle compute pass wrote
-	// the begin timestamp; otherwise query 0 would hold a stale value.
-	sampleTiming := r.timing != nil && r.particles.timingWrote
+	// The render pass is timed whenever a metrics consumer exists, with or
+	// without particles; timingWrote tells the readback whether the particle
+	// compute queries were also written this frame (stale otherwise).
+	sampleTiming := r.timing != nil
 
 	offscreenParticles := r.particleScale > 0 && len(groupCmds) > 0
 	if offscreenParticles {
@@ -393,7 +394,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	pass.Call("end")
 	timingSlot := -1
 	if sampleTiming {
-		timingSlot = r.timing.encodeResolve(encoder)
+		timingSlot = r.timing.encodeResolve(encoder, r.particles.timingWrote)
 	}
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
@@ -406,8 +407,10 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 
 // particleGPUTimings reports the most recent timestamp-query sample: the
 // particle prepare pass (kick + emit), the simulate pass (including the pass
-// boundary before it) and the main render pass. ok is false until the first
-// sample resolves, or always on adapters without "timestamp-query".
+// boundary before it) and the main render pass. Frames without particle
+// commands still sample the render pass and report zero for the compute
+// stages. ok is false until the first sample resolves, or always on adapters
+// without "timestamp-query".
 func (r *webgpuRenderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
 	if r.timing == nil || !r.timing.valid {
 		return 0, 0, 0, false

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "fonts": [
+    {"name": "default", "file": "fonts/Go-Regular.ttf"}
+  ],
+  "textures": [
+    {"name": "sprite_0", "file": "textures/sprite.png"},
+    {"name": "sprite_1", "file": "textures/sprite.png"},
+    {"name": "sprite_2", "file": "textures/sprite.png"},
+    {"name": "sprite_3", "file": "textures/sprite.png"}
+  ]
+}

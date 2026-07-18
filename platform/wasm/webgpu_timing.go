@@ -35,6 +35,10 @@ type gpuTiming struct {
 type timingSlot struct {
 	buffer js.Value // MAP_READ | COPY_DST readback target
 	busy   bool
+	// hasCompute records whether the frame that filled this slot ran timed
+	// particle compute passes. Without them, queries [0,2] hold stale values
+	// from an older frame and only the render interval [3,4] is meaningful.
+	hasCompute bool
 }
 
 // newGpuTiming returns nil when the device was created without the
@@ -107,9 +111,10 @@ func (t *gpuTiming) renderEndTimestampWrites() map[string]any {
 }
 
 // encodeResolve records the query resolution and the copy into a free
-// readback slot. It returns the slot index, or -1 when every readback is
-// still mapped (that frame simply goes unsampled).
-func (t *gpuTiming) encodeResolve(encoder js.Value) int {
+// readback slot. hasCompute tells the readback whether the particle compute
+// queries were written this frame. It returns the slot index, or -1 when
+// every readback is still mapped (that frame simply goes unsampled).
+func (t *gpuTiming) encodeResolve(encoder js.Value, hasCompute bool) int {
 	slot := -1
 	for i := range t.slots {
 		if !t.slots[i].busy {
@@ -123,6 +128,7 @@ func (t *gpuTiming) encodeResolve(encoder js.Value) int {
 	encoder.Call("resolveQuerySet", t.querySet, 0, timingQueryCount, t.resolve, 0)
 	encoder.Call("copyBufferToBuffer", t.resolve, 0, t.slots[slot].buffer, 0, timingQueryCount*8)
 	t.slots[slot].busy = true
+	t.slots[slot].hasCompute = hasCompute
 	return slot
 }
 
@@ -148,8 +154,19 @@ func (t *gpuTiming) readback(slot int) {
 		s.buffer.Call("unmap")
 		s.busy = false
 		// Timestamps may be non-monotonic across passes on some drivers;
-		// discard the sample rather than publish a negative duration.
-		if t1 >= t0 && t2 >= t1 && t4 >= t3 {
+		// discard the sample rather than publish a negative duration. On
+		// frames without timed compute passes the [0,2] queries are stale, so
+		// only the render interval is published and the compute costs are
+		// zero by definition.
+		switch {
+		case !s.hasCompute:
+			if t4 >= t3 {
+				t.prepare = 0
+				t.simulate = 0
+				t.render = time.Duration(t4 - t3)
+				t.valid = true
+			}
+		case t1 >= t0 && t2 >= t1 && t4 >= t3:
 			t.prepare = time.Duration(t1 - t0)
 			t.simulate = time.Duration(t2 - t1)
 			t.render = time.Duration(t4 - t3)
