@@ -422,7 +422,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 	return RenderContext{
 		World:              d.world,
 		Assets:             d.cfg.Assets,
-		UI:                 uiInst,
+		UI:                 uiInst.Draw(),
 		Time:               d.renderTime,
 		Dt:                 d.renderDt,
 		Log:                d.log.With("scope", "game"),

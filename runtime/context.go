@@ -103,7 +103,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Log:        d.log.With("scope", "game"),
 		Tick:       d.tick,
 		Rand:       &d.rng,
-		UI:         uiInst,
+		UI:         uiInst.Interact(),
 		Audio:      &d.audioPort,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
 		camera:     d.cameraForSurface(),

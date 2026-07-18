@@ -8,6 +8,7 @@ import (
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/frameforge/ui"
 )
 
 // uiClickGame is a minimal game whose state transitions on a UI button click,
@@ -41,7 +42,7 @@ func (g *uiClickGame) Update(ctx *UpdateContext, dt float64) {
 	if !g.state {
 		ctx.HoldSimulation()
 		rect := math2d.NewRect(math2d.Vec2{X: 40, Y: 40}, math2d.Vec2{X: 20, Y: 20})
-		if ctx.UI.Clicked("btn", rect) {
+		if ctx.UI.In(ui.SpaceRef).Clicked("btn", rect) {
 			g.clicked = true
 			g.state = true
 		}
