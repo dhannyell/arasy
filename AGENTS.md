@@ -106,9 +106,11 @@ platform/* -> asset/pixel -> asset
 
 1. Define struct in `scene/components.go`
 2. Add `store[ComponentType]` field to `World`
-3. Add `Set`/getter/`Remove` methods delegating to store
-4. Clone in `World.Clone()`
-5. Remove in `World.Despawn()`
+3. Add `Set`/getter/`Remove` methods delegating to store, following the
+   `SetX(EntityID, T)` + `X(EntityID) (T, bool)` convention exactly — the
+   structural guards discover components by reflecting over this convention
+4. Clone in `World.Clone()` (structural guard: TestCloneCoversAllComponentStores)
+5. Remove in `World.Despawn()` (structural guard: TestDespawnCoversAllComponentStores)
 6. Include in `World.Checksum()` + bump `ChecksumComponentStores` (structural guard test fails if you forget)
 
 ### Simulation Determinism
