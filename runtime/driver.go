@@ -420,7 +420,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		alpha = d.clock.Alpha()
 	}
 	return RenderContext{
-		World:              d.world,
+		World:              d.world.View(),
 		Assets:             d.cfg.Assets,
 		UI:                 uiInst.Draw(),
 		Time:               d.renderTime,

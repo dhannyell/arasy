@@ -152,7 +152,7 @@ type UpdateContext struct {
 }
 
 type RenderContext struct {
-    World *scene.World
+    World scene.WorldView
     UI    ui.Drawer
     Debug scene.DebugLayers
     Time  float64
@@ -161,6 +161,13 @@ type RenderContext struct {
     Tick  uint64
 }
 ```
+
+`RenderContext.World` e um `scene.WorldView`, uma face read-only obtida via
+`World.View()`: so expoe `RenderCommands`, `RenderCommandsInterpolated`,
+getters de componente, `Contacts` e `StepTick` — sem `Set*`/`Spawn`/`Despawn`/
+`Step`/`Clone`. Mutar estado de simulacao a partir do `Render` vira erro de
+compilacao em vez de aviso em documentacao, ja que `Render` pode rodar zero,
+uma ou varias vezes entre ticks fixos.
 
 Os dois contextos tambem expoem `Camera()`. O contexto de render permite ajustar
 a camera do frame com `SetCamera(cam)`.
