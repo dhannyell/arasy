@@ -38,6 +38,11 @@ type driverSnapshot struct {
 	audioState audio.State
 }
 
+// driverSnapshotFields counts driverSnapshot's fields. Bump it when adding
+// a field — and wire the field into captureSnapshot AND restoreSnapshot;
+// the structural guard test fails until you do.
+const driverSnapshotFields = 9
+
 func newRecorder(historyLen, interval int) *recorder {
 	if interval <= 0 {
 		interval = defaultKeyframeInterval

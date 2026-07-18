@@ -38,9 +38,13 @@ go run ./cmd/frameforge build ./examples/breakout/wasm -o dist/breakout
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
 npm run update:wasm-golden
+go test ./examples/breakout ./examples/2048 ./examples/rhythm -run TestGoldenReplay -update
 ```
 
 Golden PRs must explain the visual change; unexplained diffs are regressions.
+Golden replays (`internal/replaytest`, committed `.ffrp` + `.state.txt`
+fixtures under each demo's `testdata/`) follow the same rule for simulation
+changes.
 
 ## Architecture
 
@@ -168,10 +172,10 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 | `test` | `gofmt`, `go vet`, `go test ./...` (x86-64) |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` (Windows compat) |
-| `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` + Canvas2D visual golden; WebGPU golden remains a local/browser gate |
+| `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` (incl. `examples/...` golden replays) + Canvas2D visual golden; WebGPU golden remains a local/browser gate |
 | `arm64` | `go test ./...` (native arm64) |
 
-`wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes.
+`wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes. Golden replays (`examples/*/testdata/*.ffrp`) run on all four Go architectures (x86-64, windows, arm64, wasm) via `go test ./examples/...`, extending the same net to the full driver+input+UI+audio+game pipeline.
 
 ## Reference Docs
 - `README.md` -- capabilities, quick start, demo instructions
