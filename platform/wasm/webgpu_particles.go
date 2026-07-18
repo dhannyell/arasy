@@ -9,13 +9,12 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/render"
 )
 
 const (
 	gpuParticleTTL     = 300
-	gpuParticleStride  = 48  // must match the WGSL Particle struct
-	gpuUniformSize     = 224 // must match the WGSL EmitterUniforms struct
 	particleWorkgroup  = 64
 	dispatchBufferSize = 12 // DispatchWorkgroupsIndirectArgs: {x,y,z}
 	drawBufferSize     = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
@@ -47,7 +46,7 @@ type gpuEmitter struct {
 	simulateBind [2]js.Value // simulate; dispatch args are deliberately absent
 	renderBind   [2]js.Value // reads alive[1-front] (the survivors list)
 	textureBind  js.Value
-	scratch      [gpuUniformSize]byte
+	scratch      [gpu.ParticleUniformSize]byte
 }
 
 type gpuParticles struct {
@@ -58,7 +57,7 @@ type gpuParticles struct {
 	emitPipeline     js.Value
 	simulatePipeline js.Value
 	drawAlpha        js.Value // premultiplied source-over, MSAA 4x
-	drawAdditive     js.Value // srcFactor one / dstFactor one, MSAA 4x
+	drawAdditive     js.Value // additive blending, MSAA 4x
 	drawMissing      js.Value // opaque magenta, deliberately ignores tint
 
 	prepareLayout  js.Value
@@ -210,16 +209,16 @@ func (g *gpuParticles) buildPipelines(format js.Value) {
 			"multisample": map[string]any{"count": msaaSampleCount},
 		})
 	}
-	g.drawAlpha = pipeline("fs_main", premultipliedBlend())
-	g.drawAdditive = pipeline("fs_main", additiveBlend())
-	g.drawMissing = pipeline("fs_missing", premultipliedBlend())
+	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend())
+	g.drawAdditive = pipeline("fs_main", gpu.AdditiveBlend())
+	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend())
 }
 
 func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
 	texture := g.device.Call("createTexture", map[string]any{
 		"size":   []any{1, 1},
 		"format": "rgba8unorm",
-		"usage":  textureUsageTextureBinding() | textureUsageCopyDst(),
+		"usage":  gpu.TextureUsageTextureBinding | gpu.TextureUsageCopyDst,
 	})
 	g.queue.Call("writeTexture",
 		map[string]any{"texture": texture},
@@ -230,26 +229,19 @@ func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
 	return texture
 }
 
-// additiveBlend is the premultiplied additive variant: source adds onto the
-// destination without attenuating it (fire, sparks, glow).
-func additiveBlend() map[string]any {
-	factor := map[string]any{"srcFactor": "one", "dstFactor": "one", "operation": "add"}
-	return map[string]any{"color": factor, "alpha": factor}
-}
-
 func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmitter {
 	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity}
 	usage := js.Global().Get("GPUBufferUsage")
 	storage := usage.Get("STORAGE").Int() | usage.Get("COPY_DST").Int()
 
-	e.particles = g.buffer(decl.Capacity*gpuParticleStride, storage)
+	e.particles = g.buffer(decl.Capacity*gpu.ParticleStride, storage)
 	e.alive[0] = g.buffer(decl.Capacity*4, storage)
 	e.alive[1] = g.buffer(decl.Capacity*4, storage)
 	e.dead = g.buffer(decl.Capacity*4, storage)
 	e.counters = g.buffer(16, storage)
 	e.dispatchIndirect = g.buffer(dispatchBufferSize, storage|usage.Get("INDIRECT").Int())
 	e.drawIndirect = g.buffer(drawBufferSize, storage|usage.Get("INDIRECT").Int())
-	e.uniforms = g.buffer(gpuUniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
+	e.uniforms = g.buffer(gpu.ParticleUniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
 
 	// Dead list starts full (every slot free), counters at {capacity,0,0},
 	// dispatch at {0,1,1}, and draw at {6,0,0,0}: dispatch Y/Z fixed at 1,
@@ -501,12 +493,12 @@ func (g *gpuParticles) endFrame() {
 }
 
 func (g *gpuParticles) bufferBytes() uint64 {
-	const perEmitterOverhead = gpuUniformSize + dispatchBufferSize + drawBufferSize + 16 // counters
+	const perEmitterOverhead = gpu.ParticleUniformSize + dispatchBufferSize + drawBufferSize + 16 // counters
 	var total uint64
 	for _, emitter := range g.emitters {
 		// Particle state plus current/survivor/dead index lists. This excludes
 		// shared pipelines, textures and browser/driver allocations.
-		total += uint64(emitter.capacity*(gpuParticleStride+3*4) + perEmitterOverhead)
+		total += uint64(emitter.capacity*(gpu.ParticleStride+3*4) + perEmitterOverhead)
 	}
 	return total
 }
