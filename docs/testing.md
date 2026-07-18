@@ -230,6 +230,32 @@ Testes que precisam de DOM, Canvas2D ou WebGPU nao usam `go_js_wasm_exec`, que
 nao fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
 comando `npm run test:wasm-golden`.
 
+## Golden replays
+
+Um golden replay verifica o pipeline completo (driver + input + UI + audio +
+jogo) reproduzindo uma gravacao `.ffrp` real de gameplay e comparando dois
+sinais contra fixtures commitadas em `testdata/`: as ancoras de checksum do
+proprio `Recording` (`VerifyRecording`) e um fingerprint textual do estado
+final do jogo (`<nome>.state.txt`) via `runtime.Replay`. O fingerprint existe
+porque as ancoras hasheiam so o `World` -- jogos que guardam estado em
+`StateSlot` (2048, por exemplo) ficam invisiveis para elas.
+
+O harness compartilhado vive em `internal/replaytest` (`Golden(t, update,
+dir, name, newGame, fingerprint, script)`); cada demo coberto declara sua
+propria flag `-update` e um `golden_replay_test.go` com `TestGoldenReplay`.
+Regenerar depois de uma mudanca intencional de simulacao:
+
+```powershell
+go test ./examples/breakout ./examples/2048 ./examples/rhythm -run TestGoldenReplay -update
+```
+
+A mesma regra dos goldens visuais vale aqui: PRs que alteram um `.ffrp` ou um
+`.state.txt` devem explicar a mudanca de simulacao; um diff sem explicacao e
+tratado como regressao. Os fixtures rodam em `go test ./examples/...` nas
+quatro arquiteturas do CI (x86-64, windows, arm64, wasm) -- uma divergencia
+que aparece so numa perna e indicio de nao-determinismo cross-arch, nao um
+fixture para atualizar as cegas.
+
 ## Benchmarks
 
 Benchmarks ficam em arquivos dedicados:

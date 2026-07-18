@@ -94,7 +94,7 @@ jobs:
           GOARCH: wasm
         run: |
           export PATH="$PATH:$(go env GOROOT)/lib/wasm"
-          go test ./scene/... ./runtime/... ./math2d/... ./ease/...
+          go test ./scene/... ./runtime/... ./math2d/... ./ease/... ./examples/...
       - uses: actions/setup-node@v4
         with:
           node-version: 24
