@@ -17,7 +17,7 @@ import (
 
 // TestChecksumGolden asserts that the simulation checksum is bit-identical
 // across runs and architectures. The golden file records expected checksums at
-// ticks 1, 100, and 600 for a dense, fully deterministic world with all 11
+// ticks 1, 100, and 600 for a dense, fully deterministic world with all 12
 // component maps populated and active collisions.
 //
 // Regenerate (only on x86-64, in a dedicated commit explaining why):
@@ -126,7 +126,7 @@ func runAndCapture(w *scene.World, dt float64, config scene.StepConfig, totalTic
 }
 
 // buildGoldenWorld creates a dense, fully deterministic world with ~24
-// entities covering all 11 component maps. Positions, velocities, and
+// entities covering all 12 component stores. Positions, velocities, and
 // accelerations are arranged so that collisions occur within the 100×80
 // bounds, exercising the full simulation pipeline.
 func buildGoldenWorld() *scene.World {
@@ -210,6 +210,22 @@ func buildGoldenWorld() *scene.World {
 			Stroke: render.RGBA(1, 1, 1, 1),
 		})
 	}
+
+	// ImageSprite is render-only, but belongs to deterministic scene state and
+	// therefore participates in the cross-architecture checksum fixture.
+	imageID := w.Spawn()
+	w.SetTransform(imageID, scene.Transform{
+		Position: math2d.Vec2{X: 24, Y: 62},
+		Rotation: ninth,
+		Scale:    math2d.Vec2{X: 1.25, Y: 0.75},
+	})
+	w.SetImageSprite(imageID, scene.ImageSprite{
+		Layer:   3,
+		Texture: render.TextureID(7),
+		Src:     math2d.NewRect(math2d.Vec2{X: 2, Y: 4}, math2d.Vec2{X: 18, Y: 28}),
+		Size:    math2d.Vec2{X: 6, Y: 9},
+		Tint:    render.RGBA(0.8, 0.7, 0.6, 0.9),
+	})
 
 	// ---- Static entities (3, zero InvMass) ----
 	for i := 0; i < 3; i++ {

@@ -155,6 +155,15 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 			},
 		},
 		{
+			name: "imageSprite.Size",
+			mutate: func(w *scene.World, _, rect scene.EntityID) {
+				w.SetImageSprite(rect, scene.ImageSprite{
+					Texture: render.TextureID(2),
+					Size:    math2d.Vec2{X: 7, Y: 9},
+				})
+			},
+		},
+		{
 			name: "velocity",
 			mutate: func(w *scene.World, circle, _ scene.EntityID) {
 				w.SetVelocity(circle, scene.Velocity{Linear: math2d.Vec2{X: 99, Y: 0}})
@@ -229,6 +238,19 @@ func TestChecksumDistinguishesAbsentFromZero(t *testing.T) {
 
 	if withoutVelocity.Checksum() == withZeroVelocity.Checksum() {
 		t.Fatal("checksum did not distinguish an absent Velocity from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroImageSprite(t *testing.T) {
+	withoutImage := scene.NewWorld()
+	spawnAt(withoutImage, math2d.Vec2{X: 1, Y: 1})
+
+	withZeroImage := scene.NewWorld()
+	id := spawnAt(withZeroImage, math2d.Vec2{X: 1, Y: 1})
+	withZeroImage.SetImageSprite(id, scene.ImageSprite{})
+
+	if withoutImage.Checksum() == withZeroImage.Checksum() {
+		t.Fatal("checksum did not distinguish an absent ImageSprite from a present, zero-valued one")
 	}
 }
 
