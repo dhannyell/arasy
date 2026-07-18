@@ -39,10 +39,10 @@ func (ctx *UpdateContext) Camera() render.Camera { return ctx.camera }
 func (ctx *UpdateContext) HoldSimulation() { ctx.simulationHeld = true }
 
 // RenderContext is passed to Game.Render.
-// Treat World as read-only here; mutating it breaks determinism.
+// World is the read-only view of the simulation for this frame.
 // Camera is changed through SetCamera, and UI only emits render commands.
 type RenderContext struct {
-	World *scene.World
+	World scene.WorldView
 	// Assets resolves texture and sprite names to render handles.
 	Assets asset.Manifest
 	UI     ui.Drawer
