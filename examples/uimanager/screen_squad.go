@@ -33,11 +33,12 @@ func squadListRect() math2d.Rect {
 
 func (g *Manager) updateSquad(ctx *runtime.UpdateContext) {
 	squad := g.State.Clubs[0].Squad
-	// ScrollOffsetIn consumes the tick's wheel delta — the render-side List
+	// ScrollOffset consumes the tick's wheel delta — the render-side List
 	// call also touches scroll state, but Render's UI carries no PointerFrame
 	// (no wheel data), so wheel input must be applied here in Update.
-	ctx.UI.ScrollOffsetIn("lst_squad", squadListRect(), squadRowH*float64(len(squad)), ui.SpaceRef)
-	if row := ctx.UI.ListHitIn("lst_squad", squadListRect(), squadRowH, len(squad), ui.SpaceRef); row >= 0 {
+	in := ctx.UI.In(ui.SpaceRef)
+	in.ScrollOffset("lst_squad", squadListRect(), squadRowH*float64(len(squad)))
+	if row := in.ListHit("lst_squad", squadListRect(), squadRowH, len(squad)); row >= 0 {
 		if g.State.SelectedPlayer == row {
 			g.State.SelectedPlayer = -1
 		} else {
@@ -72,10 +73,10 @@ func drawSquadListBody(s ManagerState, ctx *runtime.RenderContext) []render.Comm
 	cmds = append(cmds, text("OVR", v(body.Max.X-140, headerY+14), muted, 10, render.AlignRight, render.BaselineMiddle, 13)...)
 	cmds = append(cmds, text("FORM", v(body.Max.X-20, headerY+14), muted, 10, render.AlignRight, render.BaselineMiddle, 13)...)
 
-	// Rows scroll/cull/zebra/selected through ctx.UI.List — it emits directly
+	// Rows scroll/cull/zebra/selected through DrawScope.List — it emits directly
 	// to the UI's command stream (correctly captured by the screen's
 	// transition group), so only the panel chrome above is returned here.
-	ctx.UI.List("lst_squad", squadListRect(), squadRowH, len(squad), s.SelectedPlayer, func(i int, rowRect math2d.Rect) {
+	ctx.UI.In(ui.SpaceRef).List("lst_squad", squadListRect(), squadRowH, len(squad), s.SelectedPlayer, func(i int, rowRect math2d.Rect) {
 		p := squad[i]
 		ctx.UI.Emit(lineCmd(11, v(rowRect.Min.X, rowRect.Max.Y), v(rowRect.Max.X, rowRect.Max.Y), 1, line))
 

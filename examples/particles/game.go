@@ -124,25 +124,25 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	hud := particleHUDLayout(ctx.Camera().Viewport)
-	if ctx.UI.ClickedIn("season_spring", hud.springButton, ui.SpaceScreen) {
+	in := ctx.UI.In(ui.SpaceScreen)
+	if in.Clicked("season_spring", hud.springButton) {
 		g.State.Season = seasonSpring
 	}
-	if ctx.UI.ClickedIn("season_summer", hud.summerButton, ui.SpaceScreen) {
+	if in.Clicked("season_summer", hud.summerButton) {
 		g.State.Season = seasonSummer
 	}
-	if ctx.UI.ClickedIn("season_autumn", hud.autumnButton, ui.SpaceScreen) {
+	if in.Clicked("season_autumn", hud.autumnButton) {
 		g.State.Season = seasonAutumn
 	}
-	if ctx.UI.ClickedIn("season_winter", hud.winterButton, ui.SpaceScreen) {
+	if in.Clicked("season_winter", hud.winterButton) {
 		g.State.Season = seasonWinter
 	}
 
-	value, changed := ctx.UI.SliderInputIn(
+	value, changed := in.SliderInput(
 		"particle_density",
 		hud.densitySlider,
 		g.State.Density,
 		densitySliderOptions,
-		ui.SpaceScreen,
 	)
 	if changed {
 		g.State.Density = value
@@ -186,33 +186,31 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 
 	cmds := make([]render.Command, 0, len(layers)+2)
 
-	ctx.UI.PanelIn(hud.titlePanel, ui.SpaceScreen)
-	ctx.UI.LabelIn(title, hud.titleCenter, ui.SpaceScreen)
-	ctx.UI.ButtonIn("season_spring", springLabel, hud.springButton, ui.SpaceScreen)
-	ctx.UI.ButtonIn("season_summer", summerLabel, hud.summerButton, ui.SpaceScreen)
-	ctx.UI.ButtonIn("season_autumn", autumnLabel, hud.autumnButton, ui.SpaceScreen)
-	ctx.UI.ButtonIn("season_winter", winterLabel, hud.winterButton, ui.SpaceScreen)
-	ctx.UI.PanelIn(hud.densityPanel, ui.SpaceScreen)
-	ctx.UI.LabelIn(
+	d := ctx.UI.In(ui.SpaceScreen)
+	d.Panel(hud.titlePanel)
+	d.Label(title, hud.titleCenter)
+	d.Button("season_spring", springLabel, hud.springButton)
+	d.Button("season_summer", summerLabel, hud.summerButton)
+	d.Button("season_autumn", autumnLabel, hud.autumnButton)
+	d.Button("season_winter", winterLabel, hud.winterButton)
+	d.Panel(hud.densityPanel)
+	d.Label(
 		fmt.Sprintf("%s density  %.2fx", densityLabel, density),
 		hud.densityLabel,
-		ui.SpaceScreen,
 	)
-	ctx.UI.LabelIn(
+	d.Label(
 		fmt.Sprintf(
 			"particles  %s / %s",
 			formatParticleCount(activeParticleBudget(density)),
 			formatParticleCount(targetParticleCapacity),
 		),
 		hud.particleCountLabel,
-		ui.SpaceScreen,
 	)
-	ctx.UI.SliderIn(
+	d.Slider(
 		"particle_density",
 		hud.densitySlider,
 		density,
 		densitySliderOptions,
-		ui.SpaceScreen,
 	)
 	visibleWorld := ctx.Camera().Resolve().World
 

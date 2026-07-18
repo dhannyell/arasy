@@ -9,10 +9,10 @@ menus, debug overlays, and lightweight tools inside the engine.
 
 ```text
 Update:
-  pointer frame -> ctx.UI.Clicked(...) -> changes deterministic state
+  pointer frame -> ctx.UI.In(space).Clicked(...) -> changes deterministic state
 
 Render:
-  world + current cursor -> ctx.UI.Button(...) -> render.Command
+  world + current cursor -> ctx.UI.In(space).Button(...) -> render.Command
 ```
 
 The UI does not talk to Canvas, DOM, native windows, or the system mouse
@@ -65,12 +65,17 @@ backend-agnostic commands.
 
 ## Responsive UI With `ui.Space`
 
-`ui/space.go` defines the `ui.Space` parameter used by the `*In(...)` widget
-variants and by `ClickedIn(...)`.
+`ui/space.go` defines the `ui.Space` parameter. `ctx.UI.In(space)` returns a
+lightweight scope with every widget exposed exactly once — the space is
+stated once per block, and the returned scope holds no state beyond
+`(ui, space)`, so there is nothing to restore afterward.
 
 ```go
-ctx.UI.ButtonIn("btn_reset", "Reset", reset, ui.SpacePlayfield)
-if ctx.UI.ClickedIn("btn_reset", reset, ui.SpacePlayfield) {
+d := ctx.UI.In(ui.SpacePlayfield)
+d.Button("btn_reset", "Reset", reset)
+
+in := ctx.UI.In(ui.SpacePlayfield)
+if in.Clicked("btn_reset", reset) {
     g.reset()
 }
 ```
@@ -78,8 +83,7 @@ if ctx.UI.ClickedIn("btn_reset", reset, ui.SpacePlayfield) {
 Available spaces:
 
 - `ui.SpaceRef`: uses the UI reference resolution (`Config.Camera.Viewport`) and
-  applies `AspectFit` inside the physical viewport. This is the default used by
-  `Button`, `Panel`, `Label`, `ProgressBar`, and `Clicked`. Use it for menus,
+  applies `AspectFit` inside the physical viewport. Use it for menus,
   generic HUDs, and panels that should scale responsively.
 - `ui.SpacePlayfield`: anchors UI inside the rectangle where `World` was
   actually drawn after the camera aspect strategy. Use it for elements that must
@@ -88,14 +92,6 @@ Available spaces:
 - `ui.SpaceScreen`: uses physical viewport pixels, with no scaling and no
   letterboxing. Use it for pixel-exact overlays, such as debug HUDs or icons
   pinned to a window corner.
-
-Methods without the suffix are shortcuts for `SpaceRef`:
-
-```go
-ctx.UI.Button("btn_play", "Play", play)
-// equivalent to:
-ctx.UI.ButtonIn("btn_play", "Play", play, ui.SpaceRef)
-```
 
 For interaction to line up correctly, use the same `Space` in `Update` and
 `Render` for the same widget.
@@ -107,7 +103,7 @@ Interaction that changes simulation must happen in `Update`.
 ```go
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
     _, reset := hudLayout(ctx.Camera().Viewport)
-    if ctx.UI.Clicked("btn_reset", reset) {
+    if ctx.UI.In(ui.SpaceRef).Clicked("btn_reset", reset) {
         g.resetMatch(ctx.World)
     }
 }
@@ -119,9 +115,10 @@ Drawing must happen in `Render`.
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
     score, reset := hudLayout(ctx.Camera().Viewport)
 
-    ctx.UI.Panel(score)
-    ctx.UI.Label("0 - 0", score.Center())
-    ctx.UI.Button("btn_reset", "Reset", reset)
+    d := ctx.UI.In(ui.SpaceRef)
+    d.Panel(score)
+    d.Label("0 - 0", score.Center())
+    d.Button("btn_reset", "Reset", reset)
 
     return ctx.World.RenderCommands()
 }
@@ -160,37 +157,43 @@ in recorder snapshots.
 
 ## Widgets
 
-Available widgets:
+`ctx.UI` only exposes `In(space)` plus a handful of space-free methods
+(`RowHeight`, `HeaderHeight`, `TableBodyRect`, `SetFont`, animation, and
+groups). Everything that depends on a rectangle/position lives on the scope
+returned by `In`.
+
+`DrawScope` (Render, via `ctx.UI.In(space)`):
 
 - `Button(id, label, rect)`
-- `ButtonIn(id, label, rect, space)`
 - `Card(rect, accent)`
-- `CardIn(rect, accent, space)`
 - `Badge(text, center, bg)`
-- `BadgeIn(text, center, bg, space)`
 - `Label(text, pos)`
-- `LabelIn(text, pos, space)`
 - `Panel(rect)`
-- `PanelIn(rect, space)`
 - `ProgressBar(rect, value)`
-- `ProgressBarIn(rect, value, space)`
 - `Slider(id, rect, value, opts)`
-- `SliderIn(id, rect, value, opts, space)`
-- `SliderInput(id, rect, value, opts)`
-- `SliderInputIn(id, rect, value, opts, space)`
 - `Table(id, rect, cols, rowCount, selected, cell)`
-- `TableIn(id, rect, cols, rowCount, selected, cell, space)`
-- `TableStyledIn(id, rect, cols, rowCount, selected, cell, style, space)`
+- `TableStyled(id, rect, cols, rowCount, selected, cell, style)`
+- `List(id, rect, rowH, rowCount, selected, draw)`
+- `ScrollArea(id, view, contentH)`
+- `Hovered(rect)`
+- `FillRect(rect, fill)`
+- `DrawText(text, pos, color, size, align, baseline)`
+- `DrawTextRot(text, pos, color, size, rotation, align, baseline)`
+- `DrawCircle(center, radius, fill, stroke, strokeWidth)`
+- `DrawLine(from, to, width, color)`
+- `DrawPoly(fill, stroke, strokeWidth, points...)`
+- `FX()`
+
+`InteractScope` (Update, via `ctx.UI.In(space)`):
+
 - `Clicked(id, rect)`
-- `ClickedIn(id, rect, space)`
 - `Activated(id, rect)`
-- `ActivatedIn(id, rect, space)`
 - `Focusable(id, rect)`
-- `FocusableIn(id, rect, space)`
+- `Hovered(rect)`
 - `ScrollOffset(id, view, contentH)`
-- `ScrollOffsetIn(id, view, contentH, space)`
-- `ScrollAreaIn(id, view, contentH, space)`
-- `TableHitIn(id, rect, cols, rowCount, selected, space)`
+- `SliderInput(id, rect, value, opts)`
+- `TableHit(id, rect, cols, rowCount, selected)`
+- `ListHit(id, rect, rowH, rowCount)`
 
 `Button`, `Panel`, and `ProgressBar` draw rectangles. `Label` and button text use
 `render.DrawText` with centered alignment and middle baseline.
@@ -205,13 +208,13 @@ rectangle, and options during `Render` with `Slider`:
 var volumeSlider = ui.SliderOptions{Min: 0, Max: 1, Step: 0.05}
 
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
-    if value, changed := ctx.UI.SliderInput("volume", volumeRect, g.Volume, volumeSlider); changed {
+    if value, changed := ctx.UI.In(ui.SpaceRef).SliderInput("volume", volumeRect, g.Volume, volumeSlider); changed {
         g.Volume = value
     }
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-    ctx.UI.Slider("volume", volumeRect, g.Volume, volumeSlider)
+    ctx.UI.In(ui.SpaceRef).Slider("volume", volumeRect, g.Volume, volumeSlider)
     return nil
 }
 ```
@@ -231,14 +234,15 @@ Scroll and tables follow the immediate-mode pattern in two phases:
 
 ```go
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
-    if row := ctx.UI.TableHitIn("players", tableRect, cols, len(players), selected, ui.SpaceRef); row >= 0 {
+    in := ctx.UI.In(ui.SpaceRef)
+    if row := in.TableHit("players", tableRect, cols, len(players), selected); row >= 0 {
         selected = row
     }
-    ctx.UI.ScrollOffset("players", bodyRect, float64(len(players))*32)
+    in.ScrollOffset("players", bodyRect, float64(len(players))*32)
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-    ctx.UI.Table("players", tableRect, cols, len(players), selected, func(row, col int) string {
+    ctx.UI.In(ui.SpaceRef).Table("players", tableRect, cols, len(players), selected, func(row, col int) string {
         return players[row].Cell(col)
     })
     return nil
@@ -246,7 +250,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 ```
 
 `ScrollOffset` belongs in `Update` because it consumes `PointerFrame.Wheel` and
-stores the offset in `ui.State`. `ScrollAreaIn` and `TableIn` draw the scrollbar
+stores the offset in `ui.State`. `ScrollArea` and `Table` draw the scrollbar
 and apply `render.BaseCommand.Clip` to body commands. The offset is part of the
 runtime snapshot, so rewind/scrub restores list position.
 
@@ -268,7 +272,7 @@ from deterministic game state can restart them.
 
 The main API is organized in layers:
 
-- `ctx.UI.FX()` — ready-made recipes for common cases.
+- `ctx.UI.In(space).FX()` — ready-made recipes for common cases.
 - `ctx.UI.Effect(id, opts)` — a composable timeline for HUDs and custom events.
 - primitives (`Approach`, `Spring`, `Tween`, `Clock`, `Reset`, `SequenceKeyed`,
   `Track`) — the escape hatch for fine control.
@@ -280,16 +284,13 @@ screen.
 ### `FX`: Ready-Made Recipes
 
 Use `FX` when an effect already exists as a recipe and you want little
-configuration. `Toast` draws a panel + text in UI coordinates:
+configuration. `FX` is obtained from a `DrawScope`, so it already carries the
+coordinate space. `Toast` draws a panel + text in that space:
 
 ```go
-ctx.UI.FX().Toast("save_notice", "Saved", rect, ui.ToastOptions{Key: saveKey})
-```
+ctx.UI.In(ui.SpaceRef).FX().Toast("save_notice", "Saved", rect, ui.ToastOptions{Key: saveKey})
 
-`ToastIn` accepts an explicit `ui.Space`:
-
-```go
-ctx.UI.FX().ToastIn("pause", "Paused", rect, ui.SpaceScreen, ui.ToastOptions{Key: pauseKey})
+ctx.UI.In(ui.SpaceScreen).FX().Toast("pause", "Paused", rect, ui.ToastOptions{Key: pauseKey})
 ```
 
 `ToastOptions.Key` follows `SequenceKeyed` semantics: `0` means inactive and
@@ -362,8 +363,9 @@ ctx.UI.BeginGroup(ui.GroupOptions{
     Fade:   0.25,
     Space:  ui.SpaceRef,
 })
-ctx.UI.Panel(panel)
-ctx.UI.Label("Settings", panel.Center())
+d := ctx.UI.In(ui.SpaceRef)
+d.Panel(panel)
+d.Label("Settings", panel.Center())
 ctx.UI.EndGroup()
 ```
 
@@ -390,7 +392,7 @@ effects matures, prefer creating a new `FX` method with minimal options instead
 of adding more loose flags:
 
 ```go
-ctx.UI.FX().Toast("goal", "GOL!", rect, ui.ToastOptions{
+ctx.UI.In(ui.SpaceRef).FX().Toast("goal", "GOL!", rect, ui.ToastOptions{
     Key: goalTick,
     Style: ui.ToastStyle{TextSize: 24},
 })
@@ -405,8 +407,8 @@ recipes.
 Interactive widgets use stable IDs:
 
 ```go
-ctx.UI.Button("btn_reset", "Reset", reset)
-if ctx.UI.Clicked("btn_reset", reset) {
+ctx.UI.In(ui.SpaceRef).Button("btn_reset", "Reset", reset)
+if ctx.UI.In(ui.SpaceRef).Clicked("btn_reset", reset) {
     // ...
 }
 ```
@@ -484,7 +486,7 @@ func hudLayout(vp math2d.Rect) (score, reset math2d.Rect) {
 
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
     _, reset := hudLayout(ctx.Camera().Viewport)
-    if ctx.UI.Clicked("btn_reset", reset) {
+    if ctx.UI.In(ui.SpaceRef).Clicked("btn_reset", reset) {
         g.reset()
     }
 }
@@ -492,9 +494,10 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
     score, reset := hudLayout(ctx.Camera().Viewport)
 
-    ctx.UI.Panel(score)
-    ctx.UI.Label("0 - 0", score.Center())
-    ctx.UI.Button("btn_reset", "Reset", reset)
+    d := ctx.UI.In(ui.SpaceRef)
+    d.Panel(score)
+    d.Label("0 - 0", score.Center())
+    d.Button("btn_reset", "Reset", reset)
 
     return ctx.World.RenderCommands()
 }
@@ -519,8 +522,8 @@ game-specific component inside `ui`.
 ## Summary
 
 ```text
-ui.UI:
-  immediate interface used by the game
+ctx.UI.In(space):
+  immediate scope used by the game, one per coordinate space
 
 Clicked:
   deterministic query called in Update

@@ -9,21 +9,12 @@ import (
 )
 
 // ListDraw draws the content of one row already positioned at rowRect (in the
-// same space List/ListIn was called with). Rows outside the visible scroll
-// window are culled before draw is called.
+// same space DrawScope.List was called with). Rows outside the visible
+// scroll window are culled before draw is called.
 type ListDraw func(row int, rowRect math2d.Rect)
 
-// List is a scrollable list of freeform rows: unlike Table it has no columns
-// or header — each row's content is emitted by draw. List handles scrolling,
-// culling, zebra/hover/selected backgrounds and click hit-testing, so games
-// don't have to hand-roll the "offset, cull, rebuild row rect" pattern for
-// every row-based screen (squad lists, calendars, inventories, etc).
-func (u *UI) List(id string, rect math2d.Rect, rowH float64, rowCount, selected int, draw ListDraw) int {
-	return u.ListIn(id, rect, rowH, rowCount, selected, draw, SpaceRef)
-}
-
-// ListHitIn is called in Update. It returns the clicked row index, or -1.
-func (u *UI) ListHitIn(id string, rect math2d.Rect, rowH float64, rowCount int, space Space) int {
+// listHitIn is called in Update. It returns the clicked row index, or -1.
+func (u *UI) listHitIn(id string, rect math2d.Rect, rowH float64, rowCount int, space Space) int {
 	wid := HashID(id)
 	offset := 0.0
 	if u.state.scroll != nil {
@@ -58,12 +49,16 @@ func (u *UI) ListHitIn(id string, rect math2d.Rect, rowH float64, rowCount int, 
 	return clicked
 }
 
-// ListIn draws the scrollable row window (background + draw callback per
-// visible row) and returns the clicked row index, or -1.
-func (u *UI) ListIn(id string, rect math2d.Rect, rowH float64, rowCount, selected int, draw ListDraw, space Space) int {
+// listIn is a scrollable list of freeform rows: unlike Table it has no
+// columns or header — each row's content is emitted by draw. It handles
+// scrolling, culling, zebra/hover/selected backgrounds and click hit-testing,
+// so games don't have to hand-roll the "offset, cull, rebuild row rect"
+// pattern for every row-based screen (squad lists, calendars, inventories,
+// etc). Returns the clicked row index, or -1.
+func (u *UI) listIn(id string, rect math2d.Rect, rowH float64, rowCount, selected int, draw ListDraw, space Space) int {
 	rowCount = max(rowCount, 0)
 	contentH := float64(rowCount) * rowH
-	offset, clip := u.ScrollAreaIn(id, rect, contentH, space)
+	offset, clip := u.scrollAreaIn(id, rect, contentH, space)
 
 	first := max(int(math.Floor(offset/rowH)), 0)
 	last := min(int(math.Ceil((offset+rect.Height())/rowH)), rowCount-1)
@@ -92,7 +87,7 @@ func (u *UI) ListIn(id string, rect math2d.Rect, rowH float64, rowCount, selecte
 			fill = u.theme.Row.Hovered
 		}
 		if fill.A > 0 {
-			u.FillRectIn(rowRect, fill, space)
+			u.fillRectIn(rowRect, fill, space)
 		}
 
 		if draw != nil {
@@ -102,5 +97,5 @@ func (u *UI) ListIn(id string, rect math2d.Rect, rowH float64, rowCount, selecte
 		render.ClipCommands(u.commands[start:], clip)
 	}
 
-	return u.ListHitIn(id, rect, rowH, rowCount, space)
+	return u.listHitIn(id, rect, rowH, rowCount, space)
 }

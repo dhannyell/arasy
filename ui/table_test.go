@@ -34,7 +34,7 @@ func TestTableHitUsesScrollOffsetForClickedRow(t *testing.T) {
 	}
 	u := NewUpdate(state, pointerFrame(downUp...), cam, theme, cam.Viewport)
 
-	row := u.TableHitIn("players", rect, []TableColumn{{Title: "Name"}}, 20, -1, SpaceRef)
+	row := u.tableHitIn("players", rect, []TableColumn{{Title: "Name"}}, 20, -1, SpaceRef)
 	if row != 2 {
 		t.Fatalf("clicked row = %v, want 2", row)
 	}
@@ -47,7 +47,7 @@ func TestTableInClipsBodyRows(t *testing.T) {
 	u := New(state, math2d.Vec2{X: 20, Y: 70}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 80, Y: 90})
 
-	u.TableIn("players", rect, []TableColumn{{Title: "Name"}}, 3, 1, func(row, col int) string {
+	u.tableIn("players", rect, []TableColumn{{Title: "Name"}}, 3, 1, func(row, col int) string {
 		return "P"
 	}, SpaceRef)
 
@@ -76,8 +76,8 @@ func TestCardAndBadgeEmitCommands(t *testing.T) {
 	store := AnimStore{}
 	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 
-	u.Card(math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 50, Y: 30}), render.RGBA(1, 0, 0, 1))
-	u.Badge("GK", math2d.Vec2{X: 50, Y: 50}, render.Color{})
+	u.cardIn(math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 50, Y: 30}), render.RGBA(1, 0, 0, 1), SpaceRef)
+	u.badgeIn("GK", math2d.Vec2{X: 50, Y: 50}, render.Color{}, SpaceRef)
 
 	if len(u.Commands()) != 4 {
 		t.Fatalf("commands = %d, want card fill/accent and badge rect/text", len(u.Commands()))

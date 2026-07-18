@@ -13,11 +13,7 @@ const (
 	scrollbarWidth        = 6
 )
 
-func (u *UI) ScrollOffset(id string, view math2d.Rect, contentH float64) float64 {
-	return u.ScrollOffsetIn(id, view, contentH, SpaceRef)
-}
-
-func (u *UI) ScrollOffsetIn(id string, view math2d.Rect, contentH float64, space Space) float64 {
+func (u *UI) scrollOffsetIn(id string, view math2d.Rect, contentH float64, space Space) float64 {
 	wid := HashID(id)
 	u.ensureScroll()
 
@@ -30,7 +26,7 @@ func (u *UI) ScrollOffsetIn(id string, view math2d.Rect, contentH float64, space
 	return offset
 }
 
-func (u *UI) ScrollAreaIn(id string, view math2d.Rect, contentH float64, space Space) (float64, math2d.Rect) {
+func (u *UI) scrollAreaIn(id string, view math2d.Rect, contentH float64, space Space) (float64, math2d.Rect) {
 	wid := HashID(id)
 	u.ensureScroll()
 

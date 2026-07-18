@@ -5,9 +5,7 @@ import (
 	"github.com/dhannyell/frameforge/render"
 )
 
-func (u *UI) Button(id, label string, rect math2d.Rect) { u.ButtonIn(id, label, rect, SpaceRef) }
-
-func (u *UI) ButtonIn(id, label string, rect math2d.Rect, space Space) {
+func (u *UI) buttonIn(id, label string, rect math2d.Rect, space Space) {
 	wid := HashID(id)
 	hot := rect.Contains(u.cursorIn(space)) && u.inside
 
@@ -81,9 +79,7 @@ func lerpButtonStyle(a, b ButtonStyle, t float64) ButtonStyle {
 	}
 }
 
-func (u *UI) Panel(rect math2d.Rect) { u.PanelIn(rect, SpaceRef) }
-
-func (u *UI) PanelIn(rect math2d.Rect, space Space) {
+func (u *UI) panelIn(rect math2d.Rect, space Space) {
 	layer := u.nextLayer()
 
 	u.commands = append(u.commands, render.DrawRect{
@@ -95,9 +91,7 @@ func (u *UI) PanelIn(rect math2d.Rect, space Space) {
 	})
 }
 
-func (u *UI) Label(text string, pos math2d.Vec2) { u.LabelIn(text, pos, SpaceRef) }
-
-func (u *UI) LabelIn(text string, pos math2d.Vec2, space Space) {
+func (u *UI) labelIn(text string, pos math2d.Vec2, space Space) {
 	layer := u.nextLayer()
 
 	u.commands = append(u.commands, render.DrawText{
@@ -112,9 +106,7 @@ func (u *UI) LabelIn(text string, pos math2d.Vec2, space Space) {
 	})
 }
 
-func (u *UI) ProgressBar(rect math2d.Rect, value float64) { u.ProgressBarIn(rect, value, SpaceRef) }
-
-func (u *UI) ProgressBarIn(rect math2d.Rect, value float64, space Space) {
+func (u *UI) progressBarIn(rect math2d.Rect, value float64, space Space) {
 	if value < 0 {
 		value = 0
 	}

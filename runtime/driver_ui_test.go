@@ -43,13 +43,13 @@ func (g *pointerUIGame) Setup() Config {
 func (g *pointerUIGame) Init(ctx *UpdateContext) {}
 
 func (g *pointerUIGame) Update(ctx *UpdateContext, dt float64) {
-	if ctx.UI.Clicked("button", g.rect) {
+	if ctx.UI.In(ui.SpaceRef).Clicked("button", g.rect) {
 		g.clicks++
 	}
 }
 
 func (g *pointerUIGame) Render(ctx *RenderContext) []render.Command {
-	ctx.UI.Button("button", "Button", g.rect)
+	ctx.UI.In(ui.SpaceRef).Button("button", "Button", g.rect)
 	return nil
 }
 

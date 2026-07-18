@@ -23,9 +23,7 @@ type TableCellStyle struct {
 	Color render.Color
 }
 
-func (u *UI) Card(rect math2d.Rect, accent render.Color) { u.CardIn(rect, accent, SpaceRef) }
-
-func (u *UI) CardIn(rect math2d.Rect, accent render.Color, space Space) {
+func (u *UI) cardIn(rect math2d.Rect, accent render.Color, space Space) {
 	layer := u.nextLayer()
 	card := u.theme.Card
 	u.commands = append(u.commands, render.DrawRect{
@@ -48,11 +46,7 @@ func (u *UI) CardIn(rect math2d.Rect, accent render.Color, space Space) {
 	})
 }
 
-func (u *UI) Badge(text string, center math2d.Vec2, bg render.Color) {
-	u.BadgeIn(text, center, bg, SpaceRef)
-}
-
-func (u *UI) BadgeIn(text string, center math2d.Vec2, bg render.Color, space Space) {
+func (u *UI) badgeIn(text string, center math2d.Vec2, bg render.Color, space Space) {
 	badge := u.theme.Badge
 	size := render.MeasureText(text, badge.TextSize)
 	rect := math2d.NewRect(
@@ -92,10 +86,6 @@ func (u *UI) BadgeIn(text string, center math2d.Vec2, bg render.Color, space Spa
 	)
 }
 
-func (u *UI) Table(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string) int {
-	return u.TableIn(id, rect, cols, rowCount, selected, cell, SpaceRef)
-}
-
 // RowHeight returns the theme's table/list row height, so games computing
 // scroll content height or row geometry don't have to duplicate the value
 // as a local constant that can silently drift from the theme.
@@ -110,7 +100,7 @@ func (u *UI) TableBodyRect(rect math2d.Rect) math2d.Rect {
 	return tableBodyRect(rect, u.theme.Header.Height)
 }
 
-func (u *UI) TableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, space Space) int {
+func (u *UI) tableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, space Space) int {
 	_ = cols
 	_ = selected
 	wid := HashID(id)
@@ -148,11 +138,11 @@ func (u *UI) TableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCoun
 	return clicked
 }
 
-func (u *UI) TableIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, space Space) int {
-	return u.TableStyledIn(id, rect, cols, rowCount, selected, cell, nil, space)
+func (u *UI) tableIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, space Space) int {
+	return u.tableStyledIn(id, rect, cols, rowCount, selected, cell, nil, space)
 }
 
-func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle, space Space) int {
+func (u *UI) tableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle, space Space) int {
 	if cell == nil {
 		cell = func(row, col int) string { return "" }
 	}
@@ -189,7 +179,7 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 		x += width
 	}
 
-	offset, clip := u.ScrollAreaIn(id, body, contentH, space)
+	offset, clip := u.scrollAreaIn(id, body, contentH, space)
 	rowH := u.theme.Row.Height
 	first := int(math.Floor(offset / rowH))
 	last := int(math.Ceil((offset + body.Height()) / rowH))
@@ -241,7 +231,7 @@ func (u *UI) TableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 		}
 	}
 
-	if clicked := u.TableHitIn(id, rect, cols, rowCount, selected, space); clicked >= 0 {
+	if clicked := u.tableHitIn(id, rect, cols, rowCount, selected, space); clicked >= 0 {
 		return clicked
 	}
 	return -1

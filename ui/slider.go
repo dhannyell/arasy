@@ -17,17 +17,12 @@ type SliderOptions struct {
 	Step float64
 }
 
-// SliderInput consumes pointer interaction for a horizontal slider in
-// SpaceRef. The caller owns value and should persist the returned value in
-// game state when changed is true.
-func (u *UI) SliderInput(id string, rect math2d.Rect, value float64, opts SliderOptions) (next float64, changed bool) {
-	return u.SliderInputIn(id, rect, value, opts, SpaceRef)
-}
-
-// SliderInputIn is SliderInput in an explicit coordinate space. A primary
-// press anywhere in rect captures the slider and jumps to that position;
-// dragging remains captured outside rect and clamps to the numeric interval.
-func (u *UI) SliderInputIn(
+// sliderInputIn consumes pointer interaction for a horizontal slider. The
+// caller owns value and should persist the returned value in game state when
+// changed is true. A primary press anywhere in rect captures the slider and
+// jumps to that position; dragging remains captured outside rect and clamps
+// to the numeric interval.
+func (u *UI) sliderInputIn(
 	id string,
 	rect math2d.Rect,
 	value float64,
@@ -77,14 +72,9 @@ func (u *UI) SliderInputIn(
 	return value, value != original
 }
 
-// Slider draws a horizontal slider in SpaceRef. Call SliderInput with the
+// sliderIn draws a horizontal slider. Call InteractScope.SliderInput with the
 // same id, rect and options during Update to make it interactive.
-func (u *UI) Slider(id string, rect math2d.Rect, value float64, opts SliderOptions) {
-	u.SliderIn(id, rect, value, opts, SpaceRef)
-}
-
-// SliderIn is Slider in an explicit coordinate space.
-func (u *UI) SliderIn(id string, rect math2d.Rect, value float64, opts SliderOptions, space Space) {
+func (u *UI) sliderIn(id string, rect math2d.Rect, value float64, opts SliderOptions, space Space) {
 	track, thumbRadius, ok := sliderGeometry(rect, u.theme.Slider)
 	if !ok || opts.Max <= opts.Min {
 		return

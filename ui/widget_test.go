@@ -19,7 +19,7 @@ func TestProgressBarClampsFillWidth(t *testing.T) {
 	cam := testCamera()
 	store := AnimStore{}
 	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
-	u.ProgressBar(math2d.NewRect(math2d.Vec2{X: 10, Y: 20}, math2d.Vec2{X: 40, Y: 8}), 1.5)
+	u.progressBarIn(math2d.NewRect(math2d.Vec2{X: 10, Y: 20}, math2d.Vec2{X: 40, Y: 8}), 1.5, SpaceRef)
 
 	commands := u.Commands()
 	if len(commands) != 2 {

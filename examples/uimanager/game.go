@@ -67,8 +67,9 @@ func (g *Manager) Init(ctx *runtime.UpdateContext) {
 func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	ctx.HoldSimulation()
 
+	in := ctx.UI.In(ui.SpaceRef)
 	for i, item := range navItems {
-		if ctx.UI.ClickedIn(item.id, item.rect, ui.SpaceRef) {
+		if in.Clicked(item.id, item.rect) {
 			if g.State.Screen != Screen(i) {
 				g.State.PreviousScreen = g.State.Screen
 				g.State.Screen = Screen(i)
@@ -82,15 +83,15 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 		g.UIState.SelectedNavItem = -1
 	}
 
-	if ctx.UI.ClickedIn("btn_sim_dashboard", simButtonRect(), ui.SpaceRef) {
+	if in.Clicked("btn_sim_dashboard", simButtonRect()) {
 		SimulateRound(&g.State)
 	}
-	if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_dash", simButtonRect(), ui.SpaceRef) {
+	if seasonEnded(g.State) && in.Clicked("btn_new_season_dash", simButtonRect()) {
 		g.startNewSeason()
 	}
 	if g.State.Screen == ScreenTable {
-		ctx.UI.ScrollOffsetIn("tbl_standings", standingsBodyRect(ctx.UI), float64(len(g.State.Clubs))*ctx.UI.RowHeight(), ui.SpaceRef)
-		if seasonEnded(g.State) && ctx.UI.ClickedIn("btn_new_season_table", tableNewSeasonButtonRect(), ui.SpaceRef) {
+		in.ScrollOffset("tbl_standings", standingsBodyRect(ctx.UI), float64(len(g.State.Clubs))*ctx.UI.RowHeight())
+		if seasonEnded(g.State) && in.Clicked("btn_new_season_table", tableNewSeasonButtonRect()) {
 			g.startNewSeason()
 		}
 	}
@@ -230,7 +231,7 @@ func (g *Manager) drawNavAnimated(active Screen, ctx *runtime.RenderContext) []r
 		}
 
 		target := 1.0
-		if ctx.UI.Hovered(item.rect) {
+		if ctx.UI.In(ui.SpaceRef).Hovered(item.rect) {
 			target = 1.08
 		}
 
@@ -413,7 +414,7 @@ func simButtonRect() math2d.Rect { return rect(720, 425, 238, 56) }
 
 func drawSeasonEndedButton(idPrefix string, button math2d.Rect, ctx *runtime.RenderContext) []render.Command {
 	btnTarget := 1.0
-	if ctx.UI.Hovered(button) {
+	if ctx.UI.In(ui.SpaceRef).Hovered(button) {
 		btnTarget = 1.08
 	}
 	scaled := ctx.UI.SpringScale(idPrefix+"_btn_new_season", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, button)

@@ -121,7 +121,7 @@ func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 
 	g.expireAnimation(ctx)
 
-	if g.state.State.phase == phasePlaying && ctx.UI.ClickedIn("btn_new", hudNewRect(), ui.SpaceRef) {
+	if g.state.State.phase == phasePlaying && ctx.UI.In(ui.SpaceRef).Clicked("btn_new", hudNewRect()) {
 		g.restart(ctx)
 		return
 	}
@@ -155,7 +155,7 @@ func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 	}
 
 	if g.state.State.undo.usable() &&
-		(ctx.UI.ClickedIn("btn_undo", powerButtonRect(0, 1), ui.SpaceRef) ||
+		(ctx.UI.In(ui.SpaceRef).Clicked("btn_undo", powerButtonRect(0, 1)) ||
 			ctx.Input.JustPressed(input.ActionCancel)) {
 		g.tryUndo()
 		return
@@ -316,22 +316,23 @@ func (g *Game2048) expireAnimation(ctx *runtime.UpdateContext) {
 }
 
 func (g *Game2048) handleOverlayClicks(ctx *runtime.UpdateContext) {
+	in := ctx.UI.In(ui.SpaceRef)
 	switch g.state.State.phase {
 	case phaseMenu:
-		if ctx.UI.ClickedIn("btn_play", overlayPrimaryButtonRect(), ui.SpaceRef) {
+		if in.Clicked("btn_play", overlayPrimaryButtonRect()) {
 			g.restart(ctx)
 		}
 	case phaseGameOver:
-		if ctx.UI.ClickedIn("btn_again", overlayPrimaryButtonRect(), ui.SpaceRef) {
+		if in.Clicked("btn_again", overlayPrimaryButtonRect()) {
 			g.restart(ctx)
 		}
 	case phaseWon:
-		if ctx.UI.ClickedIn("btn_continue", overlayPrimaryButtonRect(), ui.SpaceRef) {
+		if in.Clicked("btn_continue", overlayPrimaryButtonRect()) {
 			g.state.State.phase = phasePlaying
 			g.state.State.continued = true
 			return
 		}
-		if ctx.UI.ClickedIn("btn_new_game", overlaySecondaryButtonRect(), ui.SpaceRef) {
+		if in.Clicked("btn_new_game", overlaySecondaryButtonRect()) {
 			g.restart(ctx)
 		}
 	}

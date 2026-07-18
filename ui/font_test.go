@@ -30,7 +30,7 @@ func TestThemedWidgetsUseThemeFont(t *testing.T) {
 	theme.Font = 7
 	u := fontUI(t, theme)
 
-	u.Label("hi", math2d.Vec2{X: 10, Y: 10})
+	u.labelIn("hi", math2d.Vec2{X: 10, Y: 10}, SpaceRef)
 	if got := lastDrawText(t, u.Commands()).Font; got != 7 {
 		t.Fatalf("Label font = %d, want theme font 7", got)
 	}
@@ -39,7 +39,7 @@ func TestThemedWidgetsUseThemeFont(t *testing.T) {
 func TestZeroThemeKeepsBuiltinFont(t *testing.T) {
 	u := fontUI(t, DefaultTheme()) // Font unset = built-in 0
 
-	u.Label("hi", math2d.Vec2{X: 10, Y: 10})
+	u.labelIn("hi", math2d.Vec2{X: 10, Y: 10}, SpaceRef)
 	if got := lastDrawText(t, u.Commands()).Font; got != 0 {
 		t.Fatalf("Label font = %d, want built-in font 0", got)
 	}
@@ -52,20 +52,20 @@ func TestSetFontOverridesRawDrawTextOnly(t *testing.T) {
 	white := render.RGBA(1, 1, 1, 1)
 
 	// Raw DrawText starts at the theme font each frame.
-	u.DrawText("raw", math2d.Vec2{X: 1, Y: 1}, white, 10, render.AlignLeft, render.BaselineTop)
+	u.drawTextIn("raw", math2d.Vec2{X: 1, Y: 1}, white, 10, render.AlignLeft, render.BaselineTop, SpaceRef)
 	if got := lastDrawText(t, u.Commands()).Font; got != 7 {
 		t.Fatalf("raw DrawText font = %d, want theme font 7", got)
 	}
 
 	// SetFont changes it for subsequent raw draws.
 	u.SetFont(3)
-	u.DrawText("raw2", math2d.Vec2{X: 1, Y: 1}, white, 10, render.AlignLeft, render.BaselineTop)
+	u.drawTextIn("raw2", math2d.Vec2{X: 1, Y: 1}, white, 10, render.AlignLeft, render.BaselineTop, SpaceRef)
 	if got := lastDrawText(t, u.Commands()).Font; got != 3 {
 		t.Fatalf("raw DrawText after SetFont = %d, want 3", got)
 	}
 
 	// Themed widgets ignore SetFont and keep the theme font.
-	u.Label("hi", math2d.Vec2{X: 2, Y: 2})
+	u.labelIn("hi", math2d.Vec2{X: 2, Y: 2}, SpaceRef)
 	if got := lastDrawText(t, u.Commands()).Font; got != 7 {
 		t.Fatalf("Label after SetFont = %d, want theme font 7 (unaffected)", got)
 	}

@@ -30,7 +30,7 @@ func TestSliderInputPressCapturesAndJumpsToPointer(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: pos},
 	), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0, sliderOptions(), SpaceRef)
 
 	if !changed || value != 0.5 {
 		t.Fatalf("SliderInput() = (%v, %v), want (0.5, true)", value, changed)
@@ -49,7 +49,7 @@ func TestSliderInputDragUsesCoalescedPositionAndClampsOutside(t *testing.T) {
 	pos := math2d.Vec2{X: rect.Max.X + 100, Y: rect.Center().Y}
 	u := NewUpdate(state, sliderPointerFrame(pos, true), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0.25, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0.25, sliderOptions(), SpaceRef)
 
 	if !changed || value != 1 {
 		t.Fatalf("SliderInput() = (%v, %v), want (1, true)", value, changed)
@@ -67,7 +67,7 @@ func TestSliderInputReleaseOutsideUpdatesAndClearsCapture(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: pos},
 	), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0.75, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0.75, sliderOptions(), SpaceRef)
 
 	if !changed || value != 0 {
 		t.Fatalf("SliderInput() = (%v, %v), want (0, true)", value, changed)
@@ -92,7 +92,7 @@ func TestSliderInputSameTickPressAndReleaseUsesReleasePosition(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: up},
 	), testInteractCamera(), theme, testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0.5, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0.5, sliderOptions(), SpaceRef)
 
 	if !changed || value != 1 {
 		t.Fatalf("SliderInput() = (%v, %v), want release value (1, true)", value, changed)
@@ -111,7 +111,7 @@ func TestSliderInputSnapsToStep(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: pos},
 	), testInteractCamera(), theme, testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0, SliderOptions{Min: 0, Max: 1, Step: 0.25})
+	value, changed := u.sliderInputIn("density", rect, 0, SliderOptions{Min: 0, Max: 1, Step: 0.25}, SpaceRef)
 
 	if !changed || value != 0.5 {
 		t.Fatalf("SliderInput() = (%v, %v), want snapped (0.5, true)", value, changed)
@@ -127,7 +127,7 @@ func TestSliderInputCanReachMaxWhenStepDoesNotDivideRange(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: pos},
 	), testInteractCamera(), theme, testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0, SliderOptions{Min: 0, Max: 1, Step: 0.3})
+	value, changed := u.sliderInputIn("density", rect, 0, SliderOptions{Min: 0, Max: 1, Step: 0.3}, SpaceRef)
 
 	if !changed || value != 1 {
 		t.Fatalf("SliderInput() = (%v, %v), want max endpoint (1, true)", value, changed)
@@ -137,7 +137,7 @@ func TestSliderInputCanReachMaxWhenStepDoesNotDivideRange(t *testing.T) {
 func TestSliderInputNormalizesExternalValueWithoutPointerInput(t *testing.T) {
 	u := NewUpdate(&State{}, sliderPointerFrame(math2d.Vec2{}, false), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", sliderRect(), 2, sliderOptions())
+	value, changed := u.sliderInputIn("density", sliderRect(), 2, sliderOptions(), SpaceRef)
 
 	if !changed || value != 1 {
 		t.Fatalf("SliderInput() = (%v, %v), want clamped (1, true)", value, changed)
@@ -153,7 +153,7 @@ func TestSliderInputDoesNotStealCaptureFromAnotherWidget(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: pos},
 	), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0.25, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0.25, sliderOptions(), SpaceRef)
 
 	if changed || value != 0.25 {
 		t.Fatalf("SliderInput() = (%v, %v), want unchanged (0.25, false)", value, changed)
@@ -171,7 +171,7 @@ func TestSliderInputIgnoresSecondaryButton(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerSecondary, Pos: pos},
 	), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", rect, 0.25, sliderOptions())
+	value, changed := u.sliderInputIn("density", rect, 0.25, sliderOptions(), SpaceRef)
 
 	if changed || value != 0.25 || state.activeID != noID {
 		t.Fatalf("secondary press produced value=%v changed=%v activeID=%v", value, changed, state.activeID)
@@ -184,7 +184,7 @@ func TestSliderDrawsTrackFillAndThumbAtValue(t *testing.T) {
 	u := New(&State{}, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
 	rect := sliderRect()
 
-	u.Slider("density", rect, 0.5, sliderOptions())
+	u.sliderIn("density", rect, 0.5, sliderOptions(), SpaceRef)
 
 	commands := u.Commands()
 	if len(commands) != 3 {
@@ -217,7 +217,7 @@ func TestSliderDrawUsesActiveThumbAndFocusRing(t *testing.T) {
 	theme := DefaultTheme()
 	u := New(state, math2d.Vec2{}, true, cam, theme, cam.Viewport, &store, 0, 0)
 
-	u.Slider("density", sliderRect(), 0.5, sliderOptions())
+	u.sliderIn("density", sliderRect(), 0.5, sliderOptions(), SpaceRef)
 
 	commands := u.Commands()
 	if len(commands) != 4 {
@@ -245,14 +245,14 @@ func TestSliderInUsesSameScreenSpaceForInputAndDrawing(t *testing.T) {
 		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: pos},
 	), cam, DefaultTheme(), cam.Viewport)
 
-	value, changed := update.SliderInputIn("density", rect, 0, sliderOptions(), SpaceScreen)
+	value, changed := update.sliderInputIn("density", rect, 0, sliderOptions(), SpaceScreen)
 	if !changed || value != 0.5 {
-		t.Fatalf("SliderInputIn() = (%v, %v), want screen-space (0.5, true)", value, changed)
+		t.Fatalf("sliderInputIn() = (%v, %v), want screen-space (0.5, true)", value, changed)
 	}
 
 	store := AnimStore{}
 	draw := New(state, pos, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
-	draw.SliderIn("density", rect, value, sliderOptions(), SpaceScreen)
+	draw.sliderIn("density", rect, value, sliderOptions(), SpaceScreen)
 	thumb := draw.Commands()[2].(render.DrawCircle)
 	wantWorld := cam.ScreenToWorld(pos)
 	if thumb.Center != wantWorld {
@@ -263,7 +263,7 @@ func TestSliderInUsesSameScreenSpaceForInputAndDrawing(t *testing.T) {
 func TestSliderInvalidRangeFailsClosedAtMin(t *testing.T) {
 	u := NewUpdate(&State{}, sliderPointerFrame(math2d.Vec2{}, false), testInteractCamera(), DefaultTheme(), testInteractCamera().Viewport)
 
-	value, changed := u.SliderInput("density", sliderRect(), 8, SliderOptions{Min: 3, Max: 3})
+	value, changed := u.sliderInputIn("density", sliderRect(), 8, SliderOptions{Min: 3, Max: 3}, SpaceRef)
 
 	if !changed || value != 3 {
 		t.Fatalf("SliderInput() = (%v, %v), want disabled range to normalize to min", value, changed)
