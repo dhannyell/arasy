@@ -1,20 +1,24 @@
-struct Particle {
+// Particle state is split by mutability so the simulate pass touches only the
+// 24 hot bytes: everything else is written once at spawn and read by render.
+struct ParticleHot {
   pos : vec2f, vel : vec2f,
   age : f32, life : f32,
-  size0 : f32, size1 : f32,
-  spin : f32, counter : u32,
-  wobble_axis : vec2f,
 }
 
+struct ParticleCold {
+  size0 : f32, size1 : f32,
+  spin : f32, rot0 : f32,
+  wobble_axis : vec2f,
+  phase : f32,
+}
+
+// dead is the free-slot stack cursor and persists across frames; alive is the
+// survivor-list write cursor, reset by the host before each simulated frame.
 struct Counters {
   dead : atomic<u32>,
-  alive_cur : atomic<u32>,
-  alive_new : atomic<u32>,
-  pad : u32,
-}
-
-struct DispatchIndirect {
-  dx : u32, dy : u32, dz : u32,
+  alive : atomic<u32>,
+  pad0 : u32,
+  pad1 : u32,
 }
 
 struct DrawIndirect {
@@ -40,14 +44,13 @@ struct EmitterUniforms {
   shape : u32, vel_mode : u32, emit_radius : f32, capacity : u32,
 }
 
-@group(0) @binding(0) var<storage, read_write> particles : array<Particle>;
-@group(0) @binding(1) var<storage, read_write> alive_cur : array<u32>;
-@group(0) @binding(2) var<storage, read_write> alive_new : array<u32>;
-@group(0) @binding(3) var<storage, read_write> dead_list : array<u32>;
-@group(0) @binding(4) var<storage, read_write> counters : Counters;
-@group(0) @binding(5) var<storage, read_write> draw_indirect : DrawIndirect;
-@group(0) @binding(6) var<storage, read_write> dispatch_indirect : DispatchIndirect;
-@group(0) @binding(7) var<uniform> u : EmitterUniforms;
+@group(0) @binding(0) var<storage, read_write> hot : array<ParticleHot>;
+@group(0) @binding(1) var<storage, read_write> alive_list : array<u32>;
+@group(0) @binding(2) var<storage, read_write> dead_list : array<u32>;
+@group(0) @binding(3) var<storage, read_write> counters : Counters;
+@group(0) @binding(4) var<storage, read_write> draw_indirect : DrawIndirect;
+@group(0) @binding(5) var<uniform> u : EmitterUniforms;
+@group(0) @binding(6) var<storage, read_write> cold : array<ParticleCold>;
 
 // mirror: particle.pcg3d (hash.go)
 fn pcg3d(p : vec3u) -> vec3u {
@@ -61,20 +64,6 @@ fn pcg3d(p : vec3u) -> vec3u {
 fn float01(x : u32) -> f32 { return f32(x) * 2.3283064365386963e-10; }
 
 const TAU = 6.28318530717958647;
-
-@compute @workgroup_size(1)
-fn kick() {
-  let alive = atomicLoad(&counters.alive_new);
-  atomicStore(&counters.alive_cur, alive);
-  atomicStore(&counters.alive_new, 0u);
-  dispatch_indirect.dx = (alive + u.emit_count + 63u) / 64u;
-  dispatch_indirect.dy = 1u;
-  dispatch_indirect.dz = 1u;
-  draw_indirect.vertex_count = 6u;
-  atomicStore(&draw_indirect.instance_count, 0u);
-  draw_indirect.first_vertex = 0u;
-  draw_indirect.first_instance = 0u;
-}
 
 @compute @workgroup_size(64)
 fn emit(@builtin(global_invocation_id) gid : vec3u) {
@@ -91,10 +80,12 @@ fn emit(@builtin(global_invocation_id) gid : vec3u) {
   let slot = dead_list[old - 1u];
 
   // mirror: particle.Emitter.spawn lane map — h1 angle/speed/life,
-  // h2 sizes/spin, h3 shape, h4 rotation/wobble phase (re-derived on draw)
+  // h2 sizes/spin, h3 shape, h4 rotation/wobble+flip phase. h4 lanes are
+  // stored on the particle so the render vertex stage never re-hashes.
   let h1 = pcg3d(vec3u(u.emit_base + i, u.seed_lo, u.seed_hi));
   let h2 = pcg3d(h1);
   let h3 = pcg3d(h2);
+  let h4 = pcg3d(h3);
 
   var offset = vec2f(0.0);
   switch (u.shape) {
@@ -139,41 +130,92 @@ fn emit(@builtin(global_invocation_id) gid : vec3u) {
   // mirror: spawn-origin interpolation t = (i+1)/emitCount
   let t = f32(i + 1u) / f32(u.emit_count);
 
-  var p : Particle;
+  var p : ParticleHot;
   p.pos = mix(u.prev_pos, u.pos, t) + offset;
   p.vel = dir * speed;
   p.age = 0.0;
-  p.life = mix(u.life_min, u.life_max, float01(h1.z));
-  p.size0 = mix(u.size0_min, u.size0_max, float01(h2.x));
-  p.size1 = mix(u.size1_min, u.size1_max, float01(h2.y));
-  p.spin = (2.0 * float01(h2.z) - 1.0) * u.spin_max;
-  p.counter = u.emit_base + i;
-  p.wobble_axis = u.wobble_axis;
-  particles[slot] = p;
+  // life > 0 marks the slot live for the sequential simulate scan; a decl
+  // with a zero lifetime still dies on its first step, matching the CPU.
+  p.life = max(mix(u.life_min, u.life_max, float01(h1.z)), 1e-6);
+  hot[slot] = p;
 
-  let idx = atomicAdd(&counters.alive_cur, 1u);
-  alive_cur[idx] = slot;
+  var c : ParticleCold;
+  c.size0 = mix(u.size0_min, u.size0_max, float01(h2.x));
+  c.size1 = mix(u.size1_min, u.size1_max, float01(h2.y));
+  c.spin = (2.0 * float01(h2.z) - 1.0) * u.spin_max;
+  c.rot0 = mix(u.rot_min, u.rot_max, float01(h4.x));
+  c.wobble_axis = u.wobble_axis;
+  c.phase = float01(h4.y);
+  cold[slot] = c;
 }
 
+// The simulate pass scans pool slots directly instead of chasing a compacted
+// alive list: thread i owns hot[i], so reads and writes are fully coalesced —
+// the dominant cost of the previous indirection was its scattered access, not
+// arithmetic. Dead slots (life == 0, the zero-initialized state) cost one
+// sequential 24-byte read each. The survivor list for the render stage is
+// rebuilt every simulated frame with one workgroup-aggregated range per list:
+// threads take a lane from a workgroup-local counter, thread 0 reserves the
+// global range, and survivors/dead scatter into it. Order is
+// workgroup-relative, but the per-thread atomics it replaced never had a
+// deterministic order either.
+var<workgroup> wg_alive_count : atomic<u32>;
+var<workgroup> wg_dead_count : atomic<u32>;
+var<workgroup> wg_alive_base : u32;
+var<workgroup> wg_dead_base : u32;
+
 @compute @workgroup_size(64)
-fn simulate(@builtin(global_invocation_id) gid : vec3u) {
-  let i = gid.x;
-  if (i >= atomicLoad(&counters.alive_cur)) { return; }
-  let slot = alive_cur[i];
-  var p = particles[slot];
-
-  p.age += u.dt;
-  if (p.age >= p.life) {
-    let d = atomicAdd(&counters.dead, 1u);
-    dead_list[d] = slot;
-    return;
+fn simulate(@builtin(global_invocation_id) gid : vec3u,
+            @builtin(local_invocation_index) lid : u32) {
+  if (lid == 0u) {
+    atomicStore(&wg_alive_count, 0u);
+    atomicStore(&wg_dead_count, 0u);
   }
-  // mirror: Emitter.Step — vel = (vel + g*dt) * pow(drag, dt)
-  p.vel = (p.vel + u.gravity * u.dt) * pow(u.drag, u.dt);
-  p.pos += p.vel * u.dt;
-  particles[slot] = p;
+  workgroupBarrier();
 
-  let idx = atomicAdd(&counters.alive_new, 1u);
-  alive_new[idx] = slot;
-  atomicAdd(&draw_indirect.instance_count, 1u);
+  let slot = gid.x;
+  var lane = 0u;
+  var alive = false;
+  var died = false;
+  if (slot < u.capacity) {
+    var p = hot[slot];
+    if (p.life > 0.0) {
+      p.age += u.dt;
+      if (p.age >= p.life) {
+        // Exactly-once death: life = 0 frees the slot for the scan while the
+        // dead-stack push below returns it to the emit pass.
+        p.life = 0.0;
+        hot[slot] = p;
+        died = true;
+        lane = atomicAdd(&wg_dead_count, 1u);
+      } else {
+        // mirror: Emitter.Step — vel = (vel + g*dt) * pow(drag, dt)
+        p.vel = (p.vel + u.gravity * u.dt) * pow(u.drag, u.dt);
+        p.pos += p.vel * u.dt;
+        hot[slot] = p;
+        alive = true;
+        lane = atomicAdd(&wg_alive_count, 1u);
+      }
+    }
+  }
+
+  workgroupBarrier();
+  if (lid == 0u) {
+    let alive_n = atomicLoad(&wg_alive_count);
+    if (alive_n > 0u) {
+      wg_alive_base = atomicAdd(&counters.alive, alive_n);
+      atomicAdd(&draw_indirect.instance_count, alive_n);
+    }
+    let dead_n = atomicLoad(&wg_dead_count);
+    if (dead_n > 0u) {
+      wg_dead_base = atomicAdd(&counters.dead, dead_n);
+    }
+  }
+  workgroupBarrier();
+
+  if (alive) {
+    alive_list[wg_alive_base + lane] = slot;
+  } else if (died) {
+    dead_list[wg_dead_base + lane] = slot;
+  }
 }

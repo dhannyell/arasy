@@ -14,10 +14,20 @@ import (
 )
 
 const (
-	gpuParticleTTL     = 300
-	particleWorkgroup  = 64
-	dispatchBufferSize = 12 // DispatchWorkgroupsIndirectArgs: {x,y,z}
-	drawBufferSize     = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
+	gpuParticleTTL = 300
+	// Hot/cold strides must match the WGSL ParticleHot/ParticleCold structs.
+	// The split keeps the simulate pass on the 24 mutable bytes; spawn-time
+	// state lives in the cold buffer only emit writes and render reads.
+	gpuParticleHotStride  = 24
+	gpuParticleColdStride = 32
+	gpuUniformSize        = 224 // must match the WGSL EmitterUniforms struct
+	particleWorkgroup     = 64
+	drawBufferSize        = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
+	// countersAliveOffset locates the alive cursor inside the counters buffer
+	// ({dead, alive, pad, pad}); the host zeroes it before each simulated
+	// frame. drawInstanceOffset does the same for the indirect instance count.
+	countersAliveOffset = 4
+	drawInstanceOffset  = 4
 )
 
 type gpuEmitter struct {
@@ -28,42 +38,42 @@ type gpuEmitter struct {
 	lastSeen uint64
 	// missingTexture selects the untinted magenta placeholder pipeline.
 	missingTexture bool
-	// simulated marks whether this frame ran the compute passes; a paused
-	// frame (dt <= 0) skips them and must also skip the list swap so the
-	// draw keeps showing the last simulated state (freeze, like the CPU).
-	simulated bool
-	front     int // which alive list is "current" this frame (0 or 1)
 
-	particles        js.Value // capacity × 48 B
-	alive            [2]js.Value
-	dead             js.Value
-	counters         js.Value // {dead, aliveCur, aliveNew, pad} atomics
-	dispatchIndirect js.Value // STORAGE in kick; INDIRECT in simulate pass
-	drawIndirect     js.Value // STORAGE in compute; INDIRECT in render pass
-	uniforms         js.Value
+	hot          js.Value // capacity × 24 B, the simulated state
+	cold         js.Value // capacity × 32 B, written once at spawn
+	alive        js.Value // survivor list, rebuilt by every simulated frame
+	dead         js.Value // free-slot stack, persists across frames
+	counters     js.Value // {dead, alive, pad, pad} atomics
+	drawIndirect js.Value // STORAGE in compute; INDIRECT in render pass
+	uniforms     js.Value
 
-	prepareBind  [2]js.Value // kick + emit; dispatch args are writable storage
-	simulateBind [2]js.Value // simulate; dispatch args are deliberately absent
-	renderBind   [2]js.Value // reads alive[1-front] (the survivors list)
-	textureBind  js.Value
-	scratch      [gpu.ParticleUniformSize]byte
+	computeBind js.Value // emit + simulate share one layout and group
+	renderBind  js.Value
+	textureBind js.Value
+	scratch     [gpuUniformSize]byte
 }
 
 type gpuParticles struct {
 	device, queue js.Value
 	renderer      *webgpuRenderer
 
-	kickPipeline     js.Value
 	emitPipeline     js.Value
 	simulatePipeline js.Value
 	drawAlpha        js.Value // premultiplied source-over, MSAA 4x
 	drawAdditive     js.Value // additive blending, MSAA 4x
 	drawMissing      js.Value // opaque magenta, deliberately ignores tint
 
-	prepareLayout  js.Value
-	simulateLayout js.Value
-	renderLayout   js.Value
-	textureLayout  js.Value
+	// Single-sample variants for the particle offscreen target, built only
+	// when Config.ParticleOffscreenScale enables offscreen compositing. The
+	// additive variant keeps destination alpha untouched so the source-over
+	// composite of the offscreen stays mathematically exact for both blends.
+	drawAlphaOff    js.Value
+	drawAdditiveOff js.Value
+	drawMissingOff  js.Value
+
+	computeLayout js.Value
+	renderLayout  js.Value
+	textureLayout js.Value
 
 	whiteTexture   js.Value // 1×1 bind target for untextured effects
 	missingTexture js.Value // magenta 1×1 for a declared texture that failed
@@ -71,6 +81,14 @@ type gpuParticles struct {
 
 	emitters map[emitterGPUKey]*gpuEmitter
 	frame    uint64
+
+	// timing instrumentation: armTiming runs once per frame before the
+	// encodeSim loop, and the first compute pass created afterwards carries
+	// the frame-begin timestamp. timingWrote tells the renderer whether that
+	// pass actually existed (a fully paused frame encodes none).
+	timing      *gpuTiming
+	timingArmed bool
+	timingWrote bool
 }
 
 type emitterGPUKey struct {
@@ -79,17 +97,17 @@ type emitterGPUKey struct {
 }
 
 // newGpuParticles builds the shared particle GPU state once: bind group
-// layouts, the three compute pipelines, both render blend variants, the
-// white 1×1 texture for untextured effects and the sampler.
-func newGpuParticles(r *webgpuRenderer) *gpuParticles {
+// layouts, the three compute pipelines, the render blend variants (plus
+// their single-sample offscreen twins when withOffscreen is set), the white
+// 1×1 texture for untextured effects and the sampler.
+func newGpuParticles(r *webgpuRenderer, withOffscreen bool) *gpuParticles {
 	g := &gpuParticles{
 		device:   r.device,
 		queue:    r.queue,
 		renderer: r,
 		emitters: make(map[emitterGPUKey]*gpuEmitter),
 	}
-	g.prepareLayout = g.prepareBindLayout()
-	g.simulateLayout = g.simulateBindLayout()
+	g.computeLayout = g.computeBindLayout()
 	g.renderLayout = g.renderBindLayout()
 	g.textureLayout = g.textureBindLayout()
 	g.whiteTexture = g.createSolidTexture([4]byte{255, 255, 255, 255})
@@ -98,13 +116,14 @@ func newGpuParticles(r *webgpuRenderer) *gpuParticles {
 		"magFilter": "linear",
 		"minFilter": "linear",
 	})
-	g.buildPipelines(r.format)
+	g.buildPipelines(r.format, withOffscreen)
 	return g
 }
 
-// prepareBindLayout is shared by kick and emit. Both run in the preparation
-// pass, where the dispatch-indirect buffer is exclusively writable storage.
-func (g *gpuParticles) prepareBindLayout() js.Value {
+// computeBindLayout is shared by emit and simulate. With the simulate
+// dispatch sized on the CPU there is no dispatch-indirect buffer, so no
+// usage-scope conflict forces separate layouts anymore.
+func (g *gpuParticles) computeBindLayout() js.Value {
 	compute := js.Global().Get("GPUShaderStage").Get("COMPUTE").Int()
 	storage := map[string]any{"type": "storage"}
 	entry := func(binding int, buffer map[string]any) map[string]any {
@@ -112,43 +131,19 @@ func (g *gpuParticles) prepareBindLayout() js.Value {
 	}
 	return g.device.Call("createBindGroupLayout", map[string]any{
 		"entries": []any{
-			entry(0, storage), // particle pool
-			entry(1, storage), // alive current
-			entry(2, storage), // alive next (survivors)
-			entry(3, storage), // dead list
-			entry(4, storage), // counters
-			entry(5, storage), // draw indirect args
-			entry(6, storage), // dispatch indirect args
-			entry(7, map[string]any{"type": "uniform"}),
+			entry(0, storage), // hot particle pool
+			entry(1, storage), // survivor list
+			entry(2, storage), // dead list
+			entry(3, storage), // counters
+			entry(4, storage), // draw indirect args
+			entry(5, map[string]any{"type": "uniform"}),
+			entry(6, storage), // cold particle pool (spawn-time state)
 		},
 	})
 }
 
-// simulateBindLayout deliberately omits binding 6. The dispatch-indirect
-// buffer is consumed by dispatchWorkgroupsIndirect in this pass, so binding
-// it as writable storage too would violate WebGPU's usage-scope rules even
-// though the simulate entry point never accesses that WGSL global.
-func (g *gpuParticles) simulateBindLayout() js.Value {
-	compute := js.Global().Get("GPUShaderStage").Get("COMPUTE").Int()
-	storage := map[string]any{"type": "storage"}
-	entry := func(binding int, buffer map[string]any) map[string]any {
-		return map[string]any{"binding": binding, "visibility": compute, "buffer": buffer}
-	}
-	return g.device.Call("createBindGroupLayout", map[string]any{
-		"entries": []any{
-			entry(0, storage), // particle pool
-			entry(1, storage), // alive current
-			entry(2, storage), // alive next (survivors)
-			entry(3, storage), // dead list
-			entry(4, storage), // counters
-			entry(5, storage), // draw indirect args
-			entry(7, map[string]any{"type": "uniform"}),
-		},
-	})
-}
-
-// renderBindLayout feeds the vertex-pulling shader: uniforms, pool and the
-// survivors list, all read-only (vertex stages cannot write storage).
+// renderBindLayout feeds the vertex-pulling shader: uniforms, hot/cold pools
+// and the survivors list, all read-only (vertex stages cannot write storage).
 func (g *gpuParticles) renderBindLayout() js.Value {
 	vertex := js.Global().Get("GPUShaderStage").Get("VERTEX").Int()
 	readOnly := map[string]any{"type": "read-only-storage"}
@@ -157,6 +152,7 @@ func (g *gpuParticles) renderBindLayout() js.Value {
 			map[string]any{"binding": 0, "visibility": vertex, "buffer": map[string]any{"type": "uniform"}},
 			map[string]any{"binding": 1, "visibility": vertex, "buffer": readOnly},
 			map[string]any{"binding": 2, "visibility": vertex, "buffer": readOnly},
+			map[string]any{"binding": 3, "visibility": vertex, "buffer": readOnly},
 		},
 	})
 }
@@ -171,32 +167,25 @@ func (g *gpuParticles) textureBindLayout() js.Value {
 	})
 }
 
-func (g *gpuParticles) buildPipelines(format js.Value) {
+func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool) {
 	computeModule := g.device.Call("createShaderModule", map[string]any{"code": particlesComputeWGSL})
-	preparePipelineLayout := g.device.Call("createPipelineLayout", map[string]any{
-		"bindGroupLayouts": []any{g.prepareLayout},
+	computePipelineLayout := g.device.Call("createPipelineLayout", map[string]any{
+		"bindGroupLayouts": []any{g.computeLayout},
 	})
-	preparePipeline := func(entry string) js.Value {
+	computePipeline := func(entry string) js.Value {
 		return g.device.Call("createComputePipeline", map[string]any{
-			"layout":  preparePipelineLayout,
+			"layout":  computePipelineLayout,
 			"compute": map[string]any{"module": computeModule, "entryPoint": entry},
 		})
 	}
-	g.kickPipeline = preparePipeline("kick")
-	g.emitPipeline = preparePipeline("emit")
-	simulatePipelineLayout := g.device.Call("createPipelineLayout", map[string]any{
-		"bindGroupLayouts": []any{g.simulateLayout},
-	})
-	g.simulatePipeline = g.device.Call("createComputePipeline", map[string]any{
-		"layout":  simulatePipelineLayout,
-		"compute": map[string]any{"module": computeModule, "entryPoint": "simulate"},
-	})
+	g.emitPipeline = computePipeline("emit")
+	g.simulatePipeline = computePipeline("simulate")
 
 	renderModule := g.device.Call("createShaderModule", map[string]any{"code": particlesRenderWGSL})
 	renderLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.renderLayout, g.textureLayout},
 	})
-	pipeline := func(fragment string, blend map[string]any) js.Value {
+	pipeline := func(fragment string, blend map[string]any, samples int) js.Value {
 		return g.device.Call("createRenderPipeline", map[string]any{
 			"layout": renderLayout,
 			"vertex": map[string]any{"module": renderModule, "entryPoint": "vs_main"},
@@ -206,12 +195,17 @@ func (g *gpuParticles) buildPipelines(format js.Value) {
 				"targets":    []any{map[string]any{"format": format, "blend": blend}},
 			},
 			"primitive":   map[string]any{"topology": "triangle-list"},
-			"multisample": map[string]any{"count": msaaSampleCount},
+			"multisample": map[string]any{"count": samples},
 		})
 	}
-	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend())
-	g.drawAdditive = pipeline("fs_main", gpu.AdditiveBlend())
-	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend())
+	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend(), msaaSampleCount)
+	g.drawAdditive = pipeline("fs_main", additiveBlend(), msaaSampleCount)
+	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend(), msaaSampleCount)
+	if withOffscreen {
+		g.drawAlphaOff = pipeline("fs_main", gpu.PremultipliedBlend(), 1)
+		g.drawAdditiveOff = pipeline("fs_main", additiveOffscreenBlend(), 1)
+		g.drawMissingOff = pipeline("fs_missing", gpu.PremultipliedBlend(), 1)
+	}
 }
 
 func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
@@ -229,39 +223,51 @@ func (g *gpuParticles) createSolidTexture(color [4]byte) js.Value {
 	return texture
 }
 
+// additiveBlend is the premultiplied additive variant: source adds onto the
+// destination without attenuating it (fire, sparks, glow).
+func additiveBlend() map[string]any {
+	factor := map[string]any{"srcFactor": "one", "dstFactor": "one", "operation": "add"}
+	return map[string]any{"color": factor, "alpha": factor}
+}
+
+// additiveOffscreenBlend accumulates additive color into the offscreen while
+// leaving its alpha untouched. The composite is source-over — dst*(1-a) + rgb
+// — so additive light must carry zero coverage, or it would wrongly attenuate
+// whatever is behind the composite.
+func additiveOffscreenBlend() map[string]any {
+	return map[string]any{
+		"color": map[string]any{"srcFactor": "one", "dstFactor": "one", "operation": "add"},
+		"alpha": map[string]any{"srcFactor": "zero", "dstFactor": "one", "operation": "add"},
+	}
+}
+
 func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmitter {
 	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity}
 	usage := js.Global().Get("GPUBufferUsage")
 	storage := usage.Get("STORAGE").Int() | usage.Get("COPY_DST").Int()
 
-	e.particles = g.buffer(decl.Capacity*gpu.ParticleStride, storage)
-	e.alive[0] = g.buffer(decl.Capacity*4, storage)
-	e.alive[1] = g.buffer(decl.Capacity*4, storage)
+	e.hot = g.buffer(decl.Capacity*gpuParticleHotStride, storage)
+	e.cold = g.buffer(decl.Capacity*gpuParticleColdStride, storage)
+	e.alive = g.buffer(decl.Capacity*4, storage)
 	e.dead = g.buffer(decl.Capacity*4, storage)
 	e.counters = g.buffer(16, storage)
-	e.dispatchIndirect = g.buffer(dispatchBufferSize, storage|usage.Get("INDIRECT").Int())
 	e.drawIndirect = g.buffer(drawBufferSize, storage|usage.Get("INDIRECT").Int())
-	e.uniforms = g.buffer(gpu.ParticleUniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
+	e.uniforms = g.buffer(gpuUniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
 
-	// Dead list starts full (every slot free), counters at {capacity,0,0},
-	// dispatch at {0,1,1}, and draw at {6,0,0,0}: dispatch Y/Z fixed at 1,
-	// six vertices per instance, zero instances until simulate runs.
+	// Dead list starts full (every slot free), counters at {capacity, 0} and
+	// draw args at {3,0,0,0}: three vertices per instance, zero instances
+	// until simulate runs. The zero-initialized hot pool marks every slot
+	// dead (life == 0) for the sequential simulate scan.
 	init := make([]byte, decl.Capacity*4)
 	for i := 0; i < decl.Capacity; i++ {
 		binary.LittleEndian.PutUint32(init[i*4:], uint32(i))
 	}
 	g.queue.Call("writeBuffer", e.dead, 0, bytesToJS(init))
 	g.queue.Call("writeBuffer", e.counters, 0, bytesToJS(packU32(uint32(decl.Capacity), 0, 0, 0)))
-	g.queue.Call("writeBuffer", e.dispatchIndirect, 0, bytesToJS(packU32(0, 1, 1)))
-	g.queue.Call("writeBuffer", e.drawIndirect, 0, bytesToJS(packU32(6, 0, 0, 0)))
+	g.queue.Call("writeBuffer", e.drawIndirect, 0, bytesToJS(packU32(3, 0, 0, 0)))
 
-	// Both ping-pong orientations get their bind groups once; the per-frame
-	// swap is an index flip, never a bind-group rebuild.
-	for o := 0; o < 2; o++ {
-		e.prepareBind[o] = g.bindPrepare(e, e.alive[o], e.alive[1-o])
-		e.simulateBind[o] = g.bindSimulate(e, e.alive[o], e.alive[1-o])
-		e.renderBind[o] = g.bindRender(e, e.alive[1-o])
-	}
+	e.computeBind = g.bindCompute(e)
+	e.renderBind = g.bindRender(e)
 	e.textureBind, e.missingTexture = g.bindTexture(decl) // white 1×1 when untextured
 	return e
 }
@@ -274,39 +280,19 @@ func (g *gpuParticles) buffer(size, usage int) js.Value {
 	})
 }
 
-// bindPrepare builds the kick/emit bind group for one ping-pong orientation:
-// cur is the alive list the emit pass pushes into and simulate reads; next
-// is the survivors list simulate writes. Binding numbers mirror the
-// @group(0) declarations in the particle WGSL.
-func (g *gpuParticles) bindPrepare(e *gpuEmitter, cur, next js.Value) js.Value {
+// bindCompute builds the emit/simulate bind group. Binding numbers mirror
+// the @group(0) declarations in particle_compute.wgsl.
+func (g *gpuParticles) bindCompute(e *gpuEmitter) js.Value {
 	return g.device.Call("createBindGroup", map[string]any{
-		"layout": g.prepareLayout,
+		"layout": g.computeLayout,
 		"entries": []any{
-			map[string]any{"binding": 0, "resource": map[string]any{"buffer": e.particles}},
-			map[string]any{"binding": 1, "resource": map[string]any{"buffer": cur}},
-			map[string]any{"binding": 2, "resource": map[string]any{"buffer": next}},
-			map[string]any{"binding": 3, "resource": map[string]any{"buffer": e.dead}},
-			map[string]any{"binding": 4, "resource": map[string]any{"buffer": e.counters}},
-			map[string]any{"binding": 5, "resource": map[string]any{"buffer": e.drawIndirect}},
-			map[string]any{"binding": 6, "resource": map[string]any{"buffer": e.dispatchIndirect}},
-			map[string]any{"binding": 7, "resource": map[string]any{"buffer": e.uniforms}},
-		},
-	})
-}
-
-// bindSimulate mirrors bindPrepare without binding 6. That buffer belongs
-// exclusively to dispatchWorkgroupsIndirect during the simulation pass.
-func (g *gpuParticles) bindSimulate(e *gpuEmitter, cur, next js.Value) js.Value {
-	return g.device.Call("createBindGroup", map[string]any{
-		"layout": g.simulateLayout,
-		"entries": []any{
-			map[string]any{"binding": 0, "resource": map[string]any{"buffer": e.particles}},
-			map[string]any{"binding": 1, "resource": map[string]any{"buffer": cur}},
-			map[string]any{"binding": 2, "resource": map[string]any{"buffer": next}},
-			map[string]any{"binding": 3, "resource": map[string]any{"buffer": e.dead}},
-			map[string]any{"binding": 4, "resource": map[string]any{"buffer": e.counters}},
-			map[string]any{"binding": 5, "resource": map[string]any{"buffer": e.drawIndirect}},
-			map[string]any{"binding": 7, "resource": map[string]any{"buffer": e.uniforms}},
+			map[string]any{"binding": 0, "resource": map[string]any{"buffer": e.hot}},
+			map[string]any{"binding": 1, "resource": map[string]any{"buffer": e.alive}},
+			map[string]any{"binding": 2, "resource": map[string]any{"buffer": e.dead}},
+			map[string]any{"binding": 3, "resource": map[string]any{"buffer": e.counters}},
+			map[string]any{"binding": 4, "resource": map[string]any{"buffer": e.drawIndirect}},
+			map[string]any{"binding": 5, "resource": map[string]any{"buffer": e.uniforms}},
+			map[string]any{"binding": 6, "resource": map[string]any{"buffer": e.cold}},
 		},
 	})
 }
@@ -321,17 +307,17 @@ func packU32(values ...uint32) []byte {
 	return out
 }
 
-// bindRender builds the vertex-pulling bind group for one ping-pong
-// orientation: survivors is the alive list the simulate pass just wrote,
-// which the vertex shader indexes by instance_index. Storage buffers are
-// read-only here: core WebGPU forbids writable storage in vertex stages.
-func (g *gpuParticles) bindRender(e *gpuEmitter, survivors js.Value) js.Value {
+// bindRender builds the vertex-pulling bind group: the vertex shader indexes
+// the survivor list by instance_index. Storage buffers are read-only here:
+// core WebGPU forbids writable storage in vertex stages.
+func (g *gpuParticles) bindRender(e *gpuEmitter) js.Value {
 	return g.device.Call("createBindGroup", map[string]any{
 		"layout": g.renderLayout,
 		"entries": []any{
 			map[string]any{"binding": 0, "resource": map[string]any{"buffer": e.uniforms}},
-			map[string]any{"binding": 1, "resource": map[string]any{"buffer": e.particles}},
-			map[string]any{"binding": 2, "resource": map[string]any{"buffer": survivors}},
+			map[string]any{"binding": 1, "resource": map[string]any{"buffer": e.hot}},
+			map[string]any{"binding": 2, "resource": map[string]any{"buffer": e.alive}},
+			map[string]any{"binding": 3, "resource": map[string]any{"buffer": e.cold}},
 		},
 	})
 }
@@ -360,28 +346,110 @@ func (g *gpuParticles) bindTexture(decl particle.EffectDecl) (js.Value, bool) {
 	return bindGroup, missing
 }
 
-// encodeSim updates one emitter's CPU accounting and records its kick, emit
-// and simulate dispatches before the frame's render pass. The same emitter
-// may be drawn more than once in painter order, but it is simulated at most
-// once per frame.
-func (g *gpuParticles) encodeSim(
+// armTiming resets the per-frame timing state so this frame's compute passes
+// carry their timestamps.
+func (g *gpuParticles) armTiming(t *gpuTiming) {
+	g.timing = t
+	g.timingArmed = true
+	g.timingWrote = false
+}
+
+// simRequest is one emitter whose dispatches encodeSims must record this
+// frame, produced by prepareEmitter.
+type simRequest struct {
+	e         *gpuEmitter
+	emitCount int
+}
+
+// encodeSims runs the CPU-side accounting for every particle command in
+// painter order, then records all emit dispatches in one shared compute pass
+// and all simulate dispatches in a second. Emitter buffers are disjoint, so
+// dispatches from different emitters need no ordering between them.
+//
+// There is no kick stage: prepareEmitter resets the alive cursor and the
+// indirect instance count with two 4-byte queue writes, which execute before
+// any pass in the submission. The simulate dispatch covers the whole pool
+// (sequential slot scan), so its size is known on the CPU and the old
+// dispatch-indirect buffer is gone. The pass boundary between emit and
+// simulate makes freshly spawned particles visible to the same-frame scan.
+func (g *gpuParticles) encodeSims(
 	encoder js.Value,
-	cmd render.DrawParticles,
+	cmds []render.DrawParticles,
 	camera render.Camera,
 	w, h int,
 ) {
+	sims := make([]simRequest, 0, len(cmds))
+	for _, cmd := range cmds {
+		if e, emitCount, ok := g.prepareEmitter(cmd, camera, w, h); ok {
+			sims = append(sims, simRequest{e: e, emitCount: emitCount})
+		}
+	}
+	if len(sims) == 0 {
+		return
+	}
+
+	sampled := g.timingArmed
+	if sampled {
+		g.timingArmed = false
+		g.timingWrote = true
+	}
+
+	preparePass := beginComputePass(encoder, sampled, g.timing.prepareTimestampWrites)
+	emitPipelineSet := false
+	for _, sim := range sims {
+		if sim.emitCount == 0 {
+			continue
+		}
+		if !emitPipelineSet {
+			preparePass.Call("setPipeline", g.emitPipeline)
+			emitPipelineSet = true
+		}
+		preparePass.Call("setBindGroup", 0, sim.e.computeBind)
+		preparePass.Call("dispatchWorkgroups", (sim.emitCount+particleWorkgroup-1)/particleWorkgroup)
+	}
+	preparePass.Call("end")
+
+	simulatePass := beginComputePass(encoder, sampled, g.timing.simulateTimestampWrites)
+	simulatePass.Call("setPipeline", g.simulatePipeline)
+	for _, sim := range sims {
+		simulatePass.Call("setBindGroup", 0, sim.e.computeBind)
+		simulatePass.Call("dispatchWorkgroups", (sim.e.capacity+particleWorkgroup-1)/particleWorkgroup)
+	}
+	simulatePass.Call("end")
+}
+
+// beginComputePass opens a compute pass, attaching the given timestampWrites
+// only on frames being sampled (timed adapters, one sample per frame).
+func beginComputePass(encoder js.Value, sampled bool, writes func() map[string]any) js.Value {
+	if !sampled {
+		return encoder.Call("beginComputePass")
+	}
+	return encoder.Call("beginComputePass", map[string]any{"timestampWrites": writes()})
+}
+
+// prepareEmitter updates one emitter's CPU accounting and uploads its
+// uniforms, returning the emitter and this frame's emit count when its
+// dispatches should be encoded. ok is false for duplicate commands, unknown
+// effects and paused frames (dt <= 0), which freeze the particle buffers —
+// including the survivor list and draw args — matching particle.Emitter.Step.
+func (g *gpuParticles) prepareEmitter(
+	cmd render.DrawParticles,
+	camera render.Camera,
+	w, h int,
+) (*gpuEmitter, int, bool) {
 	decl, ok := g.renderer.manifest.EffectDecl(cmd.Effect)
 	if !ok {
-		return
+		return nil, 0, false
 	}
 
 	key := emitterGPUKey{effect: cmd.Effect, emitter: cmd.Emitter}
 	e, exists := g.emitters[key]
 	// The first command for one emitter key owns simulation this frame. In
 	// particular, never destroy/recreate buffers for a later command with a
-	// different seed after the encoder has already referenced the old ones.
+	// different seed after this frame's accounting already claimed the old
+	// ones for the encoder.
 	if exists && e.lastSeen == g.frame {
-		return
+		return nil, 0, false
 	}
 	if !exists || e.seed != cmd.Seed {
 		if exists {
@@ -404,46 +472,46 @@ func (g *gpuParticles) encodeSim(
 	packUniforms(e.scratch[:], e, cmd, frame, emitCount, camera, w, h)
 	g.queue.Call("writeBuffer", e.uniforms, 0, bytesToJS(e.scratch[:]))
 
-	// Pause/scrub updates LastPos and the draw transform but freezes particle
-	// buffers and the ping-pong orientation, matching particle.Emitter.Step.
 	if cmd.Dt <= 0 {
-		return
+		return nil, 0, false
 	}
+
+	// Queue writes land before any pass in this frame's submission: reset the
+	// survivor-list cursor and the indirect instance count so the simulate
+	// scan rebuilds both. Skipped on paused frames, which must keep them.
+	g.queue.Call("writeBuffer", e.counters, countersAliveOffset, bytesToJS(packU32(0)))
+	g.queue.Call("writeBuffer", e.drawIndirect, drawInstanceOffset, bytesToJS(packU32(0)))
 
 	// The GPU consumes the full requested hash range even when its dead stack
 	// is exhausted and some emit invocations drop their spawn.
 	e.emission.Emitted += uint32(emitCount)
-	e.simulated = true
-
-	preparePass := encoder.Call("beginComputePass")
-	preparePass.Call("setBindGroup", 0, e.prepareBind[e.front])
-
-	preparePass.Call("setPipeline", g.kickPipeline)
-	preparePass.Call("dispatchWorkgroups", 1)
-
-	if emitCount > 0 {
-		preparePass.Call("setPipeline", g.emitPipeline)
-		preparePass.Call("dispatchWorkgroups", (emitCount+particleWorkgroup-1)/particleWorkgroup)
-	}
-	preparePass.Call("end")
-
-	// WebGPU forbids one buffer from being writable STORAGE and INDIRECT in
-	// the same usage scope. A new pass makes kick's dispatch-buffer writes
-	// visible, while simulate writes only the separate draw-args buffer.
-	simulatePass := encoder.Call("beginComputePass")
-	simulatePass.Call("setBindGroup", 0, e.simulateBind[e.front])
-	simulatePass.Call("setPipeline", g.simulatePipeline)
-	simulatePass.Call("dispatchWorkgroupsIndirect", e.dispatchIndirect, 0)
-	simulatePass.Call("end")
+	return e, emitCount, true
 }
 
-// draw submits one emitter at its exact painter-order position. The indirect
-// instance count was produced by simulate, so no GPU readback is needed.
+// draw submits one emitter at its exact painter-order position in the main
+// MSAA pass. The indirect instance count was produced by simulate, so no GPU
+// readback is needed.
 func (g *gpuParticles) draw(
 	pass js.Value,
 	cmd render.DrawParticles,
 	camera render.Camera,
 	w, h int,
+) {
+	g.drawTo(pass, cmd, camera, 1, w, h, false)
+}
+
+// drawTo submits one emitter into either the main MSAA pass (offscreen
+// false, clipScale 1, target dims = canvas dims) or a single-sample particle
+// offscreen target whose dimensions are the canvas dims times clipScale. The
+// world-to-clip transform is resolution-independent, so only the scissor
+// needs the scale.
+func (g *gpuParticles) drawTo(
+	pass js.Value,
+	cmd render.DrawParticles,
+	camera render.Camera,
+	clipScale float64,
+	targetW, targetH int,
+	offscreen bool,
 ) {
 	e := g.emitters[emitterGPUKey{effect: cmd.Effect, emitter: cmd.Emitter}]
 	if e == nil || e.seed != cmd.Seed || e.lastSeen != g.frame {
@@ -451,39 +519,36 @@ func (g *gpuParticles) draw(
 	}
 
 	pipeline := g.drawAlpha
-	if e.missingTexture {
+	if offscreen {
+		pipeline = g.drawAlphaOff
+		if e.missingTexture {
+			pipeline = g.drawMissingOff
+		} else if e.decl.Blend == particle.BlendAdditive {
+			pipeline = g.drawAdditiveOff
+		}
+	} else if e.missingTexture {
 		pipeline = g.drawMissing
 	} else if e.decl.Blend == particle.BlendAdditive {
 		pipeline = g.drawAdditive
 	}
-	renderOrientation := e.front
-	if !e.simulated {
-		// After endFrame, front names the last survivors list. renderBind[o]
-		// reads alive[1-o], so a frozen frame uses the opposite prebuilt bind.
-		renderOrientation = 1 - e.front
-	}
 	pass.Call("setPipeline", pipeline)
-	pass.Call("setBindGroup", 0, e.renderBind[renderOrientation])
+	pass.Call("setBindGroup", 0, e.renderBind)
 	pass.Call("setBindGroup", 1, e.textureBind)
 
 	hasClip := cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0
-	if !applyClipScissor(pass, cmd.Clip, camera, w, h) {
+	if !applyClipScissor(pass, cmd.Clip, camera, clipScale, targetW, targetH) {
 		return
 	}
 	pass.Call("drawIndirect", e.drawIndirect, 0)
 	if hasClip {
-		pass.Call("setScissorRect", 0, 0, w, h)
+		pass.Call("setScissorRect", 0, 0, targetW, targetH)
 	}
 }
 
-// endFrame commits ping-pong orientation changes and reclaims emitters that
-// have not appeared in the command stream for gpuParticleTTL frames.
+// endFrame reclaims emitters that have not appeared in the command stream
+// for gpuParticleTTL frames.
 func (g *gpuParticles) endFrame() {
 	for key, e := range g.emitters {
-		if e.simulated {
-			e.front = 1 - e.front
-			e.simulated = false
-		}
 		if g.frame-e.lastSeen >= gpuParticleTTL {
 			e.destroy()
 			delete(g.emitters, key)
@@ -493,12 +558,12 @@ func (g *gpuParticles) endFrame() {
 }
 
 func (g *gpuParticles) bufferBytes() uint64 {
-	const perEmitterOverhead = gpu.ParticleUniformSize + dispatchBufferSize + drawBufferSize + 16 // counters
+	const perEmitterOverhead = gpuUniformSize + drawBufferSize + 16 // counters
 	var total uint64
 	for _, emitter := range g.emitters {
-		// Particle state plus current/survivor/dead index lists. This excludes
-		// shared pipelines, textures and browser/driver allocations.
-		total += uint64(emitter.capacity*(gpu.ParticleStride+3*4) + perEmitterOverhead)
+		// Hot/cold particle state plus survivor/dead index lists. This
+		// excludes shared pipelines, textures and browser/driver allocations.
+		total += uint64(emitter.capacity*(gpuParticleHotStride+gpuParticleColdStride+2*4) + perEmitterOverhead)
 	}
 	return total
 }
@@ -507,12 +572,11 @@ func (g *gpuParticles) bufferBytes() uint64 {
 // JavaScript after their buffers become unreachable.
 func (e *gpuEmitter) destroy() {
 	buffers := []js.Value{
-		e.particles,
-		e.alive[0],
-		e.alive[1],
+		e.hot,
+		e.cold,
+		e.alive,
 		e.dead,
 		e.counters,
-		e.dispatchIndirect,
 		e.drawIndirect,
 		e.uniforms,
 	}
@@ -631,10 +695,12 @@ func worldToClip(camera render.Camera, w, h int) (scale, offset, screenScale mat
 	return scale, offset, screenScale
 }
 
-// applyClipScissor maps a world-space clip to WebGPU framebuffer pixels. A
-// zero clip restores the full target. It returns false for an empty clipped
-// region so the caller can skip the indirect draw.
-func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, w, h int) bool {
+// applyClipScissor maps a world-space clip to target pixels: camera screen
+// coordinates times scale, clamped to the target dimensions (scale is 1 for
+// the main pass, Config.ParticleOffscreenScale for offscreen targets). A zero
+// clip restores the full target. It returns false for an empty clipped region
+// so the caller can skip the indirect draw.
+func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, scale float64, w, h int) bool {
 	if w <= 0 || h <= 0 {
 		return false
 	}
@@ -645,10 +711,10 @@ func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, w, 
 
 	minPoint := camera.WorldToScreen(clip.Min)
 	maxPoint := camera.WorldToScreen(clip.Max)
-	x0 := max(0, min(w, int(math.Floor(math.Min(minPoint.X, maxPoint.X)))))
-	y0 := max(0, min(h, int(math.Floor(math.Min(minPoint.Y, maxPoint.Y)))))
-	x1 := max(0, min(w, int(math.Ceil(math.Max(minPoint.X, maxPoint.X)))))
-	y1 := max(0, min(h, int(math.Ceil(math.Max(minPoint.Y, maxPoint.Y)))))
+	x0 := max(0, min(w, int(math.Floor(math.Min(minPoint.X, maxPoint.X)*scale))))
+	y0 := max(0, min(h, int(math.Floor(math.Min(minPoint.Y, maxPoint.Y)*scale))))
+	x1 := max(0, min(w, int(math.Ceil(math.Max(minPoint.X, maxPoint.X)*scale))))
+	y1 := max(0, min(h, int(math.Ceil(math.Max(minPoint.Y, maxPoint.Y)*scale))))
 	if x1 <= x0 || y1 <= y0 {
 		pass.Call("setScissorRect", 0, 0, w, h)
 		return false

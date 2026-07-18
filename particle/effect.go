@@ -6,9 +6,10 @@ package particle
 
 import "github.com/dhannyell/frameforge/math2d"
 
-// MaxCapacity caps one emitter so its WebGPU particle storage buffer stays at
-// about 3 MiB (65,536 particles x 48 bytes). CPU fallbacks use the same limit
-// to preserve backend parity and keep pool initialization bounded.
+// MaxCapacity caps one emitter so its WebGPU particle storage stays at about
+// 3.5 MiB (65,536 particles x 56 bytes across the hot/cold buffers). CPU
+// fallbacks use the same limit to preserve backend parity and keep pool
+// initialization bounded.
 const MaxCapacity = 65536
 
 // Blend selects how a particle quad is composited.

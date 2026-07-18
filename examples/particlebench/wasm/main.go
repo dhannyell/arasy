@@ -30,6 +30,10 @@ func main() {
 				metrics.JSHeapSet,
 				metrics.GPUBufferBytes,
 				metrics.GPUBufferSet,
+				metrics.GPUPrepareTime,
+				metrics.GPUSimulateTime,
+				metrics.GPURenderTime,
+				metrics.GPUTimingSet,
 			)
 		},
 	}); err != nil {
