@@ -2,6 +2,7 @@ package ffcli
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,17 +21,25 @@ var doctorCmd = &cobra.Command{
 		failed := false
 		version, err := exec.Command("go", "version").Output()
 		if err != nil || !strings.HasPrefix(strings.TrimSpace(string(version)), "go version ") {
-			fmt.Fprintln(out, "FAIL go: go version is unavailable or invalid")
+			if err := doctorPrintf(out, "FAIL go: go version is unavailable or invalid\n"); err != nil {
+				return err
+			}
 			failed = true
 		} else {
-			fmt.Fprintf(out, "ok go: %s", version)
+			if err := doctorPrintf(out, "ok go: %s", version); err != nil {
+				return err
+			}
 		}
 		wasmExec, err := wasmserve.DefaultWASMExecPath()
 		if err != nil {
-			fmt.Fprintf(out, "FAIL wasm_exec.js: %v\n", err)
+			if err := doctorPrintf(out, "FAIL wasm_exec.js: %v\n", err); err != nil {
+				return err
+			}
 			failed = true
 		} else {
-			fmt.Fprintf(out, "ok wasm_exec.js: %s\n", wasmExec)
+			if err := doctorPrintf(out, "ok wasm_exec.js: %s\n", wasmExec); err != nil {
+				return err
+			}
 		}
 
 		pkg := ""
@@ -40,21 +49,29 @@ var doctorCmd = &cobra.Command{
 			pkg = "./wasm"
 		}
 		if pkg == "" {
-			fmt.Fprintln(out, "skipped wasm build: pass a package or run from a project with ./wasm")
+			if err := doctorPrintf(out, "skipped wasm build: pass a package or run from a project with ./wasm\n"); err != nil {
+				return err
+			}
 		} else {
 			dir, tempErr := os.MkdirTemp("", "frameforge-doctor-*")
 			if tempErr != nil {
-				fmt.Fprintf(out, "FAIL wasm build: %v\n", tempErr)
+				if err := doctorPrintf(out, "FAIL wasm build: %v\n", tempErr); err != nil {
+					return err
+				}
 				failed = true
 			} else {
-				defer os.RemoveAll(dir)
+				defer func() { _ = os.RemoveAll(dir) }()
 				build := exec.Command("go", "build", "-o", filepath.Join(dir, "app.wasm"), pkg)
 				build.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 				if output, buildErr := build.CombinedOutput(); buildErr != nil {
-					fmt.Fprintf(out, "FAIL wasm build: %s\n", output)
+					if err := doctorPrintf(out, "FAIL wasm build: %s\n", output); err != nil {
+						return err
+					}
 					failed = true
 				} else {
-					fmt.Fprintf(out, "ok wasm build: %s\n", pkg)
+					if err := doctorPrintf(out, "ok wasm build: %s\n", pkg); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -63,6 +80,11 @@ var doctorCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func doctorPrintf(out io.Writer, format string, args ...any) error {
+	_, err := fmt.Fprintf(out, format, args...)
+	return err
 }
 
 func init() { rootCmd.AddCommand(doctorCmd) }

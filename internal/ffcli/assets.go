@@ -23,8 +23,8 @@ var assetsValidateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "manifest ok: %d textures, %d fonts, %d audio clips\n", len(manifest.Textures()), len(manifest.Fonts()), len(manifest.AudioClips()))
-		return nil
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "manifest ok: %d textures, %d fonts, %d audio clips\n", len(manifest.Textures()), len(manifest.Fonts()), len(manifest.AudioClips()))
+		return err
 	},
 }
 

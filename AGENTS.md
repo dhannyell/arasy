@@ -9,6 +9,7 @@ Instructions for IA agents working in this repository.
 go test ./...                          # all tests
 go test ./scene -run TestStep          # single test
 go test ./scene -run="^$" -bench=. -benchmem  # benchmarks
+golangci-lint run ./...                # mandatory before every handoff/commit
 
 # Benchmarks (suite registry: cmd/benchsave/suites.go)
 go run ./cmd/benchsave -list-suites

@@ -1,6 +1,7 @@
 package ffcli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -118,15 +119,18 @@ func copyFile(dst, src string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", src, err)
 	}
-	defer in.Close()
 	out, err := os.Create(dst)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", dst, err)
+		return errors.Join(fmt.Errorf("create %s: %w", dst, err), in.Close())
 	}
 	_, copyErr := io.Copy(out, in)
-	closeErr := out.Close()
+	inCloseErr := in.Close()
+	outCloseErr := out.Close()
 	if copyErr != nil {
 		return copyErr
 	}
-	return closeErr
+	if inCloseErr != nil {
+		return inCloseErr
+	}
+	return outCloseErr
 }

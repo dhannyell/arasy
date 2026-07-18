@@ -32,9 +32,13 @@ var devCmd = &cobra.Command{
 			return err
 		}
 		if err := rebuildWASM(pkg, dir, title); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err)
+			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err); writeErr != nil {
+				return writeErr
+			}
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "serving %s at http://%s; reload the browser to rebuild\n", pkg, devAddress)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "serving %s at http://%s; reload the browser to rebuild\n", pkg, devAddress); err != nil {
+			return err
+		}
 		wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
 			Rebuild: func() error { return rebuildWASM(pkg, dir, title) },

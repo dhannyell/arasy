@@ -58,8 +58,8 @@ var newCmd = &cobra.Command{
 		if err := renderProject(dir, data); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "created %s\nnext steps:\n  cd %s\n  go mod tidy\n  frameforge dev ./wasm\n", module, dir)
-		return nil
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created %s\nnext steps:\n  cd %s\n  go mod tidy\n  frameforge dev ./wasm\n", module, dir)
+		return err
 	},
 }
 

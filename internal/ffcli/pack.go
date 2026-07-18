@@ -2,6 +2,7 @@ package ffcli
 
 import (
 	"archive/zip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -32,7 +33,7 @@ var packCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer os.RemoveAll(staging)
+		defer func() { _ = os.RemoveAll(staging) }()
 		if err := buildWASM(pkg, staging, title, true, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
@@ -46,7 +47,7 @@ func init() {
 	rootCmd.AddCommand(packCmd)
 }
 
-func zipBuild(output, dir string) error {
+func zipBuild(output, dir string) (err error) {
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		return err
 	}
@@ -55,27 +56,25 @@ func zipBuild(output, dir string) error {
 		return err
 	}
 	zw := zip.NewWriter(f)
+	defer func() {
+		err = errors.Join(err, zw.Close(), f.Close())
+	}()
 	for _, name := range []string{"index.html", "app.wasm", "wasm_exec.js"} {
 		in, openErr := os.Open(filepath.Join(dir, name))
 		if openErr != nil {
-			zw.Close()
-			f.Close()
 			return openErr
 		}
 		entry, createErr := zw.Create(name)
 		if createErr == nil {
 			_, createErr = io.Copy(entry, in)
 		}
-		in.Close()
+		closeErr := in.Close()
 		if createErr != nil {
-			zw.Close()
-			f.Close()
 			return createErr
 		}
+		if closeErr != nil {
+			return closeErr
+		}
 	}
-	if err := zw.Close(); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	return nil
 }
