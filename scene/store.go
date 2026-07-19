@@ -97,6 +97,14 @@ func (s *store[T]) clone() store[T] {
 	}
 }
 
+// copyFrom replaces this store's dense data with src while reusing existing
+// capacity. Like clone, it leaves sparse empty for lazy rebuilding.
+func (s *store[T]) copyFrom(src *store[T]) {
+	s.dense = append(s.dense[:0], src.dense...)
+	s.ids = append(s.ids[:0], src.ids...)
+	s.sparse = nil
+}
+
 func (s *store[T]) growSparse(id EntityID) {
 	if id > maxStoreIndex {
 		panic("scene store EntityID exceeds int32 sparse index capacity")

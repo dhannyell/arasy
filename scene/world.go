@@ -41,6 +41,10 @@ type World struct {
 	// between fixed simulation ticks. It is a presentation cache only and
 	// is NOT included in Checksum.
 	renderTransforms store[Transform]
+
+	// renderIDScratch is reusable render working memory. It is transient:
+	// never cloned or checksummed.
+	renderIDScratch []EntityID
 }
 
 func NewWorld() *World {
@@ -76,6 +80,7 @@ func (w *World) Clone() *World {
 		entityCountDirty: w.entityCountDirty,
 		renderTransforms: w.renderTransforms.clone(),
 		// contacts are transient per-tick — not cloned
+		// renderIDScratch is transient render working memory — not cloned
 	}
 }
 

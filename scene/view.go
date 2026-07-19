@@ -17,6 +17,9 @@ func (v WorldView) RenderCommands() []render.Command { return v.w.RenderCommands
 func (v WorldView) RenderCommandsInterpolated(alpha float64) []render.Command {
 	return v.w.RenderCommandsInterpolated(alpha)
 }
+func (v WorldView) RenderCommandsInto(dst []render.Command, alpha float64) []render.Command {
+	return v.w.RenderCommandsInto(dst, alpha)
+}
 func (v WorldView) Transform(id EntityID) (Transform, bool)           { return v.w.Transform(id) }
 func (v WorldView) TransformTween(id EntityID) (TransformTween, bool) { return v.w.TransformTween(id) }
 func (v WorldView) CircleSprite(id EntityID) (CircleSprite, bool)     { return v.w.CircleSprite(id) }

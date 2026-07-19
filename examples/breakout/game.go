@@ -187,7 +187,7 @@ func (b *Breakout) Render(ctx *runtime.RenderContext) []render.Command {
 	d.Button("btn_reset", "Reset", reset)
 	b.renderScreenOverlay(ctx)
 
-	cmds = append(cmds, ctx.World.RenderCommandsInterpolated(ctx.Alpha)...)
+	cmds = ctx.World.RenderCommandsInto(cmds, ctx.Alpha)
 
 	return cmds
 }
