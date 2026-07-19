@@ -9,6 +9,29 @@ import (
 )
 
 func BenchmarkRendererRender(b *testing.B) {
+	renderer, commands := benchmarkRendererCommands()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_ = renderer.Render(commands)
+	}
+}
+
+func BenchmarkRendererRenderInto(b *testing.B) {
+	renderer, commands := benchmarkRendererCommands()
+	target := renderer.NewTarget()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		renderer.RenderInto(target, commands)
+	}
+}
+
+func benchmarkRendererCommands() (raster.Renderer, []render.Command) {
 	renderer := raster.Renderer{
 		Width:  1280,
 		Height: 720,
@@ -32,10 +55,5 @@ func BenchmarkRendererRender(b *testing.B) {
 		})
 	}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-
-	for range b.N {
-		_ = renderer.Render(commands)
-	}
+	return renderer, commands
 }

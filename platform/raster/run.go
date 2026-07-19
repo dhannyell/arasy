@@ -36,6 +36,7 @@ type Options struct {
 type frameTarget struct {
 	r        *Renderer
 	textures pixel.Registry
+	target   *image.RGBA
 	img      *image.RGBA
 }
 
@@ -76,7 +77,7 @@ func Run(game runtime.Game, opts Options) error {
 		log:      log,
 	}
 
-	target := frameTarget{r: &r, img: nil, textures: textures}
+	target := frameTarget{r: &r, target: r.NewTarget(), textures: textures}
 	if opts.PNG != "" {
 		driver.RenderFrame(0, &target)
 		img := target.img
@@ -97,7 +98,6 @@ func Run(game runtime.Game, opts Options) error {
 			}
 		}
 		frameDur := time.Duration(opts.FrameDT * float64(time.Second))
-		target.img = nil
 		for frame := range opts.Frames {
 			driver.RenderFrame(frameDur, &target)
 			img := target.img
@@ -132,7 +132,10 @@ func (t *frameTarget) UpdateTextures(updates []runtime.TextureUpdate) {
 	}
 }
 
-func (t *frameTarget) Render(frame runtime.Frame) { t.img = t.r.Render(frame.Commands) }
+func (t *frameTarget) Render(frame runtime.Frame) {
+	t.r.RenderInto(t.target, frame.Commands)
+	t.img = t.target
+}
 
 func writeFramePNG(dir string, frame int, img image.Image) error {
 	path := filepath.Join(dir, fmt.Sprintf("frame-%04d.png", frame))

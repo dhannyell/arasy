@@ -1,6 +1,7 @@
 package raster
 
 import (
+	"fmt"
 	"image"
 	"log/slog"
 
@@ -35,18 +36,37 @@ type Renderer struct {
 	log         *slog.Logger
 }
 
+// NewTarget allocates an RGBA image sized for this renderer.
+func (r *Renderer) NewTarget() *image.RGBA {
+	return image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
+}
+
 // Render draws commands into a new RGBA image.
 func (r *Renderer) Render(commands []render.Command) *image.RGBA {
+	img := r.NewTarget()
+	r.RenderInto(img, commands)
+	return img
+}
+
+// RenderInto draws commands into dst, which must match this renderer's
+// dimensions. The image is cleared with r.Clear before drawing.
+func (r *Renderer) RenderInto(dst *image.RGBA, commands []render.Command) {
+	if dst == nil {
+		panic("raster: RenderInto target is nil")
+	}
+
+	wantBounds := image.Rect(0, 0, r.Width, r.Height)
+	if dst.Bounds() != wantBounds {
+		panic(fmt.Sprintf("raster: RenderInto target bounds = %v, want %v", dst.Bounds(), wantBounds))
+	}
+
 	if r.particles != nil {
 		r.particles.BeginFrame()
 	}
 
-	img := image.NewRGBA(image.Rect(0, 0, r.Width, r.Height))
-	fillRect(img, img.Bounds(), toRGBA(r.Clear))
+	fillRect(dst, dst.Bounds(), toRGBA(r.Clear))
 
-	render.Each(commands, rasterSink{renderer: r, image: img})
-
-	return img
+	render.Each(commands, rasterSink{renderer: r, image: dst})
 }
 
 type rasterSink struct {
