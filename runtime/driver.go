@@ -17,6 +17,8 @@ const defaultSimulationHz = 60
 const defaultFPS = 60
 const defaultKeyframeInterval = 30
 
+const keyframeRestoreDisabledWarning = "keyframe restore disabled: game does not implement StatefulGame; every backward seek replays from tick 0; embed runtime.StateSlot to opt in"
+
 type Driver struct {
 	game     Game
 	cfg      Config
@@ -133,7 +135,10 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 
 	d.uiTheme = ui.WithDefaults(cfg.UITheme)
 	if cfg.HistoryLen > 0 {
-		d.recorder = newRecorder(cfg.HistoryLen, cfg.KeyframeInterval)
+		d.recorder = newRecorderWithArchiveBudget(cfg.HistoryLen, cfg.KeyframeInterval, cfg.KeyframeArchiveBudget)
+		if !d.canRestoreKeyframes() {
+			d.log.Warn(keyframeRestoreDisabledWarning)
+		}
 	}
 	d.rng = NewRand(cfg.Seed)
 	d.audioPort = AudioPort{audio: &d.audio}

@@ -41,6 +41,16 @@ type seekBenchGame struct {
 	player     scene.EntityID
 }
 
+type statefulSeekBenchState struct {
+	player scene.EntityID
+}
+
+type statefulSeekBenchGame struct {
+	runtime.StateSlot[statefulSeekBenchState]
+	entities   int
+	historyLen int
+}
+
 func (g *seekBenchGame) Setup() runtime.Config {
 	return runtime.Config{
 		Bounds: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1000, Y: 1000}),
@@ -91,6 +101,54 @@ func (g *seekBenchGame) Update(ctx *runtime.UpdateContext, dt float64) {
 
 func (g *seekBenchGame) Render(ctx *runtime.RenderContext) []render.Command { return nil }
 
+func (g *statefulSeekBenchGame) Setup() runtime.Config {
+	return runtime.Config{
+		Bounds: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1000, Y: 1000}),
+		InputBindings: []input.Binding{{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Action: input.ActionMoveX,
+			Scale:  1,
+		}},
+		HistoryLen: g.historyLen,
+	}
+}
+
+func (g *statefulSeekBenchGame) Init(ctx *runtime.UpdateContext) {
+	cols := seekBenchCeilSqrt(g.entities)
+	spacing := 1000.0 / float64(cols)
+
+	for i := 0; i < g.entities; i++ {
+		entity := ctx.World.Spawn()
+		ctx.World.SetTransform(entity, scene.Transform{
+			Position: math2d.Vec2{
+				X: float64(i%cols)*spacing + spacing*0.5,
+				Y: float64(i/cols)*spacing + spacing*0.5,
+			},
+			Scale: math2d.Vec2{X: 1, Y: 1},
+		})
+		ctx.World.SetCircleCollider(entity, scene.CircleCollider{Radius: 1})
+		ctx.World.SetBody(entity, scene.Body{InvMass: 1, Restitution: 1})
+		ctx.World.SetVelocity(entity, scene.Velocity{
+			Linear: math2d.Vec2{
+				X: float64(i%7-3) * 25,
+				Y: float64(i%5-2) * 25,
+			},
+		})
+
+		if i == 0 {
+			g.State.player = entity
+		}
+	}
+}
+
+func (g *statefulSeekBenchGame) Update(ctx *runtime.UpdateContext, dt float64) {
+	ctx.World.SetVelocity(g.State.player, scene.Velocity{
+		Linear: math2d.Vec2{X: ctx.Input.Value(input.ActionMoveX) * 120},
+	})
+}
+
+func (g *statefulSeekBenchGame) Render(ctx *runtime.RenderContext) []render.Command { return nil }
+
 func BenchmarkDriverStep(b *testing.B) {
 	for _, size := range seekBenchSizes {
 		for _, history := range []int{0, seekBenchHistory} {
@@ -135,6 +193,13 @@ func BenchmarkDriverBack(b *testing.B) {
 }
 
 func BenchmarkDriverScrubToTick(b *testing.B) {
+	benchmarkDriverScrubToTick(b, newSeekDriver)
+	b.Run("stateful=true", func(b *testing.B) {
+		benchmarkDriverScrubToTick(b, newStatefulSeekDriver)
+	})
+}
+
+func benchmarkDriverScrubToTick(b *testing.B, newDriver func(entities, historyLen int) *runtime.Driver) {
 	for _, size := range seekBenchSizes {
 		for _, timeline := range seekBenchTimelines {
 			targets := []struct {
@@ -151,7 +216,7 @@ func BenchmarkDriverScrubToTick(b *testing.B) {
 			for _, target := range targets {
 				name := fmt.Sprintf("entities=%d/timeline=%d/%s", size, timeline, target.name)
 				b.Run(name, func(b *testing.B) {
-					driver := newSeekDriver(size, seekBenchHistory)
+					driver := newDriver(size, seekBenchHistory)
 					primeTicks(driver, timeline)
 
 					b.ReportAllocs()
@@ -159,6 +224,8 @@ func BenchmarkDriverScrubToTick(b *testing.B) {
 
 					// ScrubToTick is non-destructive (the scrub log always
 					// covers [0, maxTick]), so the same jump repeats safely.
+					// A repeated target is a no-op after the first iteration;
+					// report scrub costs with -benchtime=1x.
 					for range b.N {
 						driver.Control(runtime.ControlCommand{
 							Kind: runtime.ControlScrubToTick,
@@ -216,6 +283,11 @@ func BenchmarkReplay(b *testing.B) {
 
 func newSeekDriver(entities, historyLen int) *runtime.Driver {
 	game := &seekBenchGame{entities: entities, historyLen: historyLen}
+	return runtime.NewDriver(game, seekBenchLogger())
+}
+
+func newStatefulSeekDriver(entities, historyLen int) *runtime.Driver {
+	game := &statefulSeekBenchGame{entities: entities, historyLen: historyLen}
 	return runtime.NewDriver(game, seekBenchLogger())
 }
 

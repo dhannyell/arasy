@@ -19,8 +19,15 @@ type Config struct {
 	FPS           int
 	InputBindings []input.Binding
 
-	// Max ticks recorded.
+	// HistoryLen caps the dense keyframe window in ticks. Restoring a keyframe
+	// also requires the game to implement StatefulGame, usually by embedding a
+	// StateSlot.
 	HistoryLen int
+	// KeyframeArchiveBudget caps thinned keyframes retained outside the dense
+	// HistoryLen window. Zero uses the default (4x the dense window, minimum
+	// 16). A negative value disables the archive, so seeks before the dense
+	// window replay from tick 0.
+	KeyframeArchiveBudget int
 	// Assets is the resolved asset manifest. Games load it with asset.Load
 	// (typically from an embed.FS) before constructing the game, and
 	// resolve handles via the Assets field on the contexts.
