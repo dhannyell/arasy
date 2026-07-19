@@ -2,6 +2,25 @@ goos: windows
 goarch: amd64
 pkg: github.com/dhannyell/frameforge/platform/raster
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
-BenchmarkRendererRender-16    	    2443	    433518 ns/op	 3704774 B/op	    1008 allocs/op
+BenchmarkRendererRender-16        	    4119	    535761 ns/op	 3704791 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5172	    484792 ns/op	 3704789 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5164	    571400 ns/op	 3704790 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    4867	    533511 ns/op	 3704788 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    4141	    595465 ns/op	 3704789 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5300	    524463 ns/op	 3704788 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    4252	    500801 ns/op	 3704789 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5180	    502665 ns/op	 3704788 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5412	    501277 ns/op	 3704788 B/op	    1009 allocs/op
+BenchmarkRendererRender-16        	    5164	    550199 ns/op	 3704789 B/op	    1009 allocs/op
+BenchmarkRendererRenderInto-16    	    8193	    315735 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    8725	    316627 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    7399	    297613 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    7539	    310948 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    7706	    307984 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    7123	    309594 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    6944	    307788 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    8500	    309626 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    8373	    311256 ns/op	   18316 B/op	    1007 allocs/op
+BenchmarkRendererRenderInto-16    	    6808	    310067 ns/op	   18316 B/op	    1007 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/platform/raster	1.495s
+ok  	github.com/dhannyell/frameforge/platform/raster	51.204s
