@@ -45,8 +45,8 @@ func TestRecorderRetainsHistoryWindowByKeyframeCount(t *testing.T) {
 	if !ok || start != 4 || end != 8 {
 		t.Fatalf("range = %d-%d ok=%v, want 4-8 ok=true", start, end, ok)
 	}
-	if _, ok := rec.KeyframeAtOrBefore(3); ok {
-		t.Fatal("unexpected keyframe before retained window")
+	if snap, ok := rec.KeyframeAtOrBefore(3); !ok || snap.tick != 2 {
+		t.Fatalf("keyframe before dense window = tick %d ok=%v, want 2 true", snap.tick, ok)
 	}
 }
 
@@ -83,6 +83,112 @@ func TestRecorderIntervalOneKeepsDenseHistory(t *testing.T) {
 	if !ok || start != 2 || end != 5 {
 		t.Fatalf("range = %d-%d ok=%v, want 2-5 ok=true", start, end, ok)
 	}
+}
+
+func TestRecorderEvictionMovesOldestDenseKeyframeToArchive(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(4, 1, 16)
+	for tick := uint64(0); tick <= 4; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	if got, want := keyframeTicks(rec.keyframes), []uint64{1, 2, 3, 4}; !equalTicks(got, want) {
+		t.Fatalf("dense keyframes = %v, want %v", got, want)
+	}
+	if got, want := keyframeTicks(rec.archive), []uint64{0}; !equalTicks(got, want) {
+		t.Fatalf("archive keyframes = %v, want %v", got, want)
+	}
+}
+
+func TestRecorderThinsOlderArchiveHalfAtBudget(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(1, 1, 4)
+	for tick := uint64(0); tick <= 5; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	if got, want := keyframeTicks(rec.archive), []uint64{0, 2, 3, 4}; !equalTicks(got, want) {
+		t.Fatalf("thinned archive = %v, want %v", got, want)
+	}
+}
+
+func TestRecorderFindsArchivedKeyframes(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(2, 1, 16)
+	for tick := uint64(2); tick <= 5; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	if snap, ok := rec.KeyframeAtOrBefore(3); !ok || snap.tick != 3 {
+		t.Fatalf("archived keyframe before 3 = tick %d ok=%v, want 3 true", snap.tick, ok)
+	}
+	if snap, ok := rec.KeyframeAt(2); !ok || snap.tick != 2 {
+		t.Fatalf("archived exact keyframe = tick %d ok=%v, want 2 true", snap.tick, ok)
+	}
+	if _, ok := rec.KeyframeAtOrBefore(1); ok {
+		t.Fatal("unexpected keyframe before archive start")
+	}
+}
+
+func TestRecorderDropAfterTruncatesArchive(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(2, 1, 16)
+	for tick := uint64(0); tick <= 5; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	rec.DropAfter(2)
+	if got, want := keyframeTicks(rec.archive), []uint64{0, 1, 2}; !equalTicks(got, want) {
+		t.Fatalf("archive after drop = %v, want %v", got, want)
+	}
+	if got := len(rec.keyframes); got != 0 {
+		t.Fatalf("dense keyframes after archive drop = %d, want 0", got)
+	}
+}
+
+func TestRecorderNegativeArchiveBudgetDisablesArchive(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(2, 1, -1)
+	for tick := uint64(0); tick <= 5; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	if got := len(rec.archive); got != 0 {
+		t.Fatalf("archive length = %d, want 0", got)
+	}
+	if _, ok := rec.KeyframeAtOrBefore(3); ok {
+		t.Fatal("unexpected keyframe before dense window with archive disabled")
+	}
+}
+
+func TestRecorderClearClearsDenseAndArchivedKeyframes(t *testing.T) {
+	rec := newRecorderWithArchiveBudget(2, 1, 16)
+	for tick := uint64(0); tick <= 5; tick++ {
+		rec.Capture(testSnapshot(tick))
+	}
+
+	rec.Clear()
+	if got := len(rec.keyframes); got != 0 {
+		t.Fatalf("dense keyframe length after clear = %d, want 0", got)
+	}
+	if got := len(rec.archive); got != 0 {
+		t.Fatalf("archive keyframe length after clear = %d, want 0", got)
+	}
+}
+
+func keyframeTicks(keyframes []driverSnapshot) []uint64 {
+	ticks := make([]uint64, len(keyframes))
+	for i, keyframe := range keyframes {
+		ticks[i] = keyframe.tick
+	}
+	return ticks
+}
+
+func equalTicks(got, want []uint64) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func testSnapshot(tick uint64) driverSnapshot {

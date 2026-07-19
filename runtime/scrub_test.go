@@ -5,7 +5,40 @@ import (
 	"testing"
 
 	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/frameforge/scene"
 )
+
+type deepScrubState struct {
+	Player  scene.EntityID
+	Updates uint64
+}
+
+type deepScrubGame struct {
+	StateSlot[deepScrubState]
+	initCalls int
+}
+
+func (g *deepScrubGame) Setup() Config {
+	return Config{HistoryLen: 8, KeyframeInterval: 2}
+}
+
+func (g *deepScrubGame) Init(ctx *UpdateContext) {
+	g.initCalls++
+	g.State.Player = ctx.World.Spawn()
+	ctx.World.SetTransform(g.State.Player, scene.Transform{Scale: math2d.Vec2{X: 1, Y: 1}})
+}
+
+func (g *deepScrubGame) Update(ctx *UpdateContext, dt float64) {
+	g.State.Updates++
+	ctx.World.SetTransform(g.State.Player, scene.Transform{
+		Position: math2d.Vec2{X: float64(g.State.Updates)},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+}
+
+func (g *deepScrubGame) Render(ctx *RenderContext) []render.Command { return nil }
 
 func TestScrubToTickIsBidirectional(t *testing.T) {
 	game := &inputBackGame{}
@@ -255,5 +288,95 @@ func TestResumeAfterScrubShrinksMaxTickOnPartialResume(t *testing.T) {
 	driver.AdvanceTime(0)
 	if driver.State().Tick != 15 {
 		t.Fatalf("scrub to stale tick 30 should be a no-op, but tick = %d", driver.State().Tick)
+	}
+}
+
+func TestDeepScrubBeforeDenseWindowMatchesLiveChecksum(t *testing.T) {
+	game := &deepScrubGame{}
+	driver := NewDriver(game, slog.Default())
+
+	const (
+		runTicks = 40
+		target   = 6
+	)
+	checksums := make([]uint64, runTicks+1)
+	checksums[0] = driver.Checksum()
+	for tick := 0; tick < runTicks; tick++ {
+		driver.Step()
+		checksums[tick+1] = driver.Checksum()
+	}
+
+	start, _, ok := driver.recorder.Range()
+	if !ok || start <= target {
+		t.Fatalf("dense recorder range starts at %d ok=%v, want start after deep target %d", start, ok, target)
+	}
+
+	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
+	driver.AdvanceTime(0)
+
+	if got := driver.State().Tick; got != target {
+		t.Fatalf("tick after deep scrub = %d, want %d", got, target)
+	}
+	if got, want := driver.Checksum(), checksums[target]; got != want {
+		t.Fatalf("checksum after deep scrub = %d, want live checksum %d", got, want)
+	}
+}
+
+func TestDeepScrubUsesArchivedKeyframeWithoutReset(t *testing.T) {
+	game := &deepScrubGame{}
+	driver := NewDriver(game, slog.Default())
+
+	const target = 6
+	for range 40 {
+		driver.Step()
+	}
+	start, _, ok := driver.recorder.Range()
+	if !ok || start <= target {
+		t.Fatalf("dense recorder range starts at %d ok=%v, want start after deep target %d", start, ok, target)
+	}
+	if snap, ok := driver.recorder.KeyframeAtOrBefore(target); !ok || snap.tick != target {
+		t.Fatalf("archived keyframe at or before %d = tick %d ok=%v, want %d true", target, snap.tick, ok, target)
+	}
+
+	initCalls := game.initCalls
+	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
+	driver.AdvanceTime(0)
+
+	if game.initCalls != initCalls {
+		t.Fatalf("deep scrub reset the game: Init calls = %d, want %d", game.initCalls, initCalls)
+	}
+}
+
+func TestForkAfterDeepScrubTruncatesKeyframesAndTimeline(t *testing.T) {
+	game := &deepScrubGame{}
+	driver := NewDriver(game, slog.Default())
+
+	const target = 6
+	for range 40 {
+		driver.ApplyInput([]input.Event{{
+			Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyD},
+			Kind:   input.EventButtonDown,
+		}})
+		driver.Step()
+	}
+
+	driver.Control(ControlCommand{Kind: ControlScrubToTick, Tick: target})
+	driver.AdvanceTime(0)
+	driver.ApplyInput([]input.Event{{
+		Source: input.Source{Device: input.DeviceKeyboard, Code: input.KeyA},
+		Kind:   input.EventButtonDown,
+	}})
+	driver.Step() // Forks at target before advancing to target+1.
+
+	if got, want := driver.State().MaxRecordedTick, uint64(target+1); got != want {
+		t.Fatalf("MaxRecordedTick after deep fork = %d, want %d", got, want)
+	}
+	if snap, ok := driver.recorder.KeyframeAtOrBefore(40); !ok || snap.tick != target {
+		t.Fatalf("latest keyframe after deep fork = tick %d ok=%v, want tick %d", snap.tick, ok, target)
+	}
+	for _, event := range driver.timeline.events {
+		if event.Tick > target {
+			t.Fatalf("timeline retained future event at tick %d after fork at %d", event.Tick, target)
+		}
 	}
 }
