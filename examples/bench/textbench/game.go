@@ -1,9 +1,8 @@
 // Package textbench is a browser performance benchmark for the WebGPU text
-// render path: per-frame atlas resolution (resolveFrameAtlases grouping text
-// by (FontID, pixel size) before tessellation), DrawText tessellation into
-// vertex streams, and the textured glyph-atlas draw runs that follow it. It
-// keeps its own label state instead of the ECS so results reflect only the
-// text path.
+// render path: per-frame atlas resolution, one-pass proportional layout into
+// compact glyph records, shared label records, and the glyph-atlas draw runs
+// that consume them. It keeps its own label state instead of the ECS so
+// results reflect only the streaming text path.
 package textbench
 
 import (
@@ -67,9 +66,8 @@ type frameStats struct {
 //   - font size mode: a single shared size (one atlas) versus four distinct
 //     sizes cycled by label index (four atlases resolved every frame);
 //   - text mode: the same label text repeated for every entry versus a
-//     unique string per label, which is the worst case for per-frame atlas
-//     request batching because no two labels can share a cached glyph run
-//     across a naive per-string cache.
+//     unique string per label, which is the worst case for per-frame layout
+//     because every glyph advance must be visited independently.
 type Game struct {
 	assets asset.Manifest
 	font   render.FontID

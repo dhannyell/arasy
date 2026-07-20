@@ -5,9 +5,11 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // benchWorldSize and benchViewport describe a browser-scale frame: a world
@@ -21,6 +23,44 @@ func benchCamera() render.Camera {
 		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1920, Y: 1080}),
 		Aspect:   render.AspectExpand,
 	}
+}
+
+type benchmarkTypefaceProvider struct {
+	face    *typeface.Face
+	builtin *Atlas
+	atlases map[AtlasKey]*Atlas
+}
+
+func newBenchmarkTypefaceProvider(b *testing.B) *benchmarkTypefaceProvider {
+	b.Helper()
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		b.Fatal(err)
+	}
+	return &benchmarkTypefaceProvider{face: face, builtin: NewAtlas(), atlases: make(map[AtlasKey]*Atlas)}
+}
+
+func (p *benchmarkTypefaceProvider) AtlasFor(fontID render.FontID, px int, text string) (*Atlas, error) {
+	if fontID == 0 {
+		return p.builtin, nil
+	}
+	key := AtlasKey{Font: fontID, PX: px}
+	if atlas := p.atlases[key]; atlas != nil {
+		return atlas, nil
+	}
+	atlas, err := NewAtlasForFace(fontID, px, p.face, []rune(text))
+	if err == nil {
+		p.atlases[key] = atlas
+	}
+	return atlas, err
+}
+
+func (p *benchmarkTypefaceProvider) CachedAtlas(fontID render.FontID, px int) (*Atlas, bool) {
+	if fontID == 0 {
+		return p.builtin, true
+	}
+	atlas, ok := p.atlases[AtlasKey{Font: fontID, PX: px}]
+	return atlas, ok
 }
 
 // benchGridPosition places index i on a square grid spanning benchWorldSize,
@@ -135,20 +175,16 @@ func makeTextCommands(n int) []render.Command {
 }
 
 // makeClipCommands is makeImageCommands with a non-empty Clip on every
-// command, sized to cover most of the destination sprite so geometry
-// survives clipping. A non-zero Clip forces Builder into the collect path
-// (Mesh.collect true via solidBegin/texBegin), so this measures
-// clipTriangles/clipTexTriangles overhead against the same load as "images",
-// which stays on the direct-to-bytes fast path.
+// command, sized to cover most of the destination sprite so the fragment
+// clip test has a non-empty region to evaluate.
 func makeClipCommands(n int) []render.Command {
 	commands := make([]render.Command, 0, n)
 	for i := range n {
 		pos := benchGridPosition(i, n)
 		dest := math2d.NewRect(pos, math2d.Vec2{X: 16, Y: 16})
 		commands = append(commands, render.DrawImage{
-			// Clip covers all but a 1px border of Dest: geometry is not fully
-			// discarded, but every triangle still crosses the clip boundary
-			// checks in clipTexTriangles.
+			// Clip covers all but a 1px border of Dest so the command exercises
+			// per-sprite screen-space clip packing.
 			BaseCommand: render.BaseCommand{
 				Clip: math2d.NewRect(
 					math2d.Vec2{X: dest.Min.X + 1, Y: dest.Min.Y + 1},
@@ -272,14 +308,14 @@ func makeRotatedImageCommands(n int) []render.Command {
 }
 
 // BenchmarkTessBuild measures reusable direct-byte tessellation under
-// sprite-heavy loads: pure textured images (one contiguous run), circle-only
+// sprite-heavy loads: instanced sprite records (one contiguous run), circle-only
 // tessellation (fan cost per radius), and mixed commands that force a run
 // split on every image.
 func BenchmarkTessBuild(b *testing.B) {
 	cam := benchCamera()
 	sizes := benchImageTexSizes()
 
-	b.Run("images", func(b *testing.B) {
+	b.Run("sprites", func(b *testing.B) {
 		for _, n := range []int{1000, 5000, 20000, 50000} {
 			commands := makeImageCommands(n)
 			frame := runtime.Frame{Camera: cam, Commands: commands}
@@ -346,12 +382,38 @@ func BenchmarkTessBuildText(b *testing.B) {
 	}
 }
 
-// BenchmarkTessBuildClip measures the collect-then-clip path forced whenever
-// a command carries a non-empty Clip rect: Builder.solidBegin/texBegin
-// switch Mesh/TexMesh into collect mode, and VisitImage's caller clips the
-// collected triangles (clipTexTriangles) before flushing to the byte stream.
-// Same load as "images", clip covers all but a thin border so geometry
-// survives, isolating clip overhead from the direct-to-bytes fast path.
+// BenchmarkTessBuildExternalText measures the steady-state browser path:
+// proportional TTF metrics, cached atlases, bounded label-layout reuse, and
+// one compact storage record per glyph. The warm-up build deliberately stays
+// outside the timer because atlas rasterization is a one-time resource cost.
+func BenchmarkTessBuildExternalText(b *testing.B) {
+	cam := benchCamera()
+	sizes := benchImageTexSizes()
+	provider := newBenchmarkTypefaceProvider(b)
+
+	for _, n := range []int{4000, 20000} {
+		commands := makeTextCommands(n)
+		for i, command := range commands {
+			cmd := command.(render.DrawText)
+			cmd.Font = 1
+			commands[i] = cmd
+		}
+		frame := runtime.Frame{Camera: cam, Commands: commands}
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			var builder Builder
+			_ = builder.Build(frame, 1920, 1080, provider, sizes)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = builder.Build(frame, 1920, 1080, provider, sizes)
+			}
+		})
+	}
+}
+
+// BenchmarkTessBuildClip measures sprite record generation with a non-empty
+// clip on every command. DrawImage stores the screen-space clip in each
+// record, so this stays on the direct record path.
 func BenchmarkTessBuildClip(b *testing.B) {
 	cam := benchCamera()
 	sizes := benchImageTexSizes()
@@ -393,11 +455,10 @@ func BenchmarkTessBuildUnsortedLayers(b *testing.B) {
 	}
 }
 
-// BenchmarkTessBuildTextureChurn measures the "images" load with 8 distinct
-// TextureIDs cycling instead of one, so streamSink.run's texture-change
-// check in the DrawRunTextured branch fails on every command and a new
-// StreamRun is appended each time. This isolates run-splitting overhead from
-// the single contiguous run built by "images".
+// BenchmarkTessBuildTextureChurn measures the sprite load with 8 distinct
+// TextureIDs cycling instead of one, so a new StreamRun is appended for every
+// command. This isolates run-splitting overhead from the single contiguous
+// sprite run.
 func BenchmarkTessBuildTextureChurn(b *testing.B) {
 	cam := benchCamera()
 	sizes := benchChurnTexSizes()
@@ -415,10 +476,10 @@ func BenchmarkTessBuildTextureChurn(b *testing.B) {
 	}
 }
 
-// BenchmarkTessBuildImageQuadAndRotation covers two paths that "images"
-// never exercises: DrawImageQuad's homography projection
-// (imageQuadProjection/AppendImageQuad) and DrawImage with non-zero
-// Rotation (destCorners' rotate-around-center branch).
+// BenchmarkTessBuildImageQuadAndRotation covers two paths that the sprite
+// benchmark never exercises: DrawImageQuad's homography projection
+// (imageQuadProjection/AppendImageQuad) and DrawImage with non-zero Rotation
+// (the sprite record's angle-packing branch).
 func BenchmarkTessBuildImageQuadAndRotation(b *testing.B) {
 	cam := benchCamera()
 	sizes := benchImageTexSizes()

@@ -1,8 +1,8 @@
 // Package spritebench is a browser performance benchmark for the WebGPU
-// sprite render path: tess.Build tessellating render.DrawImage commands into
-// vertex streams, and the per-frame byte conversion and JS-heap upload that
-// follow it. It keeps its own sprite state instead of the ECS so results
-// reflect only the tess/upload path, not scene.World bookkeeping.
+// sprite render path: tess.Build packing render.DrawImage commands into
+// storage records, followed by the per-frame JS-heap upload and instanced
+// draw. It keeps its own sprite state instead of the ECS so results reflect
+// only the tess/upload path, not scene.World bookkeeping.
 package spritebench
 
 import (
