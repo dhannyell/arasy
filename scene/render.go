@@ -9,7 +9,7 @@ import (
 )
 
 func (w *World) RenderCommands() []render.Command {
-	return w.RenderCommandsInterpolated(0)
+	return w.RenderCommandsInto(nil, 0)
 }
 
 // RenderCommandsInterpolated returns render commands with transforms
@@ -21,15 +21,29 @@ func (w *World) RenderCommands() []render.Command {
 // Interpolation is a presentation cache: it never enters Checksum or recorded
 // replays, though World.Clone preserves it so restored frames avoid smear.
 func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
+	return w.RenderCommandsInto(nil, alpha)
+}
+
+// RenderCommandsInto appends this world's render commands to dst and returns
+// the extended slice, letting callers reuse their command buffer across
+// frames. Commands remain ordered by entity ID.
+func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render.Command {
 	totalSprites := w.circleSprites.len() + w.rectSprites.len() + w.imageSprites.len()
-	ids := make([]EntityID, 0, totalSprites)
+	ids := w.renderIDScratch[:0]
+	if cap(ids) < totalSprites {
+		ids = make([]EntityID, 0, totalSprites)
+	}
 
 	ids = append(ids, w.circleSprites.ids...)
 	ids = append(ids, w.rectSprites.ids...)
 	ids = append(ids, w.imageSprites.ids...)
 	slices.Sort(ids)
+	w.renderIDScratch = ids
 
-	commands := make([]render.Command, 0, totalSprites)
+	commands := dst
+	if commands == nil {
+		commands = make([]render.Command, 0, totalSprites)
+	}
 	// Clamp/sanitize alpha: NaN, negative, zero -> no interpolation.
 	useAlpha := alpha
 	if useAlpha <= 0 || useAlpha != useAlpha {
@@ -108,7 +122,7 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 // has a valid previous pose for interpolation. Call after reset, teleport,
 // or restore to prevent visual smear.
 func (w *World) SyncRenderState() {
-	w.renderTransforms = w.transforms.clone()
+	w.renderTransforms.copyFrom(&w.transforms)
 }
 
 func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {

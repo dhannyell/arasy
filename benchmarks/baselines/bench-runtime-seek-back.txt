@@ -2,7 +2,25 @@ goos: windows
 goarch: amd64
 pkg: github.com/dhannyell/frameforge/runtime
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
-BenchmarkDriverBack/entities=100-16         	     500	  30721554 ns/op	14835465 B/op	  143796 allocs/op
-BenchmarkDriverBack/entities=1000-16        	     500	 486709168 ns/op	147824282 B/op	  539665 allocs/op
+BenchmarkDriverBack/entities=100-16         	      84	  26349901 ns/op	 3781231 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	      97	  25401554 ns/op	 3781196 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	     100	  24296635 ns/op	 3781096 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	     100	  24886199 ns/op	 3781308 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	      92	  24265089 ns/op	 3781134 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	     100	  24624321 ns/op	 3781273 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	      96	  24370669 ns/op	 3781245 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	     100	  24745060 ns/op	 3781175 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	      98	  24425158 ns/op	 3781282 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=100-16         	     100	  24537209 ns/op	 3781139 B/op	   23298 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 308740271 ns/op	25759553 B/op	   30611 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 310631586 ns/op	25757514 B/op	   30608 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 304174457 ns/op	25755000 B/op	   30604 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 303855886 ns/op	25756104 B/op	   30606 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 308019314 ns/op	25761099 B/op	   30614 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 307449443 ns/op	25757424 B/op	   30607 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 309981557 ns/op	25756771 B/op	   30608 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 307950514 ns/op	25756396 B/op	   30607 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 303793300 ns/op	25756401 B/op	   30606 allocs/op
+BenchmarkDriverBack/entities=1000-16        	       7	 306360186 ns/op	25756629 B/op	   30607 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/runtime	262.202s
+ok  	github.com/dhannyell/frameforge/runtime	58.544s

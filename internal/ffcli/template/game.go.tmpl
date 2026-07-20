@@ -47,7 +47,7 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {}
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	return ctx.World.RenderCommandsInterpolated(ctx.Alpha)
+	return ctx.World.RenderCommandsInto(nil, ctx.Alpha)
 }
 
 func loadManifest() (asset.Manifest, error) {

@@ -23,6 +23,17 @@ type spatialHashGrid struct {
 	cells    map[gridCell][]EntityID
 }
 
+// collisionScratch holds broad-phase buffers reused across collision passes.
+// It is transient working memory: never cloned or checksummed. The grid map
+// retains visited cells while its cell size stays fixed, trading bounded
+// allocation churn for memory proportional to explored world area.
+type collisionScratch struct {
+	grid  spatialHashGrid
+	pairs []entityPair
+	cells []gridCell
+	debug []DebugGridCell
+}
+
 type Contact struct {
 	A EntityID
 	B EntityID
@@ -41,13 +52,22 @@ type collisionStats struct {
 }
 
 func newSpatialHashGrid(cellSize float64) spatialHashGrid {
+	var grid spatialHashGrid
+	grid.reset(cellSize)
+	return grid
+}
+
+func (g *spatialHashGrid) reset(cellSize float64) {
 	if cellSize <= 0 {
 		cellSize = defaultCellSize
 	}
-
-	return spatialHashGrid{
-		cellSize: cellSize,
-		cells:    make(map[gridCell][]EntityID),
+	if g.cells == nil || g.cellSize != cellSize {
+		g.cellSize = cellSize
+		g.cells = make(map[gridCell][]EntityID)
+		return
+	}
+	for cell, entities := range g.cells {
+		g.cells[cell] = entities[:0]
 	}
 }
 
@@ -163,19 +183,12 @@ func (w *World) detectCircleOverlapsGrid(cellSize float64) []Contact {
 		return w.detectCircleOverlaps()
 	}
 
-	grid := newSpatialHashGrid(cellSize)
-	grid.populate(w)
-	w.debugGridCells = grid.debugCells()
-
-	return w.detectOverlapsForPairs(grid.entityPairs())
+	pairs := w.gridPairs(cellSize)
+	return w.detectOverlapsForPairs(pairs)
 }
 
 func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
-	grid := newSpatialHashGrid(cellSize)
-	grid.populate(w)
-
-	w.debugGridCells = grid.debugCells()
-	pairs := grid.entityPairs()
+	pairs := w.gridPairs(cellSize)
 
 	return collisionStats{
 		contacts:        w.detectOverlapsForPairs(pairs),
@@ -185,7 +198,7 @@ func (w *World) detectCircleOverlapsGridStats(cellSize float64) collisionStats {
 }
 
 func (w *World) detectOverlapsForPairs(pairs []entityPair) []Contact {
-	contacts := make([]Contact, 0)
+	contacts := w.contacts[:0]
 
 	for _, pair := range pairs {
 		if contact, ok := w.detectOverlapPair(pair); ok {
@@ -194,6 +207,17 @@ func (w *World) detectOverlapsForPairs(pairs []entityPair) []Contact {
 	}
 
 	return contacts
+}
+
+func (w *World) gridPairs(cellSize float64) []entityPair {
+	scratch := &w.collisionScratch
+	scratch.grid.reset(cellSize)
+	scratch.grid.populate(w)
+	scratch.cells = scratch.grid.sortedCellsInto(scratch.cells)
+	scratch.debug = scratch.grid.debugCellsInto(scratch.cells, scratch.debug)
+	w.debugGridCells = scratch.debug
+	scratch.pairs = scratch.grid.entityPairsInto(scratch.cells, scratch.pairs)
+	return scratch.pairs
 }
 
 func (w *World) detectOverlapPair(pair entityPair) (Contact, bool) {
@@ -544,56 +568,35 @@ func (g *spatialHashGrid) populate(w *World) {
 }
 
 func (g *spatialHashGrid) entityPairs() []entityPair {
-	pairSet := make(map[entityPair]struct{})
-	cells := g.sortedCells()
+	return g.entityPairsInto(g.sortedCellsInto(nil), nil)
+}
 
+func (g *spatialHashGrid) entityPairsInto(cells []gridCell, dst []entityPair) []entityPair {
+	pairs := dst[:0]
 	for _, cell := range cells {
-		entities := append([]EntityID(nil), g.cells[cell]...)
-		slices.Sort(entities)
-
+		entities := g.cells[cell]
 		for i := range entities {
 			for j := i + 1; j < len(entities); j++ {
-				if entities[i] == entities[j] {
-					// never pair an entity with itself (e.g. if it was ever
-					// inserted under the same cell twice)
-					continue
+				if entities[i] != entities[j] {
+					pairs = append(pairs, makeEntityPair(entities[i], entities[j]))
 				}
-				pairSet[makeEntityPair(entities[i], entities[j])] = struct{}{}
 			}
 		}
 	}
 
-	pairs := make([]entityPair, 0, len(pairSet))
-	for pair := range pairSet {
-		pairs = append(pairs, pair)
-	}
-
-	slices.SortFunc(pairs, func(a, b entityPair) int {
-		if a.A < b.A {
-			return -1
-		}
-
-		if a.A > b.A {
-			return 1
-		}
-
-		if a.B < b.B {
-			return -1
-		}
-
-		if a.B > b.B {
-			return 1
-		}
-
-		return 0
-	})
-
-	return pairs
+	slices.SortFunc(pairs, compareEntityPair)
+	return slices.Compact(pairs)
 }
 
-func (g *spatialHashGrid) debugCells() []DebugGridCell {
-	cells := g.sortedCells()
-	debugCells := make([]DebugGridCell, 0, len(cells))
+func compareEntityPair(a, b entityPair) int {
+	if c := cmp.Compare(a.A, b.A); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.B, b.B)
+}
+
+func (g *spatialHashGrid) debugCellsInto(cells []gridCell, dst []DebugGridCell) []DebugGridCell {
+	debugCells := dst[:0]
 
 	for _, cell := range cells {
 		debugCells = append(debugCells, DebugGridCell{
@@ -608,7 +611,11 @@ func (g *spatialHashGrid) debugCells() []DebugGridCell {
 }
 
 func (g *spatialHashGrid) sortedCells() []gridCell {
-	cells := make([]gridCell, 0, len(g.cells))
+	return g.sortedCellsInto(nil)
+}
+
+func (g *spatialHashGrid) sortedCellsInto(dst []gridCell) []gridCell {
+	cells := dst[:0]
 	for cell, entities := range g.cells {
 		if len(entities) > 0 {
 			cells = append(cells, cell)
@@ -638,11 +645,11 @@ func cellCoord(value, cellSize float64) int {
 }
 
 func (w *World) circleColliderEntities() []EntityID {
-	return slices.Clone(w.circleColliders.ids)
+	return w.circleColliders.ids
 }
 
 func (w *World) rectColliderEntities() []EntityID {
-	return slices.Clone(w.rectColliders.ids)
+	return w.rectColliders.ids
 }
 
 func (w *World) bodyOrDefault(id EntityID) Body {

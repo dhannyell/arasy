@@ -226,7 +226,7 @@ func (f *Football) Render(ctx *runtime.RenderContext) []render.Command {
 	ctx.SetCamera(cam)
 
 	cmds := BuildFieldCommands()
-	cmds = append(cmds, ctx.World.RenderCommands()...)
+	cmds = ctx.World.RenderCommandsInto(cmds, ctx.Alpha)
 
 	score, reset := hudLayout()
 

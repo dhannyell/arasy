@@ -18,20 +18,21 @@ type World struct {
 
 	stepTick uint64
 
-	transforms      store[Transform]
-	transformTweens store[TransformTween]
-	circleSprites   store[CircleSprite]
-	circleTweens    store[CircleSpriteTween]
-	rectSprites     store[RectSprite]
-	imageSprites    store[ImageSprite]
-	velocities      store[Velocity]
-	accelerations   store[Acceleration]
-	dampings        store[Damping]
-	bodies          store[Body]
-	circleColliders store[CircleCollider]
-	rectColliders   store[RectCollider]
-	debugGridCells  []DebugGridCell
-	contacts        []Contact
+	transforms       store[Transform]
+	transformTweens  store[TransformTween]
+	circleSprites    store[CircleSprite]
+	circleTweens     store[CircleSpriteTween]
+	rectSprites      store[RectSprite]
+	imageSprites     store[ImageSprite]
+	velocities       store[Velocity]
+	accelerations    store[Acceleration]
+	dampings         store[Damping]
+	bodies           store[Body]
+	circleColliders  store[CircleCollider]
+	rectColliders    store[RectCollider]
+	debugGridCells   []DebugGridCell
+	contacts         []Contact
+	collisionScratch collisionScratch
 
 	entityCountCache int
 	entityCountDirty bool
@@ -41,6 +42,10 @@ type World struct {
 	// between fixed simulation ticks. It is a presentation cache only and
 	// is NOT included in Checksum.
 	renderTransforms store[Transform]
+
+	// renderIDScratch is reusable render working memory. It is transient:
+	// never cloned or checksummed.
+	renderIDScratch []EntityID
 }
 
 func NewWorld() *World {
@@ -76,6 +81,8 @@ func (w *World) Clone() *World {
 		entityCountDirty: w.entityCountDirty,
 		renderTransforms: w.renderTransforms.clone(),
 		// contacts are transient per-tick — not cloned
+		// collisionScratch is transient broad-phase working memory — not cloned
+		// renderIDScratch is transient render working memory — not cloned
 	}
 }
 
