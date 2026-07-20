@@ -5,7 +5,7 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/spritebench"
+	"github.com/dhannyell/frameforge/examples/bench/spritebench"
 	"github.com/dhannyell/frameforge/platform/wasm"
 )
 

@@ -5,7 +5,7 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/particlebench"
+	"github.com/dhannyell/frameforge/examples/bench/particlebench"
 	"github.com/dhannyell/frameforge/platform/wasm"
 )
 

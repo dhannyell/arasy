@@ -3,7 +3,7 @@
 Build and serve the standalone browser benchmark:
 
 ```powershell
-go run ./cmd/frameforge dev ./examples/spritebench/wasm -a 127.0.0.1:8092
+go run ./cmd/frameforge dev ./examples/bench/spritebench/wasm -a 127.0.0.1:8092
 ```
 
 It bounces its own slice of sprites (position, velocity, rotation) around a
