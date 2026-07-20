@@ -141,7 +141,7 @@ func pushTextQuad(
 	v2 := textVertex(screenToClip(c, cc), uv[2], uv[3], col)
 	v3 := textVertex(screenToClip(c, d), uv[0], uv[3], col)
 
-	m.Vertices = append(m.Vertices, v0, v1, v2, v0, v2, v3)
+	m.append(v0, v1, v2, v0, v2, v3)
 }
 
 func textVertex(pos [2]float32, u, v float32, col render.Color) TextVertex {

@@ -81,6 +81,34 @@ type TextVertex struct {
 // TextMesh accumulates triangles for one text atlas.
 type TextMesh struct {
 	Vertices []TextVertex
+	stream   *[]byte
+	collect  bool
+}
+
+func (m *TextMesh) reset(stream *[]byte, collect bool) {
+	m.Vertices = m.Vertices[:0]
+	m.stream = stream
+	m.collect = collect
+}
+
+func (m *TextMesh) append(vertices ...TextVertex) {
+	if m.stream != nil && !m.collect {
+		for _, v := range vertices {
+			*m.stream = appendTextVertex(*m.stream, v)
+		}
+		return
+	}
+	m.Vertices = append(m.Vertices, vertices...)
+}
+
+func (m *TextMesh) flush() {
+	if m.stream == nil {
+		return
+	}
+	for _, v := range m.Vertices {
+		*m.stream = appendTextVertex(*m.stream, v)
+	}
+	m.Vertices = m.Vertices[:0]
 }
 
 // NewAtlas rasterizes the built-in monospace bitmap font into a single alpha

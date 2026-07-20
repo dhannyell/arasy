@@ -43,6 +43,23 @@ type FrameMetrics struct {
 	GPUSimulateTime time.Duration
 	GPURenderTime   time.Duration
 	GPUTimingSet    bool
+	// CPUTickTime and CPURenderTime are the Go-side wall times of the frame
+	// that produced this report: the simulation tick (RunTick + audio
+	// consume) and the render traversal (RenderFrame: the game's command
+	// building plus the renderer). Their sum is the loop's share of
+	// FrameTime; the remainder is browser scheduling and presentation.
+	CPUTickTime   time.Duration
+	CPURenderTime time.Duration
+	CPUTimingSet  bool
+	// CPUTessTime, CPUUploadTime and CPUEncodeTime split the renderer's
+	// share of CPURenderTime: tessellation into vertex streams, vertex
+	// upload (JS heap copy + writeBuffer) and command encoding + submit.
+	// WebGPU only; the difference CPURenderTime - (sum of the three) is the
+	// game's command building and dispatch.
+	CPUTessTime     time.Duration
+	CPUUploadTime   time.Duration
+	CPUEncodeTime   time.Duration
+	CPUBreakdownSet bool
 }
 
 type frameMetricTracker struct {
@@ -99,6 +116,13 @@ func performanceNowMillis() float64 {
 	return js.Global().Get("performance").Call("now").Float()
 }
 
+func durationFromMillis(ms float64) time.Duration {
+	if ms < 0 {
+		return 0
+	}
+	return time.Duration(ms * float64(time.Millisecond))
+}
+
 func inputLatencySince(inputAtMillis float64) (time.Duration, bool) {
 	if inputAtMillis < 0 {
 		return 0, false
@@ -129,4 +153,8 @@ type gpuBufferReporter interface {
 
 type gpuTimingReporter interface {
 	particleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
+}
+
+type cpuTimingReporter interface {
+	renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool)
 }

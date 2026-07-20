@@ -18,6 +18,34 @@ type Vertex struct {
 // Mesh accumulates triangles for the solid-color pipeline.
 type Mesh struct {
 	Vertices []Vertex
+	stream   *[]byte
+	collect  bool
+}
+
+func (m *Mesh) reset(stream *[]byte, collect bool) {
+	m.Vertices = m.Vertices[:0]
+	m.stream = stream
+	m.collect = collect
+}
+
+func (m *Mesh) append(vertices ...Vertex) {
+	if m.stream != nil && !m.collect {
+		for _, v := range vertices {
+			*m.stream = appendSolidVertex(*m.stream, v)
+		}
+		return
+	}
+	m.Vertices = append(m.Vertices, vertices...)
+}
+
+func (m *Mesh) flush() {
+	if m.stream == nil {
+		return
+	}
+	for _, v := range m.Vertices {
+		*m.stream = appendSolidVertex(*m.stream, v)
+	}
+	m.Vertices = m.Vertices[:0]
 }
 
 type ctx struct {
@@ -37,7 +65,7 @@ func vertex(pos [2]float32, col render.Color) Vertex {
 }
 
 func pushTri(m *Mesh, a, b, c [2]float32, col render.Color) {
-	m.Vertices = append(m.Vertices,
+	m.append(
 		vertex(a, col),
 		vertex(b, col),
 		vertex(c, col),
