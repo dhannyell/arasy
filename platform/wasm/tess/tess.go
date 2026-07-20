@@ -18,6 +18,34 @@ type Vertex struct {
 // Mesh accumulates triangles for the solid-color pipeline.
 type Mesh struct {
 	Vertices []Vertex
+	stream   *[]byte
+	collect  bool
+}
+
+func (m *Mesh) reset(stream *[]byte, collect bool) {
+	m.Vertices = m.Vertices[:0]
+	m.stream = stream
+	m.collect = collect
+}
+
+func (m *Mesh) append(vertices ...Vertex) {
+	if m.stream != nil && !m.collect {
+		for _, v := range vertices {
+			*m.stream = appendSolidVertex(*m.stream, v)
+		}
+		return
+	}
+	m.Vertices = append(m.Vertices, vertices...)
+}
+
+func (m *Mesh) flush() {
+	if m.stream == nil {
+		return
+	}
+	for _, v := range m.Vertices {
+		*m.stream = appendSolidVertex(*m.stream, v)
+	}
+	m.Vertices = m.Vertices[:0]
 }
 
 type ctx struct {
@@ -37,7 +65,7 @@ func vertex(pos [2]float32, col render.Color) Vertex {
 }
 
 func pushTri(m *Mesh, a, b, c [2]float32, col render.Color) {
-	m.Vertices = append(m.Vertices,
+	m.append(
 		vertex(a, col),
 		vertex(b, col),
 		vertex(c, col),
@@ -170,6 +198,41 @@ func (s *buildSink) VisitText(cmd render.DrawText) {
 	AppendText(&s.run(DrawRunText, 0, atlas.Key).Text, s.ctx, cmd, atlas)
 }
 
+// frameAtlasRequest accumulates the unique runes one (font, px) key needs
+// this frame, in first-appearance order. Providers only need glyph coverage,
+// not the commands' full text (fontAtlasProvider.ensure dedupes into a rune
+// set and the builtin atlas ignores the text entirely), so deduplicating here
+// keeps atlas resolution linear in total characters instead of quadratic in
+// the number of commands sharing a key.
+type frameAtlasRequest struct {
+	key   AtlasKey
+	runes []rune
+	// ascii is the seen-set fast path for the common case; runes outside it
+	// fall back to the lazily allocated map.
+	ascii    [128]bool
+	nonASCII map[rune]struct{}
+}
+
+func (r *frameAtlasRequest) add(text string) {
+	for _, c := range text {
+		if c < 128 {
+			if r.ascii[c] {
+				continue
+			}
+			r.ascii[c] = true
+		} else {
+			if r.nonASCII == nil {
+				r.nonASCII = make(map[rune]struct{})
+			}
+			if _, exists := r.nonASCII[c]; exists {
+				continue
+			}
+			r.nonASCII[c] = struct{}{}
+		}
+		r.runes = append(r.runes, c)
+	}
+}
+
 // resolveFrameAtlases groups text by requested key before tessellation. This
 // matters for on-demand Unicode: every command using one (font, px) sees the
 // same atlas layout, even when the provider creates a fresh atlas per call.
@@ -177,12 +240,8 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 	if provider == nil {
 		return nil
 	}
-	type request struct {
-		key  AtlasKey
-		text string
-	}
-	requests := make([]request, 0)
-	indices := make(map[AtlasKey]int)
+	var requests []frameAtlasRequest
+	var indices map[AtlasKey]int
 	for _, command := range commands {
 		cmd, ok := command.(render.DrawText)
 		if !ok || cmd.Text == "" || cmd.Color.A <= 0 {
@@ -197,21 +256,30 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 			continue
 		}
 		key := AtlasKey{Font: cmd.Font, PX: px}
-		if i, exists := indices[key]; exists {
-			requests[i].text += cmd.Text
-			continue
+		if indices == nil {
+			indices = make(map[AtlasKey]int)
 		}
-		indices[key] = len(requests)
-		requests = append(requests, request{key: key, text: cmd.Text})
+		i, exists := indices[key]
+		if !exists {
+			i = len(requests)
+			indices[key] = i
+			requests = append(requests, frameAtlasRequest{key: key})
+		}
+		requests[i].add(cmd.Text)
+	}
+	if len(requests) == 0 {
+		return nil
 	}
 
 	resolved := make(map[AtlasKey]*Atlas, len(requests))
 	var builtin *Atlas
-	for _, request := range requests {
-		atlas, err := provider.AtlasFor(request.key.Font, request.key.PX, request.text)
+	for i := range requests {
+		request := &requests[i]
+		text := string(request.runes)
+		atlas, err := provider.AtlasFor(request.key.Font, request.key.PX, text)
 		if err != nil || atlas == nil {
 			if builtin == nil {
-				builtin, _ = provider.AtlasFor(0, glyphHeight, request.text)
+				builtin, _ = provider.AtlasFor(0, glyphHeight, text)
 				if builtin == nil {
 					builtin = NewAtlas()
 				}

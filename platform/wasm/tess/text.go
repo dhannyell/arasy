@@ -35,20 +35,19 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
 	}
 
-	runes := []rune(cmd.Text)
-	glyphs := make([]Glyph, len(runes))
+	glyphs := m.glyphScratch[:0]
 	destWidth := 0.0
-	for i, r := range runes {
+	for _, r := range cmd.Text {
 		glyph, ok := atlas.Glyphs[r]
 		if !ok {
-			glyph, ok = atlas.Glyphs['?']
-			if !ok {
-				continue
-			}
+			// The zero Glyph fallback keeps the rune's slot (advance 0, no
+			// quad), matching the previous behavior when '?' is also missing.
+			glyph = atlas.Glyphs['?']
 		}
-		glyphs[i] = glyph
+		glyphs = append(glyphs, glyph)
 		destWidth += glyph.Advance * scale
 	}
+	m.glyphScratch = glyphs
 	destHeight := nativeHeight * scale
 	if builtin {
 		size := cmd.Size
@@ -141,7 +140,7 @@ func pushTextQuad(
 	v2 := textVertex(screenToClip(c, cc), uv[2], uv[3], col)
 	v3 := textVertex(screenToClip(c, d), uv[0], uv[3], col)
 
-	m.Vertices = append(m.Vertices, v0, v1, v2, v0, v2, v3)
+	m.append(v0, v1, v2, v0, v2, v3)
 }
 
 func textVertex(pos [2]float32, u, v float32, col render.Color) TextVertex {

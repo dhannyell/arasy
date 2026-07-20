@@ -70,12 +70,22 @@ type webgpuRenderer struct {
 	// texSizes maps TextureID to pixel dimensions for the textured
 	// pipeline, populated from the asset manifest in newWebGPU.
 	texSizes tess.TexSizes
+	tess     tess.Builder
 
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
 	textures  []gpuTexture
 	particles *gpuParticles
 	timing    *gpuTiming // nil when "timestamp-query" was not granted
+
+	// sampleCPUTiming mirrors the FrameMetrics gate used for GPU timestamps:
+	// without a metrics consumer the per-frame clock reads are pure overhead.
+	// cpuTess/cpuUpload/cpuEncode hold the Go-side wall time of the most
+	// recent Render call split by phase; cpuTimingValid is false until the
+	// first instrumented frame completes.
+	sampleCPUTiming               bool
+	cpuTess, cpuUpload, cpuEncode time.Duration
+	cpuTimingValid                bool
 
 	// Offscreen particle compositing, active when particleScale > 0: each
 	// contiguous run of particle commands renders into one pooled
@@ -137,17 +147,18 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	})
 
 	r := &webgpuRenderer{
-		canvas:        canvas,
-		clear:         clear,
-		manifest:      manifest,
-		gpu:           gpu,
-		device:        device,
-		queue:         device.Get("queue"),
-		context:       context,
-		format:        format,
-		fontProvider:  fontProvider,
-		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
-		particleScale: particleScale,
+		canvas:          canvas,
+		clear:           clear,
+		manifest:        manifest,
+		gpu:             gpu,
+		device:          device,
+		queue:           device.Get("queue"),
+		context:         context,
+		format:          format,
+		fontProvider:    fontProvider,
+		textAtlases:     make(map[tess.AtlasKey]gpuTextAtlas),
+		particleScale:   particleScale,
+		sampleCPUTiming: wantGPUTiming,
 	}
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
@@ -218,58 +229,56 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		return
 	}
 
-	runs := tess.Build(frame, w, h, r.fontProvider, r.texSizes)
+	var phaseStart float64
+	if r.sampleCPUTiming {
+		phaseStart = performanceNowMillis()
+	}
 
-	var solidBytes []byte
-	var texBytes []byte
-	var textBytes []byte
+	runs := r.tess.Build(frame, w, h, r.fontProvider, r.texSizes)
+	solidBytes, texBytes, textBytes := r.tess.Streams()
 	drawRuns := make([]gpuDrawRun, 0, len(runs))
-	solidOffset := 0
-	texOffset := 0
-	textOffset := 0
 	for _, run := range runs {
 		switch run.Kind {
 		case tess.DrawRunSolid:
-			if len(run.Solid.Vertices) == 0 {
+			if run.VertexCount == 0 {
 				continue
 			}
-			solidBytes = append(solidBytes, tess.Bytes(run.Solid)...)
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:   tess.DrawRunSolid,
-				offset: solidOffset,
-				count:  len(run.Solid.Vertices),
+				offset: run.ByteOffset / tess.SolidVertexStride,
+				count:  run.VertexCount,
 			})
-			solidOffset += len(run.Solid.Vertices)
 		case tess.DrawRunTextured:
-			if len(run.Textured.Vertices) == 0 {
+			if run.VertexCount == 0 {
 				continue
 			}
-			texBytes = append(texBytes, tess.TexBytes(run.Textured)...)
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunTextured,
-				texture: run.Textured.Texture,
-				offset:  texOffset,
-				count:   len(run.Textured.Vertices),
+				texture: run.Texture,
+				offset:  run.ByteOffset / tess.TexVertexStride,
+				count:   run.VertexCount,
 			})
-			texOffset += len(run.Textured.Vertices)
 		case tess.DrawRunText:
-			if len(run.Text.Vertices) == 0 {
+			if run.VertexCount == 0 {
 				continue
 			}
-			textBytes = append(textBytes, tess.TextBytes(run.Text)...)
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
 				atlasKey: run.AtlasKey,
-				offset:   textOffset,
-				count:    len(run.Text.Vertices),
+				offset:   run.ByteOffset / tess.TextVertexStride,
+				count:    run.VertexCount,
 			})
-			textOffset += len(run.Text.Vertices)
 		case tess.DrawRunParticles:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:      tess.DrawRunParticles,
 				particles: run.Particles,
 			})
 		}
+	}
+
+	var buildEnd float64
+	if r.sampleCPUTiming {
+		buildEnd = performanceNowMillis()
 	}
 
 	r.ensureSolidBuffer(len(solidBytes))
@@ -285,6 +294,11 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	r.ensureTexBuffer(len(texBytes))
 	if len(texBytes) > 0 {
 		r.queue.Call("writeBuffer", r.texBuffer, 0, bytesToJS(texBytes))
+	}
+
+	var uploadEnd float64
+	if r.sampleCPUTiming {
+		uploadEnd = performanceNowMillis()
 	}
 
 	r.ensureMSAATarget(w, h)
@@ -402,7 +416,26 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		r.timing.readback(timingSlot)
 	}
 	r.particles.endFrame()
+	if r.sampleCPUTiming {
+		encodeEnd := performanceNowMillis()
+		r.cpuTess = durationFromMillis(buildEnd - phaseStart)
+		r.cpuUpload = durationFromMillis(uploadEnd - buildEnd)
+		r.cpuEncode = durationFromMillis(encodeEnd - uploadEnd)
+		r.cpuTimingValid = true
+	}
 	r.signalReadyAfterPresent()
+}
+
+// renderCPUTimings reports the Go-side wall time of the most recent Render
+// call, split into tessellation (Build + run mapping), vertex upload (JS heap
+// copy + writeBuffer) and command encoding (render passes + submit). ok is
+// false until the first instrumented frame, or when no metrics consumer
+// enabled sampling.
+func (r *webgpuRenderer) renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool) {
+	if !r.cpuTimingValid {
+		return 0, 0, 0, false
+	}
+	return r.cpuTess, r.cpuUpload, r.cpuEncode, true
 }
 
 // particleGPUTimings reports the most recent timestamp-query sample: the

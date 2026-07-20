@@ -20,6 +20,34 @@ type TexVertex struct {
 type TexMesh struct {
 	Vertices []TexVertex
 	Texture  render.TextureID
+	stream   *[]byte
+	collect  bool
+}
+
+func (m *TexMesh) reset(stream *[]byte, collect bool) {
+	m.Vertices = m.Vertices[:0]
+	m.stream = stream
+	m.collect = collect
+}
+
+func (m *TexMesh) append(vertices ...TexVertex) {
+	if m.stream != nil && !m.collect {
+		for _, v := range vertices {
+			*m.stream = appendTexVertex(*m.stream, v)
+		}
+		return
+	}
+	m.Vertices = append(m.Vertices, vertices...)
+}
+
+func (m *TexMesh) flush() {
+	if m.stream == nil {
+		return
+	}
+	for _, v := range m.Vertices {
+		*m.stream = appendTexVertex(*m.stream, v)
+	}
+	m.Vertices = m.Vertices[:0]
 }
 
 // TexSizes maps TextureID to pixel dimensions, mirroring pixel.Registry:
@@ -229,5 +257,5 @@ func pushTexQuad(m *TexMesh, c ctx, screen [4]math2d.Vec2, w [4]float64, uv [4][
 			U: uv[i][0], V: uv[i][1],
 		}
 	}
-	m.Vertices = append(m.Vertices, v[0], v[1], v[2], v[0], v[2], v[3])
+	m.append(v[0], v[1], v[2], v[0], v[2], v[3])
 }

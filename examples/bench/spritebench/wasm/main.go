@@ -5,7 +5,7 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/spritebench"
+	"github.com/dhannyell/frameforge/examples/bench/spritebench"
 	"github.com/dhannyell/frameforge/platform/wasm"
 )
 
@@ -34,6 +34,13 @@ func main() {
 				metrics.GPUSimulateTime,
 				metrics.GPURenderTime,
 				metrics.GPUTimingSet,
+				metrics.CPUTickTime,
+				metrics.CPURenderTime,
+				metrics.CPUTimingSet,
+				metrics.CPUTessTime,
+				metrics.CPUUploadTime,
+				metrics.CPUEncodeTime,
+				metrics.CPUBreakdownSet,
 			)
 		},
 	}); err != nil {

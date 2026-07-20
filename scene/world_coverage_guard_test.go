@@ -186,3 +186,32 @@ func TestDespawnCoversAllComponentStores(t *testing.T) {
 		t.Fatalf("checksum mismatch after despawning twin worlds: despawned=%d, never-populated=%d — a component leaked into the checksum", got, want)
 	}
 }
+
+// TestDespawnBatchCoversAllComponentStores applies the same structural guard
+// to the compaction path. A new store must be removed by both APIs.
+func TestDespawnBatchCoversAllComponentStores(t *testing.T) {
+	w1 := NewWorld()
+	w2 := NewWorld()
+	id1 := w1.Spawn()
+	id2 := w2.Spawn()
+
+	populateAll(t, w2, id2, 1.5)
+	w1.DespawnBatch([]EntityID{id1})
+	w2.DespawnBatch([]EntityID{id2})
+
+	w2Value := reflect.ValueOf(w2)
+	for _, setter := range componentSetters(t) {
+		name := strings.TrimPrefix(setter.Name, "Set")
+		getter := w2Value.MethodByName(name)
+		out := getter.Call([]reflect.Value{reflect.ValueOf(id2)})
+		if out[1].Bool() {
+			t.Fatalf("component %s: still present after DespawnBatch (store forgotten in World.DespawnBatch)", name)
+		}
+	}
+	if len(w2.renderTransforms.ids) != 0 {
+		t.Fatal("renderTransforms: not cleared by DespawnBatch (no getter — checked via the internal store)")
+	}
+	if got, want := w2.Checksum(), w1.Checksum(); got != want {
+		t.Fatalf("checksum mismatch after batch despawning twin worlds: despawned=%d, never-populated=%d — a component leaked into the checksum", got, want)
+	}
+}

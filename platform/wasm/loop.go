@@ -22,17 +22,33 @@ func (h *host) startLoop() {
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
 
+		sampleCPU := h.onFrameMetrics != nil
+		var tickStart float64
+		if sampleCPU {
+			tickStart = performanceNowMillis()
+		}
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
 		h.pending = h.pending[:0]
 		if h.audio != nil {
 			h.audio.consume(audioOut)
 		}
+		var tickEnd float64
+		if sampleCPU {
+			tickEnd = performanceNowMillis()
+		}
 
 		frame := h.driver.RenderFrame(elapsed, h.renderer)
 
 		if h.onFrameMetrics != nil {
+			renderEnd := performanceNowMillis()
 			inputToSubmit, validInput := inputLatencySince(inputAtMillis)
 			if metrics, ready := h.frameMetrics.Observe(elapsed, inputToSubmit, validInput); ready {
+				metrics.CPUTickTime = durationFromMillis(tickEnd - tickStart)
+				metrics.CPURenderTime = durationFromMillis(renderEnd - tickEnd)
+				metrics.CPUTimingSet = true
+				if reporter, ok := h.renderer.(cpuTimingReporter); ok {
+					metrics.CPUTessTime, metrics.CPUUploadTime, metrics.CPUEncodeTime, metrics.CPUBreakdownSet = reporter.renderCPUTimings()
+				}
 				metrics.JSHeapUsed, metrics.JSHeapLimit, metrics.JSHeapSet = browserHeapMetrics()
 				if reporter, ok := h.renderer.(gpuBufferReporter); ok {
 					metrics.GPUBufferBytes = reporter.particleGPUBufferBytes()

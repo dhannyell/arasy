@@ -5,14 +5,20 @@ import (
 	"math"
 )
 
+const (
+	SolidVertexStride = 24
+	TextVertexStride  = 32
+	TexVertexStride   = 40
+)
+
 // Bytes serializes a solid-color mesh into the WebGPU vertex buffer layout.
 //
 // Each Vertex is encoded as six little-endian float32 values in field order:
 // X, Y, R, G, B, A.
 func Bytes(mesh Mesh) []byte {
-	out := make([]byte, len(mesh.Vertices)*24)
+	out := make([]byte, len(mesh.Vertices)*SolidVertexStride)
 	for i, v := range mesh.Vertices {
-		offset := i * 24
+		offset := i * SolidVertexStride
 		putFloat32(out[offset:], v.X)
 		putFloat32(out[offset+4:], v.Y)
 		putFloat32(out[offset+8:], v.R)
@@ -28,9 +34,9 @@ func Bytes(mesh Mesh) []byte {
 // Each TextVertex is encoded as eight little-endian float32 values in field
 // order: X, Y, R, G, B, A, U, V.
 func TextBytes(mesh TextMesh) []byte {
-	out := make([]byte, len(mesh.Vertices)*32)
+	out := make([]byte, len(mesh.Vertices)*TextVertexStride)
 	for i, v := range mesh.Vertices {
-		offset := i * 32
+		offset := i * TextVertexStride
 		putFloat32(out[offset:], v.X)
 		putFloat32(out[offset+4:], v.Y)
 		putFloat32(out[offset+8:], v.R)
@@ -49,9 +55,9 @@ func TextBytes(mesh TextMesh) []byte {
 // order: XW, YW, 0 (a Z placeholder so position is a vec4 for the WGSL
 // pipeline), W, R, G, B, A, U, V.
 func TexBytes(mesh TexMesh) []byte {
-	out := make([]byte, len(mesh.Vertices)*40)
+	out := make([]byte, len(mesh.Vertices)*TexVertexStride)
 	for i, v := range mesh.Vertices {
-		offset := i * 40
+		offset := i * TexVertexStride
 		putFloat32(out[offset:], v.XW)
 		putFloat32(out[offset+4:], v.YW)
 		putFloat32(out[offset+8:], 0)
@@ -68,4 +74,46 @@ func TexBytes(mesh TexMesh) []byte {
 
 func putFloat32(dst []byte, v float32) {
 	binary.LittleEndian.PutUint32(dst, math.Float32bits(v))
+}
+
+func appendSolidVertex(dst []byte, v Vertex) []byte {
+	start := len(dst)
+	dst = append(dst, make([]byte, SolidVertexStride)...)
+	putFloat32(dst[start:], v.X)
+	putFloat32(dst[start+4:], v.Y)
+	putFloat32(dst[start+8:], v.R)
+	putFloat32(dst[start+12:], v.G)
+	putFloat32(dst[start+16:], v.B)
+	putFloat32(dst[start+20:], v.A)
+	return dst
+}
+
+func appendTextVertex(dst []byte, v TextVertex) []byte {
+	start := len(dst)
+	dst = append(dst, make([]byte, TextVertexStride)...)
+	putFloat32(dst[start:], v.X)
+	putFloat32(dst[start+4:], v.Y)
+	putFloat32(dst[start+8:], v.R)
+	putFloat32(dst[start+12:], v.G)
+	putFloat32(dst[start+16:], v.B)
+	putFloat32(dst[start+20:], v.A)
+	putFloat32(dst[start+24:], v.U)
+	putFloat32(dst[start+28:], v.V)
+	return dst
+}
+
+func appendTexVertex(dst []byte, v TexVertex) []byte {
+	start := len(dst)
+	dst = append(dst, make([]byte, TexVertexStride)...)
+	putFloat32(dst[start:], v.XW)
+	putFloat32(dst[start+4:], v.YW)
+	putFloat32(dst[start+8:], 0)
+	putFloat32(dst[start+12:], v.W)
+	putFloat32(dst[start+16:], v.R)
+	putFloat32(dst[start+20:], v.G)
+	putFloat32(dst[start+24:], v.B)
+	putFloat32(dst[start+28:], v.A)
+	putFloat32(dst[start+32:], v.U)
+	putFloat32(dst[start+36:], v.V)
+	return dst
 }

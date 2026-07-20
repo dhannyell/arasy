@@ -46,6 +46,10 @@ type World struct {
 	// renderIDScratch is reusable render working memory. It is transient:
 	// never cloned or checksummed.
 	renderIDScratch []EntityID
+
+	// despawnMarked is reusable batch-removal working memory. It is transient:
+	// never cloned or checksummed.
+	despawnMarked map[EntityID]struct{}
 }
 
 func NewWorld() *World {
@@ -93,6 +97,9 @@ func (w *World) Spawn() EntityID {
 	return id
 }
 
+// Despawn removes every component of id. Repeatedly despawning many entities
+// can cost O(k*n) because each ordered store shifts its remaining dense data;
+// use DespawnBatch when removing a group.
 func (w *World) Despawn(id EntityID) {
 	w.markEntityCountDirty()
 	w.transforms.remove(id)
@@ -108,6 +115,37 @@ func (w *World) Despawn(id EntityID) {
 	w.circleColliders.remove(id)
 	w.rectColliders.remove(id)
 	w.renderTransforms.remove(id)
+}
+
+// DespawnBatch removes every listed entity in one stable compaction pass per
+// component store. Despawning k entities costs O(n) per store instead of
+// O(k*n) repeated shifts. Duplicate and unknown ids are ignored.
+func (w *World) DespawnBatch(ids []EntityID) {
+	if len(ids) == 0 {
+		return
+	}
+	if w.despawnMarked == nil {
+		w.despawnMarked = make(map[EntityID]struct{}, len(ids))
+	}
+	for _, id := range ids {
+		w.despawnMarked[id] = struct{}{}
+	}
+
+	w.markEntityCountDirty()
+	w.transforms.removeMarked(w.despawnMarked)
+	w.transformTweens.removeMarked(w.despawnMarked)
+	w.circleSprites.removeMarked(w.despawnMarked)
+	w.circleTweens.removeMarked(w.despawnMarked)
+	w.rectSprites.removeMarked(w.despawnMarked)
+	w.imageSprites.removeMarked(w.despawnMarked)
+	w.velocities.removeMarked(w.despawnMarked)
+	w.accelerations.removeMarked(w.despawnMarked)
+	w.dampings.removeMarked(w.despawnMarked)
+	w.bodies.removeMarked(w.despawnMarked)
+	w.circleColliders.removeMarked(w.despawnMarked)
+	w.rectColliders.removeMarked(w.despawnMarked)
+	w.renderTransforms.removeMarked(w.despawnMarked)
+	clear(w.despawnMarked)
 }
 
 func (w *World) Transform(id EntityID) (Transform, bool) {
