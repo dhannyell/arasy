@@ -88,6 +88,7 @@ type DrawRunKind uint8
 const (
 	DrawRunSolid DrawRunKind = iota
 	DrawRunTextured
+	DrawRunSprites
 	DrawRunText
 	DrawRunParticles
 )
@@ -114,12 +115,17 @@ func Build(frame runtime.Frame, w, h int, provider AtlasProvider, sizes TexSizes
 		w:   float64(w),
 		h:   float64(h),
 	}
+	atlases, ordered := resolveFrameAtlases(frame.Commands, buildCtx, provider)
 	sink := buildSink{
 		ctx:     buildCtx,
-		atlases: resolveFrameAtlases(frame.Commands, buildCtx, provider),
+		atlases: atlases,
 		sizes:   sizes,
 	}
-	render.Each(frame.Commands, &sink)
+	if ordered {
+		render.EachOrdered(frame.Commands, &sink)
+	} else {
+		render.Each(frame.Commands, &sink)
+	}
 	return sink.runs
 }
 
@@ -205,8 +211,9 @@ func (s *buildSink) VisitText(cmd render.DrawText) {
 // keeps atlas resolution linear in total characters instead of quadratic in
 // the number of commands sharing a key.
 type frameAtlasRequest struct {
-	key   AtlasKey
-	runes []rune
+	key    AtlasKey
+	cached *Atlas
+	runes  []rune
 	// ascii is the seen-set fast path for the common case; runes outside it
 	// fall back to the lazily allocated map.
 	ascii    [128]bool
@@ -214,7 +221,13 @@ type frameAtlasRequest struct {
 }
 
 func (r *frameAtlasRequest) add(text string) {
+	if r.cached != nil && printableASCII(text) {
+		return
+	}
 	for _, c := range text {
+		if r.cached.covers(c) {
+			continue
+		}
 		if c < 128 {
 			if r.ascii[c] {
 				continue
@@ -236,13 +249,18 @@ func (r *frameAtlasRequest) add(text string) {
 // resolveFrameAtlases groups text by requested key before tessellation. This
 // matters for on-demand Unicode: every command using one (font, px) sees the
 // same atlas layout, even when the provider creates a fresh atlas per call.
-func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider) map[AtlasKey]*Atlas {
+func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider) (map[AtlasKey]*Atlas, bool) {
+	ordered := true
 	if provider == nil {
-		return nil
+		return nil, false
 	}
 	var requests []frameAtlasRequest
 	var indices map[AtlasKey]int
-	for _, command := range commands {
+	cache, hasCache := provider.(CachedAtlasProvider)
+	for i, command := range commands {
+		if i > 0 && command.Layer() < commands[i-1].Layer() {
+			ordered = false
+		}
 		cmd, ok := command.(render.DrawText)
 		if !ok || cmd.Text == "" || cmd.Color.A <= 0 {
 			continue
@@ -263,18 +281,26 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 		if !exists {
 			i = len(requests)
 			indices[key] = i
-			requests = append(requests, frameAtlasRequest{key: key})
+			request := frameAtlasRequest{key: key}
+			if hasCache {
+				request.cached, _ = cache.CachedAtlas(key.Font, key.PX)
+			}
+			requests = append(requests, request)
 		}
 		requests[i].add(cmd.Text)
 	}
 	if len(requests) == 0 {
-		return nil
+		return nil, ordered
 	}
 
 	resolved := make(map[AtlasKey]*Atlas, len(requests))
 	var builtin *Atlas
 	for i := range requests {
 		request := &requests[i]
+		if request.cached != nil && len(request.runes) == 0 {
+			resolved[request.key] = request.cached
+			continue
+		}
 		text := string(request.runes)
 		atlas, err := provider.AtlasFor(request.key.Font, request.key.PX, text)
 		if err != nil || atlas == nil {
@@ -288,7 +314,7 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 		}
 		resolved[request.key] = atlas
 	}
-	return resolved
+	return resolved, ordered
 }
 
 func (s *buildSink) VisitImage(cmd render.DrawImage) {

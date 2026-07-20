@@ -37,3 +37,12 @@ test('renders particle backend semantics', async ({ page }, testInfo) => {
     'particles.png',
   );
 });
+
+test('renders sprite texture arrays and 2d layer views', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'sprite-array',
+    'sprite-array.png',
+  );
+});

@@ -67,6 +67,18 @@ func TestNewAtlasForFaceRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestIndexedASCIIGlyphsUsesQuestionMarkForUnsupportedGlyph(t *testing.T) {
+	fallback := Glyph{Advance: 7, Width: 5, Height: 9, index: 3}
+	letter := Glyph{Advance: 8, Width: 6, Height: 9, index: 4}
+	indexed := indexedASCIIGlyphs(map[rune]Glyph{'?': fallback, 'A': letter})
+	if got := indexed['A']; got != letter {
+		t.Fatalf("indexed A = %+v, want %+v", got, letter)
+	}
+	if got := indexed['B']; got != fallback {
+		t.Fatalf("indexed unsupported B = %+v, want question-mark fallback %+v", got, fallback)
+	}
+}
+
 func TestBuildExternalTypefaceUsesProportionalAdvances(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
 	narrow := buildTextRun(t, provider, "iiii", 1)
@@ -170,6 +182,26 @@ func TestBuildRequestsAllFrameRunesOncePerAtlasKey(t *testing.T) {
 	}
 }
 
+func TestBuildUsesCachedASCIIAtlasAndStillRequestsNewUnicode(t *testing.T) {
+	provider := newCachedRecordingProvider(t)
+	frame := runtime.Frame{
+		Camera: testCamera(),
+		Commands: []render.Command{
+			textCommand(0, 1, "cached ASCII"),
+		},
+	}
+	Build(frame, 100, 100, provider, nil)
+	if len(provider.calls) != 0 {
+		t.Fatalf("cached ASCII caused AtlasFor calls: %v", provider.calls)
+	}
+
+	frame.Commands = []render.Command{textCommand(0, 1, "new Á")}
+	Build(frame, 100, 100, provider, nil)
+	if len(provider.calls) != 1 || !strings.Contains(provider.calls[0], "Á") {
+		t.Fatalf("Unicode AtlasFor calls = %v, want one request containing Á", provider.calls)
+	}
+}
+
 func TestBuildTwoExternalFontsProduceSeparateAtlasRuns(t *testing.T) {
 	provider := newMultiFontTypefaceProvider(t)
 	runs := Build(runtime.Frame{
@@ -228,6 +260,33 @@ type testTypefaceProvider struct {
 type recordingProvider struct {
 	testTypefaceProvider
 	calls []string
+}
+
+type cachedRecordingProvider struct {
+	atlas *Atlas
+	calls []string
+}
+
+func newCachedRecordingProvider(t *testing.T) *cachedRecordingProvider {
+	t.Helper()
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atlas, err := NewAtlasForFace(1, 18, face, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &cachedRecordingProvider{atlas: atlas}
+}
+
+func (p *cachedRecordingProvider) CachedAtlas(fontID render.FontID, px int) (*Atlas, bool) {
+	return p.atlas, fontID == p.atlas.Key.Font && px == p.atlas.Key.PX
+}
+
+func (p *cachedRecordingProvider) AtlasFor(_ render.FontID, _ int, text string) (*Atlas, error) {
+	p.calls = append(p.calls, text)
+	return p.atlas, nil
 }
 
 func (p *recordingProvider) AtlasFor(fontID render.FontID, px int, text string) (*Atlas, error) {

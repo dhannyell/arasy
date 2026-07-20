@@ -111,3 +111,19 @@ func TestEachDoesNotReorderCallerSlice(t *testing.T) {
 		t.Fatalf("caller slice reordered: got %v, want %v", commands, before)
 	}
 }
+
+func TestEachOrderedDispatchesWithoutReordering(t *testing.T) {
+	commands := []render.Command{
+		render.DrawCircle{BaseCommand: layered(3)},
+		render.DrawRect{BaseCommand: layered(1)},
+		render.DrawLine{BaseCommand: layered(2)},
+	}
+
+	sink := &recordingSink{}
+	render.EachOrdered(commands, sink)
+
+	want := []string{"circle", "rect", "line"}
+	if !reflect.DeepEqual(sink.visits, want) {
+		t.Fatalf("visits = %v, want input order %v", sink.visits, want)
+	}
+}

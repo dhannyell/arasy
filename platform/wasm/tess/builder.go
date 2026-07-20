@@ -8,8 +8,10 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// StreamRun identifies one ordered draw in Builder's shared vertex streams.
-// ByteOffset is relative to the stream selected by Kind.
+// StreamRun identifies one ordered draw in Builder's shared streams.
+// ByteOffset is relative to the stream selected by Kind. VertexCount is a
+// vertex count for mesh streams and a record count for DrawRunSprites and
+// DrawRunText.
 type StreamRun struct {
 	Kind        DrawRunKind
 	Texture     render.TextureID
@@ -22,73 +24,133 @@ type StreamRun struct {
 // Builder tessellates frames into per-pipeline byte streams reused across
 // frames. Build overwrites the previous frame's streams and returned runs.
 type Builder struct {
-	solid []byte
-	tex   []byte
-	text  []byte
-	runs  []StreamRun
+	solid   []byte
+	tex     []byte
+	sprites []spriteRecord
+	glyphs  []textGlyphRecord
+	labels  []textLabelRecord
+	runs    []StreamRun
 
 	solidMesh Mesh
 	texMesh   TexMesh
-	textMesh  TextMesh
+
+	// spriteArray selects the array-texture sprite path. It permits adjacent
+	// DrawImage commands with different textures to share one draw run because
+	// the texture layer is carried by each storage record.
+	spriteArray bool
+}
+
+// SetSpriteArray selects whether sprite records carry array-texture layers.
+// Renderers enable it only when their declared textures fit one GPU texture
+// array; the default preserves the individual-texture fallback.
+func (b *Builder) SetSpriteArray(enabled bool) {
+	b.spriteArray = enabled
 }
 
 // Build tessellates a frame into this builder's reusable streams.
 func (b *Builder) Build(frame runtime.Frame, w, h int, provider AtlasProvider, sizes TexSizes) []StreamRun {
 	b.solid = b.solid[:0]
 	b.tex = b.tex[:0]
-	b.text = b.text[:0]
+	b.sprites = b.sprites[:0]
+	b.glyphs = b.glyphs[:0]
+	b.labels = b.labels[:0]
 	b.runs = b.runs[:0]
 
 	buildCtx := ctx{cam: frame.Camera, w: float64(w), h: float64(h)}
-	sink := streamSink{
-		builder: b,
-		ctx:     buildCtx,
-		atlases: resolveFrameAtlases(frame.Commands, buildCtx, provider),
-		sizes:   sizes,
+	// The built-in Atlas is immutable and covers every rune it can render, so
+	// it needs neither per-frame glyph discovery nor an AtlasKey map. Keeping
+	// this path separate avoids doing a second, rune-by-rune pass over HUD
+	// labels before emitting their instance records.
+	var atlases map[AtlasKey]*Atlas
+	ordered := true
+	var fallback *Atlas
+	if atlas, ok := provider.(*Atlas); ok {
+		fallback = atlas
+		for i := 1; i < len(frame.Commands); i++ {
+			if frame.Commands[i].Layer() < frame.Commands[i-1].Layer() {
+				ordered = false
+				break
+			}
+		}
+	} else {
+		atlases, ordered = resolveFrameAtlases(frame.Commands, buildCtx, provider)
 	}
-	render.Each(frame.Commands, &sink)
+	sink := streamSink{
+		builder:  b,
+		ctx:      buildCtx,
+		atlases:  atlases,
+		fallback: fallback,
+		sizes:    sizes,
+	}
+	if ordered {
+		render.EachOrdered(frame.Commands, &sink)
+	} else {
+		render.Each(frame.Commands, &sink)
+	}
 	return b.runs
 }
 
-// Streams returns the vertex data built by the most recent Build.
-func (b *Builder) Streams() (solid, tex, text []byte) {
-	return b.solid, b.tex, b.text
+// Streams returns the mesh vertex data built by the most recent Build.
+func (b *Builder) Streams() (solid, tex []byte) {
+	return b.solid, b.tex
+}
+
+// SpriteStream returns the sprite storage records built by the most recent
+// Build. Each record occupies SpriteStride bytes.
+func (b *Builder) SpriteStream() []byte {
+	return spriteBytes(b.sprites)
+}
+
+// TextGlyphStream returns the storage records built for DrawText commands.
+// Each record occupies TextGlyphStride bytes.
+func (b *Builder) TextGlyphStream() []byte {
+	return textGlyphBytes(b.glyphs)
+}
+
+// TextLabelStream returns one shared transform/clip/tint record for every
+// visible DrawText command in the most recent Build.
+func (b *Builder) TextLabelStream() []byte {
+	return textLabelBytes(b.labels)
 }
 
 type streamSink struct {
-	builder *Builder
-	ctx     ctx
-	atlases map[AtlasKey]*Atlas
-	sizes   TexSizes
+	builder  *Builder
+	ctx      ctx
+	atlases  map[AtlasKey]*Atlas
+	fallback *Atlas
+	sizes    TexSizes
 
-	lastKind    DrawRunKind
-	lastTexture render.TextureID
-	lastAtlas   AtlasKey
-	hasLast     bool
+	lastRun streamRunIdentity
+	hasLast bool
 }
 
-func (s *streamSink) run(kind DrawRunKind, texture render.TextureID, atlas AtlasKey) *StreamRun {
-	if s.hasLast && s.lastKind == kind &&
-		(kind != DrawRunTextured || s.lastTexture == texture) &&
-		(kind != DrawRunText || s.lastAtlas == atlas) {
-		return &s.builder.runs[len(s.builder.runs)-1]
-	}
+type streamRunIdentity struct {
+	kind    DrawRunKind
+	texture render.TextureID
+	atlas   AtlasKey
+}
 
-	byteOffset := 0
-	switch kind {
-	case DrawRunSolid:
-		byteOffset = len(s.builder.solid)
-	case DrawRunTextured:
-		byteOffset = len(s.builder.tex)
-	case DrawRunText:
-		byteOffset = len(s.builder.text)
+// appendRun is the only place that decides whether adjacent stream content
+// can share a draw. Its narrow parameters avoid copying StreamRun's particle
+// payload for every ordinary mesh, sprite, or text command.
+func (s *streamSink) appendRun(kind DrawRunKind, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
+	identity := streamRunIdentity{kind: kind, texture: texture, atlas: atlas}
+	if s.hasLast && s.lastRun == identity {
+		s.builder.runs[len(s.builder.runs)-1].VertexCount += vertexCount
+		return
 	}
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: kind, Texture: texture, AtlasKey: atlas, ByteOffset: byteOffset})
-	s.lastKind = kind
-	s.lastTexture = texture
-	s.lastAtlas = atlas
+	s.startRun(identity, texture, atlas, byteOffset, vertexCount)
+}
+
+// startRun keeps the allocation-heavy cold path out of appendRun's merge
+// path, which executes once per command in large sprite and text streams.
+func (s *streamSink) startRun(identity streamRunIdentity, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
+	s.builder.runs = append(s.builder.runs, StreamRun{
+		Kind: identity.kind, Texture: texture, AtlasKey: atlas,
+		ByteOffset: byteOffset, VertexCount: vertexCount,
+	})
+	s.lastRun = identity
 	s.hasLast = true
-	return &s.builder.runs[len(s.builder.runs)-1]
 }
 
 func (s *streamSink) solidBegin(clip math2d.Rect) int {
@@ -96,9 +158,12 @@ func (s *streamSink) solidBegin(clip math2d.Rect) int {
 	return len(s.builder.solid)
 }
 
-func (s *streamSink) solidEnd(run *StreamRun, start int) {
+func (s *streamSink) solidEnd(start int) {
 	s.builder.solidMesh.flush()
-	run.VertexCount += (len(s.builder.solid) - start) / SolidVertexStride
+	count := (len(s.builder.solid) - start) / SolidVertexStride
+	if count > 0 {
+		s.appendRun(DrawRunSolid, 0, AtlasKey{}, start, count)
+	}
 }
 
 func (s *streamSink) texBegin(clip math2d.Rect) int {
@@ -106,61 +171,48 @@ func (s *streamSink) texBegin(clip math2d.Rect) int {
 	return len(s.builder.tex)
 }
 
-func (s *streamSink) texEnd(run *StreamRun, start int) {
+func (s *streamSink) texEnd(texture render.TextureID, start int) {
 	s.builder.texMesh.flush()
-	run.VertexCount += (len(s.builder.tex) - start) / TexVertexStride
-}
-
-func (s *streamSink) textBegin(clip math2d.Rect) int {
-	s.builder.textMesh.reset(&s.builder.text, clip.Width() > 0 && clip.Height() > 0)
-	return len(s.builder.text)
-}
-
-func (s *streamSink) textEnd(run *StreamRun, start int) {
-	s.builder.textMesh.flush()
-	run.VertexCount += (len(s.builder.text) - start) / TextVertexStride
+	count := (len(s.builder.tex) - start) / TexVertexStride
+	if count > 0 {
+		s.appendRun(DrawRunTextured, texture, AtlasKey{}, start, count)
+	}
 }
 
 func (s *streamSink) VisitRect(cmd render.DrawRect) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendRect(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitCircle(cmd render.DrawCircle) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendCircle(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitPoint(cmd render.DrawPoint) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendPoint(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitLine(cmd render.DrawLine) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendLine(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitArc(cmd render.DrawArc) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendArc(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
-	run := s.run(DrawRunSolid, 0, AtlasKey{})
 	start := s.solidBegin(cmd.Clip)
 	AppendPolygon(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(run, start)
+	s.solidEnd(start)
 }
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
@@ -177,31 +229,40 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 	if px <= 0 {
 		return
 	}
-	atlas := s.atlases[AtlasKey{Font: cmd.Font, PX: px}]
+	atlas := s.fallback
+	if atlas == nil {
+		atlas = s.atlases[AtlasKey{Font: cmd.Font, PX: px}]
+	}
 	if atlas == nil {
 		return
 	}
-	run := s.run(DrawRunText, 0, atlas.Key)
-	start := s.textBegin(cmd.Clip)
-	AppendText(&s.builder.textMesh, s.ctx, cmd, atlas)
-	s.textEnd(run, start)
+	start := len(s.builder.glyphs) * TextGlyphStride
+	count := appendTextGlyphRecords(&s.builder.glyphs, &s.builder.labels, s.ctx, cmd, atlas)
+	if count == 0 {
+		return
+	}
+	s.appendRun(DrawRunText, 0, atlas.Key, start, count)
 }
 
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
 		if corners, ok := destCorners(s.ctx, cmd.Dest, cmd.Rotation); ok {
-			run := s.run(DrawRunSolid, 0, AtlasKey{})
 			start := s.solidBegin(cmd.Clip)
 			appendMissingTexture(&s.builder.solidMesh, s.ctx, corners, cmd.Clip)
-			s.solidEnd(run, start)
+			s.solidEnd(start)
 		}
 		return
 	}
-	run := s.run(DrawRunTextured, cmd.Texture, AtlasKey{})
-	start := s.texBegin(cmd.Clip)
-	AppendImage(&s.builder.texMesh, s.ctx, cmd, texW, texH)
-	s.texEnd(run, start)
+	start := len(s.builder.sprites) * SpriteStride
+	if !appendSpriteRecord(&s.builder.sprites, s.ctx, cmd, texW, texH, uint32(cmd.Texture-1)) {
+		return
+	}
+	runTexture := cmd.Texture
+	if s.builder.spriteArray {
+		runTexture = 0
+	}
+	s.appendRun(DrawRunSprites, runTexture, AtlasKey{}, start, 1)
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
@@ -211,14 +272,12 @@ func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
 	}
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
-		run := s.run(DrawRunSolid, 0, AtlasKey{})
 		start := s.solidBegin(cmd.Clip)
 		appendMissingTexture(&s.builder.solidMesh, s.ctx, screen, cmd.Clip)
-		s.solidEnd(run, start)
+		s.solidEnd(start)
 		return
 	}
-	run := s.run(DrawRunTextured, cmd.Texture, AtlasKey{})
 	start := s.texBegin(cmd.Clip)
 	AppendImageQuad(&s.builder.texMesh, s.ctx, cmd, texW, texH)
-	s.texEnd(run, start)
+	s.texEnd(cmd.Texture, start)
 }

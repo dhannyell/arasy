@@ -3,13 +3,80 @@ package tess
 import (
 	"encoding/binary"
 	"math"
+	"unsafe"
 )
 
 const (
 	SolidVertexStride = 24
 	TextVertexStride  = 32
 	TexVertexStride   = 40
+	SpriteStride      = 64
+	TextGlyphStride   = 16
+	TextLabelStride   = 56
+	TextMetricStride  = 32
 )
+
+// spriteRecord is the 64-byte storage layout consumed by both sprite WGSL
+// shaders. All fields are 32-bit, so its in-memory representation is the
+// little-endian byte layout WebGPU receives on every supported host.
+type spriteRecord struct {
+	centerX, centerY, halfWidth, halfHeight float32
+	rotation, pad                           float32
+	uvMinX, uvMinY, uvMaxX, uvMaxY          float32
+	clipMinX, clipMinY, clipMaxX, clipMaxY  float32
+	tint, textureLayer                      uint32
+}
+
+// textGlyphRecord carries the per-glyph state consumed by
+// shaders/text_instanced.wgsl. Label-wide transform, clip, and tint live in a
+// separate textLabelRecord instead of being duplicated for every glyph.
+type textGlyphRecord struct {
+	penX               float32
+	metric, label, pad uint32
+}
+
+// textLabelRecord carries state shared by all glyphs in one DrawText.
+type textLabelRecord struct {
+	positionX, positionY, cos, sin         float32
+	originX, baselineY, scale, layoutPad   float32
+	clipMinX, clipMinY, clipMaxX, clipMaxY float32
+	tint, pad                              uint32
+}
+
+// textGlyphMetric is immutable atlas metadata. Keeping it in a GPU buffer
+// lets each per-frame glyph record contain only pen position and two indices.
+type textGlyphMetric struct {
+	uvMinX, uvMinY, uvMaxX, uvMaxY  float32
+	width, height, offsetX, offsetY float32
+}
+
+func spriteBytes(records []spriteRecord) []byte {
+	if len(records) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(records))), len(records)*SpriteStride)
+}
+
+func textGlyphBytes(records []textGlyphRecord) []byte {
+	if len(records) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(records))), len(records)*TextGlyphStride)
+}
+
+func textLabelBytes(records []textLabelRecord) []byte {
+	if len(records) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(records))), len(records)*TextLabelStride)
+}
+
+func textMetricBytes(records []textGlyphMetric) []byte {
+	if len(records) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(records))), len(records)*TextMetricStride)
+}
 
 // Bytes serializes a solid-color mesh into the WebGPU vertex buffer layout.
 //
@@ -88,20 +155,6 @@ func appendSolidVertex(dst []byte, v Vertex) []byte {
 	return dst
 }
 
-func appendTextVertex(dst []byte, v TextVertex) []byte {
-	start := len(dst)
-	dst = append(dst, make([]byte, TextVertexStride)...)
-	putFloat32(dst[start:], v.X)
-	putFloat32(dst[start+4:], v.Y)
-	putFloat32(dst[start+8:], v.R)
-	putFloat32(dst[start+12:], v.G)
-	putFloat32(dst[start+16:], v.B)
-	putFloat32(dst[start+20:], v.A)
-	putFloat32(dst[start+24:], v.U)
-	putFloat32(dst[start+28:], v.V)
-	return dst
-}
-
 func appendTexVertex(dst []byte, v TexVertex) []byte {
 	start := len(dst)
 	dst = append(dst, make([]byte, TexVertexStride)...)
@@ -116,4 +169,21 @@ func appendTexVertex(dst []byte, v TexVertex) []byte {
 	putFloat32(dst[start+32:], v.U)
 	putFloat32(dst[start+36:], v.V)
 	return dst
+}
+
+// appendSprite writes one storage-buffer sprite record. Its field order and
+// alignment match Sprite in shaders/sprite_render.wgsl.
+func appendSprite(
+	dst []spriteRecord,
+	centerX, centerY, halfWidth, halfHeight, rotation float32,
+	uvMin, uvMax, clipMin, clipMax [2]float32,
+	tint, textureLayer uint32,
+) []spriteRecord {
+	return append(dst, spriteRecord{
+		centerX: centerX, centerY: centerY, halfWidth: halfWidth, halfHeight: halfHeight,
+		rotation: rotation,
+		uvMinX:   uvMin[0], uvMinY: uvMin[1], uvMaxX: uvMax[0], uvMaxY: uvMax[1],
+		clipMinX: clipMin[0], clipMinY: clipMin[1], clipMaxX: clipMax[0], clipMaxY: clipMax[1],
+		tint: tint, textureLayer: textureLayer,
+	})
 }

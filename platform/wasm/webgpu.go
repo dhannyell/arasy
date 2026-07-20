@@ -25,6 +25,8 @@ var errWebGPUUnavailable = errors.New("webgpu unavailable")
 // rasterize with hard, aliased edges at one sample per pixel.
 const msaaSampleCount = 4
 
+const spriteUniformSize = 32
+
 type webgpuRenderer struct {
 	canvas   js.Value
 	clear    render.Color
@@ -42,9 +44,11 @@ type webgpuRenderer struct {
 	msaaWidth   int
 	msaaHeight  int
 
-	solidPipeline    js.Value
-	textPipeline     js.Value
-	texturedPipeline js.Value
+	solidPipeline       js.Value
+	textGlyphPipeline   js.Value
+	texturedPipeline    js.Value
+	spritePipeline      js.Value
+	spriteArrayPipeline js.Value
 	// mipPipeline renders a fullscreen triangle sampling one mip level into
 	// the next. Boot-time only, used by generateMipmaps.
 	mipPipeline js.Value
@@ -57,12 +61,21 @@ type webgpuRenderer struct {
 	// single source level at a time.
 	mipSampler js.Value
 
-	solidBuffer js.Value
-	textBuffer  js.Value
-	texBuffer   js.Value
-	solidCap    int
-	textCap     int
-	texCap      int
+	solidBuffer          js.Value
+	textGlyphBuffer      js.Value
+	textLabelBuffer      js.Value
+	texBuffer            js.Value
+	spriteBuffer         js.Value
+	spriteUniform        js.Value
+	solidCap             int
+	textGlyphCap         int
+	textLabelCap         int
+	texCap               int
+	spriteCap            int
+	spriteUniformScratch [spriteUniformSize]byte
+	spriteArrayTexture   js.Value
+	spriteArrayBindGroup js.Value
+	spriteArrayEnabled   bool
 
 	fontProvider *fontAtlasProvider
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
@@ -77,6 +90,7 @@ type webgpuRenderer struct {
 	textures  []gpuTexture
 	particles *gpuParticles
 	timing    *gpuTiming // nil when "timestamp-query" was not granted
+	drawRuns  []gpuDrawRun
 
 	// sampleCPUTiming mirrors the FrameMetrics gate used for GPU timestamps:
 	// without a metrics consumer the per-frame clock reads are pure overhead.
@@ -109,12 +123,12 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	if err != nil {
 		return nil, err
 	}
-	gpu := js.Global().Get("navigator").Get("gpu")
-	if gpu.IsUndefined() || gpu.IsNull() {
+	navigatorGPU := js.Global().Get("navigator").Get("gpu")
+	if navigatorGPU.IsUndefined() || navigatorGPU.IsNull() {
 		return nil, errWebGPUUnavailable
 	}
 
-	adapter, err := awaitPromise(gpu.Call("requestAdapter"))
+	adapter, err := awaitPromise(navigatorGPU.Call("requestAdapter"))
 	if err != nil {
 		return nil, fmt.Errorf("request webgpu adapter: %w", err)
 	}
@@ -139,7 +153,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		return nil, errWebGPUUnavailable
 	}
 
-	format := gpu.Call("getPreferredCanvasFormat")
+	format := navigatorGPU.Call("getPreferredCanvasFormat")
 	context.Call("configure", map[string]any{
 		"device":    device,
 		"format":    format,
@@ -150,7 +164,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		canvas:          canvas,
 		clear:           clear,
 		manifest:        manifest,
-		gpu:             gpu,
+		gpu:             navigatorGPU,
 		device:          device,
 		queue:           device.Get("queue"),
 		context:         context,
@@ -164,16 +178,22 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.observeDeviceErrors(log)
 
 	r.solidPipeline = r.createSolidPipeline()
-	r.textPipeline = r.createTextPipeline()
+	r.textGlyphPipeline = r.createTextGlyphPipeline()
 	r.texturedPipeline = r.createTexturedPipeline()
+	r.spritePipeline = r.createSpritePipeline()
+	r.spriteArrayPipeline = r.createSpriteArrayPipeline()
 	r.mipPipeline = r.createMipPipeline()
 	r.texSampler = r.createTextureSampler()
 	r.mipSampler = r.createMipSampler()
 	r.solidBuffer, r.solidCap = r.createVertexBuffer(64 * 1024)
-	r.textBuffer, r.textCap = r.createVertexBuffer(64 * 1024)
+	r.textGlyphBuffer, r.textGlyphCap = r.createSpriteBuffer(64 * 1024)
+	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(64 * 1024)
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
+	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(64 * 1024)
+	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(spriteUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 
 	r.textures, r.texSizes = r.buildTextures(manifest)
+	r.rebuildSpriteBindGroups()
 	r.particles = newGpuParticles(r, particleScale > 0)
 	if particleScale > 0 {
 		r.compositePipeline = r.createCompositePipeline()
@@ -234,9 +254,14 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		phaseStart = performanceNowMillis()
 	}
 
+	r.tess.SetSpriteArray(r.spriteArrayEnabled)
 	runs := r.tess.Build(frame, w, h, r.fontProvider, r.texSizes)
-	solidBytes, texBytes, textBytes := r.tess.Streams()
-	drawRuns := make([]gpuDrawRun, 0, len(runs))
+	solidBytes, texBytes := r.tess.Streams()
+	spriteBytes := r.tess.SpriteStream()
+	textGlyphBytes := r.tess.TextGlyphStream()
+	textLabelBytes := r.tess.TextLabelStream()
+	r.drawRuns = r.drawRuns[:0]
+	drawRuns := r.drawRuns
 	for _, run := range runs {
 		switch run.Kind {
 		case tess.DrawRunSolid:
@@ -258,6 +283,16 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 				offset:  run.ByteOffset / tess.TexVertexStride,
 				count:   run.VertexCount,
 			})
+		case tess.DrawRunSprites:
+			if run.VertexCount == 0 {
+				continue
+			}
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:    tess.DrawRunSprites,
+				texture: run.Texture,
+				offset:  run.ByteOffset / tess.SpriteStride,
+				count:   run.VertexCount,
+			})
 		case tess.DrawRunText:
 			if run.VertexCount == 0 {
 				continue
@@ -265,7 +300,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
 				atlasKey: run.AtlasKey,
-				offset:   run.ByteOffset / tess.TextVertexStride,
+				offset:   run.ByteOffset / tess.TextGlyphStride,
 				count:    run.VertexCount,
 			})
 		case tess.DrawRunParticles:
@@ -275,6 +310,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			})
 		}
 	}
+	r.drawRuns = drawRuns
 
 	var buildEnd float64
 	if r.sampleCPUTiming {
@@ -282,18 +318,30 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 
 	r.ensureSolidBuffer(len(solidBytes))
-	r.ensureTextBuffer(len(textBytes))
+	r.ensureTextGlyphBuffer(len(textGlyphBytes))
+	r.ensureTextLabelBuffer(len(textLabelBytes))
 
 	if len(solidBytes) > 0 {
 		r.queue.Call("writeBuffer", r.solidBuffer, 0, bytesToJS(solidBytes))
 	}
-	if len(textBytes) > 0 {
-		r.queue.Call("writeBuffer", r.textBuffer, 0, bytesToJS(textBytes))
+	if len(textGlyphBytes) > 0 {
+		r.queue.Call("writeBuffer", r.textGlyphBuffer, 0, bytesToJS(textGlyphBytes))
+	}
+	if len(textLabelBytes) > 0 {
+		r.queue.Call("writeBuffer", r.textLabelBuffer, 0, bytesToJS(textLabelBytes))
 	}
 
 	r.ensureTexBuffer(len(texBytes))
 	if len(texBytes) > 0 {
 		r.queue.Call("writeBuffer", r.texBuffer, 0, bytesToJS(texBytes))
+	}
+	r.ensureSpriteBuffer(len(spriteBytes))
+	if len(spriteBytes) > 0 {
+		r.queue.Call("writeBuffer", r.spriteBuffer, 0, bytesToJS(spriteBytes))
+	}
+	if len(spriteBytes) > 0 || len(textGlyphBytes) > 0 {
+		packSpriteUniforms(r.spriteUniformScratch[:], frame.Camera, w, h)
+		r.queue.Call("writeBuffer", r.spriteUniform, 0, bytesToJS(r.spriteUniformScratch[:]))
 	}
 
 	var uploadEnd float64
@@ -363,8 +411,9 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 	pass := encoder.Call("beginRenderPass", renderPassDesc)
 
-	// Runs are submitted in painter order. Each pipeline has its own packed
-	// vertex buffer, so the run stores a firstVertex offset into that buffer.
+	// Runs are submitted in painter order. Mesh pipelines read packed vertex
+	// buffers; sprite/text pipelines use firstVertex to index shared storage
+	// records without relying on firstInstance.
 	lastComposited := -1
 	for _, run := range drawRuns {
 		switch run.kind {
@@ -381,15 +430,27 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			pass.Call("setVertexBuffer", 0, r.texBuffer)
 			pass.Call("setBindGroup", 0, gt.bindGroup)
 			pass.Call("draw", run.count, 1, run.offset, 0)
+		case tess.DrawRunSprites:
+			if r.spriteArrayEnabled {
+				pass.Call("setPipeline", r.spriteArrayPipeline)
+				pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
+			} else {
+				gt, ok := r.textureFor(run.texture)
+				if !ok || gt.spriteBindGroup.IsUndefined() || gt.spriteBindGroup.IsNull() {
+					continue
+				}
+				pass.Call("setPipeline", r.spritePipeline)
+				pass.Call("setBindGroup", 0, gt.spriteBindGroup)
+			}
+			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 		case tess.DrawRunText:
 			atlas, ok := r.textAtlasFor(run.atlasKey)
 			if !ok {
 				continue
 			}
-			pass.Call("setPipeline", r.textPipeline)
-			pass.Call("setBindGroup", 0, atlas.bindGroup)
-			pass.Call("setVertexBuffer", 0, r.textBuffer)
-			pass.Call("draw", run.count, 1, run.offset, 0)
+			pass.Call("setPipeline", r.textGlyphPipeline)
+			pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
+			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 		case tess.DrawRunParticles:
 			if !offscreenParticles {
 				r.particles.draw(pass, run.particles, frame.Camera, w, h)
@@ -427,8 +488,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 }
 
 // renderCPUTimings reports the Go-side wall time of the most recent Render
-// call, split into tessellation (Build + run mapping), vertex upload (JS heap
-// copy + writeBuffer) and command encoding (render passes + submit). ok is
+// call, split into stream construction (Build + run mapping), buffer upload
+// (JS heap copy + writeBuffer) and command encoding (render passes + submit). ok is
 // false until the first instrumented frame, or when no metrics consumer
 // enabled sampling.
 func (r *webgpuRenderer) renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool) {
@@ -589,14 +650,24 @@ func (r *webgpuRenderer) createSolidPipeline() js.Value {
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
-func (r *webgpuRenderer) createTextPipeline() js.Value {
-	module := r.dev.CreateShaderModule(textWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextPipelineDesc(module, r.format.String(), msaaSampleCount)))
+func (r *webgpuRenderer) createTextGlyphPipeline() js.Value {
+	module := r.dev.CreateShaderModule(textGlyphWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createTexturedPipeline() js.Value {
 	module := r.dev.CreateShaderModule(texturedWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), msaaSampleCount)))
+}
+
+func (r *webgpuRenderer) createSpritePipeline() js.Value {
+	module := r.dev.CreateShaderModule(spriteWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
+}
+
+func (r *webgpuRenderer) createSpriteArrayPipeline() js.Value {
+	module := r.dev.CreateShaderModule(spriteArrayWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a
@@ -622,9 +693,12 @@ func (r *webgpuRenderer) createMipSampler() js.Value {
 }
 
 type gpuTextAtlas struct {
-	atlas     *tess.Atlas
-	texture   js.Value
-	bindGroup js.Value
+	atlas          *tess.Atlas
+	texture        js.Value
+	metricBuffer   js.Value
+	view           js.Value
+	sampler        js.Value
+	glyphBindGroup js.Value
 }
 
 func (r *webgpuRenderer) textAtlasFor(key tess.AtlasKey) (gpuTextAtlas, bool) {
@@ -636,6 +710,7 @@ func (r *webgpuRenderer) textAtlasFor(key tess.AtlasKey) (gpuTextAtlas, bool) {
 		return cached, true
 	} else if ok && !cached.texture.IsUndefined() && !cached.texture.IsNull() {
 		cached.texture.Call("destroy")
+		cached.metricBuffer.Call("destroy")
 	}
 	gpuAtlas := r.createTextAtlas(atlas)
 	r.textAtlases[key] = gpuAtlas
@@ -651,13 +726,21 @@ func (r *webgpuRenderer) createTextAtlas(atlas *tess.Atlas) gpuTextAtlas {
 	r.dev.WriteTexture(map[string]any{"texture": texture}, atlas.Image.Pix, gpu.TextureWriteLayout(width, height), gpu.TextureWriteSize(width, height))
 	view := r.dev.CreateView(texture, nil)
 	sampler := r.dev.CreateSampler(gpu.NearestSamplerDesc())
-	layout := r.dev.BindGroupLayout(r.textPipeline, 0)
-	bindGroup := r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(layout, view, sampler))
-	return gpuTextAtlas{atlas: atlas, texture: jsHandle(texture), bindGroup: jsHandle(bindGroup)}
+	viewValue := jsHandle(view)
+	samplerValue := jsHandle(sampler)
+	metricBytes := atlas.GlyphMetricStream()
+	metricBuffer := jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(len(metricBytes), gpu.BufferUsageStorage|gpu.BufferUsageCopyDst)))
+	r.queue.Call("writeBuffer", metricBuffer, 0, bytesToJS(metricBytes))
+	glyphBindGroup := r.createTextGlyphBindGroup(viewValue, samplerValue, metricBuffer)
+	return gpuTextAtlas{atlas: atlas, texture: jsHandle(texture), metricBuffer: metricBuffer, view: viewValue, sampler: samplerValue, glyphBindGroup: glyphBindGroup}
 }
 
 func (r *webgpuRenderer) createVertexBuffer(size int) (js.Value, int) {
 	return jsHandle(r.dev.CreateBuffer(gpu.VertexBufferDesc(size))), size
+}
+
+func (r *webgpuRenderer) createSpriteBuffer(size int) (js.Value, int) {
+	return jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(size, gpu.BufferUsageStorage|gpu.BufferUsageCopyDst))), size
 }
 
 // ensureMSAATarget (re)creates the multisampled color target when the canvas
@@ -684,13 +767,44 @@ func (r *webgpuRenderer) ensureSolidBuffer(size int) {
 	r.solidBuffer, r.solidCap = r.createVertexBuffer(newCap)
 }
 
-func (r *webgpuRenderer) ensureTextBuffer(size int) {
-	if size <= r.textCap {
+func (r *webgpuRenderer) ensureTextGlyphBuffer(size int) {
+	if size <= r.textGlyphCap {
 		return
 	}
+	newCap := growBufferCap(r.textGlyphCap, size)
+	r.textGlyphBuffer, r.textGlyphCap = r.createSpriteBuffer(newCap)
+	r.rebuildTextGlyphBindGroups()
+}
 
-	newCap := growBufferCap(r.textCap, size)
-	r.textBuffer, r.textCap = r.createVertexBuffer(newCap)
+func (r *webgpuRenderer) ensureTextLabelBuffer(size int) {
+	if size <= r.textLabelCap {
+		return
+	}
+	newCap := growBufferCap(r.textLabelCap, size)
+	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(newCap)
+	r.rebuildTextGlyphBindGroups()
+}
+
+func (r *webgpuRenderer) createTextGlyphBindGroup(view, sampler, metrics js.Value) js.Value {
+	layout := r.textGlyphPipeline.Call("getBindGroupLayout", 0)
+	return r.device.Call("createBindGroup", map[string]any{
+		"layout": layout,
+		"entries": []any{
+			map[string]any{"binding": 0, "resource": view},
+			map[string]any{"binding": 1, "resource": sampler},
+			map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.textGlyphBuffer}},
+			map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.textLabelBuffer}},
+			map[string]any{"binding": 4, "resource": map[string]any{"buffer": metrics}},
+			map[string]any{"binding": 5, "resource": map[string]any{"buffer": r.spriteUniform}},
+		},
+	})
+}
+
+func (r *webgpuRenderer) rebuildTextGlyphBindGroups() {
+	for key, atlas := range r.textAtlases {
+		atlas.glyphBindGroup = r.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer)
+		r.textAtlases[key] = atlas
+	}
 }
 
 func (r *webgpuRenderer) ensureTexBuffer(size int) {
@@ -700,6 +814,16 @@ func (r *webgpuRenderer) ensureTexBuffer(size int) {
 
 	newCap := growBufferCap(r.texCap, size)
 	r.texBuffer, r.texCap = r.createVertexBuffer(newCap)
+}
+
+func (r *webgpuRenderer) ensureSpriteBuffer(size int) {
+	if size <= r.spriteCap {
+		return
+	}
+
+	newCap := growBufferCap(r.spriteCap, size)
+	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(newCap)
+	r.rebuildSpriteBindGroups()
 }
 
 func awaitPromise(promise js.Value) (js.Value, error) {

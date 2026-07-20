@@ -649,6 +649,15 @@ func packUniforms(
 	writer.u32(uint32(e.capacity))
 }
 
+func packSpriteUniforms(dst []byte, camera render.Camera, w, h int) {
+	scale, offset, screenScale := worldToClip(camera, w, h)
+	writer := particleUniformWriter{dst: dst}
+	writer.vec2(scale)
+	writer.vec2(offset)
+	writer.vec2(screenScale)
+	writer.vec2(math2d.Vec2{X: 2 / float64(w), Y: -2 / float64(h)})
+}
+
 type particleUniformWriter struct {
 	dst    []byte
 	offset int

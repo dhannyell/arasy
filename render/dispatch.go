@@ -22,12 +22,30 @@ type CommandSink interface {
 // Each stable-sorts commands by layer and dispatches each command exactly
 // once. The caller's slice is never reordered.
 func Each(commands []Command, sink CommandSink) {
-	ordered := append([]Command(nil), commands...)
-	sort.SliceStable(ordered, func(i, j int) bool {
-		return ordered[i].Layer() < ordered[j].Layer()
-	})
+	ordered := commands
+	for i := 1; i < len(commands); i++ {
+		if commands[i].Layer() < commands[i-1].Layer() {
+			// Only copy and stable-sort when an out-of-order layer requires it.
+			// Most game frames are emitted in painter order, so avoiding this
+			// allocation also keeps the renderer's hot path linear in command
+			// count without changing the caller-owned slice.
+			ordered = append([]Command(nil), commands...)
+			sort.SliceStable(ordered, func(i, j int) bool {
+				return ordered[i].Layer() < ordered[j].Layer()
+			})
+			break
+		}
+	}
 
-	for _, command := range ordered {
+	EachOrdered(ordered, sink)
+}
+
+// EachOrdered dispatches commands already known to be in nondecreasing layer
+// order. It does not validate or repair ordering. It is for renderers that
+// proved the precondition while doing another required frame pass; callers
+// must use Each when they have not done so.
+func EachOrdered(commands []Command, sink CommandSink) {
+	for _, command := range commands {
 		switch command := command.(type) {
 		case DrawRect:
 			sink.VisitRect(command)

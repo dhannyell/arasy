@@ -48,6 +48,14 @@ func (p *fontAtlasProvider) AtlasFor(fontID render.FontID, px int, text string) 
 	return p.ensure(fontID, px, text)
 }
 
+func (p *fontAtlasProvider) CachedAtlas(fontID render.FontID, px int) (*tess.Atlas, bool) {
+	if fontID == 0 {
+		return p.builtin, true
+	}
+	atlas, ok := p.atlases[tess.AtlasKey{Font: fontID, PX: px}]
+	return atlas, ok
+}
+
 func (p *fontAtlasProvider) ensure(fontID render.FontID, px int, text string) (*tess.Atlas, error) {
 	face := p.fonts.Lookup(fontID)
 	if face == nil {

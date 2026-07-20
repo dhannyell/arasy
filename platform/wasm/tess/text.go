@@ -2,6 +2,7 @@ package tess
 
 import (
 	"math"
+	"unicode/utf8"
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
@@ -26,12 +27,13 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 	nativeAscent := atlas.Ascent
 	scale := 1.0
 	builtin := atlas.Key.Font == 0
+	var measured math2d.Vec2
 	if builtin {
 		size := cmd.Size
 		if size <= 0 {
 			size = nativeHeight
 		}
-		measured := render.MeasureText(cmd.Text, size)
+		measured = render.MeasureText(cmd.Text, size)
 		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
 	}
 
@@ -50,11 +52,6 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 	m.glyphScratch = glyphs
 	destHeight := nativeHeight * scale
 	if builtin {
-		size := cmd.Size
-		if size <= 0 {
-			size = nativeHeight
-		}
-		measured := render.MeasureText(cmd.Text, size)
 		destWidth = c.cam.WorldScalarToScreen(measured.X)
 		destHeight = c.cam.WorldScalarToScreen(measured.Y)
 	}
@@ -62,30 +59,17 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		return
 	}
 
-	screenPos := c.cam.WorldToScreen(cmd.Position)
-
-	offsetX := 0.0
-	switch cmd.Align {
-	case render.AlignCenter:
-		offsetX = -destWidth / 2
-	case render.AlignRight:
-		offsetX = -destWidth
+	clipMin, clipMax := textClip(c, cmd)
+	sin, cos := textRotation(cmd.Rotation)
+	topY := textTopY(cmd.Baseline, destHeight, nativeAscent, nativeHeight)
+	layout := textLabelLayout{
+		position: c.cam.WorldToScreen(cmd.Position),
+		originX:  textOriginX(cmd.Align, destWidth),
+		topY:     topY, baselineY: topY + nativeAscent*scale,
+		scale: scale, clipMin: clipMin, clipMax: clipMax, cos: cos, sin: sin,
 	}
-
-	offsetY := 0.0
-	switch cmd.Baseline {
-	case render.BaselineTop:
-		offsetY = 0
-	case render.BaselineMiddle:
-		offsetY = -destHeight / 2
-	case render.BaselineBottom:
-		offsetY = -destHeight
-	default:
-		offsetY = -(nativeAscent / nativeHeight) * destHeight
-	}
-
-	baseline := screenPos.Y + offsetY + nativeAscent*scale
-	penX := screenPos.X + offsetX
+	baseline := layout.position.Y + layout.baselineY
+	penX := layout.position.X + layout.originX
 	for _, glyph := range glyphs {
 		if glyph.Width <= 0 || glyph.Height <= 0 {
 			penX += glyph.Advance * scale
@@ -100,7 +84,7 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		if builtin {
 			advance = destWidth / float64(len(glyphs))
 			x0 = penX
-			y0 = screenPos.Y + offsetY
+			y0 = layout.position.Y + layout.topY
 			x1 = x0 + advance
 			y1 = y0 + destHeight
 		}
@@ -110,22 +94,195 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		cc := math2d.Vec2{X: x1, Y: y1}
 		d := math2d.Vec2{X: x0, Y: y1}
 
-		if cmd.Rotation != 0 {
-			a = rotateScreenPoint(a, screenPos, cmd.Rotation)
-			b = rotateScreenPoint(b, screenPos, cmd.Rotation)
-			cc = rotateScreenPoint(cc, screenPos, cmd.Rotation)
-			d = rotateScreenPoint(d, screenPos, cmd.Rotation)
-		}
+		a = layout.rotate(a)
+		b = layout.rotate(b)
+		cc = layout.rotate(cc)
+		d = layout.rotate(d)
 
 		pushTextQuad(m, c, a, b, cc, d, glyph.UV, cmd.Color)
 		penX += advance
 	}
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-		clip := clipRect(c, cmd.Clip)
+		clip := screenClipRect(c, layout.clipMin, layout.clipMax)
 		clipped := clipTextTriangles(m.Vertices[start:], clip)
 		m.Vertices = append(m.Vertices[:start], clipped...)
 	}
+}
+
+// appendTextGlyphRecords retains the established Go-side text layout while
+// emitting one storage record per visible glyph. The vertex shader expands
+// the glyph quad and applies the label rotation around screenPos.
+func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c ctx, cmd render.DrawText, atlas *Atlas) int {
+	if atlas == nil || cmd.Text == "" || cmd.Color.A <= 0 {
+		return 0
+	}
+
+	nativeHeight := atlas.Height
+	if nativeHeight <= 0 {
+		return 0
+	}
+	nativeAscent := atlas.Ascent
+	scale := 1.0
+	builtin := atlas.Key.Font == 0
+	start := len(*dst)
+	labelIndex := uint32(len(*labels))
+	destWidth := 0.0
+	destHeight := nativeHeight
+	if builtin {
+		size := cmd.Size
+		if size <= 0 {
+			size = nativeHeight
+		}
+		measured := render.MeasureText(cmd.Text, size)
+		glyphCount := utf8.RuneCountInString(cmd.Text)
+		if glyphCount == 0 {
+			return 0
+		}
+		destWidth = c.cam.WorldScalarToScreen(measured.X)
+		destHeight = c.cam.WorldScalarToScreen(measured.Y)
+		scale = destHeight / nativeHeight
+		advance := destWidth / float64(glyphCount)
+		penX := 0.0
+		for _, r := range cmd.Text {
+			glyph := atlas.glyph(r)
+			if glyph.Width <= 0 || glyph.Height <= 0 {
+				penX += advance
+				continue
+			}
+			*dst = append(*dst, textGlyphRecord{
+				penX: float32(penX), metric: glyph.index, label: labelIndex,
+			})
+			penX += advance
+		}
+	} else {
+		ascii := true
+		for i := 0; i < len(cmd.Text); i++ {
+			if cmd.Text[i] < atlasFirstRune || cmd.Text[i] > atlasLastRune {
+				ascii = false
+				break
+			}
+			glyph := atlas.asciiGlyphs[cmd.Text[i]]
+			if glyph.Width > 0 && glyph.Height > 0 {
+				*dst = append(*dst, textGlyphRecord{
+					penX: float32(destWidth), metric: glyph.index, label: labelIndex,
+				})
+			}
+			destWidth += glyph.Advance
+		}
+		if !ascii {
+			*dst = (*dst)[:start]
+			destWidth = 0
+			for _, r := range cmd.Text {
+				glyph := atlas.glyph(r)
+				if glyph.Width > 0 && glyph.Height > 0 {
+					*dst = append(*dst, textGlyphRecord{
+						penX: float32(destWidth), metric: glyph.index, label: labelIndex,
+					})
+				}
+				destWidth += glyph.Advance
+			}
+		}
+	}
+	if destWidth <= 0 || destHeight <= 0 || len(*dst) == start {
+		*dst = (*dst)[:start]
+		return 0
+	}
+
+	clipMin, clipMax := textClip(c, cmd)
+	sin, cos := textRotation(cmd.Rotation)
+	topY := textTopY(cmd.Baseline, destHeight, nativeAscent, nativeHeight)
+	appendTextLabel(
+		labels, c.cam.WorldToScreen(cmd.Position), textOriginX(cmd.Align, destWidth),
+		topY+nativeAscent*scale, scale, clipMin, clipMax, cos, sin, cmd.Color,
+	)
+	return len(*dst) - start
+}
+
+type textLabelLayout struct {
+	position         math2d.Vec2
+	originX          float64
+	topY, baselineY  float64
+	scale            float64
+	clipMin, clipMax math2d.Vec2
+	cos, sin         float64
+}
+
+func textOriginX(align render.TextAlign, width float64) float64 {
+	switch align {
+	case render.AlignCenter:
+		return -width / 2
+	case render.AlignRight:
+		return -width
+	default:
+		return 0
+	}
+}
+
+func textTopY(baseline render.TextBaseline, height, nativeAscent, nativeHeight float64) float64 {
+	switch baseline {
+	case render.BaselineMiddle:
+		return -height / 2
+	case render.BaselineBottom:
+		return -height
+	case render.BaselineTop:
+		return 0
+	default:
+		return -(nativeAscent / nativeHeight) * height
+	}
+}
+
+func textRotation(angle float64) (sin, cos float64) {
+	sin, cos = 0.0, 1.0
+	if angle != 0 {
+		sin, cos = math.Sincos(angle)
+	}
+	return sin, cos
+}
+
+func (l textLabelLayout) rotate(point math2d.Vec2) math2d.Vec2 {
+	dx := point.X - l.position.X
+	dy := point.Y - l.position.Y
+	return math2d.Vec2{
+		X: l.position.X + dx*l.cos - dy*l.sin,
+		Y: l.position.Y + dx*l.sin + dy*l.cos,
+	}
+}
+
+func appendTextLabel(labels *[]textLabelRecord, position math2d.Vec2, originX, baselineY, scale float64, clipMin, clipMax math2d.Vec2, cos, sin float64, color render.Color) uint32 {
+	index := uint32(len(*labels))
+	*labels = append(*labels, textLabelRecord{
+		positionX: float32(position.X), positionY: float32(position.Y),
+		cos: float32(cos), sin: float32(sin),
+		originX: float32(originX), baselineY: float32(baselineY), scale: float32(scale),
+		clipMinX: float32(clipMin.X), clipMinY: float32(clipMin.Y),
+		clipMaxX: float32(clipMax.X), clipMaxY: float32(clipMax.Y),
+		tint: packTextTint(color),
+	})
+	return index
+}
+
+func screenClipRect(c ctx, min, max math2d.Vec2) [4]float32 {
+	a := screenToClip(c, min)
+	b := screenToClip(c, max)
+	return [4]float32{min32(a[0], b[0]), max32(a[0], b[0]), min32(a[1], b[1]), max32(a[1], b[1])}
+}
+
+func textClip(c ctx, cmd render.DrawText) (math2d.Vec2, math2d.Vec2) {
+	if cmd.Clip.Width() <= 0 || cmd.Clip.Height() <= 0 {
+		return math2d.Vec2{}, math2d.Vec2{X: c.w, Y: c.h}
+	}
+	a := c.cam.WorldToScreen(cmd.Clip.Min)
+	b := c.cam.WorldToScreen(cmd.Clip.Max)
+	return math2d.Vec2{X: math.Min(a.X, b.X), Y: math.Min(a.Y, b.Y)},
+		math2d.Vec2{X: math.Max(a.X, b.X), Y: math.Max(a.Y, b.Y)}
+}
+
+func packTextTint(color render.Color) uint32 {
+	return uint32(spriteColorByte(color.R)) |
+		uint32(spriteColorByte(color.G))<<8 |
+		uint32(spriteColorByte(color.B))<<16 |
+		uint32(spriteColorByte(color.A))<<24
 }
 
 func pushTextQuad(
@@ -153,17 +310,6 @@ func textVertex(pos [2]float32, u, v float32, col render.Color) TextVertex {
 		A: float32(col.A),
 		U: u,
 		V: v,
-	}
-}
-
-func rotateScreenPoint(p, anchor math2d.Vec2, angle float64) math2d.Vec2 {
-	sin, cos := math.Sin(angle), math.Cos(angle)
-	dx := p.X - anchor.X
-	dy := p.Y - anchor.Y
-
-	return math2d.Vec2{
-		X: anchor.X + dx*cos - dy*sin,
-		Y: anchor.Y + dx*sin + dy*cos,
 	}
 }
 

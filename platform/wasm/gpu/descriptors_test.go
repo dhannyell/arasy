@@ -21,16 +21,25 @@ func TestPipelineDescriptorsMatchLiteralFixtures(t *testing.T) {
 			map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
 			map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
 		}, literalAlphaBlend())},
-		{"text", gpu.TextPipelineDesc(module, format, 4), literalPipeline(module, format, 4, 32, []any{
-			map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
-			map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
-			map[string]any{"shaderLocation": 2, "offset": 24, "format": "float32x2"},
-		}, literalAlphaBlend())},
 		{"textured", gpu.TexturedPipelineDesc(module, format, 4), literalPipeline(module, format, 4, 40, []any{
 			map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
 			map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
 			map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
 		}, literalPremultipliedBlend())},
+		{"sprites", gpu.SpritePipelineDesc(module, format, 4), map[string]any{
+			"layout":      "auto",
+			"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
+			"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": literalPremultipliedBlend()}}},
+			"primitive":   map[string]any{"topology": "triangle-list"},
+			"multisample": map[string]any{"count": 4},
+		}},
+		{"text glyphs", gpu.TextGlyphPipelineDesc(module, format, 4), map[string]any{
+			"layout":      "auto",
+			"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
+			"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": literalAlphaBlend()}}},
+			"primitive":   map[string]any{"topology": "triangle-list"},
+			"multisample": map[string]any{"count": 4},
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -61,6 +70,13 @@ func TestTextureAndParticleBufferDescriptors(t *testing.T) {
 	texture := gpu.TextureDesc(8, 8, 4)
 	if texture["usage"] != gpu.TextureUsageTextureBinding|gpu.TextureUsageCopyDst|gpu.TextureUsageRenderAttachment {
 		t.Fatalf("texture usage = %v", texture["usage"])
+	}
+	if got, want := gpu.TextureArrayDesc(8, 4, 3, 4), map[string]any{
+		"size":   map[string]any{"width": 8, "height": 4, "depthOrArrayLayers": 3},
+		"format": "rgba8unorm", "mipLevelCount": 4,
+		"usage": gpu.TextureUsageTextureBinding | gpu.TextureUsageCopyDst | gpu.TextureUsageRenderAttachment,
+	}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texture-array descriptor differs: got %#v, want %#v", got, want)
 	}
 	if got, want := gpu.VertexBufferDesc(10)["usage"], gpu.BufferUsageVertex|gpu.BufferUsageCopyDst; got != want {
 		t.Fatalf("vertex usage = %v, want %v", got, want)

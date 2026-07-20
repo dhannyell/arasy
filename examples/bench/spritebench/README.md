@@ -9,9 +9,9 @@ go run ./cmd/frameforge dev ./examples/bench/spritebench/wasm -a 127.0.0.1:8092
 It bounces its own slice of sprites (position, velocity, rotation) around a
 1920x1080 world and emits one `render.DrawImage` per sprite. In the default
 **direct** path the commands are built straight from that slice, bypassing the
-ECS so results isolate the tess/upload path: `tess.Build` tessellating draw
-commands into vertex streams, the `Bytes`/`TexBytes` conversion into the
-WebGPU vertex buffer layout, and the JS-heap upload that follows.
+ECS so results isolate the tess/upload path: `tess.Build` packing draw commands
+into 64-byte storage records, the JS-heap upload that follows, and the
+instanced WebGPU draw which expands each record into a quad.
 
 The **ECS** path mirrors the same sprites into `scene.World` entities
 (`Transform` + `ImageSprite`, no colliders) and renders through
@@ -28,8 +28,9 @@ Controls:
 - `UP` doubles the sprite count, `DOWN` halves it (starts at 1,000, clamped to
   [1, 500,000]).
 - `T` toggles between one shared texture and four textures interleaved per
-  sprite, which forces the textured pipeline to split a run on every draw
-  instead of batching the whole frame into one.
+  sprite. The bundled equal-sized textures share one array resource and stay
+  in a single draw run. Manifests with unequal texture dimensions retain the
+  per-texture fallback and split runs when painter order alternates textures.
 - `E` toggles between the direct and ECS render paths at the current count.
 
 The HUD reports sprite count, texture mode, render path, rolling FPS, frame
@@ -39,7 +40,7 @@ which the renderer samples on every frame whenever the host consumes
 
 The `cpu ~= frame - gpu draw` line is an estimate of the CPU-side cost of the
 render loop: frame time minus the measured GPU draw pass leaves command
-building, `tess.Build`, the `Bytes`/`TexBytes` conversions and the
-`bytesToJS` heap copies. It is not a measurement of any single stage — use it
+building, `tess.Build`, storage-record packing and the `bytesToJS` heap copies.
+It is not a measurement of any single stage — use it
 to see whether growing the sprite count or switching to four textures shifts
 cost onto the CPU path versus the GPU.
