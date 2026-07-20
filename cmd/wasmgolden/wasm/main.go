@@ -16,9 +16,12 @@ func main() {
 
 	var game runtime.Game
 	var err error
-	if params.Call("get", "fixture").String() == "particles" {
+	switch params.Call("get", "fixture").String() {
+	case "particles":
 		game, err = wasmgolden.NewParticleGolden()
-	} else {
+	case "sprite-array":
+		game, err = wasmgolden.NewSpriteArrayGolden()
+	default:
 		game, err = wasmgolden.New()
 	}
 	if err != nil {
