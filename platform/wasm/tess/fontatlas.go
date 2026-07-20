@@ -40,6 +40,7 @@ type Glyph struct {
 	Height  float64
 	OffsetX float64
 	OffsetY float64
+	index   uint32
 }
 
 // Atlas stores the bitmap font texture and per-rune UV coordinates.
@@ -47,8 +48,16 @@ type Atlas struct {
 	Key    AtlasKey
 	Image  *image.Alpha
 	Glyphs map[rune]Glyph
-	Ascent float64
-	Height float64
+	// asciiGlyphs bypasses map lookups for printable ASCII, which every atlas
+	// owns. The map remains the source of truth for dynamic Unicode coverage.
+	asciiGlyphs [128]Glyph
+	// coverage includes requested runes that the face could not rasterize. It
+	// prevents a provider from rebuilding an unchanged atlas every frame just
+	// because layout falls back to '?'.
+	coverage map[rune]struct{}
+	metrics  []textGlyphMetric
+	Ascent   float64
+	Height   float64
 }
 
 // AtlasProvider resolves an atlas for one command. Implementations may cache
@@ -56,6 +65,13 @@ type Atlas struct {
 // runes. Returning nil or an error makes Build fall back to the built-in font.
 type AtlasProvider interface {
 	AtlasFor(font render.FontID, px int, text string) (*Atlas, error)
+}
+
+// CachedAtlasProvider is an optional steady-state fast path. Build still
+// checks the cached atlas's rune coverage and calls AtlasFor when new Unicode
+// appears, so providers retain ownership of atlas growth.
+type CachedAtlasProvider interface {
+	CachedAtlas(font render.FontID, px int) (*Atlas, bool)
 }
 
 // AtlasFor lets the legacy built-in atlas act as a provider. External font
@@ -81,37 +97,13 @@ type TextVertex struct {
 // TextMesh accumulates triangles for one text atlas.
 type TextMesh struct {
 	Vertices []TextVertex
-	stream   *[]byte
-	collect  bool
 	// glyphScratch is AppendText's per-command glyph lookup buffer, reused
 	// across commands so steady-state tessellation does not allocate.
 	glyphScratch []Glyph
 }
 
-func (m *TextMesh) reset(stream *[]byte, collect bool) {
-	m.Vertices = m.Vertices[:0]
-	m.stream = stream
-	m.collect = collect
-}
-
 func (m *TextMesh) append(vertices ...TextVertex) {
-	if m.stream != nil && !m.collect {
-		for _, v := range vertices {
-			*m.stream = appendTextVertex(*m.stream, v)
-		}
-		return
-	}
 	m.Vertices = append(m.Vertices, vertices...)
-}
-
-func (m *TextMesh) flush() {
-	if m.stream == nil {
-		return
-	}
-	for _, v := range m.Vertices {
-		*m.stream = appendTextVertex(*m.stream, v)
-	}
-	m.Vertices = m.Vertices[:0]
 }
 
 // NewAtlas rasterizes the built-in monospace bitmap font into a single alpha
@@ -150,15 +142,34 @@ func NewAtlas() *Atlas {
 			Width:   float64(glyphWidth),
 			Height:  float64(glyphHeight),
 			OffsetY: -fixedFloat(metrics.Ascent),
+			index:   uint32(i),
 		}
+		// NewAtlas owns printable ASCII, so this indexed copy is safe for the
+		// built-in-only fast path in appendTextGlyphRecords.
+		// The map remains populated for the legacy tessellation oracle.
+	}
+	asciiGlyphs := indexedASCIIGlyphs(glyphs)
+	glyphMetrics := make([]textGlyphMetric, 0, len(glyphs))
+	for r := rune(atlasFirstRune); r <= rune(atlasLastRune); r++ {
+		glyph := glyphs[r]
+		metric := metricForGlyph(glyph)
+		// Canonical FontID(0) layout uses render.MeasureText's advance,
+		// not the bitmap cell width. The legacy tessellator stretches each
+		// cell to that advance; preserve the same geometry in the GPU table.
+		measured := render.MeasureText("M", glyphHeight)
+		metric.width = float32(measured.X * float64(glyphHeight) / measured.Y)
+		glyphMetrics = append(glyphMetrics, metric)
 	}
 
 	return &Atlas{
-		Key:    AtlasKey{Font: 0, PX: glyphHeight},
-		Image:  img,
-		Glyphs: glyphs,
-		Ascent: fixedFloat(metrics.Ascent),
-		Height: fixedFloat(metrics.Height),
+		Key:         AtlasKey{Font: 0, PX: glyphHeight},
+		Image:       img,
+		Glyphs:      glyphs,
+		asciiGlyphs: asciiGlyphs,
+		coverage:    runeSet(atlasFirstRune, atlasLastRune, nil),
+		metrics:     glyphMetrics,
+		Ascent:      fixedFloat(metrics.Ascent),
+		Height:      fixedFloat(metrics.Height),
 	}
 }
 
@@ -243,7 +254,7 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 	drawer := &font.Drawer{Dst: img, Src: image.NewUniform(color.Alpha{A: 255}), Face: fontFace}
 	glyphs := make(map[rune]Glyph, len(items))
 
-	for _, item := range items {
+	for index, item := range items {
 		drawer.Dot = fixed.Point26_6{
 			X: fixed.I(item.x) - item.bounds.Min.X,
 			Y: fixed.I(item.y) - item.bounds.Min.Y,
@@ -261,21 +272,103 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 			Height:  float64(item.h),
 			OffsetX: fixedFloat(item.bounds.Min.X),
 			OffsetY: fixedFloat(item.bounds.Min.Y),
+			index:   uint32(index),
 		}
 	}
 
 	metrics := fontFace.Metrics()
+	asciiGlyphs := indexedASCIIGlyphs(glyphs)
+	glyphMetrics := make([]textGlyphMetric, len(items))
+	for _, glyph := range glyphs {
+		glyphMetrics[glyph.index] = metricForGlyph(glyph)
+	}
 	atlas := &Atlas{
-		Key:    AtlasKey{Font: fontID, PX: px},
-		Image:  img,
-		Glyphs: glyphs,
-		Ascent: fixedFloat(metrics.Ascent),
-		Height: fixedFloat(metrics.Height),
+		Key:         AtlasKey{Font: fontID, PX: px},
+		Image:       img,
+		Glyphs:      glyphs,
+		asciiGlyphs: asciiGlyphs,
+		coverage:    requested,
+		metrics:     glyphMetrics,
+		Ascent:      fixedFloat(metrics.Ascent),
+		Height:      fixedFloat(metrics.Height),
 	}
 	if err := fontFace.Close(); err != nil {
 		return nil, fmt.Errorf("create font atlas: close font face: %w", err)
 	}
 	return atlas, nil
+}
+
+// GlyphMetricStream returns immutable atlas metadata in the storage-buffer
+// layout consumed by the instanced text shader.
+func (a *Atlas) GlyphMetricStream() []byte {
+	if a == nil {
+		return nil
+	}
+	return textMetricBytes(a.metrics)
+}
+
+func metricForGlyph(glyph Glyph) textGlyphMetric {
+	return textGlyphMetric{
+		uvMinX: glyph.UV[0], uvMinY: glyph.UV[1], uvMaxX: glyph.UV[2], uvMaxY: glyph.UV[3],
+		width: float32(glyph.Width), height: float32(glyph.Height),
+		offsetX: float32(glyph.OffsetX), offsetY: float32(glyph.OffsetY),
+	}
+}
+
+// indexedASCIIGlyphs keeps printable-ASCII lookup branchless while matching
+// the map-based layout fallback for faces that omit a printable glyph.
+func indexedASCIIGlyphs(glyphs map[rune]Glyph) [128]Glyph {
+	var indexed [128]Glyph
+	fallback := glyphs['?']
+	for r := rune(atlasFirstRune); r <= rune(atlasLastRune); r++ {
+		glyph, ok := glyphs[r]
+		if !ok {
+			glyph = fallback
+		}
+		indexed[r] = glyph
+	}
+	return indexed
+}
+
+func runeSet(first, last rune, extra []rune) map[rune]struct{} {
+	set := make(map[rune]struct{}, int(last-first+1)+len(extra))
+	for r := first; r <= last; r++ {
+		set[r] = struct{}{}
+	}
+	for _, r := range extra {
+		set[r] = struct{}{}
+	}
+	return set
+}
+
+func (a *Atlas) covers(r rune) bool {
+	if a == nil {
+		return false
+	}
+	if r >= atlasFirstRune && r <= atlasLastRune {
+		return true
+	}
+	_, ok := a.coverage[r]
+	return ok
+}
+
+func printableASCII(text string) bool {
+	for i := 0; i < len(text); i++ {
+		if text[i] < atlasFirstRune || text[i] > atlasLastRune {
+			return false
+		}
+	}
+	return true
+}
+
+func (a *Atlas) glyph(r rune) Glyph {
+	if r >= atlasFirstRune && r <= atlasLastRune {
+		return a.asciiGlyphs[r]
+	}
+	if glyph, ok := a.Glyphs[r]; ok {
+		return glyph
+	}
+	return a.asciiGlyphs['?']
 }
 
 func fixedFloat(v fixed.Int26_6) float64 { return float64(v) / 64 }

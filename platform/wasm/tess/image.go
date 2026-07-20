@@ -94,6 +94,98 @@ func AppendImage(m *TexMesh, c ctx, cmd render.DrawImage, texW, texH int) {
 	}
 }
 
+// appendSpriteRecord converts a DrawImage into the 64-byte storage-buffer
+// record consumed by the instanced sprite pipeline. Camera projection and
+// quad expansion deliberately stay on the GPU; only the command-local
+// rotation, texture region, tint, and screen-space clip are prepared here.
+func appendSpriteRecord(dst *[]spriteRecord, c ctx, cmd render.DrawImage, texW, texH int, textureLayer uint32) bool {
+	// The overwhelmingly common game path uses an upright destination rect,
+	// the whole texture, no clip, and the default white tint. Keep it direct:
+	// rotation still travels as an angle for the shader, while no temporary
+	// UV/clip vectors or color conversion are needed on the wasm hot loop.
+	if cmd.Dest.Min.X < cmd.Dest.Max.X && cmd.Dest.Min.Y < cmd.Dest.Max.Y &&
+		cmd.Src == (math2d.Rect{}) && cmd.Clip == (math2d.Rect{}) && cmd.Tint == (render.Color{}) {
+		*dst = append(*dst, spriteRecord{
+			centerX:    float32((cmd.Dest.Min.X + cmd.Dest.Max.X) * 0.5),
+			centerY:    float32((cmd.Dest.Min.Y + cmd.Dest.Max.Y) * 0.5),
+			halfWidth:  float32((cmd.Dest.Max.X - cmd.Dest.Min.X) * 0.5),
+			halfHeight: float32((cmd.Dest.Max.Y - cmd.Dest.Min.Y) * 0.5),
+			rotation:   float32(cmd.Rotation),
+			uvMaxX:     1, uvMaxY: 1,
+			clipMaxX: float32(c.w), clipMaxY: float32(c.h),
+			tint: 0xffffffff, textureLayer: textureLayer,
+		})
+		return true
+	}
+
+	minX, maxX := cmd.Dest.Min.X, cmd.Dest.Max.X
+	if minX > maxX {
+		minX, maxX = maxX, minX
+	}
+	minY, maxY := cmd.Dest.Min.Y, cmd.Dest.Max.Y
+	if minY > maxY {
+		minY, maxY = maxY, minY
+	}
+	if maxX <= minX || maxY <= minY {
+		return false
+	}
+	uvMin := [2]float32{}
+	uvMax := [2]float32{1, 1}
+	if cmd.Src != (math2d.Rect{}) {
+		uv, ok := srcUV(cmd.Src, texW, texH)
+		if !ok {
+			return false
+		}
+		uvMin, uvMax = uv[0], uv[2]
+	}
+
+	clipMin := math2d.Vec2{}
+	clipMax := math2d.Vec2{X: c.w, Y: c.h}
+	if cmd.Clip != (math2d.Rect{}) {
+		if cmd.Clip.Width() <= 0 || cmd.Clip.Height() <= 0 {
+			return false
+		}
+		a := c.cam.WorldToScreen(cmd.Clip.Min)
+		b := c.cam.WorldToScreen(cmd.Clip.Max)
+		clipMin = math2d.Vec2{X: math.Min(a.X, b.X), Y: math.Min(a.Y, b.Y)}
+		clipMax = math2d.Vec2{X: math.Max(a.X, b.X), Y: math.Max(a.Y, b.Y)}
+	}
+
+	tint := packSpriteTint(cmd.Tint)
+	*dst = appendSprite(
+		*dst,
+		float32((minX+maxX)*0.5), float32((minY+maxY)*0.5),
+		float32((maxX-minX)*0.5), float32((maxY-minY)*0.5),
+		float32(cmd.Rotation),
+		uvMin, uvMax,
+		[2]float32{float32(clipMin.X), float32(clipMin.Y)},
+		[2]float32{float32(clipMax.X), float32(clipMax.Y)},
+		tint,
+		textureLayer,
+	)
+	return true
+}
+
+func packSpriteTint(tint render.Color) uint32 {
+	if tint == (render.Color{}) {
+		return 0xffffffff
+	}
+	return uint32(spriteColorByte(tint.R*tint.A)) |
+		uint32(spriteColorByte(tint.G*tint.A))<<8 |
+		uint32(spriteColorByte(tint.B*tint.A))<<16 |
+		uint32(spriteColorByte(tint.A))<<24
+}
+
+func spriteColorByte(value float64) byte {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 255
+	}
+	return byte(value*255 + 0.5)
+}
+
 // AppendImageQuad converts a render.DrawImageQuad into two textured
 // triangles using a projective homography that maps the unit square onto the
 // screen-space quad corners. W varies per corner when the quad has genuine

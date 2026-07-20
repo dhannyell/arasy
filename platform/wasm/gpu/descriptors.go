@@ -55,20 +55,37 @@ func SolidPipelineDesc(module Handle, format string, sampleCount int) map[string
 	}, AlphaBlend())
 }
 
-func TextPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
-	return pipelineDesc(module, format, sampleCount, 32, []any{
-		map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
-		map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
-		map[string]any{"shaderLocation": 2, "offset": 24, "format": "float32x2"},
-	}, AlphaBlend())
-}
-
 func TexturedPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
 	return pipelineDesc(module, format, sampleCount, 40, []any{
 		map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
 		map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
 		map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
 	}, PremultipliedBlend())
+}
+
+// SpritePipelineDesc expands storage-buffer sprite records with vertex
+// pulling, so it intentionally has no vertex buffer layout.
+func SpritePipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+	return map[string]any{
+		"layout":      "auto",
+		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
+		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": PremultipliedBlend()}}},
+		"primitive":   map[string]any{"topology": "triangle-list"},
+		"multisample": map[string]any{"count": sampleCount},
+	}
+}
+
+// TextGlyphPipelineDesc expands storage-buffer glyph records without a
+// vertex buffer. Unlike sprites, glyph fragments carry straight RGB plus an
+// alpha mask, so they must retain the text pipeline's straight-alpha blend.
+func TextGlyphPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+	return map[string]any{
+		"layout":      "auto",
+		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
+		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": AlphaBlend()}}},
+		"primitive":   map[string]any{"topology": "triangle-list"},
+		"multisample": map[string]any{"count": sampleCount},
+	}
 }
 
 func pipelineDesc(module Handle, format string, sampleCount, stride int, attributes []any, blend map[string]any) map[string]any {
@@ -115,6 +132,17 @@ func NearestSamplerDesc() map[string]any {
 func TextureDesc(w, h, levels int) map[string]any {
 	return map[string]any{
 		"size": []any{w, h}, "format": "rgba8unorm", "mipLevelCount": levels,
+		"usage": TextureUsageTextureBinding | TextureUsageCopyDst | TextureUsageRenderAttachment,
+	}
+}
+
+// TextureArrayDesc describes a uniform stack of 2D texture layers. Sprite
+// records select their layer in the shader, avoiding a bind-group switch for
+// every interleaved texture.
+func TextureArrayDesc(w, h, layers, levels int) map[string]any {
+	return map[string]any{
+		"size":   map[string]any{"width": w, "height": h, "depthOrArrayLayers": layers},
+		"format": "rgba8unorm", "mipLevelCount": levels,
 		"usage": TextureUsageTextureBinding | TextureUsageCopyDst | TextureUsageRenderAttachment,
 	}
 }

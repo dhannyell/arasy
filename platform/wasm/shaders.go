@@ -12,14 +12,11 @@ import _ "embed"
 //go:embed shaders/solid.wgsl
 var solidWGSL string
 
-// textWGSL is the atlas-backed text WebGPU pipeline shader.
+// textGlyphWGSL expands storage-buffer glyph records while retaining all text
+// layout decisions in the tessellator.
 //
-// Vertex inputs match tess.TextVertex serialized by tess.TextBytes:
-// @location(0) position vec2f, @location(1) color vec4f,
-// @location(2) uv vec2f.
-//
-//go:embed shaders/text.wgsl
-var textWGSL string
+//go:embed shaders/text_instanced.wgsl
+var textGlyphWGSL string
 
 // texturedWGSL is the image/texture WebGPU pipeline shader.
 //
@@ -30,6 +27,18 @@ var textWGSL string
 //
 //go:embed shaders/textured.wgsl
 var texturedWGSL string
+
+// spriteWGSL expands storage-buffer sprite records in the vertex shader.
+//
+//go:embed shaders/sprite_render.wgsl
+var spriteWGSL string
+
+// spriteArrayWGSL is the array-texture variant of the sprite pipeline. Each
+// record selects a layer, so interleaved textures retain painter order in one
+// draw call.
+//
+//go:embed shaders/sprite_array_render.wgsl
+var spriteArrayWGSL string
 
 // mipmapWGSL is the internal fullscreen-triangle shader used to generate a
 // texture's mip chain via successive render passes. It has no vertex buffer

@@ -52,7 +52,7 @@ type FrameMetrics struct {
 	CPURenderTime time.Duration
 	CPUTimingSet  bool
 	// CPUTessTime, CPUUploadTime and CPUEncodeTime split the renderer's
-	// share of CPURenderTime: tessellation into vertex streams, vertex
+	// share of CPURenderTime: geometry/storage-record construction, GPU-buffer
 	// upload (JS heap copy + writeBuffer) and command encoding + submit.
 	// WebGPU only; the difference CPURenderTime - (sum of the three) is the
 	// game's command building and dispatch.
