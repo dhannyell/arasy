@@ -34,6 +34,13 @@ func main() {
 				metrics.GPUSimulateTime,
 				metrics.GPURenderTime,
 				metrics.GPUTimingSet,
+				metrics.CPUTickTime,
+				metrics.CPURenderTime,
+				metrics.CPUTimingSet,
+				metrics.CPUTessTime,
+				metrics.CPUUploadTime,
+				metrics.CPUEncodeTime,
+				metrics.CPUBreakdownSet,
 			)
 		},
 	}); err != nil {

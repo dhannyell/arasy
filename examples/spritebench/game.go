@@ -67,6 +67,14 @@ type frameStats struct {
 	p99        time.Duration
 	gpuDraw    time.Duration
 	hasGPUTime bool
+
+	cpuTick         time.Duration
+	cpuRender       time.Duration
+	hasCPUTime      bool
+	cpuTess         time.Duration
+	cpuUpload       time.Duration
+	cpuEncode       time.Duration
+	hasCPUBreakdown bool
 }
 
 // Game bounces an owned slice of sprites inside the world and renders one
@@ -253,13 +261,7 @@ func (g *Game) spawnEntities(w *scene.World) {
 }
 
 func (g *Game) despawnEntities(w *scene.World) {
-	// Despawn highest EntityID first: component stores keep their dense
-	// arrays sorted by id, so removing from the front shifts and reindexes
-	// the whole tail on every call — front-first mass despawn is O(n^2) and
-	// visibly stalls at tens of thousands of entities. Tail-first is O(n).
-	for i := len(g.entities) - 1; i >= 0; i-- {
-		w.Despawn(g.entities[i])
-	}
+	w.DespawnBatch(g.entities)
 	g.entities = g.entities[:0]
 }
 
@@ -295,7 +297,8 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	d.Label(fmt.Sprintf("sprites  %s     textures  %s     path  %s", formatCount(len(g.sprites)), g.textureModeLabel(), g.pathModeLabel()), hud.load)
 	d.Label(fmt.Sprintf("FPS  %5.1f     frame  %6.2f ms     P99  %6.2f ms", g.stats.fps, milliseconds(g.stats.frameTime), milliseconds(g.stats.p99)), hud.frame)
 	d.Label(g.gpuLabel(), hud.gpu)
-	d.Label(g.cpuEstimateLabel(), hud.cpu)
+	d.Label(g.cpuLabel(), hud.cpu)
+	d.Label(g.cpuBreakdownLabel(), hud.breakdown)
 	d.Label("UP doubles, DOWN halves, T toggles 1/4 textures, E toggles direct/ECS", hud.help)
 	return commands
 }
@@ -312,10 +315,17 @@ func (g *Game) ObserveFrame(
 	hasGPU bool,
 	_, _, gpuDraw time.Duration,
 	hasGPUTime bool,
+	cpuTick, cpuRender time.Duration,
+	hasCPUTime bool,
+	cpuTess, cpuUpload, cpuEncode time.Duration,
+	hasCPUBreakdown bool,
 ) {
 	g.stats = frameStats{
 		fps: fps, frameTime: frameTime, p99: p99,
 		gpuDraw: gpuDraw, hasGPUTime: hasGPUTime,
+		cpuTick: cpuTick, cpuRender: cpuRender, hasCPUTime: hasCPUTime,
+		cpuTess: cpuTess, cpuUpload: cpuUpload, cpuEncode: cpuEncode,
+		hasCPUBreakdown: hasCPUBreakdown,
 	}
 }
 
@@ -342,19 +352,37 @@ func (g *Game) gpuLabel() string {
 	return fmt.Sprintf("GPU  draw  %6.2f ms", milliseconds(g.stats.gpuDraw))
 }
 
-// cpuEstimateLabel approximates the CPU-side cost of the tess/upload path:
-// the render-loop wall time minus GPU draw time contains command building,
-// tess.Build, the Bytes/TexBytes conversions and the bytesToJS heap copies.
-// It is an estimate, not a measurement of any single stage.
-func (g *Game) cpuEstimateLabel() string {
-	if !g.stats.hasGPUTime {
-		return "cpu ~= frame - gpu draw  unavailable (no gpu draw sample)"
+// cpuLabel reports the measured Go-side wall time of the frame loop, split
+// into the simulation tick and the render traversal (game command building +
+// renderer). Falls back to the frame-minus-GPU estimate when the host does
+// not report CPU timings.
+func (g *Game) cpuLabel() string {
+	if !g.stats.hasCPUTime {
+		if !g.stats.hasGPUTime {
+			return "cpu timings unavailable"
+		}
+		cpu := max(g.stats.frameTime-g.stats.gpuDraw, 0)
+		return fmt.Sprintf("cpu ~= frame - gpu draw  %6.2f ms", milliseconds(cpu))
 	}
-	cpu := g.stats.frameTime - g.stats.gpuDraw
-	if cpu < 0 {
-		cpu = 0
+	return fmt.Sprintf("CPU  tick  %6.2f ms     render  %6.2f ms", milliseconds(g.stats.cpuTick), milliseconds(g.stats.cpuRender))
+}
+
+// cpuBreakdownLabel splits the renderer's share of the render traversal into
+// tessellation, vertex upload (JS heap copy + writeBuffer) and command
+// encoding. "cmds" is the remainder: the game building its command slice
+// (or scene.World extracting render poses in ECS mode) plus dispatch/sort.
+func (g *Game) cpuBreakdownLabel() string {
+	if !g.stats.hasCPUBreakdown {
+		return "render breakdown unavailable (canvas2d or no sample yet)"
 	}
-	return fmt.Sprintf("cpu ~= frame - gpu draw  %6.2f ms", milliseconds(cpu))
+	cmds := max(g.stats.cpuRender-g.stats.cpuTess-g.stats.cpuUpload-g.stats.cpuEncode, 0)
+	return fmt.Sprintf(
+		"tess  %6.2f     upload  %6.2f     encode  %6.2f     cmds  %6.2f ms",
+		milliseconds(g.stats.cpuTess),
+		milliseconds(g.stats.cpuUpload),
+		milliseconds(g.stats.cpuEncode),
+		milliseconds(cmds),
+	)
 }
 
 func spritebenchBindings() []input.Binding {
@@ -399,23 +427,24 @@ func formatCount(count int) string {
 type spritebenchHUD struct {
 	panel                        math2d.Rect
 	title, load, frame, gpu, cpu math2d.Vec2
-	help                         math2d.Vec2
+	breakdown, help              math2d.Vec2
 }
 
 func spritebenchLayout(viewport math2d.Rect) spritebenchHUD {
 	w, h := viewport.Width(), viewport.Height()
-	panelW := math2d.Clamp(w*0.48, 520, 720)
-	panelH := math2d.Clamp(h*0.36, 260, 320)
+	panelW := math2d.Clamp(w*0.48, 560, 760)
+	panelH := math2d.Clamp(h*0.40, 290, 350)
 	x := viewport.Min.X + (w-panelW)/2
 	y := viewport.Min.Y + math2d.Clamp(h*0.035, 18, 42)
-	line := panelH * 0.10
+	line := panelH * 0.09
 	return spritebenchHUD{
-		panel: math2d.NewRect(math2d.Vec2{X: x, Y: y}, math2d.Vec2{X: panelW, Y: panelH}),
-		title: math2d.Vec2{X: x + panelW/2, Y: y + line*0.8},
-		load:  math2d.Vec2{X: x + panelW/2, Y: y + line*1.9},
-		frame: math2d.Vec2{X: x + panelW/2, Y: y + line*3.0},
-		gpu:   math2d.Vec2{X: x + panelW/2, Y: y + line*4.1},
-		cpu:   math2d.Vec2{X: x + panelW/2, Y: y + line*5.2},
-		help:  math2d.Vec2{X: x + panelW/2, Y: y + line*6.6},
+		panel:     math2d.NewRect(math2d.Vec2{X: x, Y: y}, math2d.Vec2{X: panelW, Y: panelH}),
+		title:     math2d.Vec2{X: x + panelW/2, Y: y + line*0.8},
+		load:      math2d.Vec2{X: x + panelW/2, Y: y + line*1.9},
+		frame:     math2d.Vec2{X: x + panelW/2, Y: y + line*3.0},
+		gpu:       math2d.Vec2{X: x + panelW/2, Y: y + line*4.1},
+		cpu:       math2d.Vec2{X: x + panelW/2, Y: y + line*5.2},
+		breakdown: math2d.Vec2{X: x + panelW/2, Y: y + line*6.3},
+		help:      math2d.Vec2{X: x + panelW/2, Y: y + line*7.7},
 	}
 }

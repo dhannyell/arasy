@@ -80,6 +80,37 @@ func (s *store[T]) remove(id EntityID) {
 	}
 }
 
+// removeMarked removes every marked entity in one stable compaction pass.
+// Dense entries retain ascending EntityID order, and sparse indexes are
+// rebuilt in the same pass.
+func (s *store[T]) removeMarked(marked map[EntityID]struct{}) {
+	if len(marked) == 0 || len(s.ids) == 0 {
+		return
+	}
+	if len(s.sparse) == 0 {
+		s.rebuildSparse()
+	}
+
+	write := 0
+	for read, id := range s.ids {
+		if _, remove := marked[id]; remove {
+			s.sparse[int(id)] = noIndex
+			continue
+		}
+		if write != read {
+			s.dense[write] = s.dense[read]
+			s.ids[write] = id
+		}
+		s.sparse[int(id)] = int32(write)
+		write++
+	}
+
+	clear(s.dense[write:])
+	clear(s.ids[write:])
+	s.dense = s.dense[:write]
+	s.ids = s.ids[:write]
+}
+
 func (s *store[T]) has(id EntityID) bool {
 	idx := int(id)
 	if len(s.sparse) == 0 && len(s.ids) > 0 {
