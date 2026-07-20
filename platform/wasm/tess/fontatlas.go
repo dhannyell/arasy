@@ -83,6 +83,9 @@ type TextMesh struct {
 	Vertices []TextVertex
 	stream   *[]byte
 	collect  bool
+	// glyphScratch is AppendText's per-command glyph lookup buffer, reused
+	// across commands so steady-state tessellation does not allocate.
+	glyphScratch []Glyph
 }
 
 func (m *TextMesh) reset(stream *[]byte, collect bool) {
