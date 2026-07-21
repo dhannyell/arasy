@@ -124,10 +124,25 @@ func Run(game runtime.Game, opts Options) error {
 	return nil
 }
 
-func (t *frameTarget) UpdateTextures(updates []runtime.TextureUpdate) {
-	for _, u := range updates {
+func (t *frameTarget) UpdateResources(updates runtime.FrameUpdates) {
+	for _, u := range updates.Textures {
 		if int(u.ID) < len(t.textures) && t.textures[u.ID] != nil && u.Image != nil {
 			draw.Draw(t.textures[u.ID], t.textures[u.ID].Bounds(), u.Image, image.Point{}, draw.Src)
+		}
+	}
+	// Textures first: retained batches may reference them.
+	for _, u := range updates.SpriteBatches {
+		if u.Op == runtime.BatchDelete {
+			t.r.DeleteSpriteBatch(u.ID)
+		} else {
+			t.r.ReplaceSpriteBatch(u.ID, u.Instances)
+		}
+	}
+	for _, u := range updates.TextBatches {
+		if u.Op == runtime.BatchDelete {
+			t.r.DeleteTextBatch(u.ID)
+		} else {
+			t.r.ReplaceTextBatch(u.ID, u.Labels)
 		}
 	}
 }

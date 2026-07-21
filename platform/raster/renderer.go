@@ -34,6 +34,11 @@ type Renderer struct {
 	particles   *particle.EmitterSet
 	diagnostics diagnostic.Once
 	log         *slog.Logger
+
+	// spriteBatches/textBatches hold retained batch content published through
+	// Replace*Batch. Render-only: never snapshotted or recorded.
+	spriteBatches map[render.SpriteBatchID][]render.SpriteInstance
+	textBatches   map[render.TextBatchID][]render.TextLabel
 }
 
 // NewTarget allocates an RGBA image sized for this renderer.
@@ -112,4 +117,12 @@ func (s rasterSink) VisitImageQuad(command render.DrawImageQuad) {
 
 func (s rasterSink) VisitParticles(command render.DrawParticles) {
 	s.renderer.drawParticles(s.image, command)
+}
+
+func (s rasterSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
+	s.renderer.drawSpriteBatch(s.image, command)
+}
+
+func (s rasterSink) VisitTextBatch(command render.DrawTextBatch) {
+	s.renderer.drawTextBatch(s.image, command)
 }
