@@ -19,6 +19,7 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 	commands := []render.Command{
 		render.DrawRect{},
 		render.DrawCircle{},
+		render.DrawEllipse{},
 		render.DrawPoint{},
 		render.DrawLine{},
 		render.DrawText{},

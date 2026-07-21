@@ -80,6 +80,63 @@ func TestGoldenCirclesPoints(t *testing.T) {
 	assertGolden(t, "circles_points", img)
 }
 
+func TestGoldenEllipses(t *testing.T) {
+	img := goldenRenderer().Render([]render.Command{
+		// 1. circle (rx == ry)
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 14, Y: 15},
+			RadiusX: 10, RadiusY: 10,
+			Fill: render.RGBA(0.22, 0.74, 0.36, 1),
+		},
+		// 2. Horizontal (rx > ry), fill
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 50, Y: 16},
+			RadiusX: 18, RadiusY: 7,
+			Fill: render.RGBA(0.12, 0.63, 0.72, 1),
+		},
+		// 3. Vertical (ry > rx), stroke
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 86, Y: 18},
+			RadiusX: 6, RadiusY: 14,
+			Stroke:      render.RGBA(0.95, 0.95, 0.35, 1),
+			StrokeWidth: 2,
+		},
+		// 4. Horizontal fill + stroke
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 16, Y: 56},
+			RadiusX: 6, RadiusY: 14,
+			Fill:        render.RGBA(1, 0.35, 0.7, 1),
+			Stroke:      render.RGBA(0.95, 0.95, 0.35, 1),
+			StrokeWidth: 3,
+		},
+		// 5. thick stroke (swallows the interior)
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 50, Y: 56},
+			RadiusX: 14, RadiusY: 6,
+			Stroke:      render.RGBA(0.4, 0.75, 1, 1),
+			StrokeWidth: 14,
+		},
+		// 6. Sub-pixel (rx/ry < 1)
+		render.DrawEllipse{
+			Center:  math2d.Vec2{X: 84, Y: 58},
+			RadiusX: 0.45, RadiusY: 0.3,
+			Fill: render.RGBA(1, 0.55, 0.2, 0.7),
+		},
+		// 7. Clip
+		render.DrawEllipse{
+			BaseCommand: render.BaseCommand{
+				Clip: math2d.NewRect(math2d.Vec2{X: 70, Y: 50}, math2d.Vec2{X: 16, Y: 14}),
+			},
+			Center:  math2d.Vec2{X: 86, Y: 58},
+			RadiusX: 10, RadiusY: 7,
+			Fill:        render.RGBA(0.35, 0.9, 1, 0.78),
+			Stroke:      render.RGBA(1, 1, 1, 1),
+			StrokeWidth: 1.4,
+		},
+	})
+	assertGolden(t, "ellipses", img)
+}
+
 func TestGoldenLinesArcs(t *testing.T) {
 	img := goldenRenderer().Render([]render.Command{
 		render.DrawLine{

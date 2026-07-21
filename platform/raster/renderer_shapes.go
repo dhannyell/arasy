@@ -54,6 +54,27 @@ func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 	}
 }
 
+func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
+	center := r.Camera.WorldToScreen(command.Center)
+
+	radiusX := r.Camera.WorldScalarToScreen(command.RadiusX)
+	radiusY := r.Camera.WorldScalarToScreen(command.RadiusY)
+
+	if radiusX <= 0 || radiusY <= 0 {
+		return
+	}
+
+	bounds := r.clipBounds(img, ellipseBounds(center, radiusX, radiusY), command.Clip)
+
+	if command.Fill.A > 0 {
+		fillEllipse(img, center, radiusX, radiusY, bounds, toRGBA(command.Fill))
+	}
+	if command.Stroke.A > 0 && command.StrokeWidth > 0 {
+		strokeWidth := r.Camera.WorldScalarToScreen(command.StrokeWidth)
+		strokeEllipse(img, center, radiusX, radiusY, strokeWidth, bounds, toRGBA(command.Stroke))
+	}
+}
+
 func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 	center := r.Camera.WorldToScreen(command.Center)
 	radius := r.Camera.WorldScalarToScreen(command.Radius)

@@ -9,6 +9,7 @@ import "sort"
 type CommandSink interface {
 	VisitRect(DrawRect)
 	VisitCircle(DrawCircle)
+	VisitEllipse(DrawEllipse)
 	VisitPoint(DrawPoint)
 	VisitLine(DrawLine)
 	VisitText(DrawText)
@@ -53,6 +54,8 @@ func EachOrdered(commands []Command, sink CommandSink) {
 			sink.VisitRect(command)
 		case DrawCircle:
 			sink.VisitCircle(command)
+		case DrawEllipse:
+			sink.VisitEllipse(command)
 		case DrawPoint:
 			sink.VisitPoint(command)
 		case DrawLine:

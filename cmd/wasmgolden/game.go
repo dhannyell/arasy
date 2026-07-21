@@ -105,6 +105,15 @@ func (g *game) Render(ctx *runtime.RenderContext) []render.Command {
 			Stroke:      render.RGBA8(210, 255, 220, 255),
 			StrokeWidth: 1,
 		},
+		render.DrawEllipse{
+			BaseCommand: render.BaseCommand{LayerValue: 7},
+			Center:      math2d.Vec2{X: 38, Y: 63},
+			RadiusX:     8,
+			RadiusY:     4,
+			Fill:        render.RGBA(0.82, 0.72, 1, 0.78),
+			Stroke:      render.RGBA8(255, 255, 255, 255),
+			StrokeWidth: 1.2,
+		},
 		render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: 1, Clip: clip},
 			Texture:     texture,

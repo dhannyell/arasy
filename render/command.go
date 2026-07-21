@@ -68,6 +68,17 @@ type DrawCircle struct {
 	StrokeWidth float64
 }
 
+// DrawEllipse describes an axis-aligned ellipse draw command in world coodinates.
+type DrawEllipse struct {
+	BaseCommand
+	Center      math2d.Vec2
+	RadiusX     float64
+	RadiusY     float64
+	Fill        Color
+	Stroke      Color
+	StrokeWidth float64
+}
+
 // DrawPoint describes a filled point marker draw command.
 type DrawPoint struct {
 	BaseCommand
@@ -204,6 +215,7 @@ type DrawParticles struct {
 
 func (DrawRect) isRenderCommand()        {}
 func (DrawCircle) isRenderCommand()      {}
+func (DrawEllipse) isRenderCommand()     {}
 func (DrawPoint) isRenderCommand()       {}
 func (DrawLine) isRenderCommand()        {}
 func (DrawText) isRenderCommand()        {}

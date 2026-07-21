@@ -243,6 +243,10 @@ func (s canvasSink) VisitCircle(command render.DrawCircle) {
 	s.withClip(command.Clip, func() { s.canvas.drawCircle(command, s.camera) })
 }
 
+func (s canvasSink) VisitEllipse(command render.DrawEllipse) {
+	s.withClip(command.Clip, func() { s.canvas.drawEllipse(command, s.camera) })
+}
+
 func (s canvasSink) VisitPoint(command render.DrawPoint) {
 	s.withClip(command.Clip, func() { s.canvas.drawPoint(command, s.camera) })
 }
@@ -554,6 +558,27 @@ func (c *Canvas2D) drawCircle(cmd render.DrawCircle, camera render.Camera) {
 
 	c.ctx.Call("beginPath")
 	c.ctx.Call("arc", center.X, center.Y, radius, 0, 2*math.Pi)
+	if cmd.Fill.A > 0 {
+		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
+		c.ctx.Call("fill")
+	}
+	if cmd.Stroke.A > 0 && cmd.StrokeWidth > 0 {
+		c.ctx.Set("strokeStyle", cssColor(cmd.Stroke))
+		c.ctx.Set("lineWidth", camera.WorldScalarToScreen(cmd.StrokeWidth))
+		c.ctx.Call("stroke")
+	}
+}
+
+func (c *Canvas2D) drawEllipse(cmd render.DrawEllipse, camera render.Camera) {
+	center := camera.WorldToScreen(cmd.Center)
+	rx := camera.WorldScalarToScreen(cmd.RadiusX)
+	ry := camera.WorldScalarToScreen(cmd.RadiusY)
+	if rx <= 0 || ry <= 0 {
+		return
+	}
+
+	c.ctx.Call("beginPath")
+	c.ctx.Call("ellipse", center.X, center.Y, rx, ry, 0, 0, 2*math.Pi)
 	if cmd.Fill.A > 0 {
 		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
 		c.ctx.Call("fill")

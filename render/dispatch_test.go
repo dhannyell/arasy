@@ -15,6 +15,7 @@ type recordingSink struct {
 
 func (s *recordingSink) VisitRect(render.DrawRect)       { s.visits = append(s.visits, "rect") }
 func (s *recordingSink) VisitCircle(render.DrawCircle)   { s.visits = append(s.visits, "circle") }
+func (s *recordingSink) VisitEllipse(render.DrawEllipse) { s.visits = append(s.visits, "ellipse") }
 func (s *recordingSink) VisitPoint(render.DrawPoint)     { s.visits = append(s.visits, "point") }
 func (s *recordingSink) VisitLine(render.DrawLine)       { s.visits = append(s.visits, "line") }
 func (s *recordingSink) VisitText(render.DrawText)       { s.visits = append(s.visits, "text") }
@@ -81,6 +82,7 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 	commands := []render.Command{
 		render.DrawRect{},
 		render.DrawCircle{},
+		render.DrawEllipse{},
 		render.DrawPoint{},
 		render.DrawLine{},
 		render.DrawText{},
@@ -97,11 +99,11 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 	render.Each(commands, sink)
 
 	want := []string{
-		"rect", "circle", "point", "line", "text", "arc", "polygon", "image", "imageQuad", "particles",
+		"rect", "circle", "ellipse", "point", "line", "text", "arc", "polygon", "image", "imageQuad", "particles",
 		"spriteBatch", "textBatch",
 	}
 	if !reflect.DeepEqual(sink.visits, want) {
-		t.Fatalf("visits = %v, want %v (each of the 12 command kinds must dispatch exactly once)", sink.visits, want)
+		t.Fatalf("visits = %v, want %v (each of the 13 command kinds must dispatch exactly once)", sink.visits, want)
 	}
 }
 

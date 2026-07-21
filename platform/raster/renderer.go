@@ -87,6 +87,10 @@ func (s rasterSink) VisitCircle(command render.DrawCircle) {
 	s.renderer.drawCircle(s.image, command)
 }
 
+func (s rasterSink) VisitEllipse(command render.DrawEllipse) {
+	s.renderer.drawEllipse(s.image, command)
+}
+
 func (s rasterSink) VisitPoint(command render.DrawPoint) {
 	s.renderer.drawPoint(s.image, command)
 }
