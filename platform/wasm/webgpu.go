@@ -102,9 +102,9 @@ type webgpuRenderer struct {
 	// sprite/text batch repack that actually uploads bytes that frame.
 	// frameVisibleSprites/Labels and frameRetainedDraws are reset and
 	// recomputed by the sprite/text resolution loops in Render.
-	frameRetainedContentBytes                uint64
+	frameRetainedContentBytes               uint64
 	frameVisibleSprites, frameVisibleLabels int
-	frameRetainedDraws                       int
+	frameRetainedDraws                      int
 
 	log         *slog.Logger
 	diagnostics diagnostic.Once
@@ -411,10 +411,10 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// uniforms per animated command. Two draws of the same batch always get
 	// two distinct slots, since queue.writeBuffer lands before the command
 	// buffer and a shared slot would show both draws the last packed value.
-	r.batchArena.reset()
 	hasSpriteBatchDraw := false
 	r.frameVisibleSprites = 0
 	r.frameRetainedDraws = 0
+	animatedBatchDraws := 0
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunSpriteBatch {
 			continue
@@ -430,26 +430,35 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		if batch.count == 0 {
 			continue
 		}
-		if view, ok := webgpuBatchView(frame.Camera, cmd.Clip); ok {
+		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(frame.Camera)
+		if view, ok := webgpuBatchView(frame.Camera, cmd.Clip); ok && canCull {
 			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
 			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
 				continue
 			}
 		}
 		if batch.animated {
-			offset, ok := r.batchArena.alloc()
-			if !ok {
-				r.growBatchUniformArena()
-				offset, _ = r.batchArena.alloc()
-			}
-			packSpriteBatchAnimUniforms(r.batchArenaScratch[:], frame.Camera, w, h, cmd.Animation)
-			r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
-			drawRuns[i].batchSlot = offset
+			animatedBatchDraws++
 		}
 		drawRuns[i].batch = batch
 		hasSpriteBatchDraw = true
 		r.frameVisibleSprites += batch.count
 		r.frameRetainedDraws += len(batch.ranges)
+	}
+	r.ensureBatchUniformArena(animatedBatchDraws)
+	r.batchArena.reset()
+	for i := range drawRuns {
+		batch := drawRuns[i].batch
+		if drawRuns[i].kind != tess.DrawRunSpriteBatch || batch == nil || !batch.animated {
+			continue
+		}
+		offset, ok := r.batchArena.alloc()
+		if !ok {
+			panic("wasm: retained sprite uniform arena capacity miscalculated")
+		}
+		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], frame.Camera, w, h, drawRuns[i].spriteBatch.Animation)
+		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
+		drawRuns[i].batchSlot = offset
 	}
 
 	// Resolve retained text batch commands the same way: registry lookup

@@ -52,7 +52,7 @@ func (s canvasSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
 // order through the same code path as streaming DrawImage.
 func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpriteBatch, instances []render.SpriteInstance) {
 	if view, ok := canvasBatchView(camera, command.Clip); ok {
-		bounds, boundsOK := renderbatch.InflatedBatchBounds(instances, command.Animation)
+		bounds, boundsOK := renderbatch.InflatedBatchBoundsForCamera(instances, command.Animation, camera)
 		if !boundsOK {
 			c.diagnostics.Log(c.log, slog.LevelWarn,
 				diagnostic.Key{Code: "canvas-sprite-batch-non-finite", ID: uint64(command.Batch)},
@@ -66,7 +66,7 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 
 	for i := range instances {
 		inst := instances[i]
-		if !renderbatch.IsFiniteRect(inst.Dest) {
+		if !renderbatch.IsFiniteSpriteGeometry(inst) {
 			c.diagnostics.Log(c.log, slog.LevelWarn,
 				diagnostic.Key{Code: "canvas-sprite-instance-non-finite", ID: uint64(command.Batch)},
 				"Canvas2D: sprite instance has non-finite geometry; instance skipped")

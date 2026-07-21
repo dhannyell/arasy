@@ -8,12 +8,11 @@ import (
 	"github.com/dhannyell/frameforge/runtime"
 )
 
-// These tests cover the heterogeneous DrawRun interleaving introduced when
-// Build stopped grouping commands into three fixed passes (solid, then
-// textured, then text) and started preserving painter order across kinds.
-// render.Each sorts by layer before dispatch; buildSink opens a new run
-// whenever the pipeline kind changes, or the texture changes within a
-// textured run.
+// These tests cover Builder's heterogeneous StreamRun interleaving and
+// painter order across pipeline kinds. render.Each sorts by layer before
+// dispatch; streamSink opens a new run
+// whenever the pipeline kind changes, or the texture changes within a sprite
+// run.
 
 func drawRect(layer int) render.DrawRect {
 	return render.DrawRect{
@@ -44,7 +43,8 @@ func drawParticles(layer int, emitter render.EmitterID) render.DrawParticles {
 func TestBuildInterleavesKindsInPainterOrderWithinSameLayer(t *testing.T) {
 	sizes := TexSizes{{}, {8, 8}}
 
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -53,7 +53,7 @@ func TestBuildInterleavesKindsInPainterOrderWithinSameLayer(t *testing.T) {
 		},
 	}, 100, 100, nil, sizes)
 
-	wantKinds := []DrawRunKind{DrawRunSolid, DrawRunTextured, DrawRunSolid}
+	wantKinds := []DrawRunKind{DrawRunSolid, DrawRunSprites, DrawRunSolid}
 	if len(runs) != len(wantKinds) {
 		t.Fatalf("len(runs) = %d, want %d", len(runs), len(wantKinds))
 	}
@@ -63,12 +63,12 @@ func TestBuildInterleavesKindsInPainterOrderWithinSameLayer(t *testing.T) {
 		}
 		switch run.Kind {
 		case DrawRunSolid:
-			if len(run.Solid.Vertices) == 0 {
+			if run.VertexCount == 0 {
 				t.Fatalf("runs[%d] solid run has no vertices", i)
 			}
-		case DrawRunTextured:
-			if len(run.Textured.Vertices) == 0 {
-				t.Fatalf("runs[%d] textured run has no vertices", i)
+		case DrawRunSprites:
+			if run.VertexCount == 0 {
+				t.Fatalf("runs[%d] sprite run has no records", i)
 			}
 		}
 	}
@@ -79,7 +79,8 @@ func TestBuildSortsAcrossKindsByLayerNotInputOrder(t *testing.T) {
 
 	// Input order is [rect(layer 1), image(layer 0)], the reverse of the
 	// expected draw order: the lower-layer image must be dispatched first.
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(1),
@@ -87,7 +88,7 @@ func TestBuildSortsAcrossKindsByLayerNotInputOrder(t *testing.T) {
 		},
 	}, 100, 100, nil, sizes)
 
-	wantKinds := []DrawRunKind{DrawRunTextured, DrawRunSolid}
+	wantKinds := []DrawRunKind{DrawRunSprites, DrawRunSolid}
 	if len(runs) != len(wantKinds) {
 		t.Fatalf("len(runs) = %d, want %d", len(runs), len(wantKinds))
 	}
@@ -98,13 +99,14 @@ func TestBuildSortsAcrossKindsByLayerNotInputOrder(t *testing.T) {
 	}
 }
 
-func TestBuildPlacesMissingTexturePlaceholderBetweenTexturedRunsWithoutMerging(t *testing.T) {
+func TestBuildPlacesMissingTexturePlaceholderBetweenSpriteRunsWithoutMerging(t *testing.T) {
 	// Texture 1 is known (8x8); texture 2 is out of range in sizes, so it
 	// resolves to the magenta placeholder appended to a solid run at its
 	// painter position.
 	sizes := TexSizes{{}, {8, 8}}
 
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawImage(0, 1),
@@ -113,7 +115,7 @@ func TestBuildPlacesMissingTexturePlaceholderBetweenTexturedRunsWithoutMerging(t
 		},
 	}, 100, 100, nil, sizes)
 
-	wantKinds := []DrawRunKind{DrawRunTextured, DrawRunSolid, DrawRunTextured}
+	wantKinds := []DrawRunKind{DrawRunSprites, DrawRunSolid, DrawRunSprites}
 	if len(runs) != len(wantKinds) {
 		t.Fatalf("len(runs) = %d, want %d runs %v, got %+v", len(runs), len(wantKinds), wantKinds, runs)
 	}
@@ -123,11 +125,11 @@ func TestBuildPlacesMissingTexturePlaceholderBetweenTexturedRunsWithoutMerging(t
 		}
 	}
 
-	if runs[0].Textured.Texture != 1 || runs[2].Textured.Texture != 1 {
-		t.Fatalf("runs[0].Textured.Texture=%d runs[2].Textured.Texture=%d, want both 1 (not merged across the placeholder)",
-			runs[0].Textured.Texture, runs[2].Textured.Texture)
+	if runs[0].Texture != 1 || runs[2].Texture != 1 {
+		t.Fatalf("runs[0].Texture=%d runs[2].Texture=%d, want both 1 (not merged across the placeholder)",
+			runs[0].Texture, runs[2].Texture)
 	}
-	if len(runs[1].Solid.Vertices) == 0 {
+	if runs[1].VertexCount == 0 {
 		t.Fatal("placeholder solid run has no vertices")
 	}
 }
@@ -135,7 +137,8 @@ func TestBuildPlacesMissingTexturePlaceholderBetweenTexturedRunsWithoutMerging(t
 func TestBuildInterleavesTextWithSolidsInPainterOrder(t *testing.T) {
 	atlas := NewAtlas()
 
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -159,13 +162,14 @@ func TestBuildInterleavesTextWithSolidsInPainterOrder(t *testing.T) {
 			t.Fatalf("runs[%d].Kind = %v, want %v", i, run.Kind, wantKinds[i])
 		}
 	}
-	if len(runs[1].Text.Vertices) == 0 {
+	if runs[1].VertexCount == 0 {
 		t.Fatal("text run has no vertices")
 	}
 }
 
 func TestBuildKeepsEveryParticleCommandInItsOwnPainterOrderedRun(t *testing.T) {
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),

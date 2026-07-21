@@ -44,7 +44,7 @@ func TestPlanSpriteBatchExactRecordLayout(t *testing.T) {
 		want   float32
 	}{
 		{0, 5}, {4, 10}, {8, 3}, {12, 6}, // center, half-size
-		{16, 0.5}, // rotation
+		{16, 0.5},                          // rotation
 		{24, 0}, {28, 0}, {32, 1}, {36, 1}, // whole-texture UVs
 		{40, -math.MaxFloat32}, {44, -math.MaxFloat32}, // always-open clip sentinel
 		{48, math.MaxFloat32}, {52, math.MaxFloat32},
@@ -290,6 +290,27 @@ func TestUniformArenaAlignmentRoundsUp(t *testing.T) {
 	}
 }
 
+func TestUniformArenaSlotCapacityGrowsBeforeFrameWrites(t *testing.T) {
+	tests := []struct {
+		name              string
+		current, required int
+		want              int
+	}{
+		{"keeps capacity", 64, 64, 64},
+		{"grows past initial capacity", 64, 65, 128},
+		{"grows more than once", 64, 129, 256},
+		{"never shrinks", 128, 1, 128},
+		{"initializes empty arena", 0, 1, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := uniformArenaSlotCapacity(tt.current, tt.required); got != tt.want {
+				t.Fatalf("uniformArenaSlotCapacity(%d, %d) = %d, want %d", tt.current, tt.required, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 	camera := render.Camera{
 		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 16, Y: 16}),
@@ -317,18 +338,18 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 		offset int
 		want   float32
 	}{
-		{32, 0.5},  // wrapped time
-		{36, 1},    // bounce Hz
-		{40, 1},    // intensity
-		{44, 0},    // pad
-		{48, 17},   // pulse center X
-		{52, 47},   // pulse center Y
-		{56, 2},    // pulse radius
-		{60, 4},    // pulse width
-		{64, 1},    // pulse boost
-		{68, 0},    // pad
-		{72, 0},    // pad
-		{76, 0},    // pad
+		{32, 0.5}, // wrapped time
+		{36, 1},   // bounce Hz
+		{40, 1},   // intensity
+		{44, 0},   // pad
+		{48, 17},  // pulse center X
+		{52, 47},  // pulse center Y
+		{56, 2},   // pulse radius
+		{60, 4},   // pulse width
+		{64, 1},   // pulse boost
+		{68, 0},   // pad
+		{72, 0},   // pad
+		{76, 0},   // pad
 	}
 	for _, f := range fields {
 		got := math.Float32frombits(binary.LittleEndian.Uint32(slot[f.offset:]))

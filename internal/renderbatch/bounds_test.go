@@ -90,6 +90,37 @@ func TestSpriteBoundsNonFiniteDestIsRejected(t *testing.T) {
 	}
 }
 
+func TestSpriteBoundsNonFiniteRotationIsRejected(t *testing.T) {
+	inst := render.SpriteInstance{Dest: rect(0, 0, 1, 1), Rotation: math.NaN()}
+	if _, ok := renderbatch.SpriteBounds(inst); ok {
+		t.Fatal("SpriteBounds accepted a non-finite rotation")
+	}
+}
+
+func TestSpriteBoundsForCameraMatchesScaleThenRotateUnderAspectStretch(t *testing.T) {
+	camera := render.Camera{
+		World:    rect(0, 0, 100, 100),
+		Viewport: rect(0, 0, 200, 100),
+		Aspect:   render.AspectStretch,
+	}
+	inst := render.SpriteInstance{Dest: rect(49, 40, 51, 60), Rotation: math.Pi / 2}
+	got, ok := renderbatch.SpriteBoundsForCamera(inst, camera)
+	if !ok {
+		t.Fatal("SpriteBoundsForCamera rejected finite geometry")
+	}
+	assertRectNear(t, got, rect(45, 48, 55, 52), 1e-9)
+	if renderbatch.WorldBoundsPreserveScreenRotation(camera) {
+		t.Fatal("anisotropic AspectStretch reported world-rotation bounds as conservative")
+	}
+}
+
+func TestWorldBoundsPreserveScreenRotationWithUniformScale(t *testing.T) {
+	camera := render.Camera{World: rect(0, 0, 100, 50), Viewport: rect(0, 0, 200, 100)}
+	if !renderbatch.WorldBoundsPreserveScreenRotation(camera) {
+		t.Fatal("uniform camera scale must preserve world-rotation bounds")
+	}
+}
+
 func TestBatchBoundsUnionsFiniteInstances(t *testing.T) {
 	instances := []render.SpriteInstance{
 		{Dest: rect(0, 0, 10, 10)},

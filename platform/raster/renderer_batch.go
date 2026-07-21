@@ -58,7 +58,7 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 	}
 
 	if view, ok := r.batchView(command.Clip); ok {
-		bounds, boundsOK := renderbatch.InflatedBatchBounds(instances, command.Animation)
+		bounds, boundsOK := renderbatch.InflatedBatchBoundsForCamera(instances, command.Animation, r.Camera)
 		if !boundsOK {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
 				diagnostic.Key{Code: "sprite-batch-non-finite", ID: uint64(command.Batch)},
@@ -72,7 +72,7 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 
 	for i := range instances {
 		inst := instances[i]
-		if !renderbatch.IsFiniteRect(inst.Dest) {
+		if !renderbatch.IsFiniteSpriteGeometry(inst) {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
 				diagnostic.Key{Code: "sprite-instance-non-finite", ID: uint64(command.Batch)},
 				"raster: sprite instance has non-finite geometry; instance skipped")

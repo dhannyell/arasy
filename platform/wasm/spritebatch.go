@@ -35,15 +35,16 @@ type spriteBatchRange struct {
 // consecutive draw ranges, and the metadata needed for culling and
 // accounting. Content is render-only.
 type spriteBatchPlan struct {
-	records   []byte
-	anims     []byte
-	animated  bool
-	ranges    []spriteBatchRange
-	bounds    math2d.Rect
-	hasBounds bool
-	maxBounce float64
-	count     int
-	nonFinite int
+	records     []byte
+	anims       []byte
+	animated    bool
+	ranges      []spriteBatchRange
+	bounds      math2d.Rect
+	hasBounds   bool
+	maxBounce   float64
+	hasRotation bool
+	count       int
+	nonFinite   int
 }
 
 // planSpriteBatch packs instances into retained records without reordering:
@@ -73,10 +74,11 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 
 	for i := range instances {
 		inst := instances[i]
-		if !renderbatch.IsFiniteRect(inst.Dest) {
+		if !renderbatch.IsFiniteSpriteGeometry(inst) {
 			plan.nonFinite++
 			continue
 		}
+		plan.hasRotation = plan.hasRotation || inst.Rotation != 0
 
 		texW, texH, found := sizes.Lookup(inst.Texture)
 		magenta := !found
@@ -195,6 +197,20 @@ func (a *uniformArena) alloc() (offset int, ok bool) {
 
 func (a *uniformArena) reset() {
 	a.used = 0
+}
+
+// uniformArenaSlotCapacity returns the power-of-two slot capacity needed for
+// required draws without shrinking current. The renderer calls this before it
+// writes any per-frame uniforms so replacing the GPU buffer never invalidates
+// slots already assigned to earlier draws in the same frame.
+func uniformArenaSlotCapacity(current, required int) int {
+	if current < 1 {
+		current = 1
+	}
+	for current < required {
+		current *= 2
+	}
+	return current
 }
 
 // packSpriteBatchAnimUniforms packs one arena slot: the shared 32-byte

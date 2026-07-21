@@ -29,9 +29,10 @@ type gpuSpriteBatch struct {
 	ranges     []spriteBatchRange
 	bindGroups []js.Value
 
-	bounds    math2d.Rect
-	hasBounds bool
-	maxBounce float64
+	bounds      math2d.Rect
+	hasBounds   bool
+	maxBounce   float64
+	hasRotation bool
 }
 
 func (b *gpuSpriteBatch) destroy() {
@@ -87,12 +88,13 @@ func (r *webgpuRenderer) replaceSpriteBatch(id render.SpriteBatchID, instances [
 	}
 
 	batch := &gpuSpriteBatch{
-		count:     plan.count,
-		animated:  plan.animated,
-		ranges:    plan.ranges,
-		bounds:    plan.bounds,
-		hasBounds: plan.hasBounds,
-		maxBounce: plan.maxBounce,
+		count:       plan.count,
+		animated:    plan.animated,
+		ranges:      plan.ranges,
+		bounds:      plan.bounds,
+		hasBounds:   plan.hasBounds,
+		maxBounce:   plan.maxBounce,
+		hasRotation: plan.hasRotation,
 	}
 	reuse := old != nil && old.animated == plan.animated &&
 		old.cap >= len(plan.records) && old.animCap >= len(plan.anims)
@@ -260,13 +262,16 @@ func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
 	r.spriteBatchAnimArrayPipeline = pipelineFor(spriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout)
 }
 
-// growBatchUniformArena doubles the shared uniform arena and rebuilds the
-// animated bind groups referencing the old buffer. Growth is rare (the arena
-// starts far above typical per-frame animated draw counts) and never happens
-// mid-pass: it runs while mapping runs, before the render pass exists.
-func (r *webgpuRenderer) growBatchUniformArena() {
+// ensureBatchUniformArena grows the shared uniform arena before any slots are
+// assigned or written for the frame. Replacing the buffer after writes would
+// redirect earlier bind groups to a new buffer without their uniform data.
+func (r *webgpuRenderer) ensureBatchUniformArena(required int) {
+	slots := uniformArenaSlotCapacity(r.batchArena.slots, required)
+	if slots == r.batchArena.slots {
+		return
+	}
 	old := r.batchUniformBuffer
-	r.batchArena = newUniformArena(spriteBatchAnimUniformSize, r.batchArenaAlignment, r.batchArena.slots*2)
+	r.batchArena = newUniformArena(spriteBatchAnimUniformSize, r.batchArenaAlignment, slots)
 	r.batchUniformBuffer = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
 		r.batchArena.slotSize*r.batchArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 	for _, batch := range r.spriteBatches {
