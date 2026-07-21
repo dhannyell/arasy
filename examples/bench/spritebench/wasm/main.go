@@ -41,6 +41,12 @@ func main() {
 				metrics.CPUUploadTime,
 				metrics.CPUEncodeTime,
 				metrics.CPUBreakdownSet,
+				metrics.Retained.GPUBytes,
+				metrics.Retained.ContentBytes,
+				metrics.Retained.SpritesTotal,
+				metrics.Retained.SpritesVisible,
+				metrics.Retained.Draws,
+				metrics.RetainedSet,
 			)
 		},
 	}); err != nil {
