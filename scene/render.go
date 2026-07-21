@@ -99,9 +99,24 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 					}
 				}
 				if z > 0 {
+					ground := pos
 					fp := w.spriteFootprint(id)
-					proj := w.projection.Project(pos, fp, z)
-					pos.Y = proj.BodyPosition.Y
+					proj := w.projection.Project(ground, fp, z)
+					// Ground shadow first, so it draws behind the lifted body.
+					// Same layer, emitted adjacent to the body, so the depth
+					// sort keeps the composite entity's commands together.
+					if proj.ShadowAlpha > 0 && (proj.ShadowRadii.X > 0 || proj.ShadowRadii.Y > 0) {
+						commands = append(commands, render.DrawEllipse{
+							Center:  ground.Add(proj.ShadowCenter),
+							RadiusX: proj.ShadowRadii.X,
+							RadiusY: proj.ShadowRadii.Y,
+							Fill:    render.RGBA(0, 0, 0, proj.ShadowAlpha),
+							BaseCommand: render.BaseCommand{
+								LayerValue: w.spriteLayer(id),
+							},
+						})
+					}
+					pos = proj.BodyPosition
 					if proj.BodyScale > 0 {
 						scl = scl.Mul(proj.BodyScale)
 					}
