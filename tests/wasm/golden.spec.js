@@ -46,3 +46,12 @@ test('renders sprite texture arrays and 2d layer views', async ({ page }, testIn
     'sprite-array.png',
   );
 });
+
+test('renders retained sprite and text batches', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'retained-batches',
+    'retained-batches.png',
+  );
+});

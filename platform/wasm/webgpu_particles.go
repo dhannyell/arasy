@@ -649,59 +649,10 @@ func packUniforms(
 	writer.u32(uint32(e.capacity))
 }
 
-func packSpriteUniforms(dst []byte, camera render.Camera, w, h int) {
-	scale, offset, screenScale := worldToClip(camera, w, h)
-	writer := particleUniformWriter{dst: dst}
-	writer.vec2(scale)
-	writer.vec2(offset)
-	writer.vec2(screenScale)
-	writer.vec2(math2d.Vec2{X: 2 / float64(w), Y: -2 / float64(h)})
-}
-
-type particleUniformWriter struct {
-	dst    []byte
-	offset int
-}
-
-func (w *particleUniformWriter) f32(value float64) {
-	binary.LittleEndian.PutUint32(w.dst[w.offset:], math.Float32bits(float32(value)))
-	w.offset += 4
-}
-
-func (w *particleUniformWriter) u32(value uint32) {
-	binary.LittleEndian.PutUint32(w.dst[w.offset:], value)
-	w.offset += 4
-}
-
-func (w *particleUniformWriter) vec2(value math2d.Vec2) {
-	w.f32(value.X)
-	w.f32(value.Y)
-}
-
 func (w *particleUniformWriter) vec4(value [4]float64) {
 	for _, component := range value {
 		w.f32(component)
 	}
-}
-
-// worldToClip returns the affine coefficients consumed by the particle
-// vertex shader. It mirrors Camera.WorldToScreen followed by tess's
-// screenToClip conversion, including aspect-fit/expand view resolution.
-func worldToClip(camera render.Camera, w, h int) (scale, offset, screenScale math2d.Vec2) {
-	if w <= 0 || h <= 0 {
-		return math2d.Vec2{}, math2d.Vec2{}, math2d.Vec2{}
-	}
-	resolved := camera.Resolve()
-	screenScale = math2d.Vec2{X: resolved.ScaleX, Y: resolved.ScaleY}
-	scale = math2d.Vec2{
-		X: 2 * resolved.ScaleX / float64(w),
-		Y: -2 * resolved.ScaleY / float64(h),
-	}
-	offset = math2d.Vec2{
-		X: 2*(resolved.Viewport.Min.X-resolved.World.Min.X*resolved.ScaleX)/float64(w) - 1,
-		Y: 1 - 2*(resolved.Viewport.Min.Y-resolved.World.Min.Y*resolved.ScaleY)/float64(h),
-	}
-	return scale, offset, screenScale
 }
 
 // applyClipScissor maps a world-space clip to target pixels: camera screen

@@ -115,7 +115,8 @@ func TestBuildFontZeroKeepsCanonicalTextWidth(t *testing.T) {
 
 func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{render.DrawText{
 			BaseCommand: render.BaseCommand{Clip: math2d.NewRect(
@@ -126,20 +127,23 @@ func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 			Font: 1, Rotation: math.Pi / 5,
 		}},
 	}, 100, 100, provider, nil)
-	if len(runs) != 1 || len(runs[0].Text.Vertices) == 0 {
+	if len(runs) != 1 || runs[0].VertexCount == 0 {
 		t.Fatalf("rotated clipped text produced %+v", runs)
 	}
-	for _, v := range runs[0].Text.Vertices {
-		if math.IsNaN(float64(v.X)) || math.IsInf(float64(v.X), 0) ||
-			math.IsNaN(float64(v.Y)) || math.IsInf(float64(v.Y), 0) {
-			t.Fatalf("non-finite vertex %+v", v)
+	label := decodeTextLabel(t, builder.TextLabelStream(), 0)
+	for _, pair := range [][2]float32{label.position, label.rotation, label.originBaseline, label.clipMin, label.clipMax} {
+		for _, value := range pair {
+			if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
+				t.Fatalf("non-finite label record %+v", label)
+			}
 		}
 	}
 }
 
 func TestBuildSplitsTextRunsByAtlasWithoutChangingPainterOrder(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -164,7 +168,8 @@ func TestBuildSplitsTextRunsByAtlasWithoutChangingPainterOrder(t *testing.T) {
 
 func TestBuildRequestsAllFrameRunesOncePerAtlasKey(t *testing.T) {
 	provider := &recordingProvider{testTypefaceProvider: *newTestTypefaceProvider(t)}
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			textCommand(0, 1, "Á"),
@@ -190,13 +195,14 @@ func TestBuildUsesCachedASCIIAtlasAndStillRequestsNewUnicode(t *testing.T) {
 			textCommand(0, 1, "cached ASCII"),
 		},
 	}
-	Build(frame, 100, 100, provider, nil)
+	var builder Builder
+	builder.Build(frame, 100, 100, provider, nil)
 	if len(provider.calls) != 0 {
 		t.Fatalf("cached ASCII caused AtlasFor calls: %v", provider.calls)
 	}
 
 	frame.Commands = []render.Command{textCommand(0, 1, "new Á")}
-	Build(frame, 100, 100, provider, nil)
+	builder.Build(frame, 100, 100, provider, nil)
 	if len(provider.calls) != 1 || !strings.Contains(provider.calls[0], "Á") {
 		t.Fatalf("Unicode AtlasFor calls = %v, want one request containing Á", provider.calls)
 	}
@@ -204,7 +210,8 @@ func TestBuildUsesCachedASCIIAtlasAndStillRequestsNewUnicode(t *testing.T) {
 
 func TestBuildTwoExternalFontsProduceSeparateAtlasRuns(t *testing.T) {
 	provider := newMultiFontTypefaceProvider(t)
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			textCommand(0, 1, "one"),
@@ -313,19 +320,32 @@ func (p *testTypefaceProvider) AtlasFor(fontID render.FontID, px int, text strin
 	return NewAtlasForFace(fontID, px, p.face, []rune(text))
 }
 
-func buildTextRun(t *testing.T, provider AtlasProvider, text string, fontID render.FontID) DrawRun {
+type builtTextRun struct {
+	StreamRun
+	Text TextMesh
+}
+
+func buildTextRun(t *testing.T, provider AtlasProvider, text string, fontID render.FontID) builtTextRun {
 	t.Helper()
-	runs := Build(runtime.Frame{
-		Camera: testCamera(),
-		Commands: []render.Command{render.DrawText{
-			Position: math2d.Vec2{X: 10, Y: 30}, Text: text,
-			Color: render.RGBA(1, 1, 1, 1), Size: 18, Font: fontID,
-		}},
+	cmd := render.DrawText{
+		Position: math2d.Vec2{X: 10, Y: 30}, Text: text,
+		Color: render.RGBA(1, 1, 1, 1), Size: 18, Font: fontID,
+	}
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
+		Camera:   testCamera(),
+		Commands: []render.Command{cmd},
 	}, 100, 100, provider, nil)
 	if len(runs) != 1 || runs[0].Kind != DrawRunText {
 		t.Fatalf("text produced runs %+v", runs)
 	}
-	return runs[0]
+	atlas, err := provider.AtlasFor(runs[0].AtlasKey.Font, runs[0].AtlasKey.PX, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mesh TextMesh
+	AppendText(&mesh, testCtx(), cmd, atlas)
+	return builtTextRun{StreamRun: runs[0], Text: mesh}
 }
 
 func textCommand(layer int, fontID render.FontID, text string) render.DrawText {

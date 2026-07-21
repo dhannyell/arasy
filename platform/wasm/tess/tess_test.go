@@ -155,7 +155,8 @@ func TestColorsRemainStraightAlpha(t *testing.T) {
 func TestBuildSortsSolidCommandsByLayer(t *testing.T) {
 	first := render.RGBA(1, 0, 0, 1)
 	second := render.RGBA(0, 0, 1, 1)
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawRect{
@@ -174,16 +175,16 @@ func TestBuildSortsSolidCommandsByLayer(t *testing.T) {
 	if len(runs) != 1 || runs[0].Kind != DrawRunSolid {
 		t.Fatalf("runs = %+v, want one solid run", runs)
 	}
-	mesh := runs[0].Solid
-	if len(mesh.Vertices) != 12 {
-		t.Fatalf("len(vertices) = %d, want 12", len(mesh.Vertices))
+	solid, _ := builder.Streams()
+	if got := len(solid) / SolidVertexStride; got != 12 {
+		t.Fatalf("len(vertices) = %d, want 12", got)
 	}
-	assertFloat32(t, mesh.Vertices[0].B, float32(second.B))
-	assertFloat32(t, mesh.Vertices[6].R, float32(first.R))
+	assertFloat32(t, math.Float32frombits(binary.LittleEndian.Uint32(solid[16:])), float32(second.B))
+	assertFloat32(t, math.Float32frombits(binary.LittleEndian.Uint32(solid[6*SolidVertexStride+8:])), float32(first.R))
 }
 
 // TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation confirms
-// that buildSink's run grouping is wired correctly into the DrawImage
+// that Builder's run grouping is wired correctly into the DrawImage
 // dispatch: consecutive draws of the same texture share one run, a different
 // texture starts a new run, and vertex counts plus overall draw order are
 // preserved across the split runs.
@@ -191,7 +192,8 @@ func TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation(t *testing
 	sizes := TexSizes{{}, {8, 8}, {8, 8}}
 	dest := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10})
 
-	runs := Build(runtime.Frame{
+	var builder Builder
+	runs := builder.Build(runtime.Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawImage{Texture: 1, Dest: dest},
@@ -202,16 +204,16 @@ func TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation(t *testing
 	}, 100, 100, nil, sizes)
 
 	wantTextures := []render.TextureID{1, 2, 1}
-	wantVertexCounts := []int{12, 6, 6}
+	wantRecordCounts := []int{2, 1, 1}
 	if len(runs) != len(wantTextures) {
 		t.Fatalf("len(runs) = %d, want %d runs", len(runs), len(wantTextures))
 	}
 	for i, run := range runs {
-		if run.Kind != DrawRunTextured || run.Textured.Texture != wantTextures[i] {
-			t.Fatalf("runs[%d] = %+v, want textured texture %d", i, run, wantTextures[i])
+		if run.Kind != DrawRunSprites || run.Texture != wantTextures[i] {
+			t.Fatalf("runs[%d] = %+v, want sprite texture %d", i, run, wantTextures[i])
 		}
-		if len(run.Textured.Vertices) != wantVertexCounts[i] {
-			t.Fatalf("textured[%d] len(vertices) = %d, want %d", i, len(run.Textured.Vertices), wantVertexCounts[i])
+		if run.VertexCount != wantRecordCounts[i] {
+			t.Fatalf("sprite[%d] record count = %d, want %d", i, run.VertexCount, wantRecordCounts[i])
 		}
 	}
 }

@@ -17,6 +17,8 @@ type StreamRun struct {
 	Texture     render.TextureID
 	AtlasKey    AtlasKey
 	Particles   render.DrawParticles
+	SpriteBatch render.DrawSpriteBatch
+	TextBatch   render.DrawTextBatch
 	ByteOffset  int
 	VertexCount int
 }
@@ -130,6 +132,105 @@ type streamRunIdentity struct {
 	atlas   AtlasKey
 }
 
+type frameAtlasRequest struct {
+	key    AtlasKey
+	cached *Atlas
+	runes  []rune
+	ascii  [128]bool
+	other  map[rune]struct{}
+}
+
+func (r *frameAtlasRequest) add(text string) {
+	if r.cached != nil && printableASCII(text) {
+		return
+	}
+	for _, char := range text {
+		if r.cached != nil && r.cached.covers(char) {
+			continue
+		}
+		if char < 128 {
+			if r.ascii[char] {
+				continue
+			}
+			r.ascii[char] = true
+		} else {
+			if r.other == nil {
+				r.other = make(map[rune]struct{})
+			}
+			if _, exists := r.other[char]; exists {
+				continue
+			}
+			r.other[char] = struct{}{}
+		}
+		r.runes = append(r.runes, char)
+	}
+}
+
+func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider) (map[AtlasKey]*Atlas, bool) {
+	ordered := true
+	if provider == nil {
+		return nil, false
+	}
+	var requests []frameAtlasRequest
+	indices := make(map[AtlasKey]int)
+	cache, hasCache := provider.(CachedAtlasProvider)
+	for commandIndex, command := range commands {
+		if commandIndex > 0 && command.Layer() < commands[commandIndex-1].Layer() {
+			ordered = false
+		}
+		cmd, ok := command.(render.DrawText)
+		if !ok || cmd.Text == "" || cmd.Color.A <= 0 {
+			continue
+		}
+		size := cmd.Size
+		if size <= 0 {
+			size = glyphHeight
+		}
+		px := int(math.Round(c.cam.WorldScalarToScreen(size)))
+		if px <= 0 {
+			continue
+		}
+		key := AtlasKey{Font: cmd.Font, PX: px}
+		requestIndex, exists := indices[key]
+		if !exists {
+			requestIndex = len(requests)
+			indices[key] = requestIndex
+			request := frameAtlasRequest{key: key}
+			if hasCache {
+				request.cached, _ = cache.CachedAtlas(key.Font, key.PX)
+			}
+			requests = append(requests, request)
+		}
+		requests[requestIndex].add(cmd.Text)
+	}
+	if len(requests) == 0 {
+		return nil, ordered
+	}
+
+	resolved := make(map[AtlasKey]*Atlas, len(requests))
+	var builtin *Atlas
+	for requestIndex := range requests {
+		request := &requests[requestIndex]
+		if request.cached != nil && len(request.runes) == 0 {
+			resolved[request.key] = request.cached
+			continue
+		}
+		text := string(request.runes)
+		atlas, err := provider.AtlasFor(request.key.Font, request.key.PX, text)
+		if err != nil || atlas == nil {
+			if builtin == nil {
+				builtin, _ = provider.AtlasFor(0, glyphHeight, text)
+				if builtin == nil {
+					builtin = NewAtlas()
+				}
+			}
+			atlas = builtin
+		}
+		resolved[request.key] = atlas
+	}
+	return resolved, ordered
+}
+
 // appendRun is the only place that decides whether adjacent stream content
 // can share a draw. Its narrow parameters avoid copying StreamRun's particle
 // payload for every ordinary mesh, sprite, or text command.
@@ -217,6 +318,20 @@ func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
 	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Particles: cmd})
+	s.hasLast = false
+}
+
+func (s *streamSink) VisitSpriteBatch(cmd render.DrawSpriteBatch) {
+	// A retained batch owns GPU state and breaks painter-order merging, like
+	// a particle command: one command per run, no instance payload.
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, SpriteBatch: cmd})
+	s.hasLast = false
+}
+
+func (s *streamSink) VisitTextBatch(cmd render.DrawTextBatch) {
+	// A retained text batch owns GPU state and breaks painter-order merging,
+	// like a particle/sprite-batch command: one command per run, no payload.
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, TextBatch: cmd})
 	s.hasLast = false
 }
 

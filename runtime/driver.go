@@ -70,6 +70,8 @@ type Driver struct {
 	audio     driverAudio
 	audioPort AudioPort
 	texture   driverTexture
+	batches   driverBatches
+	batchPort BatchPort
 }
 
 // viewportEntry records a SetViewport call at the tick it was applied.
@@ -143,6 +145,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d.rng = NewRand(cfg.Seed)
 	d.audioPort = AudioPort{audio: &d.audio}
 	d.texture = driverTexture{}
+	d.batchPort = BatchPort{batches: &d.batches}
 	d.doReset()
 	return d
 }
@@ -341,6 +344,18 @@ func (d *Driver) Checksum() uint64 { return d.world.Checksum() }
 
 func (d *Driver) ConsumeTextureUpdates() []TextureUpdate { return d.texture.consume() }
 
+// ConsumeFrameUpdates drains every pending render-only resource publication
+// (dynamic textures and retained sprite/text batches) in one call. Texture
+// updates are listed before batches so renderers can apply them first.
+func (d *Driver) ConsumeFrameUpdates() FrameUpdates {
+	sprites, text := d.batches.consume()
+	return FrameUpdates{
+		Textures:      d.texture.consume(),
+		SpriteBatches: sprites,
+		TextBatches:   text,
+	}
+}
+
 func (d *Driver) Frame(elapsed time.Duration) Frame {
 	d.renderDt = elapsed.Seconds()
 	d.renderTime += d.renderDt
@@ -434,6 +449,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		Tick:               d.tick,
 		Alpha:              alpha,
 		UpdateTextureField: &TexturePort{texture: &d.texture},
+		Batches:            &d.batchPort,
 		camera:             d.cameraForSurface(),
 	}
 }
@@ -469,6 +485,7 @@ func (d *Driver) doReset() {
 	d.rng = NewRand(d.cfg.Seed)
 	d.audio.reset()
 	d.texture.reset()
+	d.batches.reset()
 	d.game.Init(&ctx)
 	d.log.Info("reset")
 }

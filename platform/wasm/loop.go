@@ -57,6 +57,9 @@ func (h *host) startLoop() {
 				if reporter, ok := h.renderer.(gpuTimingReporter); ok {
 					metrics.GPUPrepareTime, metrics.GPUSimulateTime, metrics.GPURenderTime, metrics.GPUTimingSet = reporter.particleGPUTimings()
 				}
+				if reporter, ok := h.renderer.(retainedBatchReporter); ok {
+					metrics.Retained, metrics.RetainedSet = reporter.retainedBatchMetrics()
+				}
 				h.onFrameMetrics(metrics)
 			}
 		}
