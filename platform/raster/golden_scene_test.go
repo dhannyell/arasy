@@ -11,7 +11,7 @@ import (
 
 func TestGoldenDebugOverlay(t *testing.T) {
 	world := goldenDebugWorld()
-	const expectedChecksum uint64 = 15506184933295501958
+	const expectedChecksum uint64 = 10150545181079943401
 	if got := world.Checksum(); got != expectedChecksum {
 		t.Fatalf("debug world checksum = %d, want %d", got, expectedChecksum)
 	}

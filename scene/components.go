@@ -150,3 +150,21 @@ type Ballistics struct {
 }
 
 
+// Locomotion moves an agent toward MoveIntent with asymmetric
+// acceleration and a speed-dependent turn radius.
+type Locomotion struct {
+	Accel    float64 // accel toward desired velocity, units/s²
+	Decel    float64 // decel when slowing/turning back, units/s²
+	MaxSpeed float64
+	Agility  float64 // turn responsiveness; effective radius = speed/agility
+}
+
+// MoveIntent is the current movement goal of a Locomotion agent.
+// Remove the component to stop steering (momentum still decays via
+// Locomotion.Decel).
+type MoveIntent struct {
+	Target       math2d.Vec2
+	DesiredSpeed float64
+}
+
+

@@ -36,6 +36,8 @@ type World struct {
 	heights          store[Height]
 	spins            store[Spin]
 	ballisticsSet    store[Ballistics]
+	locomotions      store[Locomotion]
+	moveIntents      store[MoveIntent]
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
 	collisionScratch collisionScratch
@@ -99,6 +101,8 @@ func (w *World) Clone() *World {
 		heights:          w.heights.clone(),
 		spins:            w.spins.clone(),
 		ballisticsSet:    w.ballisticsSet.clone(),
+		locomotions:      w.locomotions.clone(),
+		moveIntents:      w.moveIntents.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
@@ -138,6 +142,8 @@ func (w *World) Despawn(id EntityID) {
 	w.heights.remove(id)
 	w.spins.remove(id)
 	w.ballisticsSet.remove(id)
+	w.locomotions.remove(id)
+	w.moveIntents.remove(id)
 	w.renderTransforms.remove(id)
 	w.renderHeights.remove(id)
 }
@@ -172,6 +178,8 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.heights.removeMarked(w.despawnMarked)
 	w.spins.removeMarked(w.despawnMarked)
 	w.ballisticsSet.removeMarked(w.despawnMarked)
+	w.locomotions.removeMarked(w.despawnMarked)
+	w.moveIntents.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
 	w.renderHeights.removeMarked(w.despawnMarked)
 	clear(w.despawnMarked)
@@ -464,6 +472,40 @@ func (w *World) RemoveBallistics(id EntityID) {
 	w.ballisticsSet.remove(id)
 }
 
+// Locomotion
+
+func (w *World) Locomotion(id EntityID) (Locomotion, bool) {
+	l, ok := w.locomotions.get(id)
+	return l, ok
+}
+
+func (w *World) SetLocomotion(id EntityID, l Locomotion) {
+	w.markEntityCountDirty()
+	w.locomotions.set(id, l)
+}
+
+func (w *World) RemoveLocomotion(id EntityID) {
+	w.markEntityCountDirty()
+	w.locomotions.remove(id)
+}
+
+// MoveIntent
+
+func (w *World) MoveIntent(id EntityID) (MoveIntent, bool) {
+	m, ok := w.moveIntents.get(id)
+	return m, ok
+}
+
+func (w *World) SetMoveIntent(id EntityID, m MoveIntent) {
+	w.markEntityCountDirty()
+	w.moveIntents.set(id, m)
+}
+
+func (w *World) RemoveMoveIntent(id EntityID) {
+	w.markEntityCountDirty()
+	w.moveIntents.remove(id)
+}
+
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {
 	return w.debugGridCells
 }
@@ -527,6 +569,12 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.ballisticsSet.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.locomotions.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.moveIntents.ids {
 		ids[id] = struct{}{}
 	}
 
