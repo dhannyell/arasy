@@ -1,4 +1,4 @@
-﻿package tess
+package tess
 
 import (
 	"math"
@@ -51,6 +51,7 @@ func AppendEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
 		m.Vertices = append(m.Vertices[:start], clipped...)
 	}
 }
+
 // appendTransformedEllipse draws an ellipse under a non-identity transform.
 // The boundary is generated in world space and every vertex is transformed, so
 // rotation and shear are honored (an axis-aligned ellipse becomes a rotated

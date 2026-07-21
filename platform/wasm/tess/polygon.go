@@ -1,4 +1,4 @@
-﻿package tess
+package tess
 
 import (
 	"github.com/dhannyell/frameforge/math2d"
