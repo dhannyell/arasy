@@ -60,6 +60,23 @@ type FrameMetrics struct {
 	CPUUploadTime   time.Duration
 	CPUEncodeTime   time.Duration
 	CPUBreakdownSet bool
+	// Retained holds retained sprite/text batch accounting: GPU-resident
+	// bytes across every registered batch, content bytes actually uploaded
+	// this frame, packed vs. visible (post-culling) instance/label counts,
+	// and the number of retained draw calls issued. WebGPU only.
+	Retained    RetainedBatchMetrics
+	RetainedSet bool
+}
+
+// RetainedBatchMetrics summarizes retained sprite/text batch state for one
+// reported frame. ContentBytes is zero at steady state: unchanged content,
+// projection and atlas identity mean no batch repacks and nothing uploads.
+type RetainedBatchMetrics struct {
+	GPUBytes                     uint64
+	ContentBytes                 uint64
+	SpritesTotal, SpritesVisible int
+	LabelsTotal, LabelsVisible   int
+	Draws                        int
 }
 
 type frameMetricTracker struct {
@@ -157,4 +174,8 @@ type gpuTimingReporter interface {
 
 type cpuTimingReporter interface {
 	renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool)
+}
+
+type retainedBatchReporter interface {
+	retainedBatchMetrics() (RetainedBatchMetrics, bool)
 }
