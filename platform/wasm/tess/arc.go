@@ -13,6 +13,11 @@ import (
 // count is derived from the screen-space radius and angular sweep so the same
 // visual error rule used for circles also applies to arcs.
 func AppendArc(m *Mesh, c ctx, cmd render.DrawArc) {
+	if !cmd.Transform.IsIdentity() {
+		appendTransformedArc(m, c, cmd)
+		return
+	}
+
 	start := len(m.Vertices)
 
 	center := c.cam.WorldToScreen(cmd.Center)
@@ -35,6 +40,44 @@ func AppendArc(m *Mesh, c ctx, cmd render.DrawArc) {
 
 	n := arcSegments(radius, sweep)
 	appendArcRing(m, c, center, innerRadius, radius, cmd.StartAngle, sweep, n, cmd.Color)
+
+	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+		clip := clipRect(c, cmd.Clip)
+		clipped := clipTriangles(m.Vertices[start:], clip)
+		m.Vertices = append(m.Vertices[:start], clipped...)
+	}
+}
+
+// appendTransformedArc draws an arc under a non-identity transform. Arc points
+// are generated in world space and transformed per vertex, then stroked as an
+// open polyline (matching the raster backend), so the arc's angular position
+// and shape follow rotation and shear rather than only its center moving.
+func appendTransformedArc(m *Mesh, c ctx, cmd render.DrawArc) {
+	radius := c.cam.WorldScalarToScreen(cmd.Radius)
+	width := transformedStrokeWidth(c, cmd.Width, cmd.Transform)
+	if radius <= 0 || width <= 0 || cmd.Color.A <= 0 {
+		return
+	}
+
+	sweep := arcSweep(cmd.StartAngle, cmd.EndAngle)
+	if sweep <= 0 {
+		return
+	}
+
+	n := arcSegments(radius, sweep)
+	if n <= 0 {
+		return
+	}
+
+	start := len(m.Vertices)
+	points := make([]math2d.Vec2, n+1)
+	for i := 0; i <= n; i++ {
+		a := cmd.StartAngle + sweep*float64(i)/float64(n)
+		w := math2d.Vec2{X: cmd.Center.X + math.Cos(a)*cmd.Radius, Y: cmd.Center.Y + math.Sin(a)*cmd.Radius}
+		points[i] = c.cam.WorldToScreen(cmd.Transform.Apply(w))
+	}
+
+	appendOpenStrokeScreen(m, c, points, width, cmd.Color)
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
 		clip := clipRect(c, cmd.Clip)

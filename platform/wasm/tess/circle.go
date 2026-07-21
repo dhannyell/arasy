@@ -20,6 +20,11 @@ const (
 // stroke is emitted as a ring of quads between the inner and outer radii.
 // When cmd.Clip is non-zero, only the vertices emitted by this call are clipped.
 func AppendCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
+	if !cmd.Transform.IsIdentity() {
+		appendTransformedCircle(m, c, cmd)
+		return
+	}
+
 	start := len(m.Vertices)
 
 	center := c.cam.WorldToScreen(cmd.Center)
@@ -42,6 +47,44 @@ func AppendCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
 				innerRadius = 0
 			}
 			appendCircleRing(m, c, center, innerRadius, radius, n, cmd.Stroke)
+		}
+	}
+
+	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+		clip := clipRect(c, cmd.Clip)
+		clipped := clipTriangles(m.Vertices[start:], clip)
+		m.Vertices = append(m.Vertices[:start], clipped...)
+	}
+}
+
+// appendTransformedCircle draws a circle under a non-identity transform. The
+// boundary is generated in world space and every vertex is transformed, so a
+// non-uniform scale or shear turns the circle into the correct ellipse/oval
+// (matching the raster backend), rather than only relocating the center.
+func appendTransformedCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
+	radius := c.cam.WorldScalarToScreen(cmd.Radius)
+	if radius <= 0 {
+		return
+	}
+
+	start := len(m.Vertices)
+	n := circleSegments(radius)
+
+	center := c.cam.WorldToScreen(cmd.Transform.Apply(cmd.Center))
+	boundary := make([]math2d.Vec2, n)
+	for i := 0; i < n; i++ {
+		a := 2 * math.Pi * float64(i) / float64(n)
+		w := math2d.Vec2{X: cmd.Center.X + math.Cos(a)*cmd.Radius, Y: cmd.Center.Y + math.Sin(a)*cmd.Radius}
+		boundary[i] = c.cam.WorldToScreen(cmd.Transform.Apply(w))
+	}
+
+	if cmd.Fill.A > 0 {
+		appendConvexFanScreen(m, c, center, boundary, cmd.Fill)
+	}
+
+	if cmd.Stroke.A > 0 && cmd.StrokeWidth > 0 {
+		if sw := transformedStrokeWidth(c, cmd.StrokeWidth, cmd.Transform); sw > 0 {
+			appendClosedStrokeScreen(m, c, boundary, sw, cmd.Stroke)
 		}
 	}
 

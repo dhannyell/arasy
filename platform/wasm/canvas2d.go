@@ -218,65 +218,70 @@ type canvasSink struct {
 	camera render.Camera
 }
 
-// withClip wraps draw in ctx.save()/restore() only when there is an actual
-// clip rect to apply; most render commands carry a zero Clip, and skipping
-// the pair avoids two syscall/js crossings for the common case. Draw methods
-// that mutate persistent context state beyond fillStyle/strokeStyle/lineWidth
-// (e.g. rotated text) must manage their own local save/restore, since this
-// no-clip path never wraps them.
-func (s canvasSink) withClip(clip math2d.Rect, draw func()) {
-	if clip.Width() <= 0 || clip.Height() <= 0 {
+// withClipAndTransform wraps draw with ctx.save()/restore(), applying both
+// clip and/or affine transform in a single save/restore pair when needed.
+// Clip is applied before transform (clip is in world space – Step 2 semantics).
+// When both are identity/zero, draw is called directly with no save/restore.
+func (s canvasSink) withClipAndTransform(clip math2d.Rect, transform math2d.Affine, draw func()) {
+	needClip := clip.Width() > 0 && clip.Height() > 0
+	needTransform := !transform.IsIdentity()
+	if !needClip && !needTransform {
 		draw()
 		return
 	}
 	s.canvas.ctx.Call("save")
-	s.canvas.applyClip(clip, s.camera)
+	if needClip {
+		s.canvas.applyClip(clip, s.camera)
+	}
+	if needTransform {
+		s.canvas.ctx.Call("transform", transform.A, transform.B, transform.C, transform.D, transform.E, transform.F)
+	}
 	draw()
 	s.canvas.ctx.Call("restore")
 }
 
 func (s canvasSink) VisitRect(command render.DrawRect) {
-	s.withClip(command.Clip, func() { s.canvas.drawRect(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawRect(command, s.camera) })
 }
 
 func (s canvasSink) VisitCircle(command render.DrawCircle) {
-	s.withClip(command.Clip, func() { s.canvas.drawCircle(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawCircle(command, s.camera) })
 }
 
 func (s canvasSink) VisitEllipse(command render.DrawEllipse) {
-	s.withClip(command.Clip, func() { s.canvas.drawEllipse(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawEllipse(command, s.camera) })
 }
 
 func (s canvasSink) VisitPoint(command render.DrawPoint) {
-	s.withClip(command.Clip, func() { s.canvas.drawPoint(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawPoint(command, s.camera) })
 }
 
 func (s canvasSink) VisitLine(command render.DrawLine) {
-	s.withClip(command.Clip, func() { s.canvas.drawLine(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawLine(command, s.camera) })
 }
 
 func (s canvasSink) VisitText(command render.DrawText) {
-	s.withClip(command.Clip, func() { s.canvas.drawText(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawText(command, s.camera) })
 }
 
 func (s canvasSink) VisitArc(command render.DrawArc) {
-	s.withClip(command.Clip, func() { s.canvas.drawArc(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawArc(command, s.camera) })
 }
 
 func (s canvasSink) VisitPolygon(command render.DrawPolygon) {
-	s.withClip(command.Clip, func() { s.canvas.drawPolygon(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawPolygon(command, s.camera) })
 }
 
 func (s canvasSink) VisitImage(command render.DrawImage) {
-	s.withClip(command.Clip, func() { s.canvas.drawImage(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawImage(command, s.camera) })
 }
 
 func (s canvasSink) VisitImageQuad(command render.DrawImageQuad) {
-	s.withClip(command.Clip, func() { s.canvas.drawImageQuad(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawImageQuad(command, s.camera) })
 }
 
 func (s canvasSink) VisitParticles(command render.DrawParticles) {
-	s.withClip(command.Clip, func() { s.canvas.drawParticles(command, s.camera) })
+	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawParticles(command, s.camera) })
 }
 
 // drawImage is the Canvas2D fallback implementation of DrawImage. It matches

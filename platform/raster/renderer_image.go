@@ -27,6 +27,11 @@ type resolvedImageDraw struct {
 // Rotation pivots on the destination center, mirroring how
 // rotated text anchors on its position.
 func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedImage(img, command)
+		return
+	}
+
 	tex := r.Textures.Lookup(command.Texture)
 	var srcRect image.Rectangle
 	if tex != nil {
@@ -48,6 +53,38 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 		clip:     command.Clip,
 		tint:     tintFrom(command.Tint),
 		blend:    particle.BlendAlpha,
+	})
+}
+
+// drawTransformedImage renders a DrawImage carrying a non-identity affine
+// transform by reusing the DrawImageQuad inverse-sampling path: the
+// destination rect's world-space corners (rotated first, if Rotation is set)
+// become a quad, and drawImageQuad maps the texture onto the transformed quad.
+// This matches the Canvas2D and WebGPU backends instead of drawing a
+// placeholder. A missing texture falls out as a magenta transformed quad.
+func (r *Renderer) drawTransformedImage(img *image.RGBA, command render.DrawImage) {
+	dest := command.Dest
+	corners := [4]math2d.Vec2{
+		{X: dest.Min.X, Y: dest.Min.Y},
+		{X: dest.Max.X, Y: dest.Min.Y},
+		{X: dest.Max.X, Y: dest.Max.Y},
+		{X: dest.Min.X, Y: dest.Max.Y},
+	}
+	if command.Rotation != 0 {
+		center := math2d.Vec2{X: (dest.Min.X + dest.Max.X) / 2, Y: (dest.Min.Y + dest.Max.Y) / 2}
+		sin, cos := math.Sincos(command.Rotation)
+		for i, p := range corners {
+			dx := p.X - center.X
+			dy := p.Y - center.Y
+			corners[i] = math2d.Vec2{X: center.X + dx*cos - dy*sin, Y: center.Y + dx*sin + dy*cos}
+		}
+	}
+	r.drawImageQuad(img, render.DrawImageQuad{
+		BaseCommand: command.BaseCommand,
+		Texture:     command.Texture,
+		Corners:     corners,
+		Src:         command.Src,
+		Tint:        command.Tint,
 	})
 }
 
@@ -124,7 +161,7 @@ var (
 func (r *Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) {
 	var corners [4]math2d.Vec2
 	for i, corner := range command.Corners {
-		corners[i] = r.Camera.WorldToScreen(corner)
+		corners[i] = r.Camera.WorldToScreen(command.Transform.Apply(corner))
 	}
 
 	// Check convexity before building the homography (matching

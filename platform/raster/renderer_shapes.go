@@ -9,6 +9,11 @@ import (
 )
 
 func (r *Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedRect(img, command)
+		return
+	}
+
 	screenMin := r.Camera.WorldToScreen(command.Rect.Min)
 	screenMax := r.Camera.WorldToScreen(command.Rect.Max)
 
@@ -39,6 +44,11 @@ func (r *Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 }
 
 func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedCircle(img, command)
+		return
+	}
+
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
@@ -55,6 +65,11 @@ func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 }
 
 func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedEllipse(img, command)
+		return
+	}
+
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radiusX := r.Camera.WorldScalarToScreen(command.RadiusX)
@@ -76,6 +91,17 @@ func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
 }
 
 func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
+	if !command.Transform.IsIdentity() {
+		// Point under transform: draw as small N-gon
+		r.drawTransformedCircle(img, render.DrawCircle{
+			Center:      command.Center,
+			Radius:      command.Radius,
+			Fill:        command.Color,
+			BaseCommand: command.BaseCommand,
+		})
+		return
+	}
+
 	center := r.Camera.WorldToScreen(command.Center)
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
 	bounds := r.clipBounds(img, circleBounds(center, radius), command.Clip)
@@ -84,6 +110,11 @@ func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 }
 
 func (r *Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedLine(img, command)
+		return
+	}
+
 	from := r.Camera.WorldToScreen(command.From)
 	to := r.Camera.WorldToScreen(command.To)
 
@@ -94,6 +125,11 @@ func (r *Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 }
 
 func (r *Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedArc(img, command)
+		return
+	}
+
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
@@ -105,6 +141,11 @@ func (r *Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
 }
 
 func (r *Renderer) drawPolygon(img *image.RGBA, command render.DrawPolygon) {
+	if !command.Transform.IsIdentity() {
+		r.drawTransformedPolygon(img, command)
+		return
+	}
+
 	if len(command.Points) < 3 {
 		return
 	}

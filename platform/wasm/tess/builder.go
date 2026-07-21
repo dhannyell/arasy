@@ -368,11 +368,20 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
-		if corners, ok := destCorners(s.ctx, cmd.Dest, cmd.Rotation); ok {
+		if corners, ok := imageScreenCorners(s.ctx, cmd); ok {
 			start := s.solidBegin(cmd.Clip)
 			appendMissingTexture(&s.builder.solidMesh, s.ctx, corners, cmd.Clip)
 			s.solidEnd(start)
 		}
+		return
+	}
+	if !cmd.Transform.IsIdentity() {
+		// A transformed sprite leaves the instanced fast path (whose record
+		// carries no per-sprite matrix) and draws as an explicit textured quad,
+		// so rotation/shear/scale are honored like the raster backend.
+		start := s.texBegin(cmd.Clip)
+		AppendImage(&s.builder.texMesh, s.ctx, cmd, texW, texH)
+		s.texEnd(cmd.Texture, start)
 		return
 	}
 	start := len(s.builder.sprites) * SpriteStride
@@ -387,7 +396,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
-	screen, _, valid := imageQuadProjection(s.ctx, cmd.Corners)
+	screen, _, valid := imageQuadProjection(s.ctx, transformedCorners(cmd.Transform, cmd.Corners))
 	if !valid {
 		return
 	}

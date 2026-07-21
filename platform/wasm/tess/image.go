@@ -73,7 +73,7 @@ func (s TexSizes) Lookup(id render.TextureID) (w, h int, ok bool) {
 // W=1 (no perspective). Rotation turns the destination rect around its own
 // screen-space center, matching the raster backend.
 func AppendImage(m *TexMesh, c ctx, cmd render.DrawImage, texW, texH int) {
-	corners, ok := destCorners(c, cmd.Dest, cmd.Rotation)
+	corners, ok := imageScreenCorners(c, cmd)
 	if !ok {
 		return
 	}
@@ -192,7 +192,7 @@ func spriteColorByte(value float64) byte {
 // perspective, so the vertex position is pre-multiplied by w and hardware
 // perspective-correct interpolation divides it back in the pipeline.
 func AppendImageQuad(m *TexMesh, c ctx, cmd render.DrawImageQuad, texW, texH int) {
-	_, homography, ok := imageQuadProjection(c, cmd.Corners)
+	_, homography, ok := imageQuadProjection(c, transformedCorners(cmd.Transform, cmd.Corners))
 	if !ok {
 		return
 	}
@@ -250,6 +250,71 @@ func imageQuadProjection(c ctx, corners [4]math2d.Vec2) ([4]math2d.Vec2, math2d.
 	}
 	h, ok := math2d.HomographyFromQuad(screen)
 	return screen, h, ok
+}
+
+// imageScreenCorners returns a DrawImage's four screen-space corners, honoring
+// a non-identity BaseCommand.Transform. The identity path stays on destCorners
+// so the common (and instanced) sprite geometry is byte-identical.
+func imageScreenCorners(c ctx, cmd render.DrawImage) ([4]math2d.Vec2, bool) {
+	if cmd.Transform.IsIdentity() {
+		return destCorners(c, cmd.Dest, cmd.Rotation)
+	}
+	return transformedImageCorners(c, cmd.Dest, cmd.Rotation, cmd.Transform)
+}
+
+// transformedImageCorners projects the destination rect's four world-space
+// corners through the command transform and the camera. Rotation, when set, is
+// applied afterward as a screen-space spin around the transformed center,
+// matching destCorners' rotation convention.
+func transformedImageCorners(c ctx, dest math2d.Rect, rotation float64, transform math2d.Affine) (corners [4]math2d.Vec2, ok bool) {
+	world := [4]math2d.Vec2{
+		{X: dest.Min.X, Y: dest.Min.Y},
+		{X: dest.Max.X, Y: dest.Min.Y},
+		{X: dest.Max.X, Y: dest.Max.Y},
+		{X: dest.Min.X, Y: dest.Max.Y},
+	}
+	for i, w := range world {
+		corners[i] = c.cam.WorldToScreen(transform.Apply(w))
+	}
+
+	// Shoelace area: zero means the transform collapsed the rect to a line or
+	// point, which has nothing to draw.
+	area := 0.0
+	for i := range corners {
+		j := (i + 1) % len(corners)
+		area += corners[i].X*corners[j].Y - corners[j].X*corners[i].Y
+	}
+	if area == 0 {
+		return corners, false
+	}
+
+	if rotation != 0 {
+		center := math2d.Vec2{
+			X: (corners[0].X + corners[1].X + corners[2].X + corners[3].X) / 4,
+			Y: (corners[0].Y + corners[1].Y + corners[2].Y + corners[3].Y) / 4,
+		}
+		sin, cos := math.Sincos(rotation)
+		for i, p := range corners {
+			dx := p.X - center.X
+			dy := p.Y - center.Y
+			corners[i] = math2d.Vec2{X: center.X + dx*cos - dy*sin, Y: center.Y + dx*sin + dy*cos}
+		}
+	}
+	return corners, true
+}
+
+// transformedCorners applies a command transform to a DrawImageQuad's four
+// world-space corners before projection. The identity case returns the corners
+// unchanged (and un-copied semantics are irrelevant: the array is passed by
+// value), keeping existing quads byte-identical.
+func transformedCorners(transform math2d.Affine, corners [4]math2d.Vec2) [4]math2d.Vec2 {
+	if transform.IsIdentity() {
+		return corners
+	}
+	for i := range corners {
+		corners[i] = transform.Apply(corners[i])
+	}
+	return corners
 }
 
 // destCorners projects a DrawImage-style destination rect from world space
