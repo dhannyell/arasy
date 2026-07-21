@@ -33,6 +33,15 @@ func circleBounds(center math2d.Vec2, radius float64) image.Rectangle {
 	)
 }
 
+func ellipseBounds(center math2d.Vec2, radiusX, radiusY float64) image.Rectangle {
+	return image.Rect(
+		int(math.Floor(center.X-radiusX)),
+		int(math.Floor(center.Y-radiusY)),
+		int(math.Ceil(center.X+radiusX)),
+		int(math.Ceil(center.Y+radiusY)),
+	)
+}
+
 func lineBounds(from, to math2d.Vec2, width float64) image.Rectangle {
 	radius := width * 0.5
 	return image.Rect(

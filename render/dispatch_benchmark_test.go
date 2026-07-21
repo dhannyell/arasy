@@ -11,6 +11,7 @@ type discardSink struct{}
 
 func (discardSink) VisitRect(render.DrawRect)           {}
 func (discardSink) VisitCircle(render.DrawCircle)       {}
+func (discardSink) VisitEllipse(render.DrawEllipse)     {}
 func (discardSink) VisitPoint(render.DrawPoint)         {}
 func (discardSink) VisitLine(render.DrawLine)           {}
 func (discardSink) VisitText(render.DrawText)           {}

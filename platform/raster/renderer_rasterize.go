@@ -124,6 +124,23 @@ func fillCircle(img *image.RGBA, center math2d.Vec2, radius float64, bounds imag
 	}
 }
 
+func fillEllipse(img *image.RGBA, center math2d.Vec2, radiusX, radiusY float64, bounds image.Rectangle, c color.RGBA) {
+	rxSq := radiusX * radiusX
+	rySq := radiusY * radiusY
+	rr := rxSq * rySq
+	bounds = bounds.Intersect(ellipseBounds(center, radiusX, radiusY))
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			dx := float64(x) + 0.5 - center.X
+			dy := float64(y) + 0.5 - center.Y
+			if float64(dx*dx)*rySq+float64(dy*dy)*rxSq <= rr {
+				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+			}
+		}
+	}
+}
+
 func strokeRect(img *image.RGBA, rect image.Rectangle, width int, bounds image.Rectangle, c color.RGBA) {
 	if width <= 0 || rect.Empty() {
 		return
@@ -193,6 +210,46 @@ func strokeCircle(img *image.RGBA, center math2d.Vec2, radius float64, width flo
 
 			if distSq >= innerSq && distSq <= outerSq {
 				img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+			}
+		}
+	}
+}
+
+func strokeEllipse(img *image.RGBA, center math2d.Vec2, radiusX, radiusY, width float64, bounds image.Rectangle, c color.RGBA) {
+	if radiusX <= 0 || radiusY <= 0 || width <= 0 {
+		return
+	}
+
+	outerRadiusX := radiusX
+	outerRadiusY := radiusY
+	innerRadiusX := radiusX - width
+	innerRadiusY := radiusY - width
+	if innerRadiusX < 0 {
+		innerRadiusX = 0
+	}
+	if innerRadiusY < 0 {
+		innerRadiusY = 0
+	}
+
+	outerRxSq := outerRadiusX * outerRadiusX
+	outerRySq := outerRadiusY * outerRadiusY
+	outerRR := outerRxSq * outerRySq
+
+	innerRxSq := innerRadiusX * innerRadiusX
+	innerRySq := innerRadiusY * innerRadiusY
+	innerRR := innerRxSq * innerRySq
+
+	bounds = bounds.Intersect(ellipseBounds(center, outerRadiusX, outerRadiusY))
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			dx := float64(x) + 0.5 - center.X
+			dy := float64(y) + 0.5 - center.Y
+			distSq := float64(dx*dx)*outerRySq + float64(dy*dy)*outerRxSq
+			if distSq <= outerRR {
+				if innerRadiusX <= 0 || innerRadiusY <= 0 || float64(dx*dx)*innerRySq+float64(dy*dy)*innerRxSq >= innerRR {
+					img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
+				}
 			}
 		}
 	}

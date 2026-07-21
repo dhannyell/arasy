@@ -163,6 +163,10 @@ func (s *buildSink) VisitCircle(cmd render.DrawCircle) {
 	AppendCircle(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }
 
+func (s *buildSink) VisitEllipse(cmd render.DrawEllipse) {
+	AppendEllipse(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
+}
+
 func (s *buildSink) VisitPoint(cmd render.DrawPoint) {
 	AppendPoint(&s.run(DrawRunSolid, 0, AtlasKey{}).Solid, s.ctx, cmd)
 }

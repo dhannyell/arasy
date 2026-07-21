@@ -191,6 +191,12 @@ func (s *streamSink) VisitCircle(cmd render.DrawCircle) {
 	s.solidEnd(start)
 }
 
+func (s *streamSink) VisitEllipse(cmd render.DrawEllipse) {
+	start := s.solidBegin(cmd.Clip)
+	AppendEllipse(&s.builder.solidMesh, s.ctx, cmd)
+	s.solidEnd(start)
+}
+
 func (s *streamSink) VisitPoint(cmd render.DrawPoint) {
 	start := s.solidBegin(cmd.Clip)
 	AppendPoint(&s.builder.solidMesh, s.ctx, cmd)
