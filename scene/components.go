@@ -173,4 +173,3 @@ type MoveIntent struct {
 	Target       math2d.Vec2
 	DesiredSpeed float64
 }
-

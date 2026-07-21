@@ -70,4 +70,3 @@ func DebugGridAreaCommands(bounds math2d.Rect, cellSize float64, color render.Co
 func (w *World) AdvanceBallisticsExport(dt float64) { w.advanceBallistics(dt) }
 
 func (w *World) ApplyLocomotionExport(dt float64) { w.applyLocomotion(dt) }
-

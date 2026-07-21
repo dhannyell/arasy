@@ -2,7 +2,6 @@ package scene
 
 import "github.com/dhannyell/frameforge/render"
 
-
 const defaultCellSize = 64
 
 type PhysicsConfig struct {
@@ -35,7 +34,7 @@ type World struct {
 	rectColliders    store[RectCollider]
 	heights          store[Height]
 	spins            store[Spin]
-	ballistics    store[Ballistics]
+	ballistics       store[Ballistics]
 	locomotions      store[Locomotion]
 	moveIntents      store[MoveIntent]
 	debugGridCells   []DebugGridCell
@@ -105,7 +104,7 @@ func (w *World) Clone() *World {
 		rectColliders:    w.rectColliders.clone(),
 		heights:          w.heights.clone(),
 		spins:            w.spins.clone(),
-		ballistics:    w.ballistics.clone(),
+		ballistics:       w.ballistics.clone(),
 		locomotions:      w.locomotions.clone(),
 		moveIntents:      w.moveIntents.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
