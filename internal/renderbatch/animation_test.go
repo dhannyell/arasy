@@ -326,10 +326,10 @@ func TestFlipBookCellsValidSequence(t *testing.T) {
 
 func TestFlipBookCellsDegradesLikeAnimatedSrc(t *testing.T) {
 	cases := map[string]render.SpriteInstance{
-		"one frame":      {Src: rect(0, 0, 2, 2), Animation: render.SpriteAnimation{Frames: 1, Rate: 1}},
-		"no rate":        {Src: rect(0, 0, 2, 2), Animation: render.SpriteAnimation{Frames: 4}},
-		"zero src":       {Animation: render.SpriteAnimation{Frames: 4, Rate: 1}},
-		"src outside":    {Src: rect(8, 0, 10, 2), Animation: render.SpriteAnimation{Frames: 4, Rate: 1}},
+		"one frame":       {Src: rect(0, 0, 2, 2), Animation: render.SpriteAnimation{Frames: 1, Rate: 1}},
+		"no rate":         {Src: rect(0, 0, 2, 2), Animation: render.SpriteAnimation{Frames: 4}},
+		"zero src":        {Animation: render.SpriteAnimation{Frames: 4, Rate: 1}},
+		"src outside":     {Src: rect(8, 0, 10, 2), Animation: render.SpriteAnimation{Frames: 4, Rate: 1}},
 		"sequence spills": {Src: rect(4, 2, 6, 4), Animation: render.SpriteAnimation{Frames: 4, Rate: 1}},
 	}
 	for name, inst := range cases {
