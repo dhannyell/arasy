@@ -35,6 +35,55 @@ const (
 	minSpriteCount     = 1
 	maxSpriteCount     = 500_000
 	textureCount       = 4
+
+	retainedBatchID = render.SpriteBatchID(1)
+
+	// Culling scenario: cullingBatchCount retained batches of
+	// cullingSpritesPerBatch sprites each. The first cullingVisibleBatches
+	// scatter inside the camera's unmodified default World rect
+	// (0,0)-(worldWidth,worldHeight); every other batch is offset far
+	// outside it, so exactly cullingVisibleBatches survive whole-batch
+	// culling without touching the camera at all.
+	cullingVisibleBatches  = 10
+	cullingBatchCount      = 100
+	cullingSpritesPerBatch = 1000
+	cullingBatchIDBase     = render.SpriteBatchID(1000)
+	// cullingOffscreenStep places every culled batch on its own multiple of
+	// worldWidth, far past any coordinate the default camera or its clip
+	// could ever resolve to.
+	cullingOffscreenStep = worldWidth * 4
+)
+
+// pathMode selects how Render builds sprite commands, isolating a different
+// cost each time: direct command construction, ECS bookkeeping, retained
+// whole-batch replace, or the whole-batch culling scenario (100 spatial
+// batches, only cullingVisibleBatches in the camera).
+type pathMode int
+
+const (
+	pathDirect pathMode = iota
+	pathECS
+	pathRetained
+	pathCulling
+)
+
+func (p pathMode) next() pathMode { return (p + 1) % 4 }
+
+// mutationPercents cycles the fraction of retained sprites that actually
+// move each tick. v1 retained batches always replace whole-batch, so every
+// step above 0% pays the same full re-upload cost — the point of the
+// control is to make that visible, not to demonstrate a speedup.
+var mutationPercents = []int{0, 1, 10, 100}
+
+// Crowd animation constants for the retained animated-torcida stressor.
+// Bounce/Phase are baked into each instance once at publish time (static
+// content); BounceHz/Intensity ride the per-draw SpriteBatchAnimation
+// uniform, so animating never touches the retained buffer or re-uploads
+// content — only the small per-frame arena slot changes.
+const (
+	crowdBounceHz  = 1.1
+	crowdIntensity = 1.0
+	crowdBounce    = 6 // world units of per-sprite bounce amplitude
 )
 
 // spriteState is one bouncing sprite: position, velocity and a slow spin.
@@ -75,6 +124,13 @@ type frameStats struct {
 	cpuUpload       time.Duration
 	cpuEncode       time.Duration
 	hasCPUBreakdown bool
+
+	retainedGPUBytes     uint64
+	retainedContentBytes uint64
+	retainedTotal        int
+	retainedVisible      int
+	retainedDraws        int
+	hasRetained          bool
 }
 
 // Game bounces an owned slice of sprites inside the world and renders one
@@ -101,8 +157,20 @@ type Game struct {
 	spriteCount  int
 	multiTexture bool
 
-	useECS   bool
+	path     pathMode
 	entities []scene.EntityID
+
+	// mutationIndex selects mutationPercents; only meaningful in pathRetained.
+	mutationIndex    int
+	retainedDirty    bool // forces a republish (structural change or first frame)
+	cullingPublished bool
+
+	// animated toggles the retained "torcida" stressor: every instance
+	// carries a baked-in bounce amplitude/phase, and Render drives the
+	// batch-wide bounce uniform from animTime. Only meaningful in
+	// pathRetained.
+	animated bool
+	animTime float64
 
 	stats frameStats
 }
@@ -149,6 +217,10 @@ func (g *Game) Init(*runtime.UpdateContext) {
 func (g *Game) restart() {
 	g.spriteCount = defaultSpriteCount
 	g.multiTexture = false
+	g.path = pathDirect
+	g.mutationIndex = 0
+	g.animated = false
+	g.animTime = 0
 	g.sprites = g.sprites[:0]
 	g.growTo(g.spriteCount)
 }
@@ -162,22 +234,45 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	}
 	if ctx.Input.JustPressed(input.ActionConfirm) {
 		g.multiTexture = !g.multiTexture
-		if g.useECS {
+		if g.path == pathECS {
 			for i, id := range g.entities {
 				ctx.World.SetImageSprite(id, g.imageSpriteFor(i))
 			}
 		}
+		g.retainedDirty = true
 	}
 	if ctx.Input.JustPressed(input.ActionFocusNext) {
-		g.useECS = !g.useECS
-		if g.useECS {
-			g.spawnEntities(ctx.World)
-		} else {
-			g.despawnEntities(ctx.World)
-		}
+		g.setPath(ctx, g.path.next())
+	}
+	if ctx.Input.JustPressed(input.ActionPause) {
+		g.mutationIndex = (g.mutationIndex + 1) % len(mutationPercents)
+	}
+	if ctx.Input.JustPressed(input.ActionMoveX) {
+		// Toggling animation changes which instance records carry a
+		// non-zero Animation (planSpriteBatch selects the animated pipeline
+		// from that), so it needs one repack — after that, animating is
+		// GPU-only: the batch buffer never changes again while animated
+		// stays on.
+		g.animated = !g.animated
+		g.retainedDirty = true
+	}
+	g.animTime += dt
+
+	if g.path == pathCulling {
+		g.publishCullingBatchesOnce(ctx)
+		return
 	}
 
-	for i := range g.sprites {
+	// mutated bounds how many sprites actually move this tick. direct/ECS
+	// always move every sprite; retained mode moves only the fraction
+	// mutationPercents[g.mutationIndex] selects, so the HUD can show that
+	// even a small mutated fraction still forces a full-batch re-upload —
+	// v1 retained batches have no partial update.
+	mutated := len(g.sprites)
+	if g.path == pathRetained {
+		mutated = g.spriteCount * mutationPercents[g.mutationIndex] / 100
+	}
+	for i := 0; i < mutated; i++ {
 		s := &g.sprites[i]
 		s.Pos.X += s.Vel.X * dt
 		s.Pos.Y += s.Vel.Y * dt
@@ -199,13 +294,41 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 		}
 	}
 
-	// The sprite slice stays the single source of motion in both modes; ECS
-	// mode mirrors it into the World every tick, which is exactly the store
-	// write traffic a transform-driven game generates.
-	if g.useECS {
+	// The sprite slice stays the single source of motion in ECS mode too; it
+	// mirrors positions into the World every tick, which is exactly the
+	// store write traffic a transform-driven game generates.
+	if g.path == pathECS {
 		for i, id := range g.entities {
 			ctx.World.SetTransform(id, g.transformFor(i))
 		}
+	}
+	if g.path == pathRetained && mutated > 0 {
+		g.retainedDirty = true
+	}
+}
+
+// setPath transitions between direct, ECS, retained and culling, doing the
+// one-time setup/teardown each mode needs: ECS entities, the culling
+// scenario's 100 retained batches, and the retained path's first publish.
+func (g *Game) setPath(ctx *runtime.UpdateContext, next pathMode) {
+	if next == g.path {
+		return
+	}
+	if g.path == pathECS {
+		g.despawnEntities(ctx.World)
+	}
+	if g.path == pathCulling && g.cullingPublished {
+		g.deleteCullingBatches(ctx)
+	}
+	if g.path == pathRetained {
+		ctx.Batches.DeleteSprites(retainedBatchID)
+	}
+	g.path = next
+	switch next {
+	case pathECS:
+		g.spawnEntities(ctx.World)
+	case pathRetained:
+		g.retainedDirty = true
 	}
 }
 
@@ -220,12 +343,55 @@ func (g *Game) setSpriteCount(w *scene.World, n int) {
 		g.sprites = g.sprites[:n]
 	}
 	g.spriteCount = n
-	if g.useECS {
+	if g.path == pathECS {
 		// Count changes are rare user events; a full respawn keeps the
 		// entity list trivially in sync with the sprite slice.
 		g.despawnEntities(w)
 		g.spawnEntities(w)
 	}
+	g.retainedDirty = true
+}
+
+// publishCullingBatchesOnce publishes cullingBatchCount retained batches
+// once. The first cullingVisibleBatches scatter inside
+// (0,0)-(worldWidth,worldHeight), the same World rect the default camera
+// already shows; every other batch sits at its own multiple of
+// cullingOffscreenStep on the X axis, far past anything that rect (or its
+// clip) could ever intersect. No camera change is needed: whole-batch
+// culling alone should keep exactly cullingVisibleBatches on screen.
+func (g *Game) publishCullingBatchesOnce(ctx *runtime.UpdateContext) {
+	if g.cullingPublished {
+		return
+	}
+	for i := 0; i < cullingBatchCount; i++ {
+		originX := 0.0
+		if i >= cullingVisibleBatches {
+			originX = float64(i) * cullingOffscreenStep
+		}
+
+		instances := make([]render.SpriteInstance, cullingSpritesPerBatch)
+		for j := range instances {
+			// i in the seed keeps the cullingVisibleBatches from scattering
+			// identically on top of each other.
+			pos := spawnSprite(j*cullingBatchCount + i).Pos
+			instances[j] = render.SpriteInstance{
+				Texture: g.textures[0],
+				Dest: math2d.NewRect(
+					math2d.Vec2{X: originX + pos.X, Y: pos.Y},
+					math2d.Vec2{X: spriteSize, Y: spriteSize},
+				),
+			}
+		}
+		ctx.Batches.UpdateSprites(cullingBatchIDBase+render.SpriteBatchID(i), instances)
+	}
+	g.cullingPublished = true
+}
+
+func (g *Game) deleteCullingBatches(ctx *runtime.UpdateContext) {
+	for i := 0; i < cullingBatchCount; i++ {
+		ctx.Batches.DeleteSprites(cullingBatchIDBase + render.SpriteBatchID(i))
+	}
+	g.cullingPublished = false
 }
 
 // transformFor converts a sprite's corner-anchored state to the ECS
@@ -239,13 +405,16 @@ func (g *Game) transformFor(i int) scene.Transform {
 	}
 }
 
-func (g *Game) imageSpriteFor(i int) scene.ImageSprite {
-	texture := g.textures[0]
+func (g *Game) spriteTexture(i int) render.TextureID {
 	if g.multiTexture {
-		texture = g.textures[i%textureCount]
+		return g.textures[i%textureCount]
 	}
+	return g.textures[0]
+}
+
+func (g *Game) imageSpriteFor(i int) scene.ImageSprite {
 	return scene.ImageSprite{
-		Texture: texture,
+		Texture: g.spriteTexture(i),
 		Size:    math2d.Vec2{X: spriteSize, Y: spriteSize},
 	}
 }
@@ -273,21 +442,31 @@ func (g *Game) growTo(n int) {
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	var commands []render.Command
-	if g.useECS {
+	switch g.path {
+	case pathECS:
 		commands = ctx.World.RenderCommands()
-	} else {
-		commands = make([]render.Command, 0, len(g.sprites))
-		for i, s := range g.sprites {
-			texture := g.textures[0]
-			if g.multiTexture {
-				texture = g.textures[i%textureCount]
-			}
-			commands = append(commands, render.DrawImage{
-				Texture:  texture,
-				Dest:     math2d.NewRect(s.Pos, math2d.Vec2{X: spriteSize, Y: spriteSize}),
-				Rotation: s.Rotation,
-			})
+	case pathRetained:
+		if g.retainedDirty {
+			ctx.Batches.UpdateSprites(retainedBatchID, g.retainedInstances())
+			g.retainedDirty = false
 		}
+		batchCmd := render.DrawSpriteBatch{Batch: retainedBatchID}
+		if g.animated {
+			// Only Time changes frame to frame; BounceHz/Intensity are
+			// constants. This is the one piece of "animated" state allowed
+			// to vary every frame without touching the retained buffer —
+			// it rides the draw command's small per-frame uniform slot.
+			batchCmd.Animation = render.SpriteBatchAnimation{
+				Time:      g.animTime,
+				BounceHz:  crowdBounceHz,
+				Intensity: crowdIntensity,
+			}
+		}
+		commands = []render.Command{batchCmd}
+	case pathCulling:
+		commands = g.renderCullingCommands(ctx)
+	default: // pathDirect
+		commands = g.directCommands()
 	}
 
 	hud := spritebenchLayout(ctx.Camera().Viewport)
@@ -299,7 +478,52 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	d.Label(g.gpuLabel(), hud.gpu)
 	d.Label(g.cpuLabel(), hud.cpu)
 	d.Label(g.cpuBreakdownLabel(), hud.breakdown)
-	d.Label("UP doubles, DOWN halves, T toggles 1/4 textures, E toggles direct/ECS", hud.help)
+	d.Label(g.retainedLabel(), hud.retained)
+	d.Label("UP/DOWN count, T textures, E direct/ECS/retained/culling, M mutation %, A toggles crowd animation", hud.help)
+	return commands
+}
+
+func (g *Game) directCommands() []render.Command {
+	commands := make([]render.Command, 0, len(g.sprites))
+	for i, s := range g.sprites {
+		commands = append(commands, render.DrawImage{
+			Texture:  g.spriteTexture(i),
+			Dest:     math2d.NewRect(s.Pos, math2d.Vec2{X: spriteSize, Y: spriteSize}),
+			Rotation: s.Rotation,
+		})
+	}
+	return commands
+}
+
+func (g *Game) retainedInstances() []render.SpriteInstance {
+	instances := make([]render.SpriteInstance, len(g.sprites))
+	for i, s := range g.sprites {
+		inst := render.SpriteInstance{
+			Texture:  g.spriteTexture(i),
+			Dest:     math2d.NewRect(s.Pos, math2d.Vec2{X: spriteSize, Y: spriteSize}),
+			Rotation: s.Rotation,
+		}
+		if g.animated {
+			// Phase is a pure function of index so the crowd bounces out of
+			// sync instead of as one rigid block.
+			inst.Animation = render.SpriteAnimation{
+				Bounce: crowdBounce,
+				Phase:  float32(math.Mod(float64(i)*0.129, 1)),
+			}
+		}
+		instances[i] = inst
+	}
+	return instances
+}
+
+// renderCullingCommands leaves the camera untouched (see
+// publishCullingBatchesOnce) and emits every batch command: culling which
+// cullingVisibleBatches survive is the renderer's job, not the game's.
+func (g *Game) renderCullingCommands(*runtime.RenderContext) []render.Command {
+	commands := make([]render.Command, cullingBatchCount)
+	for i := range commands {
+		commands[i] = render.DrawSpriteBatch{Batch: cullingBatchIDBase + render.SpriteBatchID(i)}
+	}
 	return commands
 }
 
@@ -319,13 +543,19 @@ func (g *Game) ObserveFrame(
 	hasCPUTime bool,
 	cpuTess, cpuUpload, cpuEncode time.Duration,
 	hasCPUBreakdown bool,
+	retainedGPUBytes, retainedContentBytes uint64,
+	retainedTotal, retainedVisible, retainedDraws int,
+	hasRetained bool,
 ) {
 	g.stats = frameStats{
 		fps: fps, frameTime: frameTime, p99: p99,
 		gpuDraw: gpuDraw, hasGPUTime: hasGPUTime,
 		cpuTick: cpuTick, cpuRender: cpuRender, hasCPUTime: hasCPUTime,
 		cpuTess: cpuTess, cpuUpload: cpuUpload, cpuEncode: cpuEncode,
-		hasCPUBreakdown: hasCPUBreakdown,
+		hasCPUBreakdown:  hasCPUBreakdown,
+		retainedGPUBytes: retainedGPUBytes, retainedContentBytes: retainedContentBytes,
+		retainedTotal: retainedTotal, retainedVisible: retainedVisible, retainedDraws: retainedDraws,
+		hasRetained: hasRetained,
 	}
 }
 
@@ -337,10 +567,41 @@ func (g *Game) textureModeLabel() string {
 }
 
 func (g *Game) pathModeLabel() string {
-	if g.useECS {
+	switch g.path {
+	case pathECS:
 		return "ECS"
+	case pathRetained:
+		if g.animated {
+			return fmt.Sprintf("retained (mutate %d%%, animated)", mutationPercents[g.mutationIndex])
+		}
+		return fmt.Sprintf("retained (mutate %d%%)", mutationPercents[g.mutationIndex])
+	case pathCulling:
+		return fmt.Sprintf("culling (%d batches x %d)", cullingBatchCount, cullingSpritesPerBatch)
+	default:
+		return "direct"
 	}
-	return "direct"
+}
+
+// retainedLabel reports GPU-resident bytes across every registered retained
+// batch, content bytes actually uploaded this frame (0 at steady state),
+// visible-vs-total instance count and the number of retained draw calls —
+// WebGPU only, and only meaningful once a retained/culling path has
+// published at least one batch.
+func (g *Game) retainedLabel() string {
+	if !g.stats.hasRetained {
+		return "retained batches unavailable (Canvas2D)"
+	}
+	if g.path != pathRetained && g.path != pathCulling {
+		return "retained  n/a in this path"
+	}
+	return fmt.Sprintf(
+		"retained  gpu %s B  upload %s B/frame  visible %s/%s  draws %d",
+		formatCount(int(g.stats.retainedGPUBytes)),
+		formatCount(int(g.stats.retainedContentBytes)),
+		formatCount(g.stats.retainedVisible),
+		formatCount(g.stats.retainedTotal),
+		g.stats.retainedDraws,
+	)
 }
 
 // gpuLabel reports the main render pass's GPU time; the particle compute
@@ -391,6 +652,8 @@ func spritebenchBindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyArrowDown), Action: input.ActionCancel, Scale: 1},
 		{Source: input.Keyboard(input.KeyT), Action: input.ActionConfirm, Scale: 1},
 		{Source: input.Keyboard(input.KeyE), Action: input.ActionFocusNext, Scale: 1},
+		{Source: input.Keyboard(input.KeyM), Action: input.ActionPause, Scale: 1},
+		{Source: input.Keyboard(input.KeyA), Action: input.ActionMoveX, Scale: 1},
 	}
 }
 
@@ -427,16 +690,16 @@ func formatCount(count int) string {
 type spritebenchHUD struct {
 	panel                        math2d.Rect
 	title, load, frame, gpu, cpu math2d.Vec2
-	breakdown, help              math2d.Vec2
+	breakdown, retained, help    math2d.Vec2
 }
 
 func spritebenchLayout(viewport math2d.Rect) spritebenchHUD {
 	w, h := viewport.Width(), viewport.Height()
 	panelW := math2d.Clamp(w*0.48, 560, 760)
-	panelH := math2d.Clamp(h*0.40, 290, 350)
+	panelH := math2d.Clamp(h*0.44, 320, 380)
 	x := viewport.Min.X + (w-panelW)/2
 	y := viewport.Min.Y + math2d.Clamp(h*0.035, 18, 42)
-	line := panelH * 0.09
+	line := panelH * 0.08
 	return spritebenchHUD{
 		panel:     math2d.NewRect(math2d.Vec2{X: x, Y: y}, math2d.Vec2{X: panelW, Y: panelH}),
 		title:     math2d.Vec2{X: x + panelW/2, Y: y + line*0.8},
@@ -445,6 +708,7 @@ func spritebenchLayout(viewport math2d.Rect) spritebenchHUD {
 		gpu:       math2d.Vec2{X: x + panelW/2, Y: y + line*4.1},
 		cpu:       math2d.Vec2{X: x + panelW/2, Y: y + line*5.2},
 		breakdown: math2d.Vec2{X: x + panelW/2, Y: y + line*6.3},
-		help:      math2d.Vec2{X: x + panelW/2, Y: y + line*7.7},
+		retained:  math2d.Vec2{X: x + panelW/2, Y: y + line*7.4},
+		help:      math2d.Vec2{X: x + panelW/2, Y: y + line*8.6},
 	}
 }

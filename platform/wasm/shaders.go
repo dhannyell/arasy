@@ -40,6 +40,20 @@ var spriteWGSL string
 //go:embed shaders/sprite_array_render.wgsl
 var spriteArrayWGSL string
 
+// spriteBatchAnimWGSL draws retained animated sprite batches (single
+// texture): flip-book and bounce/pulse run in the vertex shader from the
+// retained base records, per-instance animation records, and one dynamic-
+// offset uniform slot per draw command.
+//
+//go:embed shaders/sprite_batch_anim.wgsl
+var spriteBatchAnimWGSL string
+
+// spriteBatchAnimArrayWGSL is the texture-array variant of the retained
+// animated sprite batch pipeline.
+//
+//go:embed shaders/sprite_batch_array_anim.wgsl
+var spriteBatchAnimArrayWGSL string
+
 // mipmapWGSL is the internal fullscreen-triangle shader used to generate a
 // texture's mip chain via successive render passes. It has no vertex buffer
 // inputs; the fullscreen triangle is derived from @builtin(vertex_index).

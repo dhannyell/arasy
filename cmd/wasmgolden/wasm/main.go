@@ -21,6 +21,8 @@ func main() {
 		game, err = wasmgolden.NewParticleGolden()
 	case "sprite-array":
 		game, err = wasmgolden.NewSpriteArrayGolden()
+	case "retained-batches":
+		game, err = wasmgolden.NewRetainedBatchesGolden()
 	default:
 		game, err = wasmgolden.New()
 	}

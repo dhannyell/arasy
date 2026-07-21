@@ -213,14 +213,16 @@ type DrawParticles struct {
 	Seed uint64
 }
 
-func (DrawRect) isRenderCommand()      {}
-func (DrawCircle) isRenderCommand()    {}
-func (DrawEllipse) isRenderCommand()   {}
-func (DrawPoint) isRenderCommand()     {}
-func (DrawLine) isRenderCommand()      {}
-func (DrawText) isRenderCommand()      {}
-func (DrawArc) isRenderCommand()       {}
-func (DrawPolygon) isRenderCommand()   {}
-func (DrawImage) isRenderCommand()     {}
-func (DrawImageQuad) isRenderCommand() {}
-func (DrawParticles) isRenderCommand() {}
+func (DrawRect) isRenderCommand()        {}
+func (DrawCircle) isRenderCommand()      {}
+func (DrawEllipse) isRenderCommand()     {}
+func (DrawPoint) isRenderCommand()       {}
+func (DrawLine) isRenderCommand()        {}
+func (DrawText) isRenderCommand()        {}
+func (DrawArc) isRenderCommand()         {}
+func (DrawPolygon) isRenderCommand()     {}
+func (DrawImage) isRenderCommand()       {}
+func (DrawImageQuad) isRenderCommand()   {}
+func (DrawParticles) isRenderCommand()   {}
+func (DrawSpriteBatch) isRenderCommand() {}
+func (DrawTextBatch) isRenderCommand()   {}
