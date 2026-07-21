@@ -51,7 +51,10 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 
 	w.contacts = w.contacts[:0]
 
+	w.applyLocomotion(dt)
 	w.applyAcceleration(dt)
+	w.advanceBallistics(dt)
+	w.substepFastColliders(dt)
 	w.integrate(dt)
 	w.bounceEntitiesInside(config.Bounds, config.Bounce)
 

@@ -37,14 +37,32 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 	ids = append(ids, w.circleSprites.ids...)
 	ids = append(ids, w.rectSprites.ids...)
 	ids = append(ids, w.imageSprites.ids...)
-	slices.Sort(ids)
+
+	// Depth sort: Layer dominates, then Y position (lower Y = drawn first = behind),
+	// then EntityID for determinism.
+	slices.SortFunc(ids, func(a, b EntityID) int {
+		layerA, layerB := w.spriteLayer(a), w.spriteLayer(b)
+		if layerA != layerB {
+			return layerA - layerB
+		}
+		ta, aok := w.transforms.get(a)
+		tb, bok := w.transforms.get(b)
+		if aok && bok {
+			if ta.Position.Y < tb.Position.Y {
+				return -1
+			}
+			if ta.Position.Y > tb.Position.Y {
+				return 1
+			}
+		}
+		return int(a) - int(b)
+	})
 	w.renderIDScratch = ids
 
 	commands := dst
 	if commands == nil {
 		commands = make([]render.Command, 0, totalSprites)
 	}
-	// Clamp/sanitize alpha: NaN, negative, zero -> no interpolation.
 	useAlpha := alpha
 	if useAlpha <= 0 || useAlpha != useAlpha {
 		useAlpha = 0
@@ -52,13 +70,14 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		useAlpha = math.Nextafter(1, 0)
 	}
 
+	hasProjection := !w.projection.IsZero()
+
 	for _, id := range ids {
 		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
 
-		// Interpolate position from previous render transform if available.
 		interpolated := transform
 		if useAlpha > 0 {
 			if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
@@ -68,10 +87,51 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			}
 		}
 
+		// Height projection: lift + scale + shadow (render-only).
+		pos := interpolated.Position
+		scl := interpolated.Scale
+		if hasProjection {
+			if h, hasH := w.heights.get(id); hasH {
+				z := h.Z
+				if useAlpha > 0 {
+					if prevH, hasPrevH := w.renderHeights.get(id); hasPrevH {
+						z = math2d.Lerp(prevH.Z, h.Z, useAlpha)
+					}
+				}
+				if z > 0 {
+					ground := pos
+					fp := w.spriteFootprint(id)
+					proj := w.projection.Project(ground, fp, z)
+					// Ground shadow first, so it draws behind the lifted body.
+					// Same layer, emitted adjacent to the body, so the depth
+					// sort keeps the composite entity's commands together.
+					if proj.ShadowAlpha > 0 && (proj.ShadowRadii.X > 0 || proj.ShadowRadii.Y > 0) {
+						commands = append(commands, render.DrawEllipse{
+							Center:  ground.Add(proj.ShadowCenter),
+							RadiusX: proj.ShadowRadii.X,
+							RadiusY: proj.ShadowRadii.Y,
+							Fill:    render.RGBA(0, 0, 0, proj.ShadowAlpha),
+							BaseCommand: render.BaseCommand{
+								LayerValue: w.spriteLayer(id),
+							},
+						})
+					}
+					pos = proj.BodyPosition
+					if proj.BodyScale > 0 {
+						scl = scl.Mul(proj.BodyScale)
+					}
+				}
+			}
+		}
+
 		if circle, hasCircle := w.circleSprites.get(id); hasCircle {
+			r := circle.Radius
+			if scl.X > 0 {
+				r *= scl.X
+			}
 			commands = append(commands, render.DrawCircle{
-				Center: interpolated.Position,
-				Radius: circle.Radius,
+				Center: pos,
+				Radius: r,
 				Fill:   circle.Color,
 				BaseCommand: render.BaseCommand{
 					LayerValue: circle.Layer,
@@ -95,14 +155,14 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		if img, hasImage := w.imageSprites.get(id); hasImage {
 			halfSize := img.Size.Mul(0.5)
 			scaledHalf := math2d.Vec2{
-				X: halfSize.X * interpolated.Scale.X,
-				Y: halfSize.Y * interpolated.Scale.Y,
+				X: halfSize.X * scl.X,
+				Y: halfSize.Y * scl.Y,
 			}
 			commands = append(commands, render.DrawImage{
 				Texture: img.Texture,
 				Dest: math2d.NewRectFromCorners(
-					interpolated.Position.Sub(scaledHalf),
-					interpolated.Position.Add(scaledHalf),
+					pos.Sub(scaledHalf),
+					pos.Add(scaledHalf),
 				),
 				Src:      img.Src,
 				Tint:     img.Tint,
@@ -117,12 +177,41 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 	return commands
 }
 
-// SyncRenderState copies the current transforms into the render-pose cache.
-// Call before each simulation step that can move entities so the next frame
-// has a valid previous pose for interpolation. Call after reset, teleport,
-// or restore to prevent visual smear.
+// spriteLayer returns the layer of the first sprite found for the entity.
+func (w *World) spriteLayer(id EntityID) int {
+	if s, ok := w.circleSprites.get(id); ok {
+		return s.Layer
+	}
+	if s, ok := w.rectSprites.get(id); ok {
+		return s.Layer
+	}
+	if s, ok := w.imageSprites.get(id); ok {
+		return s.Layer
+	}
+	return 0
+}
+
+// spriteFootprint returns the half-extents of the entity's sprite footprint,
+// used by Projection for shadow positioning.
+func (w *World) spriteFootprint(id EntityID) math2d.Vec2 {
+	if s, ok := w.circleSprites.get(id); ok {
+		return math2d.Vec2{X: s.Radius, Y: s.Radius}
+	}
+	if s, ok := w.rectSprites.get(id); ok {
+		return math2d.Vec2{
+			X: (s.Rect.Max.X - s.Rect.Min.X) * 0.5,
+			Y: (s.Rect.Max.Y - s.Rect.Min.Y) * 0.5,
+		}
+	}
+	if s, ok := w.imageSprites.get(id); ok {
+		return math2d.Vec2{X: s.Size.X * 0.5, Y: s.Size.Y * 0.5}
+	}
+	return math2d.Vec2{}
+}
+
 func (w *World) SyncRenderState() {
 	w.renderTransforms.copyFrom(&w.transforms)
+	w.renderHeights.copyFrom(&w.heights)
 }
 
 func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, layer int) []render.Command {

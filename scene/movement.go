@@ -20,6 +20,10 @@ func (w *World) applyAcceleration(dt float64) {
 
 func (w *World) integrate(dt float64) {
 	for i, id := range w.velocities.ids {
+		if _, moved := w.ccdMoved[id]; moved {
+			// Horizontal motion already integrated with continuous collision.
+			continue
+		}
 		velocity := w.velocities.dense[i]
 		transform, ok := w.transforms.get(id)
 		if !ok {

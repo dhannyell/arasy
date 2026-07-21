@@ -22,11 +22,16 @@ const (
 	tagCircleCollider
 	tagRectCollider
 	tagImageSprite
+	tagHeight
+	tagSpin
+	tagBallistics
+	tagLocomotion
+	tagMoveIntent
 )
 
 // ChecksumComponentStores counts the component stores covered by Checksum.
 // The structural guard test compares it against reflection over World.
-const ChecksumComponentStores = 12
+const ChecksumComponentStores = 17
 
 // Checksum returns a deterministic hash of all entity positions and velocities.
 // Two worlds with identical simulation state always produce the same value.
@@ -123,6 +128,35 @@ func (w *World) Checksum() uint64 {
 	hashComponent(h, buf[:], tagRectCollider, &w.rectColliders, func(c RectCollider) {
 		hashF64(h, buf[:], c.HalfExtends.X)
 		hashF64(h, buf[:], c.HalfExtends.Y)
+	})
+	hashComponent(h, buf[:], tagHeight, &w.heights, func(h2 Height) {
+		hashF64(h, buf[:], h2.Z)
+		hashF64(h, buf[:], h2.VZ)
+	})
+	hashComponent(h, buf[:], tagSpin, &w.spins, func(s Spin) {
+		hashF64(h, buf[:], s.Omega)
+	})
+	hashComponent(h, buf[:], tagBallistics, &w.ballistics, func(b Ballistics) {
+		hashF64(h, buf[:], b.Gravity)
+		hashF64(h, buf[:], b.DragK)
+		hashF64(h, buf[:], b.MagnusK)
+		hashF64(h, buf[:], b.BounceDamping)
+		hashF64(h, buf[:], b.BounceFriction)
+		hashF64(h, buf[:], b.SpinDecay)
+		hashF64(h, buf[:], b.RollFriction)
+		hashF64(h, buf[:], b.RestVZ)
+		hashU64(h, buf[:], uint64(int64(b.Substeps)))
+	})
+	hashComponent(h, buf[:], tagLocomotion, &w.locomotions, func(l Locomotion) {
+		hashF64(h, buf[:], l.Accel)
+		hashF64(h, buf[:], l.Decel)
+		hashF64(h, buf[:], l.MaxSpeed)
+		hashF64(h, buf[:], l.Agility)
+	})
+	hashComponent(h, buf[:], tagMoveIntent, &w.moveIntents, func(m MoveIntent) {
+		hashF64(h, buf[:], m.Target.X)
+		hashF64(h, buf[:], m.Target.Y)
+		hashF64(h, buf[:], m.DesiredSpeed)
 	})
 	if w.imageSprites.len() > 0 {
 		hashComponent(h, buf[:], tagImageSprite, &w.imageSprites, func(s ImageSprite) {

@@ -202,6 +202,42 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 			},
 		},
 		{
+			name: "height.Z",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetHeight(circle, scene.Height{Z: 99, VZ: 0})
+			},
+		},
+		{
+			name: "spin.Omega",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetSpin(circle, scene.Spin{Omega: 99})
+			},
+		},
+		{
+			name: "ballistics.Gravity",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetBallistics(circle, scene.Ballistics{Gravity: 99})
+			},
+		},
+		{
+			name: "ballistics.Substeps",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetBallistics(circle, scene.Ballistics{Substeps: 8})
+			},
+		},
+		{
+			name: "locomotion.Accel",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetLocomotion(circle, scene.Locomotion{Accel: 99})
+			},
+		},
+		{
+			name: "moveIntent.DesiredSpeed",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetMoveIntent(circle, scene.MoveIntent{DesiredSpeed: 99})
+			},
+		},
+		{
 			name: "remove component (Body)",
 			mutate: func(w *scene.World, circle, _ scene.EntityID) {
 				w.RemoveBody(circle)
@@ -254,12 +290,77 @@ func TestChecksumDistinguishesAbsentFromZeroImageSprite(t *testing.T) {
 	}
 }
 
+func TestChecksumDistinguishesAbsentFromZeroHeight(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetHeight(id, scene.Height{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Height from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroSpin(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetSpin(id, scene.Spin{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Spin from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroBallistics(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetBallistics(id, scene.Ballistics{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Ballistics from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroLocomotion(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetLocomotion(id, scene.Locomotion{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Locomotion from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroMoveIntent(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetMoveIntent(id, scene.MoveIntent{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent MoveIntent from a present, zero-valued one")
+	}
+}
+
 func TestChecksumCoversAllComponentStores(t *testing.T) {
 	wt := reflect.TypeFor[scene.World]()
 	count := 0
 	for f := range wt.Fields() {
 		if strings.HasPrefix(f.Type.String(), "scene.store[") {
-			if f.Name == "renderTransforms" {
+			if f.Name == "renderTransforms" || f.Name == "renderHeights" {
 				continue
 			}
 			count++

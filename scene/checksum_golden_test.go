@@ -17,8 +17,10 @@ import (
 
 // TestChecksumGolden asserts that the simulation checksum is bit-identical
 // across runs and architectures. The golden file records expected checksums at
-// ticks 1, 100, and 600 for a dense, fully deterministic world with all 12
-// component maps populated and active collisions.
+// ticks 1, 100, and 600 for a dense, fully deterministic world with every
+// component store populated and active collisions, including a spinning
+// projectile in flight (drag + Magnus + bounce) and a steering agent — the
+// float-heavy integrators where FMA fusion would diverge across architectures.
 //
 // Regenerate (only on x86-64, in a dedicated commit explaining why):
 //
@@ -125,10 +127,11 @@ func runAndCapture(w *scene.World, dt float64, config scene.StepConfig, totalTic
 	return results
 }
 
-// buildGoldenWorld creates a dense, fully deterministic world with ~24
-// entities covering all 12 component stores. Positions, velocities, and
-// accelerations are arranged so that collisions occur within the 100×80
-// bounds, exercising the full simulation pipeline.
+// buildGoldenWorld creates a dense, fully deterministic world covering every
+// component store, including the 2.5D physics components (Height, Ballistics,
+// Spin, Locomotion, MoveIntent). Positions, velocities, and accelerations are
+// arranged so that collisions occur within the 100×80 bounds, exercising the
+// full simulation pipeline.
 func buildGoldenWorld() *scene.World {
 	w := scene.NewWorld()
 
@@ -323,6 +326,62 @@ func buildGoldenWorld() *scene.World {
 		w.SetCircleSprite(id, scene.CircleSprite{
 			BaseSprite: scene.BaseSprite{Layer: 1, Color: render.RGBA(0.7, 0.7, 0.2, 1)},
 			Radius:     2.5,
+		})
+	}
+
+	// ---- Spinning projectile in flight (Height + Ballistics + Spin) ----
+	// Exercises the ballistic integrator (drag, Magnus, gravity, bounce) and
+	// substep continuous collision — the float-heavy code where FMA bites.
+	{
+		id := w.Spawn()
+		w.SetTransform(id, scene.Transform{
+			Position: math2d.Vec2{X: 20, Y: 30},
+			Scale:    math2d.Vec2{X: 1, Y: 1},
+		})
+		w.SetVelocity(id, scene.Velocity{Linear: math2d.Vec2{X: 6 + seventh, Y: third}})
+		w.SetHeight(id, scene.Height{Z: 8 + ninth, VZ: 4 + third})
+		w.SetSpin(id, scene.Spin{Omega: 5 + seventh})
+		w.SetBallistics(id, scene.Ballistics{
+			Gravity:        9 + third,
+			DragK:          0.05,
+			MagnusK:        0.3,
+			BounceDamping:  0.6,
+			BounceFriction: 0.8,
+			SpinDecay:      0.5,
+			RollFriction:   1.0,
+			RestVZ:         0.2,
+			Substeps:       4,
+		})
+		w.SetBody(id, scene.Body{InvMass: 1, Restitution: 0.5})
+		w.SetCircleCollider(id, scene.CircleCollider{Radius: 1 + ninth})
+		w.SetCircleSprite(id, scene.CircleSprite{
+			BaseSprite: scene.BaseSprite{Layer: 2, Color: render.RGBA(0.9, 0.6, 0.1, 1)},
+			Radius:     1 + ninth,
+		})
+	}
+
+	// ---- Steering agent (Locomotion + MoveIntent) ----
+	{
+		id := w.Spawn()
+		w.SetTransform(id, scene.Transform{
+			Position: math2d.Vec2{X: 60, Y: 50},
+			Scale:    math2d.Vec2{X: 1, Y: 1},
+		})
+		w.SetVelocity(id, scene.Velocity{Linear: math2d.Vec2{X: seventh, Y: -ninth}})
+		w.SetLocomotion(id, scene.Locomotion{
+			Accel:    8 + third,
+			Decel:    4 + seventh,
+			MaxSpeed: 6 + ninth,
+			Agility:  3 + seventh,
+		})
+		w.SetMoveIntent(id, scene.MoveIntent{
+			Target:       math2d.Vec2{X: 30, Y: 20},
+			DesiredSpeed: 5 + third,
+		})
+		w.SetCircleCollider(id, scene.CircleCollider{Radius: 2})
+		w.SetCircleSprite(id, scene.CircleSprite{
+			BaseSprite: scene.BaseSprite{Layer: 1, Color: render.RGBA(0.3, 0.8, 0.5, 1)},
+			Radius:     2,
 		})
 	}
 
