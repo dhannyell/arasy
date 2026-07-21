@@ -37,8 +37,8 @@ func ellipseBounds(center math2d.Vec2, radiusX, radiusY float64) image.Rectangle
 	return image.Rect(
 		int(math.Floor(center.X-radiusX)),
 		int(math.Floor(center.Y-radiusY)),
-		int(math.Ceil(center.X+radiusX)),
-		int(math.Ceil(center.Y+radiusY)),
+		int(math.Ceil(center.X+radiusX))+1,
+		int(math.Ceil(center.Y+radiusY))+1,
 	)
 }
 
