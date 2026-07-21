@@ -24,6 +24,9 @@ type UpdateContext struct {
 	Tick    uint64
 	Rand    *Rand
 	Audio   *AudioPort
+	// Batches publishes retained sprite/text batch content. The same port is
+	// shared with RenderContext; publications drain at the next frame.
+	Batches *BatchPort
 
 	StepConfig scene.StepConfig
 
@@ -59,6 +62,10 @@ type RenderContext struct {
 	// Use it with World.RenderCommandsInterpolated to produce smooth visuals.
 	Alpha              float64
 	UpdateTextureField *TexturePort
+	// Batches publishes retained sprite/text batch content. Publications made
+	// here are drained before the same frame's Render because RenderFrame
+	// calls Frame() first.
+	Batches *BatchPort
 
 	camera render.Camera
 }
@@ -105,6 +112,7 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		Rand:       &d.rng,
 		UI:         uiInst.Interact(),
 		Audio:      &d.audioPort,
+		Batches:    &d.batchPort,
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
 		camera:     d.cameraForSurface(),
 	}
