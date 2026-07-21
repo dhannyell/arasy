@@ -42,7 +42,7 @@ func (s canvasSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
 	if len(instances) == 0 {
 		return
 	}
-	s.withClip(command.Clip, func() {
+	s.withClipAndTransform(command.Clip, math2d.Affine{}, func() {
 		s.canvas.drawSpriteBatch(s.camera, command, instances)
 	})
 }
@@ -105,7 +105,7 @@ func (s canvasSink) VisitTextBatch(command render.DrawTextBatch) {
 			"Canvas2D: DrawTextBatch references a missing or deleted batch; command skipped")
 		return
 	}
-	s.withClip(command.Clip, func() {
+	s.withClipAndTransform(command.Clip, math2d.Affine{}, func() {
 		for i := range labels {
 			label := labels[i]
 			s.canvas.drawText(render.DrawText{

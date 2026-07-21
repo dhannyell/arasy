@@ -1,4 +1,4 @@
-package tess
+﻿package tess
 
 import (
 	"github.com/dhannyell/frameforge/math2d"
@@ -19,14 +19,14 @@ func AppendPolygon(m *Mesh, c ctx, cmd render.DrawPolygon) {
 
 	points := make([]math2d.Vec2, len(cmd.Points))
 	for i, point := range cmd.Points {
-		points[i] = c.cam.WorldToScreen(point)
+		points[i] = c.cam.WorldToScreen(cmd.Transform.Apply(point))
 	}
 
 	if cmd.Fill.A > 0 {
 		appendPolygonFill(m, c, points, cmd.Fill)
 	}
 
-	strokeWidth := c.cam.WorldScalarToScreen(cmd.StrokeWidth)
+	strokeWidth := transformedStrokeWidth(c, cmd.StrokeWidth, cmd.Transform)
 	if cmd.Stroke.A > 0 && strokeWidth > 0 {
 		appendPolygonStroke(m, c, points, strokeWidth, cmd.Stroke)
 	}

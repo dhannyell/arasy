@@ -76,3 +76,49 @@ func TestDrawImageUsesBaseCommandLayer(t *testing.T) {
 		t.Fatalf("Layer() = %d, want 9", got)
 	}
 }
+
+func TestBaseCommandTransformDefaultIsIdentity(t *testing.T) {
+	bc := render.BaseCommand{}
+	if !bc.Transform.IsIdentity() {
+		t.Fatalf("default Transform should be identity, got %+v", bc.Transform)
+	}
+}
+
+func TestBaseCommandTransformStoresMatrix(t *testing.T) {
+	bc := render.BaseCommand{Transform: math2d.Rotate(1)}
+
+	if bc.Transform.IsIdentity() {
+		t.Fatal("Rotate(1) should not be identity")
+	}
+
+	p := math2d.Vec2{X: 1, Y: 0}
+	got := bc.Transform.Apply(p)
+	want := math2d.Rotate(1).Apply(p)
+	if got != want {
+		t.Fatalf("Transform.Apply(%v) = %v, want %v", p, got, want)
+	}
+}
+
+func TestAllCommandsCanCarryTransform(t *testing.T) {
+	transform := math2d.Translate(math2d.Vec2{X: 10, Y: 20})
+
+	commands := []render.Command{
+		render.DrawRect{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawCircle{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawEllipse{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawPoint{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawLine{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawText{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawArc{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawPolygon{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawImage{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawImageQuad{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawParticles{BaseCommand: render.BaseCommand{Transform: transform}},
+	}
+
+	for _, cmd := range commands {
+		if cmd.Layer() != 0 {
+			t.Fatalf("%T default layer should be 0", cmd)
+		}
+	}
+}

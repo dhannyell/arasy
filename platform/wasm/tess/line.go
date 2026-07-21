@@ -1,4 +1,4 @@
-package tess
+﻿package tess
 
 import (
 	"math"
@@ -20,9 +20,9 @@ func AppendLine(m *Mesh, c ctx, cmd render.DrawLine) {
 
 	start := len(m.Vertices)
 
-	from := c.cam.WorldToScreen(cmd.From)
-	to := c.cam.WorldToScreen(cmd.To)
-	width := c.cam.WorldScalarToScreen(cmd.Width)
+	from := c.cam.WorldToScreen(cmd.Transform.Apply(cmd.From))
+	to := c.cam.WorldToScreen(cmd.Transform.Apply(cmd.To))
+	width := transformedStrokeWidth(c, cmd.Width, cmd.Transform)
 
 	appendLineQuad(m, c, from, to, width, cmd.Color)
 
