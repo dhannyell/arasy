@@ -14,6 +14,10 @@ import (
 // Segment count is derived from the larger semi-axis so the tighter curvature
 // of the minor axis is still adequately sampled.
 func AppendEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
+	if !cmd.Transform.IsIdentity() {
+		appendTransformedEllipse(m, c, cmd)
+		return
+	}
 	start := len(m.Vertices)
 	center := c.cam.WorldToScreen(cmd.Center)
 	rx := c.cam.WorldScalarToScreen(cmd.RadiusX)
@@ -47,6 +51,46 @@ func AppendEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
 		m.Vertices = append(m.Vertices[:start], clipped...)
 	}
 }
+
+// appendTransformedEllipse draws an ellipse under a non-identity transform.
+// The boundary is generated in world space and every vertex is transformed, so
+// rotation and shear are honored (an axis-aligned ellipse becomes a rotated
+// one), matching the raster backend, rather than only relocating the center.
+func appendTransformedEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
+	rx := c.cam.WorldScalarToScreen(cmd.RadiusX)
+	ry := c.cam.WorldScalarToScreen(cmd.RadiusY)
+	if rx <= 0 || ry <= 0 {
+		return
+	}
+
+	start := len(m.Vertices)
+	n := circleSegments(max(rx, ry))
+
+	center := c.cam.WorldToScreen(cmd.Transform.Apply(cmd.Center))
+	boundary := make([]math2d.Vec2, n)
+	for i := 0; i < n; i++ {
+		a := 2 * math.Pi * float64(i) / float64(n)
+		w := math2d.Vec2{X: cmd.Center.X + math.Cos(a)*cmd.RadiusX, Y: cmd.Center.Y + math.Sin(a)*cmd.RadiusY}
+		boundary[i] = c.cam.WorldToScreen(cmd.Transform.Apply(w))
+	}
+
+	if cmd.Fill.A > 0 {
+		appendConvexFanScreen(m, c, center, boundary, cmd.Fill)
+	}
+
+	if cmd.Stroke.A > 0 && cmd.StrokeWidth > 0 {
+		if sw := transformedStrokeWidth(c, cmd.StrokeWidth, cmd.Transform); sw > 0 {
+			appendClosedStrokeScreen(m, c, boundary, sw, cmd.Stroke)
+		}
+	}
+
+	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+		clip := clipRect(c, cmd.Clip)
+		clipped := clipTriangles(m.Vertices[start:], clip)
+		m.Vertices = append(m.Vertices[:start], clipped...)
+	}
+}
+
 func appendEllipseFan(m *Mesh, c ctx, center math2d.Vec2, rx, ry float64, n int, col render.Color) {
 	clipCenter := screenToClip(c, center)
 	for i := range n {

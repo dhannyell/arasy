@@ -278,7 +278,8 @@ func TestBuildSkipsNonConvexImageQuadBeforeTextureLookup(t *testing.T) {
 	}
 
 	for _, sizes := range []TexSizes{nil, {{0, 0}, {16, 16}}} {
-		runs := Build(runtime.Frame{
+		var builder Builder
+		runs := builder.Build(runtime.Frame{
 			Camera:   testCamera(),
 			Commands: []render.Command{bowtie},
 		}, 100, 100, nil, sizes)

@@ -261,4 +261,3 @@ func floatNear(a, b, epsilon float64) bool {
 	}
 	return diff < epsilon
 }
-

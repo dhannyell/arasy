@@ -99,6 +99,40 @@ func TestDrawImageBlit1to1(t *testing.T) {
 	assertPixel(t, img.At(3, 3), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 }
 
+// TestDrawImageTransformRotatesTexturedQuad proves a DrawImage carrying a
+// non-identity Transform is inverse-sampled onto the transformed quad (like the
+// Canvas2D/WebGPU backends) instead of the old axis-aligned magenta
+// placeholder. A 45°-rotated 8×8 white sprite reaches above its axis-aligned
+// destination top edge, and its former axis-aligned corner becomes clear.
+func TestDrawImageTransformRotatesTexturedQuad(t *testing.T) {
+	tex := makeTexWhite()
+	renderer := imageRenderer(16, 16)
+	renderer.Textures = pixel.Registry{nil, tex}
+
+	center := math2d.Vec2{X: 8, Y: 8}
+	img := renderer.Render([]render.Command{
+		render.DrawImage{
+			BaseCommand: render.BaseCommand{Transform: math2d.Rotate(math.Pi / 4).About(center)},
+			Texture:     1,
+			Dest:        math2d.NewRect(math2d.Vec2{X: 4, Y: 4}, math2d.Vec2{X: 8, Y: 8}),
+		},
+	})
+
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	magenta := color.RGBA{R: 255, G: 0, B: 255, A: 255}
+
+	// (8,3) is above the axis-aligned dest (y<4) but inside the rotated diamond,
+	// so only a truly rotated sprite paints it white.
+	assertPixel(t, img.At(8, 3), white)
+	// The rotated sprite must not be the magenta missing-texture placeholder.
+	if got := img.At(8, 8); got == magenta {
+		t.Fatal("transformed image drew the magenta placeholder over a valid texture")
+	}
+	// (4,4) is a corner of the axis-aligned dest — an unrotated blit would paint
+	// it white, but the 45° rotation retracts the corner, leaving it clear.
+	assertPixel(t, img.At(4, 4), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
 // TestDrawImageScaleNearest scales a 2×2 texture to fill 4×4 — each texel
 // becomes a 2×2 block.
 func TestDrawImageScaleNearest(t *testing.T) {

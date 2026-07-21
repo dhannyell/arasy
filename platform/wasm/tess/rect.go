@@ -15,6 +15,11 @@ import (
 // Rect strokes are generated inside the rectangle bounds.
 // Rounded rectangles are approximated with deterministic corner segments.
 func AppendRect(m *Mesh, c ctx, cmd render.DrawRect) {
+	if !cmd.Transform.IsIdentity() {
+		appendTransformedRect(m, c, cmd)
+		return
+	}
+
 	start := len(m.Vertices)
 
 	rMin := c.cam.WorldToScreen(cmd.Rect.Min)
@@ -35,6 +40,39 @@ func AppendRect(m *Mesh, c ctx, cmd render.DrawRect) {
 		appendSquareRect(m, c, x0, y0, x1, y1, cmd)
 	} else {
 		appendRoundedRect(m, c, x0, y0, x1, y1, cmd)
+	}
+
+	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+		clip := clipRect(c, cmd.Clip)
+		clipped := clipTriangles(m.Vertices[start:], clip)
+		m.Vertices = append(m.Vertices[:start], clipped...)
+	}
+}
+
+// appendTransformedRect draws a rect under a non-identity transform. All four
+// corners are transformed in world space and drawn as a filled/stroked
+// quadrilateral, so rotation and shear are honored (matching the raster
+// backend). CornerRadius is ignored under transform: a rounded rect degrades
+// to a sharp one, the same limitation the raster backend carries.
+func appendTransformedRect(m *Mesh, c ctx, cmd render.DrawRect) {
+	start := len(m.Vertices)
+
+	r := cmd.Rect
+	corners := []math2d.Vec2{
+		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Min.X, Y: r.Min.Y})),
+		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Max.X, Y: r.Min.Y})),
+		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Max.X, Y: r.Max.Y})),
+		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Min.X, Y: r.Max.Y})),
+	}
+
+	if cmd.Fill.A > 0 {
+		appendPolygonFill(m, c, corners, cmd.Fill)
+	}
+
+	if cmd.Stroke.A > 0 {
+		if sw := transformedStrokeWidth(c, cmd.StrokeWidth, cmd.Transform); sw > 0 {
+			appendClosedStrokeScreen(m, c, corners, sw, cmd.Stroke)
+		}
 	}
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {

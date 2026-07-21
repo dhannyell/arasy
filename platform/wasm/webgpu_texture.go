@@ -229,8 +229,21 @@ func (r *webgpuRenderer) generateMipmapsLayer(tex js.Value, w, h, levels, layer 
 // out of range or was never built (e.g. a decode failure logged in
 // buildTextures); tess.Build already substitutes a solid magenta placeholder
 // for such ids, so the caller should simply skip drawing the run.
-func (r *webgpuRenderer) UpdateTextures(updates []runtime.TextureUpdate) {
-	for _, u := range updates {
+func (r *webgpuRenderer) UpdateResources(updates runtime.FrameUpdates) {
+	// UpdateResources runs before Render's own CPU timing window opens
+	// (Driver.RenderFrame calls it between Frame() and Render()), but a
+	// sprite batch replace packs and uploads its records right here. Time it
+	// so that cost is folded into the frame's reported upload instead of
+	// disappearing outside every measured phase.
+	var start float64
+	if r.sampleCPUTiming {
+		start = performanceNowMillis()
+	}
+	// UpdateResources is the frame boundary every host calls right before
+	// Render (Driver.RenderFrame), so this is where the retained-batch
+	// content-bytes-this-frame counter resets.
+	r.frameRetainedContentBytes = 0
+	for _, u := range updates.Textures {
 		if u.Image == nil {
 			continue
 		}
@@ -250,6 +263,12 @@ func (r *webgpuRenderer) UpdateTextures(updates []runtime.TextureUpdate) {
 		} else {
 			r.generateMipmaps(gt.texture, w, h, gpu.MipLevelCount(w, h))
 		}
+	}
+	// Textures first: retained batches may reference them.
+	r.applySpriteBatchUpdates(updates.SpriteBatches)
+	r.applyTextBatchUpdates(updates.TextBatches)
+	if r.sampleCPUTiming {
+		r.cpuResourceUpdate = durationFromMillis(performanceNowMillis() - start)
 	}
 }
 

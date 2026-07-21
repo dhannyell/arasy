@@ -2,6 +2,9 @@ package raster
 
 import (
 	"image"
+	"log/slog"
+	"sync"
+
 	"math"
 
 	"github.com/dhannyell/frameforge/render"
@@ -43,7 +46,15 @@ func (r *Renderer) face(id render.FontID, px int) font.Face {
 // DrawText.Size, so text grows/shrinks with the camera like other shapes.
 var textFace = basicfont.Face7x13
 
+var textAffineWarnOnce sync.Once
+
 func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
+	if !command.Transform.IsIdentity() {
+		textAffineWarnOnce.Do(func() {
+			slog.Warn("raster: DrawText with non-identity Transform is not supported; drawing without transform")
+		})
+	}
+
 	if command.Text == "" || command.Color.A <= 0 {
 		return
 	}

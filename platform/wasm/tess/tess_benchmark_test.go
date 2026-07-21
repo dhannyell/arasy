@@ -512,26 +512,3 @@ func BenchmarkTessBuildImageQuadAndRotation(b *testing.B) {
 		}
 	})
 }
-
-// BenchmarkTessBytes measures the second copy of the per-frame vertex
-// stream: converting an already-tessellated TexMesh into the WebGPU vertex
-// buffer byte layout. The mesh is built once from 20000 images (a single
-// contiguous textured run) and reused across iterations, isolating TexBytes
-// from Build.
-func BenchmarkTessBytes(b *testing.B) {
-	cam := benchCamera()
-	sizes := benchImageTexSizes()
-	frame := runtime.Frame{Camera: cam, Commands: makeImageCommands(20000)}
-	runs := Build(frame, 1920, 1080, nil, sizes)
-	if len(runs) != 1 || runs[0].Kind != DrawRunTextured {
-		b.Fatalf("setup runs = %+v, want one textured run", runs)
-	}
-	mesh := runs[0].Textured
-
-	b.Run("TexBytes/images_20000", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			_ = TexBytes(mesh)
-		}
-	})
-}

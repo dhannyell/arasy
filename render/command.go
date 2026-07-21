@@ -42,6 +42,13 @@ type BaseCommand struct {
 	// Clip, when non-zero, restricts this command to the rectangle in world
 	// coordinates. Zero value = no clipping.
 	Clip math2d.Rect
+
+	// Transform, when non-identity (and non-zero), maps this command's
+	// world-space geometry through the affine matrix before the camera is
+	// applied. Zero value = identity = no transform. Pivoted transforms:
+	// build with Affine.About(pivot). Decorative use only for now —
+	// interactive widget hit-testing under transform is deferred.
+	Transform math2d.Affine
 }
 
 func (b BaseCommand) Layer() int {
@@ -109,6 +116,10 @@ type DrawText struct {
 
 	// Rotation is applied around Position, in radians. Zero keeps text
 	// unrotated.
+	//
+	// When both Rotation and BaseCommand.Transform are set, Rotation applies
+	// first (around Position), then Transform maps the result. Prefer
+	// Transform in new code.
 	Rotation float64
 }
 
@@ -147,6 +158,10 @@ type DrawImage struct {
 	Tint Color
 	// Rotation is applied around the center of Dest, in radians. Zero
 	// keeps the image axis-aligned.
+	//
+	// When both Rotation and BaseCommand.Transform are set, Rotation applies
+	// first (around the center of Dest), then Transform maps the result.
+	// Prefer Transform in new code.
 	Rotation float64
 }
 
@@ -213,14 +228,16 @@ type DrawParticles struct {
 	Seed uint64
 }
 
-func (DrawRect) isRenderCommand()      {}
-func (DrawCircle) isRenderCommand()    {}
-func (DrawEllipse) isRenderCommand()   {}
-func (DrawPoint) isRenderCommand()     {}
-func (DrawLine) isRenderCommand()      {}
-func (DrawText) isRenderCommand()      {}
-func (DrawArc) isRenderCommand()       {}
-func (DrawPolygon) isRenderCommand()   {}
-func (DrawImage) isRenderCommand()     {}
-func (DrawImageQuad) isRenderCommand() {}
-func (DrawParticles) isRenderCommand() {}
+func (DrawRect) isRenderCommand()        {}
+func (DrawCircle) isRenderCommand()      {}
+func (DrawEllipse) isRenderCommand()     {}
+func (DrawPoint) isRenderCommand()       {}
+func (DrawLine) isRenderCommand()        {}
+func (DrawText) isRenderCommand()        {}
+func (DrawArc) isRenderCommand()         {}
+func (DrawPolygon) isRenderCommand()     {}
+func (DrawImage) isRenderCommand()       {}
+func (DrawImageQuad) isRenderCommand()   {}
+func (DrawParticles) isRenderCommand()   {}
+func (DrawSpriteBatch) isRenderCommand() {}
+func (DrawTextBatch) isRenderCommand()   {}
