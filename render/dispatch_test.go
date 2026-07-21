@@ -27,6 +27,12 @@ func (s *recordingSink) VisitImageQuad(render.DrawImageQuad) {
 func (s *recordingSink) VisitParticles(render.DrawParticles) {
 	s.visits = append(s.visits, "particles")
 }
+func (s *recordingSink) VisitSpriteBatch(render.DrawSpriteBatch) {
+	s.visits = append(s.visits, "spriteBatch")
+}
+func (s *recordingSink) VisitTextBatch(render.DrawTextBatch) {
+	s.visits = append(s.visits, "textBatch")
+}
 
 func layered(layer int) render.BaseCommand {
 	return render.BaseCommand{LayerValue: layer}
@@ -83,6 +89,8 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 		render.DrawImage{},
 		render.DrawImageQuad{},
 		render.DrawParticles{},
+		render.DrawSpriteBatch{},
+		render.DrawTextBatch{},
 	}
 
 	sink := &recordingSink{}
@@ -90,9 +98,10 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 
 	want := []string{
 		"rect", "circle", "point", "line", "text", "arc", "polygon", "image", "imageQuad", "particles",
+		"spriteBatch", "textBatch",
 	}
 	if !reflect.DeepEqual(sink.visits, want) {
-		t.Fatalf("visits = %v, want %v (each of the 10 command kinds must dispatch exactly once)", sink.visits, want)
+		t.Fatalf("visits = %v, want %v (each of the 12 command kinds must dispatch exactly once)", sink.visits, want)
 	}
 }
 
@@ -125,5 +134,25 @@ func TestEachOrderedDispatchesWithoutReordering(t *testing.T) {
 	want := []string{"circle", "rect", "line"}
 	if !reflect.DeepEqual(sink.visits, want) {
 		t.Fatalf("visits = %v, want input order %v", sink.visits, want)
+	}
+}
+
+// TestEachKeepsBatchCommandsAtTheirPainterPosition pins batch commands as
+// painter-order boundaries: a batch sorts by its own layer and stays stable
+// against streaming commands on the same layer.
+func TestEachKeepsBatchCommandsAtTheirPainterPosition(t *testing.T) {
+	commands := []render.Command{
+		render.DrawImage{BaseCommand: layered(2)},
+		render.DrawTextBatch{BaseCommand: layered(3), Batch: 9},
+		render.DrawSpriteBatch{BaseCommand: layered(1), Batch: 7},
+		render.DrawRect{BaseCommand: layered(1)},
+	}
+
+	sink := &recordingSink{}
+	render.Each(commands, sink)
+
+	want := []string{"spriteBatch", "rect", "image", "textBatch"}
+	if !reflect.DeepEqual(sink.visits, want) {
+		t.Fatalf("visits = %v, want %v", sink.visits, want)
 	}
 }

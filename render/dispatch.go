@@ -17,6 +17,8 @@ type CommandSink interface {
 	VisitImage(DrawImage)
 	VisitImageQuad(DrawImageQuad)
 	VisitParticles(DrawParticles)
+	VisitSpriteBatch(DrawSpriteBatch)
+	VisitTextBatch(DrawTextBatch)
 }
 
 // Each stable-sorts commands by layer and dispatches each command exactly
@@ -67,6 +69,10 @@ func EachOrdered(commands []Command, sink CommandSink) {
 			sink.VisitImageQuad(command)
 		case DrawParticles:
 			sink.VisitParticles(command)
+		case DrawSpriteBatch:
+			sink.VisitSpriteBatch(command)
+		case DrawTextBatch:
+			sink.VisitTextBatch(command)
 		}
 	}
 }
