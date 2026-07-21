@@ -208,6 +208,18 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 			},
 		},
 		{
+			name: "spin.Omega",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetSpin(circle, scene.Spin{Omega: 99})
+			},
+		},
+		{
+			name: "ballistics.Gravity",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetBallistics(circle, scene.Ballistics{Gravity: 99})
+			},
+		},
+		{
 			name: "remove component (Body)",
 			mutate: func(w *scene.World, circle, _ scene.EntityID) {
 				w.RemoveBody(circle)
@@ -270,6 +282,32 @@ func TestChecksumDistinguishesAbsentFromZeroHeight(t *testing.T) {
 
 	if without.Checksum() == with.Checksum() {
 		t.Fatal("checksum did not distinguish an absent Height from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroSpin(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetSpin(id, scene.Spin{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Spin from a present, zero-valued one")
+	}
+}
+
+func TestChecksumDistinguishesAbsentFromZeroBallistics(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetBallistics(id, scene.Ballistics{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Ballistics from a present, zero-valued one")
 	}
 }
 func TestChecksumCoversAllComponentStores(t *testing.T) {

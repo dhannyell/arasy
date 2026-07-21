@@ -66,3 +66,6 @@ func (w *World) DebugGridCells() []DebugGridCell { return w.debugGridCellsSnapsh
 func DebugGridAreaCommands(bounds math2d.Rect, cellSize float64, color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
 	return debugGridAreaCommands(bounds, cellSize, color, strokeWidth, dashLength, layer)
 }
+
+func (w *World) AdvanceBallisticsExport(dt float64) { w.advanceBallistics(dt) }
+

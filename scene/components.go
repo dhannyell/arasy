@@ -130,3 +130,23 @@ type Height struct {
 	Z, VZ float64
 }
 
+// Spin is the angular velocity around the vertical axis, used by the
+// Magnus term of Ballistics to curve horizontal flight.
+type Spin struct {
+	Omega float64
+}
+
+// Ballistics parameterizes projectile flight for entities with Height.
+// All terms are algebraic (+ - * / sqrt) to keep cross-arch determinism.
+type Ballistics struct {
+	Gravity        float64 // downward accel on Z, world units/s²
+	DragK          float64 // quadratic drag coefficient (0 = vacuum)
+	MagnusK        float64 // spin-curve coupling (0 = no curve)
+	BounceDamping  float64 // VZ retention on ground impact [0,1]
+	BounceFriction float64 // horizontal velocity retention on impact [0,1]
+	SpinDecay      float64 // per-second spin damping
+	RollFriction   float64 // horizontal decel while on the ground
+	RestVZ         float64 // |VZ| below this on the ground settles to 0
+}
+
+

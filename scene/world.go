@@ -34,6 +34,8 @@ type World struct {
 	circleColliders  store[CircleCollider]
 	rectColliders    store[RectCollider]
 	heights          store[Height]
+	spins            store[Spin]
+	ballisticsSet    store[Ballistics]
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
 	collisionScratch collisionScratch
@@ -95,6 +97,8 @@ func (w *World) Clone() *World {
 		circleColliders:  w.circleColliders.clone(),
 		rectColliders:    w.rectColliders.clone(),
 		heights:          w.heights.clone(),
+		spins:            w.spins.clone(),
+		ballisticsSet:    w.ballisticsSet.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
@@ -132,6 +136,8 @@ func (w *World) Despawn(id EntityID) {
 	w.circleColliders.remove(id)
 	w.rectColliders.remove(id)
 	w.heights.remove(id)
+	w.spins.remove(id)
+	w.ballisticsSet.remove(id)
 	w.renderTransforms.remove(id)
 	w.renderHeights.remove(id)
 }
@@ -164,6 +170,8 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.circleColliders.removeMarked(w.despawnMarked)
 	w.rectColliders.removeMarked(w.despawnMarked)
 	w.heights.removeMarked(w.despawnMarked)
+	w.spins.removeMarked(w.despawnMarked)
+	w.ballisticsSet.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
 	w.renderHeights.removeMarked(w.despawnMarked)
 	clear(w.despawnMarked)
@@ -422,6 +430,40 @@ func (w *World) RemoveHeight(id EntityID) {
 	w.heights.remove(id)
 }
 
+// Spin
+
+func (w *World) Spin(id EntityID) (Spin, bool) {
+	s, ok := w.spins.get(id)
+	return s, ok
+}
+
+func (w *World) SetSpin(id EntityID, s Spin) {
+	w.markEntityCountDirty()
+	w.spins.set(id, s)
+}
+
+func (w *World) RemoveSpin(id EntityID) {
+	w.markEntityCountDirty()
+	w.spins.remove(id)
+}
+
+// Ballistics
+
+func (w *World) Ballistics(id EntityID) (Ballistics, bool) {
+	b, ok := w.ballisticsSet.get(id)
+	return b, ok
+}
+
+func (w *World) SetBallistics(id EntityID, b Ballistics) {
+	w.markEntityCountDirty()
+	w.ballisticsSet.set(id, b)
+}
+
+func (w *World) RemoveBallistics(id EntityID) {
+	w.markEntityCountDirty()
+	w.ballisticsSet.remove(id)
+}
+
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {
 	return w.debugGridCells
 }
@@ -479,6 +521,12 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.heights.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.spins.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.ballisticsSet.ids {
 		ids[id] = struct{}{}
 	}
 
