@@ -1,5 +1,8 @@
 package scene
 
+import "github.com/dhannyell/frameforge/render"
+
+
 const defaultCellSize = 64
 
 type PhysicsConfig struct {
@@ -30,6 +33,7 @@ type World struct {
 	bodies           store[Body]
 	circleColliders  store[CircleCollider]
 	rectColliders    store[RectCollider]
+	heights          store[Height]
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
 	collisionScratch collisionScratch
@@ -42,6 +46,16 @@ type World struct {
 	// between fixed simulation ticks. It is a presentation cache only and
 	// is NOT included in Checksum.
 	renderTransforms store[Transform]
+
+	// renderHeights stores the previous-tick Height for each entity,
+	// used by RenderCommandsInterpolated for smooth Height interpolation.
+	// Like renderTransforms, it is a presentation cache only and is NOT
+	// included in Checksum.
+	renderHeights store[Height]
+
+	// projection drives the 2.5D visual lift/scale/shadow for entities
+	// with Height. Render-only; never in Checksum.
+	projection render.Projection
 
 	// renderIDScratch is reusable render working memory. It is transient:
 	// never cloned or checksummed.
@@ -80,10 +94,13 @@ func (w *World) Clone() *World {
 		bodies:           w.bodies.clone(),
 		circleColliders:  w.circleColliders.clone(),
 		rectColliders:    w.rectColliders.clone(),
+		heights:          w.heights.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
 		renderTransforms: w.renderTransforms.clone(),
+		renderHeights:    w.renderHeights.clone(),
+		projection:       w.projection,
 		// contacts are transient per-tick — not cloned
 		// collisionScratch is transient broad-phase working memory — not cloned
 		// renderIDScratch is transient render working memory — not cloned
@@ -114,7 +131,9 @@ func (w *World) Despawn(id EntityID) {
 	w.bodies.remove(id)
 	w.circleColliders.remove(id)
 	w.rectColliders.remove(id)
+	w.heights.remove(id)
 	w.renderTransforms.remove(id)
+	w.renderHeights.remove(id)
 }
 
 // DespawnBatch removes every listed entity in one stable compaction pass per
@@ -144,7 +163,9 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.bodies.removeMarked(w.despawnMarked)
 	w.circleColliders.removeMarked(w.despawnMarked)
 	w.rectColliders.removeMarked(w.despawnMarked)
+	w.heights.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
+	w.renderHeights.removeMarked(w.despawnMarked)
 	clear(w.despawnMarked)
 }
 
@@ -382,6 +403,25 @@ func (w *World) RemoveRectCollider(id EntityID) {
 	w.rectColliders.remove(id)
 }
 
+// Height
+
+func (w *World) Height(id EntityID) (Height, bool) {
+	h, ok := w.heights.get(id)
+	return h, ok
+}
+
+func (w *World) SetHeight(id EntityID, h Height) {
+	w.markEntityCountDirty()
+	w.heights.set(id, h)
+	// Sync render state immediately to prevent visual smear on teleport.
+	w.renderHeights.set(id, h)
+}
+
+func (w *World) RemoveHeight(id EntityID) {
+	w.markEntityCountDirty()
+	w.heights.remove(id)
+}
+
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {
 	return w.debugGridCells
 }
@@ -438,11 +478,25 @@ func (w *World) entityCount() int {
 	for _, id := range w.rectColliders.ids {
 		ids[id] = struct{}{}
 	}
+	for _, id := range w.heights.ids {
+		ids[id] = struct{}{}
+	}
 
 	w.entityCountCache = len(ids)
 	w.entityCountDirty = false
 
 	return w.entityCountCache
+}
+
+// Projection returns the current 2.5D projection configuration.
+func (w *World) Projection() render.Projection {
+	return w.projection
+}
+
+// SetProjection sets the 2.5D projection configuration for this world.
+// The projection is render-only and never enters Checksum.
+func (w *World) SetProjection(p render.Projection) {
+	w.projection = p
 }
 
 func (w *World) markEntityCountDirty() {

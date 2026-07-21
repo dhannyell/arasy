@@ -122,3 +122,11 @@ type CircleSpriteTweenOptions struct {
 	Loop             LoopMode
 	RemoveOnComplete bool
 }
+
+// Height gives an entity a scalar altitude above the 2D plane. Z is
+// simulation state (it participates in checksum and cloning); visual
+// presentation derives from it via render.Projection.
+type Height struct {
+	Z, VZ float64
+}
+

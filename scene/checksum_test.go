@@ -202,6 +202,12 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 			},
 		},
 		{
+			name: "height.Z",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetHeight(circle, scene.Height{Z: 99, VZ: 0})
+			},
+		},
+		{
 			name: "remove component (Body)",
 			mutate: func(w *scene.World, circle, _ scene.EntityID) {
 				w.RemoveBody(circle)
@@ -254,12 +260,24 @@ func TestChecksumDistinguishesAbsentFromZeroImageSprite(t *testing.T) {
 	}
 }
 
+func TestChecksumDistinguishesAbsentFromZeroHeight(t *testing.T) {
+	without := scene.NewWorld()
+	spawnAt(without, math2d.Vec2{X: 1, Y: 1})
+
+	with := scene.NewWorld()
+	id := spawnAt(with, math2d.Vec2{X: 1, Y: 1})
+	with.SetHeight(id, scene.Height{})
+
+	if without.Checksum() == with.Checksum() {
+		t.Fatal("checksum did not distinguish an absent Height from a present, zero-valued one")
+	}
+}
 func TestChecksumCoversAllComponentStores(t *testing.T) {
 	wt := reflect.TypeFor[scene.World]()
 	count := 0
 	for f := range wt.Fields() {
 		if strings.HasPrefix(f.Type.String(), "scene.store[") {
-			if f.Name == "renderTransforms" {
+			if f.Name == "renderTransforms" || f.Name == "renderHeights" {
 				continue
 			}
 			count++
