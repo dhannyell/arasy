@@ -136,7 +136,7 @@ func (w *World) Checksum() uint64 {
 	hashComponent(h, buf[:], tagSpin, &w.spins, func(s Spin) {
 		hashF64(h, buf[:], s.Omega)
 	})
-	hashComponent(h, buf[:], tagBallistics, &w.ballisticsSet, func(b Ballistics) {
+	hashComponent(h, buf[:], tagBallistics, &w.ballistics, func(b Ballistics) {
 		hashF64(h, buf[:], b.Gravity)
 		hashF64(h, buf[:], b.DragK)
 		hashF64(h, buf[:], b.MagnusK)
@@ -145,6 +145,7 @@ func (w *World) Checksum() uint64 {
 		hashF64(h, buf[:], b.SpinDecay)
 		hashF64(h, buf[:], b.RollFriction)
 		hashF64(h, buf[:], b.RestVZ)
+		hashU64(h, buf[:], uint64(int64(b.Substeps)))
 	})
 	hashComponent(h, buf[:], tagLocomotion, &w.locomotions, func(l Locomotion) {
 		hashF64(h, buf[:], l.Accel)

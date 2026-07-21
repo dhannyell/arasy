@@ -147,8 +147,15 @@ type Ballistics struct {
 	SpinDecay      float64 // per-second spin damping
 	RollFriction   float64 // horizontal decel while on the ground
 	RestVZ         float64 // |VZ| below this on the ground settles to 0
-}
 
+	// Substeps enables opt-in continuous collision for fast projectiles: the
+	// horizontal move is split into this many equal sub-moves, each resolved
+	// against static colliders, so a projectile faster than its own radius per
+	// tick cannot tunnel through thin walls. 0 or 1 keeps the cheap single-step
+	// path (the default for slow entities). Requires a CircleCollider and a
+	// dynamic Body (InvMass > 0) to be resolved.
+	Substeps int
+}
 
 // Locomotion moves an agent toward MoveIntent with asymmetric
 // acceleration and a speed-dependent turn radius.
@@ -166,5 +173,4 @@ type MoveIntent struct {
 	Target       math2d.Vec2
 	DesiredSpeed float64
 }
-
 

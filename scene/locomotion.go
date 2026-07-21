@@ -99,9 +99,10 @@ func (w *World) applyLocomotion(dt float64) {
 				desiredDirY = desiredVel.Y / desiredSpeed
 			}
 
-			// Interpolate direction: dir' = normalize(dir + t*(desiredDir - dir))
-			nx := dirX + t*(desiredDirX-dirX)
-			ny := dirY + t*(desiredDirY-dirY)
+			// Interpolate direction: dir' = normalize(dir + t*(desiredDir - dir)).
+			// float64 conversions on the products stop FMA fusion (cross-arch).
+			nx := dirX + float64(t*(desiredDirX-dirX))
+			ny := dirY + float64(t*(desiredDirY-dirY))
 			norm := math.Sqrt(float64(nx*nx) + float64(ny*ny))
 			if norm > 1e-8 {
 				nx /= norm
@@ -131,8 +132,8 @@ func (w *World) applyLocomotion(dt float64) {
 			vel.Linear = targetVel
 		} else {
 			factor := step / deltaMag
-			vel.Linear.X += deltaX * factor
-			vel.Linear.Y += deltaY * factor
+			vel.Linear.X += float64(deltaX * factor)
+			vel.Linear.Y += float64(deltaY * factor)
 		}
 		w.velocities.set(id, vel)
 	}

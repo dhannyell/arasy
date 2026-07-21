@@ -165,6 +165,137 @@ func TestBallisticsSpinDecay(t *testing.T) {
 	}
 }
 
+func TestBallisticsSpinNotInjected(t *testing.T) {
+	// A ballistic entity without a Spin component must never gain one.
+	w := scene.NewWorld()
+	bal := scene.Ballistics{Gravity: 9.8, SpinDecay: 1.0}
+	id := newProjectile(w, math2d.Vec2{}, 5, 0, 4, bal)
+
+	if _, has := w.Spin(id); has {
+		t.Fatal("precondition: projectile should not have Spin")
+	}
+
+	dt := 1.0 / 60.0
+	for range 120 {
+		w.AdvanceBallisticsExport(dt)
+	}
+
+	if _, has := w.Spin(id); has {
+		t.Error("advanceBallistics injected a Spin component into an entity that never had one")
+	}
+}
+
+func TestBallisticsHeightOnlyIntegratesZ(t *testing.T) {
+	// Height without Ballistics still falls under its own VZ with an inelastic
+	// ground, letting a consumer drive flight manually.
+	w := scene.NewWorld()
+	id := w.Spawn()
+	w.SetTransform(id, scene.Transform{Scale: math2d.Vec2{X: 1, Y: 1}})
+	w.SetHeight(id, scene.Height{Z: 5, VZ: -1})
+
+	if _, has := w.Ballistics(id); has {
+		t.Fatal("precondition: entity should not have Ballistics")
+	}
+
+	dt := 1.0 / 60.0
+	// After one tick: Z = 5 + (-1)*dt.
+	w.AdvanceBallisticsExport(dt)
+	h, _ := w.Height(id)
+	if want := 5.0 - dt; math.Abs(h.Z-want) > 1e-9 {
+		t.Errorf("height-only Z = %f, want %f", h.Z, want)
+	}
+
+	// Falls to the ground and clamps inelastically.
+	for range 600 {
+		w.AdvanceBallisticsExport(dt)
+	}
+	h, _ = w.Height(id)
+	if h.Z != 0 || h.VZ != 0 {
+		t.Errorf("height-only should settle at Z=0, VZ=0; got Z=%f VZ=%f", h.Z, h.VZ)
+	}
+}
+
+func TestBallisticsRollingStopsUnderGravity(t *testing.T) {
+	// A ball resting on the ground under real gravity must still lose speed to
+	// rolling friction (not be clamped by impact friction every tick).
+	w := scene.NewWorld()
+	// BounceFriction=0 would instantly zero horizontal speed on the very first
+	// tick if impact friction leaked into resting contact. It must not: a
+	// resting ball's decay is owned by RollFriction alone.
+	bal := scene.Ballistics{
+		Gravity:        9.8,
+		BounceDamping:  0.5,
+		BounceFriction: 0.0,
+		RollFriction:   1.0,
+		RestVZ:         0.1, // > Gravity*dt*BounceDamping ≈ 0.082 so it settles
+	}
+	id := newProjectile(w, math2d.Vec2{}, 10, 0, 0, bal)
+	w.SetHeight(id, scene.Height{Z: 0, VZ: 0}) // on the ground
+
+	dt := 1.0 / 60.0
+	for range 60 {
+		w.AdvanceBallisticsExport(dt)
+	}
+
+	vel, _ := w.Velocity(id)
+	speed := math.Sqrt(float64(vel.Linear.X*vel.Linear.X) + float64(vel.Linear.Y*vel.Linear.Y))
+	if speed <= 0.5 {
+		t.Errorf("impact friction leaked into resting contact (BounceFriction=0 zeroed speed): speed=%f", speed)
+	}
+	if speed >= 10 {
+		t.Errorf("rolling friction under gravity did not slow the ball: speed=%f", speed)
+	}
+}
+
+func TestBallisticsAntiTunneling(t *testing.T) {
+	// A fast projectile with Substeps must not tunnel through a thin static
+	// wall; the same projectile without Substeps does (proving the guard bites).
+	build := func(substeps int) *scene.World {
+		w := scene.NewWorld()
+		id := w.Spawn()
+		w.SetTransform(id, scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}})
+		w.SetVelocity(id, scene.Velocity{Linear: math2d.Vec2{X: 40, Y: 0}}) // 0.667/tick, 3× radius
+		w.SetHeight(id, scene.Height{})
+		w.SetBallistics(id, scene.Ballistics{Substeps: substeps})
+		w.SetCircleCollider(id, scene.CircleCollider{Radius: 0.11})
+		w.SetBody(id, scene.Body{InvMass: 1, Restitution: 0})
+
+		// Thin static wall at x=5.
+		wall := w.Spawn()
+		w.SetTransform(wall, scene.Transform{Position: math2d.Vec2{X: 5, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}})
+		w.SetRectCollider(wall, scene.RectCollider{HalfExtends: math2d.Vec2{X: 0.05, Y: 2}})
+		w.SetBody(wall, scene.Body{InvMass: 0})
+		return w
+	}
+
+	config := scene.StepConfig{
+		Bounds: math2d.Rect{Min: math2d.Vec2{X: -100, Y: -100}, Max: math2d.Vec2{X: 100, Y: 100}},
+		Bounce: scene.BounceConfig{OpenSides: scene.SideLeft | scene.SideRight | scene.SideTop | scene.SideBottom},
+	}
+	dt := 1.0 / 60.0
+
+	// With substeps: stays on the near side of the wall.
+	wOn := build(8)
+	projID := scene.EntityID(1)
+	for range 60 {
+		wOn.Step(dt, config)
+	}
+	on, _ := wOn.Transform(projID)
+	if on.Position.X > 5 {
+		t.Errorf("with substeps the projectile tunneled: x=%f, wall at 5", on.Position.X)
+	}
+
+	// Without substeps: tunnels straight through (control).
+	wOff := build(0)
+	for range 60 {
+		wOff.Step(dt, config)
+	}
+	off, _ := wOff.Transform(projID)
+	if off.Position.X <= 5 {
+		t.Errorf("control failed: projectile without substeps should tunnel, x=%f", off.Position.X)
+	}
+}
+
 func TestBallisticsDeterminism(t *testing.T) {
 	run := func() uint64 {
 		w := scene.NewWorld()

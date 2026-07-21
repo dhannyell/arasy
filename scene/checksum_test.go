@@ -220,6 +220,12 @@ func TestChecksumChangesPerComponent(t *testing.T) {
 			},
 		},
 		{
+			name: "ballistics.Substeps",
+			mutate: func(w *scene.World, circle, _ scene.EntityID) {
+				w.SetBallistics(circle, scene.Ballistics{Substeps: 8})
+			},
+		},
+		{
 			name: "locomotion.Accel",
 			mutate: func(w *scene.World, circle, _ scene.EntityID) {
 				w.SetLocomotion(circle, scene.Locomotion{Accel: 99})

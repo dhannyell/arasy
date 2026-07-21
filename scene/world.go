@@ -35,7 +35,7 @@ type World struct {
 	rectColliders    store[RectCollider]
 	heights          store[Height]
 	spins            store[Spin]
-	ballisticsSet    store[Ballistics]
+	ballistics    store[Ballistics]
 	locomotions      store[Locomotion]
 	moveIntents      store[MoveIntent]
 	debugGridCells   []DebugGridCell
@@ -68,6 +68,11 @@ type World struct {
 	// despawnMarked is reusable batch-removal working memory. It is transient:
 	// never cloned or checksummed.
 	despawnMarked map[EntityID]struct{}
+
+	// ccdMoved records entities whose horizontal motion was already integrated
+	// by substepFastColliders this tick, so integrate skips them. Transient:
+	// rebuilt each tick, never cloned or checksummed.
+	ccdMoved map[EntityID]struct{}
 }
 
 func NewWorld() *World {
@@ -100,7 +105,7 @@ func (w *World) Clone() *World {
 		rectColliders:    w.rectColliders.clone(),
 		heights:          w.heights.clone(),
 		spins:            w.spins.clone(),
-		ballisticsSet:    w.ballisticsSet.clone(),
+		ballistics:    w.ballistics.clone(),
 		locomotions:      w.locomotions.clone(),
 		moveIntents:      w.moveIntents.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
@@ -141,7 +146,7 @@ func (w *World) Despawn(id EntityID) {
 	w.rectColliders.remove(id)
 	w.heights.remove(id)
 	w.spins.remove(id)
-	w.ballisticsSet.remove(id)
+	w.ballistics.remove(id)
 	w.locomotions.remove(id)
 	w.moveIntents.remove(id)
 	w.renderTransforms.remove(id)
@@ -177,7 +182,7 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.rectColliders.removeMarked(w.despawnMarked)
 	w.heights.removeMarked(w.despawnMarked)
 	w.spins.removeMarked(w.despawnMarked)
-	w.ballisticsSet.removeMarked(w.despawnMarked)
+	w.ballistics.removeMarked(w.despawnMarked)
 	w.locomotions.removeMarked(w.despawnMarked)
 	w.moveIntents.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
@@ -458,18 +463,18 @@ func (w *World) RemoveSpin(id EntityID) {
 // Ballistics
 
 func (w *World) Ballistics(id EntityID) (Ballistics, bool) {
-	b, ok := w.ballisticsSet.get(id)
+	b, ok := w.ballistics.get(id)
 	return b, ok
 }
 
 func (w *World) SetBallistics(id EntityID, b Ballistics) {
 	w.markEntityCountDirty()
-	w.ballisticsSet.set(id, b)
+	w.ballistics.set(id, b)
 }
 
 func (w *World) RemoveBallistics(id EntityID) {
 	w.markEntityCountDirty()
-	w.ballisticsSet.remove(id)
+	w.ballistics.remove(id)
 }
 
 // Locomotion
@@ -568,7 +573,7 @@ func (w *World) entityCount() int {
 	for _, id := range w.spins.ids {
 		ids[id] = struct{}{}
 	}
-	for _, id := range w.ballisticsSet.ids {
+	for _, id := range w.ballistics.ids {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.locomotions.ids {
