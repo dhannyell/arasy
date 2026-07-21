@@ -11,6 +11,9 @@ import (
 	"time"
 
 	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/frameforge/internal/renderbatch"
+	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
@@ -24,8 +27,6 @@ var errWebGPUUnavailable = errors.New("webgpu unavailable")
 // edges (circles, rounded corners, polygon silhouettes) that would otherwise
 // rasterize with hard, aliased edges at one sample per pixel.
 const msaaSampleCount = 4
-
-const spriteUniformSize = 32
 
 type webgpuRenderer struct {
 	canvas   js.Value
@@ -77,6 +78,37 @@ type webgpuRenderer struct {
 	spriteArrayBindGroup js.Value
 	spriteArrayEnabled   bool
 
+	// Retained sprite batches: registry keyed by game-chosen ID, the shared
+	// animated-uniform arena, and the lazily created 1x1 magenta placeholder
+	// view. Content is render-only.
+	spriteBatches                map[render.SpriteBatchID]*gpuSpriteBatch
+	spriteBatchAnimLayout        js.Value
+	spriteBatchAnimArrayLayout   js.Value
+	spriteBatchAnimPipeline      js.Value
+	spriteBatchAnimArrayPipeline js.Value
+	spritePlaceholder            js.Value
+	batchUniformBuffer           js.Value
+	batchArena                   uniformArena
+	batchArenaAlignment          int
+	batchArenaScratch            [spriteBatchAnimUniformSize]byte
+
+	// Retained text batches: registry keyed by game-chosen ID. Content is
+	// render-only.
+	textBatches map[render.TextBatchID]*gpuTextBatch
+
+	// Retained-batch frame accounting for retainedBatchMetrics:
+	// frameRetainedContentBytes is reset once per frame (UpdateResources,
+	// the frame boundary every host calls before Render) and grown by every
+	// sprite/text batch repack that actually uploads bytes that frame.
+	// frameVisibleSprites/Labels and frameRetainedDraws are reset and
+	// recomputed by the sprite/text resolution loops in Render.
+	frameRetainedContentBytes                uint64
+	frameVisibleSprites, frameVisibleLabels int
+	frameRetainedDraws                       int
+
+	log         *slog.Logger
+	diagnostics diagnostic.Once
+
 	fontProvider *fontAtlasProvider
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
 
@@ -100,6 +132,11 @@ type webgpuRenderer struct {
 	sampleCPUTiming               bool
 	cpuTess, cpuUpload, cpuEncode time.Duration
 	cpuTimingValid                bool
+	// cpuResourceUpdate is the most recent UpdateResources call's wall time
+	// (texture writes plus any retained sprite batch pack/upload), folded
+	// into cpuUpload since it happens before Render's own timing window
+	// opens but still uploads GPU buffers this frame.
+	cpuResourceUpdate time.Duration
 
 	// Offscreen particle compositing, active when particleScale > 0: each
 	// contiguous run of particle commands renders into one pooled
@@ -171,8 +208,11 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		format:          format,
 		fontProvider:    fontProvider,
 		textAtlases:     make(map[tess.AtlasKey]gpuTextAtlas),
+		spriteBatches:   make(map[render.SpriteBatchID]*gpuSpriteBatch),
+		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
 		particleScale:   particleScale,
 		sampleCPUTiming: wantGPUTiming,
+		log:             log,
 	}
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
@@ -191,6 +231,12 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(64 * 1024)
 	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(spriteUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
+
+	r.createSpriteBatchAnimPipelines()
+	r.batchArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
+	r.batchArena = newUniformArena(spriteBatchAnimUniformSize, r.batchArenaAlignment, 64)
+	r.batchUniformBuffer = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
+		r.batchArena.slotSize*r.batchArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 
 	r.textures, r.texSizes = r.buildTextures(manifest)
 	r.rebuildSpriteBindGroups()
@@ -212,6 +258,28 @@ func (r *webgpuRenderer) particleGPUBufferBytes() uint64 {
 		return 0
 	}
 	return r.particles.bufferBytes()
+}
+
+// retainedBatchMetrics reports retained sprite/text batch accounting for the
+// frame that just rendered: GPU-resident bytes across every registered
+// batch (drawn or not), content bytes actually uploaded this frame, packed
+// vs. visible (post-culling) instance/label counts, and the number of
+// retained draw calls issued.
+func (r *webgpuRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
+	var m RetainedBatchMetrics
+	for _, b := range r.spriteBatches {
+		m.GPUBytes += uint64(b.residentBytes())
+		m.SpritesTotal += b.count
+	}
+	for _, b := range r.textBatches {
+		m.GPUBytes += uint64(b.residentBytes())
+		m.LabelsTotal += len(b.labels)
+	}
+	m.ContentBytes = r.frameRetainedContentBytes
+	m.SpritesVisible = r.frameVisibleSprites
+	m.LabelsVisible = r.frameVisibleLabels
+	m.Draws = r.frameRetainedDraws
+	return m, true
 }
 
 func (r *webgpuRenderer) observeDeviceErrors(log *slog.Logger) {
@@ -255,7 +323,21 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 
 	r.tess.SetSpriteArray(r.spriteArrayEnabled)
+	textBatchIDs := collectTextBatchIDs(frame.Commands)
+	r.prepTextBatches(textBatchIDs, frame.Camera, w, h)
 	runs := r.tess.Build(frame, w, h, r.fontProvider, r.texSizes)
+
+	// tess ends here: command building/packing and atlas-coverage growth are
+	// done. Retained-batch repack (finalizeTextBatches, the sprite-batch
+	// resolution below) does its own packing and queue.writeBuffer calls, so
+	// it counts toward upload like every other buffer write in this
+	// function — never hidden outside the timed window.
+	var buildEnd float64
+	if r.sampleCPUTiming {
+		buildEnd = performanceNowMillis()
+	}
+
+	r.finalizeTextBatches(textBatchIDs, frame.Camera, w, h)
 	solidBytes, texBytes := r.tess.Streams()
 	spriteBytes := r.tess.SpriteStream()
 	textGlyphBytes := r.tess.TextGlyphStream()
@@ -308,14 +390,73 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 				kind:      tess.DrawRunParticles,
 				particles: run.Particles,
 			})
+		case tess.DrawRunSpriteBatch:
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:        tess.DrawRunSpriteBatch,
+				spriteBatch: run.SpriteBatch,
+				batchSlot:   -1,
+			})
+		case tess.DrawRunTextBatch:
+			drawRuns = append(drawRuns, gpuDrawRun{
+				kind:      tess.DrawRunTextBatch,
+				textBatch: run.TextBatch,
+			})
 		}
 	}
 	r.drawRuns = drawRuns
 
-	var buildEnd float64
-	if r.sampleCPUTiming {
-		buildEnd = performanceNowMillis()
+	// Resolve retained sprite batch commands before any upload: registry
+	// lookup (missing batches warn once and are skipped), whole-batch culling
+	// against the animation-inflated bounds, and one arena slot of animation
+	// uniforms per animated command. Two draws of the same batch always get
+	// two distinct slots, since queue.writeBuffer lands before the command
+	// buffer and a shared slot would show both draws the last packed value.
+	r.batchArena.reset()
+	hasSpriteBatchDraw := false
+	r.frameVisibleSprites = 0
+	r.frameRetainedDraws = 0
+	for i := range drawRuns {
+		if drawRuns[i].kind != tess.DrawRunSpriteBatch {
+			continue
+		}
+		cmd := drawRuns[i].spriteBatch
+		batch, ok := r.spriteBatches[cmd.Batch]
+		if !ok {
+			r.diagnostics.Log(r.log, slog.LevelWarn,
+				diagnostic.Key{Code: "webgpu-sprite-batch-missing", ID: uint64(cmd.Batch)},
+				"webgpu: DrawSpriteBatch references a missing or deleted batch; command skipped")
+			continue
+		}
+		if batch.count == 0 {
+			continue
+		}
+		if view, ok := webgpuBatchView(frame.Camera, cmd.Clip); ok {
+			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
+			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
+				continue
+			}
+		}
+		if batch.animated {
+			offset, ok := r.batchArena.alloc()
+			if !ok {
+				r.growBatchUniformArena()
+				offset, _ = r.batchArena.alloc()
+			}
+			packSpriteBatchAnimUniforms(r.batchArenaScratch[:], frame.Camera, w, h, cmd.Animation)
+			r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
+			drawRuns[i].batchSlot = offset
+		}
+		drawRuns[i].batch = batch
+		hasSpriteBatchDraw = true
+		r.frameVisibleSprites += batch.count
+		r.frameRetainedDraws += len(batch.ranges)
 	}
+
+	// Resolve retained text batch commands the same way: registry lookup
+	// (missing batches warn once and are skipped) and whole-batch culling
+	// against the batch's screen-space bounds. finalizeTextBatches already
+	// repacked any batch that changed, so this only reads the result.
+	hasTextBatchDraw := r.resolveTextBatchDraws(drawRuns, frame.Camera, w, h)
 
 	r.ensureSolidBuffer(len(solidBytes))
 	r.ensureTextGlyphBuffer(len(textGlyphBytes))
@@ -339,7 +480,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	if len(spriteBytes) > 0 {
 		r.queue.Call("writeBuffer", r.spriteBuffer, 0, bytesToJS(spriteBytes))
 	}
-	if len(spriteBytes) > 0 || len(textGlyphBytes) > 0 {
+	if len(spriteBytes) > 0 || len(textGlyphBytes) > 0 || hasSpriteBatchDraw || hasTextBatchDraw {
 		packSpriteUniforms(r.spriteUniformScratch[:], frame.Camera, w, h)
 		r.queue.Call("writeBuffer", r.spriteUniform, 0, bytesToJS(r.spriteUniformScratch[:]))
 	}
@@ -463,6 +604,56 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			pass.Call("setPipeline", r.compositePipeline)
 			pass.Call("setBindGroup", 0, r.particleTargets[run.group].bindGroup)
 			pass.Call("draw", 3, 1, 0, 0)
+		case tess.DrawRunSpriteBatch:
+			batch := run.batch
+			if batch == nil {
+				continue
+			}
+			cmd := run.spriteBatch
+			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
+				continue
+			}
+			for i, rg := range batch.ranges {
+				if batch.animated {
+					if r.spriteArrayEnabled && !rg.magenta {
+						pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
+					} else {
+						pass.Call("setPipeline", r.spriteBatchAnimPipeline)
+					}
+					pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
+				} else {
+					if r.spriteArrayEnabled && !rg.magenta {
+						pass.Call("setPipeline", r.spriteArrayPipeline)
+					} else {
+						pass.Call("setPipeline", r.spritePipeline)
+					}
+					pass.Call("setBindGroup", 0, batch.bindGroups[i])
+				}
+				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
+			}
+			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+				pass.Call("setScissorRect", 0, 0, w, h)
+			}
+		case tess.DrawRunTextBatch:
+			batch := run.text
+			if batch == nil {
+				continue
+			}
+			cmd := run.textBatch
+			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
+				continue
+			}
+			pass.Call("setPipeline", r.textGlyphPipeline)
+			for _, rg := range batch.ranges {
+				if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
+					continue
+				}
+				pass.Call("setBindGroup", 0, rg.bindGroup)
+				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
+			}
+			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+				pass.Call("setScissorRect", 0, 0, w, h)
+			}
 		}
 	}
 
@@ -480,7 +671,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	if r.sampleCPUTiming {
 		encodeEnd := performanceNowMillis()
 		r.cpuTess = durationFromMillis(buildEnd - phaseStart)
-		r.cpuUpload = durationFromMillis(uploadEnd - buildEnd)
+		r.cpuUpload = durationFromMillis(uploadEnd-buildEnd) + r.cpuResourceUpdate
 		r.cpuEncode = durationFromMillis(encodeEnd - uploadEnd)
 		r.cpuTimingValid = true
 	}
@@ -636,6 +827,36 @@ type gpuDrawRun struct {
 	// group indexes the composite group this particle run belongs to when
 	// offscreen compositing is active; contiguous particle runs share one.
 	group int
+	// spriteBatch is the retained batch command; batch is its resolved
+	// registry entry (nil when missing, deleted, empty or culled) and
+	// batchSlot the animation-uniform arena offset for animated draws.
+	spriteBatch render.DrawSpriteBatch
+	batch       *gpuSpriteBatch
+	batchSlot   int
+	// textBatch is the retained text batch command; text is its resolved
+	// registry entry (nil when missing, deleted, empty or culled).
+	textBatch render.DrawTextBatch
+	text      *gpuTextBatch
+}
+
+// webgpuBatchView returns the world-space rect a retained batch must
+// intersect to produce pixels: the camera's resolved visible world,
+// tightened by the command clip when set. ok is false when the camera has no
+// usable world area, in which case the caller draws without culling.
+func webgpuBatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool) {
+	view := camera.Resolve().World
+	if view.Width() <= 0 || view.Height() <= 0 {
+		return math2d.Rect{}, false
+	}
+	if clip != (math2d.Rect{}) {
+		view.Min.X = max(view.Min.X, clip.Min.X)
+		view.Min.Y = max(view.Min.Y, clip.Min.Y)
+		view.Max.X = min(view.Max.X, clip.Max.X)
+		view.Max.Y = min(view.Max.Y, clip.Max.Y)
+		// An empty intersection still culls: IntersectsView requires a
+		// positive-area overlap, and a degenerate rect overlaps nothing.
+	}
+	return view, true
 }
 
 // particleTarget is one pooled offscreen target plus its composite bind group.
@@ -731,7 +952,7 @@ func (r *webgpuRenderer) createTextAtlas(atlas *tess.Atlas) gpuTextAtlas {
 	metricBytes := atlas.GlyphMetricStream()
 	metricBuffer := jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(len(metricBytes), gpu.BufferUsageStorage|gpu.BufferUsageCopyDst)))
 	r.queue.Call("writeBuffer", metricBuffer, 0, bytesToJS(metricBytes))
-	glyphBindGroup := r.createTextGlyphBindGroup(viewValue, samplerValue, metricBuffer)
+	glyphBindGroup := r.createTextGlyphBindGroup(viewValue, samplerValue, metricBuffer, r.textGlyphBuffer, r.textLabelBuffer)
 	return gpuTextAtlas{atlas: atlas, texture: jsHandle(texture), metricBuffer: metricBuffer, view: viewValue, sampler: samplerValue, glyphBindGroup: glyphBindGroup}
 }
 
@@ -785,24 +1006,32 @@ func (r *webgpuRenderer) ensureTextLabelBuffer(size int) {
 	r.rebuildTextGlyphBindGroups()
 }
 
-func (r *webgpuRenderer) createTextGlyphBindGroup(view, sampler, metrics js.Value) js.Value {
+// createTextGlyphBindGroup builds a text-pipeline bind group against
+// explicit glyph/label buffers: the shared streaming buffers for
+// DrawText, or one retained batch's own persistent buffers.
+func (r *webgpuRenderer) createTextGlyphBindGroup(view, sampler, metrics, glyphBuffer, labelBuffer js.Value) js.Value {
 	layout := r.textGlyphPipeline.Call("getBindGroupLayout", 0)
 	return r.device.Call("createBindGroup", map[string]any{
 		"layout": layout,
 		"entries": []any{
 			map[string]any{"binding": 0, "resource": view},
 			map[string]any{"binding": 1, "resource": sampler},
-			map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.textGlyphBuffer}},
-			map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.textLabelBuffer}},
+			map[string]any{"binding": 2, "resource": map[string]any{"buffer": glyphBuffer}},
+			map[string]any{"binding": 3, "resource": map[string]any{"buffer": labelBuffer}},
 			map[string]any{"binding": 4, "resource": map[string]any{"buffer": metrics}},
 			map[string]any{"binding": 5, "resource": map[string]any{"buffer": r.spriteUniform}},
 		},
 	})
 }
 
+// rebuildTextGlyphBindGroups rebuilds every atlas's streaming bind group
+// after the shared glyph/label buffers grow. Retained text batches keep
+// their own persistent buffers and are unaffected; their bind groups are
+// rebuilt by repackTextBatch whenever content, projection, or atlas
+// identity actually changes.
 func (r *webgpuRenderer) rebuildTextGlyphBindGroups() {
 	for key, atlas := range r.textAtlases {
-		atlas.glyphBindGroup = r.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer)
+		atlas.glyphBindGroup = r.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer, r.textGlyphBuffer, r.textLabelBuffer)
 		r.textAtlases[key] = atlas
 	}
 }

@@ -91,19 +91,27 @@ const (
 	DrawRunSprites
 	DrawRunText
 	DrawRunParticles
+	// DrawRunSpriteBatch draws one retained sprite batch. The run carries the
+	// command (batch ID and animation uniforms) but no instance payload:
+	// content lives in the backend's retained registry.
+	DrawRunSpriteBatch
+	// DrawRunTextBatch draws one retained text batch. The run carries the
+	// command (batch ID) but no glyph/label payload: content lives in the
+	// backend's retained text registry.
+	DrawRunTextBatch
 )
-
 // DrawRun contains commands that can be submitted together while preserving
 // painter order between different WebGPU pipelines. Runs are split whenever
 // the pipeline changes, and textured runs are also split when their texture
 // changes.
 type DrawRun struct {
-	Kind      DrawRunKind
-	Solid     Mesh
-	Textured  TexMesh
-	Text      TextMesh
-	Particles render.DrawParticles
-	AtlasKey  AtlasKey
+	Kind        DrawRunKind
+	Solid       Mesh
+	Textured    TexMesh
+	Text        TextMesh
+	Particles   render.DrawParticles
+	SpriteBatch render.DrawSpriteBatch
+	AtlasKey    AtlasKey
 }
 
 // Build tessellates frame commands into ordered, heterogeneous WebGPU runs.
@@ -185,6 +193,20 @@ func (s *buildSink) VisitParticles(cmd render.DrawParticles) {
 	// geometry kinds on either side cannot merge across this painter-order
 	// boundary.
 	s.runs = append(s.runs, DrawRun{Kind: DrawRunParticles, Particles: cmd})
+	s.hasLast = false
+}
+
+func (s *buildSink) VisitSpriteBatch(cmd render.DrawSpriteBatch) {
+	// A retained batch owns GPU state and breaks painter-order merging, like
+	// a particle command: one command per run, no payload.
+	s.runs = append(s.runs, DrawRun{Kind: DrawRunSpriteBatch, SpriteBatch: cmd})
+	s.hasLast = false
+}
+
+func (s *buildSink) VisitTextBatch(cmd render.DrawTextBatch) {
+	// A retained text batch owns GPU state and breaks painter-order merging,
+	// like a particle/sprite-batch command: one command per run, no payload.
+	s.runs = append(s.runs, DrawRun{Kind: DrawRunTextBatch})
 	s.hasLast = false
 }
 

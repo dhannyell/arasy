@@ -40,6 +40,9 @@ type Canvas2D struct {
 
 	particles   *particle.EmitterSet
 	diagnostics diagnostic.Once
+
+	// batches holds retained sprite/text batch content (render-only).
+	batches canvasBatchRegistry
 }
 
 // dynamicTexture is the reusable upload target for one dynamic texture: an
@@ -148,14 +151,17 @@ func (c *Canvas2D) loadFont(decl asset.FontDecl) {
 	face.Call("load").Call("then", resolve).Call("catch", reject)
 }
 
-func (c *Canvas2D) UpdateTextures(updates []runtime.TextureUpdate) {
-	for _, u := range updates {
+func (c *Canvas2D) UpdateResources(updates runtime.FrameUpdates) {
+	for _, u := range updates.Textures {
 		if u.Image == nil {
 			continue
 		}
 		b := u.Image.Bounds()
 		c.UpdateTexture(u.ID, u.Image.Pix, b.Dx(), b.Dy())
 	}
+	// Textures first: retained batches may reference them.
+	c.batches.applySprites(c.log, updates.SpriteBatches)
+	c.batches.applyText(c.log, updates.TextBatches)
 }
 
 func (c *Canvas2D) UpdateTexture(id render.TextureID, pix []byte, w, h int) {

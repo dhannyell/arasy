@@ -17,6 +17,8 @@ type StreamRun struct {
 	Texture     render.TextureID
 	AtlasKey    AtlasKey
 	Particles   render.DrawParticles
+	SpriteBatch render.DrawSpriteBatch
+	TextBatch   render.DrawTextBatch
 	ByteOffset  int
 	VertexCount int
 }
@@ -217,6 +219,20 @@ func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
 	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Particles: cmd})
+	s.hasLast = false
+}
+
+func (s *streamSink) VisitSpriteBatch(cmd render.DrawSpriteBatch) {
+	// A retained batch owns GPU state and breaks painter-order merging, like
+	// a particle command: one command per run, no instance payload.
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, SpriteBatch: cmd})
+	s.hasLast = false
+}
+
+func (s *streamSink) VisitTextBatch(cmd render.DrawTextBatch) {
+	// A retained text batch owns GPU state and breaks painter-order merging,
+	// like a particle/sprite-batch command: one command per run, no payload.
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, TextBatch: cmd})
 	s.hasLast = false
 }
 
