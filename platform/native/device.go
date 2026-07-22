@@ -22,7 +22,7 @@ type device struct {
 
 var _ = newDevice
 
-func newDevice(window *glfw.Window, log *slog.Logger) (d *device, err error) {
+func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *device, err error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -78,16 +78,22 @@ func newDevice(window *glfw.Window, log *slog.Logger) (d *device, err error) {
 		return d, err
 	}
 
-	if !containsPresentMode(caps.PresentModes, wgpu.PresentModeFifo) {
-		return d, fmt.Errorf("fifo present mode support is required")
+	present, err := choosePresentMode(caps.PresentModes, vsync, log)
+	if err != nil {
+		return d, err
 	}
 
 	d.config = &wgpu.SurfaceConfiguration{
 		Usage:       wgpu.TextureUsageRenderAttachment,
 		Format:      format,
-		PresentMode: wgpu.PresentModeFifo,
+		PresentMode: present,
 		AlphaMode:   alpha,
 	}
+	log.Info("native surface present mode selected",
+		"requested_vsync_off", vsync == VSyncOff,
+		"present_mode", present,
+		"available_present_modes", caps.PresentModes,
+	)
 	fbW, fbH := window.GetFramebufferSize()
 	d.configure(fbW, fbH)
 
