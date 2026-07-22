@@ -10,12 +10,16 @@ import (
 )
 
 type Config struct {
-	Camera        render.Camera
-	Clear         render.Color
-	Bounds        math2d.Rect
-	Bounce        scene.BounceConfig
-	Physics       scene.PhysicsConfig
-	SimulationHz  int
+	Camera       render.Camera
+	Clear        render.Color
+	Bounds       math2d.Rect
+	Bounce       scene.BounceConfig
+	Physics      scene.PhysicsConfig
+	SimulationHz int
+	// FPS caps the host frame rate. Zero (the zero value)
+	// uses the engine default; a positive value caps at that many frames per
+	// second; a negative value runs the host loop uncapped. The fixed simulation
+	// rate is SimulationHz and is independent of this cap.
 	FPS           int
 	InputBindings []input.Binding
 
