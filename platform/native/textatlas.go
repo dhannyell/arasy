@@ -130,10 +130,10 @@ func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sam
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: view},
 			{Binding: 1, Sampler: sampler},
-			{Binding: 2, Buffer: r.glyphBuffer},
-			{Binding: 3, Buffer: r.labelBuffer},
-			{Binding: 4, Buffer: metrics},
-			{Binding: 5, Buffer: r.uniformBuffer},
+			{Binding: 2, Buffer: r.glyphBuffer, Size: wgpu.WholeSize},
+			{Binding: 3, Buffer: r.labelBuffer, Size: wgpu.WholeSize},
+			{Binding: 4, Buffer: metrics, Size: wgpu.WholeSize},
+			{Binding: 5, Buffer: r.uniformBuffer, Size: wgpu.WholeSize},
 		},
 	})
 	if err != nil {

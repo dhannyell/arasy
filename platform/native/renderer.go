@@ -417,7 +417,7 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 			texture.spriteBindGroup.Release()
 		}
 		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Label: "frameforge sprite bind group", Layout: layout, Entries: []wgpu.BindGroupEntry{
-			{Binding: 0, TextureView: texture.view}, {Binding: 1, Sampler: r.textureSampler}, {Binding: 2, Buffer: r.spriteBuffer}, {Binding: 3, Buffer: r.spriteUniform},
+			{Binding: 0, TextureView: texture.view}, {Binding: 1, Sampler: r.textureSampler}, {Binding: 2, Buffer: r.spriteBuffer, Size: wgpu.WholeSize}, {Binding: 3, Buffer: r.spriteUniform, Size: wgpu.WholeSize},
 		}})
 		if err != nil {
 			return fmt.Errorf("create sprite bind group: %w", err)

@@ -186,20 +186,22 @@ func (r textureResources) generateMipmaps(texture *wgpu.Texture, width, height, 
 
 func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture *wgpu.Texture, level uint32) error {
 	source, err := texture.TryCreateView(&wgpu.TextureViewDescriptor{
-		Dimension:     wgpu.TextureViewDimension2D,
-		BaseMipLevel:  level - 1,
-		MipLevelCount: 1,
-		Aspect:        wgpu.TextureAspectAll,
+		Dimension:       wgpu.TextureViewDimension2D,
+		BaseMipLevel:    level - 1,
+		MipLevelCount:   1,
+		ArrayLayerCount: 1,
+		Aspect:          wgpu.TextureAspectAll,
 	})
 	if err != nil {
 		return fmt.Errorf("create source mip view: %w", err)
 	}
 	defer source.Release()
 	destination, err := texture.TryCreateView(&wgpu.TextureViewDescriptor{
-		Dimension:     wgpu.TextureViewDimension2D,
-		BaseMipLevel:  level,
-		MipLevelCount: 1,
-		Aspect:        wgpu.TextureAspectAll,
+		Dimension:       wgpu.TextureViewDimension2D,
+		BaseMipLevel:    level,
+		MipLevelCount:   1,
+		ArrayLayerCount: 1,
+		Aspect:          wgpu.TextureAspectAll,
 	})
 	if err != nil {
 		return fmt.Errorf("create destination mip view: %w", err)
@@ -276,17 +278,19 @@ func textureSamplerDescriptor() wgpu.SamplerDescriptor {
 
 func mipSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:     "frameforge mipmap sampler",
-		MagFilter: wgpu.FilterModeLinear,
-		MinFilter: wgpu.FilterModeLinear,
+		Label:         "frameforge mipmap sampler",
+		MagFilter:     wgpu.FilterModeLinear,
+		MinFilter:     wgpu.FilterModeLinear,
+		MaxAnisotropy: 1,
 	}
 }
 
 func nearestSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:     "frameforge text atlas sampler",
-		MagFilter: wgpu.FilterModeNearest,
-		MinFilter: wgpu.FilterModeNearest,
+		Label:         "frameforge text atlas sampler",
+		MagFilter:     wgpu.FilterModeNearest,
+		MinFilter:     wgpu.FilterModeNearest,
+		MaxAnisotropy: 1,
 	}
 }
 
