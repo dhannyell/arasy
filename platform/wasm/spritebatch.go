@@ -1,6 +1,7 @@
 package wasm
 
 import (
+	"encoding/binary"
 	"math"
 
 	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
@@ -17,6 +18,23 @@ const (
 	spriteBatchAnimStride      = 32
 	spriteBatchAnimUniformSize = 80
 )
+
+type spriteUniformWriter struct {
+	dst    []byte
+	offset int
+}
+
+func (w *spriteUniformWriter) f32(value float64) {
+	binary.LittleEndian.PutUint32(w.dst[w.offset:], math.Float32bits(float32(value)))
+	w.offset += 4
+}
+
+func (w *spriteUniformWriter) u32(value uint32) {
+	binary.LittleEndian.PutUint32(w.dst[w.offset:], value)
+	w.offset += 4
+}
+
+func (w *spriteUniformWriter) skip(bytes int) { w.offset += bytes }
 
 // spriteBatchRange is one consecutive span of batch records sharing a bind
 // target. The array path binds one 2d-array group for every non-missing
@@ -139,11 +157,11 @@ func appendSpriteBatchAnimRecord(dst []byte, inst render.SpriteInstance, texW, t
 		baseIndex = uint32(base)
 	}
 	var buf [spriteBatchAnimStride]byte
-	writer := particleUniformWriter{dst: buf[:]}
+	writer := spriteUniformWriter{dst: buf[:]}
 	writer.u32(frames)
 	writer.u32(cellsPerRow)
 	writer.u32(baseIndex)
-	writer.offset += 4 // alignment pad
+	writer.skip(4) // alignment pad
 	writer.f32(float64(anim.Rate))
 	writer.f32(float64(anim.Phase))
 	writer.f32(float64(anim.Bounce))
@@ -217,7 +235,7 @@ func uniformArenaSlotCapacity(current, required int) int {
 // time, bounce parameters, pulse) consumed by the animated sprite shaders.
 func packSpriteBatchAnimUniforms(dst []byte, camera render.Camera, w, h int, anim render.SpriteBatchAnimation) {
 	tess.PackSpriteUniforms(dst, camera, w, h)
-	writer := particleUniformWriter{dst: dst, offset: tess.SpriteUniformSize}
+	writer := spriteUniformWriter{dst: dst, offset: tess.SpriteUniformSize}
 	writer.f32(float64(renderbatch.WrapTime(anim.Time)))
 	writer.f32(anim.BounceHz)
 	writer.f32(anim.Intensity)
