@@ -110,6 +110,23 @@ func (v *voice) setGainLocked(target, fadeSec float64, rate int) {
 	v.fadeRemaining = fadeSamples
 }
 
+func (v *voice) setPosition(frame int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	frames := len(v.pcm) / 2
+	if frames == 0 {
+		v.pos = 0
+		return
+	}
+	if v.loop {
+		frame %= frames
+	}
+	v.pos = max(0, min(frame, frames))
+	v.pendingOff = 0
+	v.pendingLen = 0
+}
+
 func (v *voice) fadeOut(fadeSec float64, rate int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()

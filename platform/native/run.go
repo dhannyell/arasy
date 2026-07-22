@@ -102,5 +102,17 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 
 	h := newHost(driver, renderer, window, opts)
 	h.registerCallbacks()
+
+	var sink *audioSink
+	if len(cfg.Assets.AudioClips()) > 0 {
+		sink, err = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, opts.Log)
+		if err != nil {
+			opts.Log.Warn("native audio disabled", "err", err)
+			sink = nil
+		}
+	}
+	defer sink.close()
+
+	h.audio = sink
 	return h.run()
 }
