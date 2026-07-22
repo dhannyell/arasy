@@ -1,15 +1,16 @@
-package wasm
+package fontatlas_test
 
 import (
 	"testing"
 	"testing/fstest"
 
 	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/frameforge/internal/render/gpu/fontatlas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-func TestFontAtlasProviderRetainsAndGrowsAtlasAcrossRequests(t *testing.T) {
-	p := testFontAtlasProvider(t)
+func TestProviderRetainsAndGrowsAtlasAcrossRequests(t *testing.T) {
+	p := testProvider(t)
 	first, err := p.AtlasFor(1, 18, "Áê")
 	if err != nil {
 		t.Fatal(err)
@@ -28,7 +29,7 @@ func TestFontAtlasProviderRetainsAndGrowsAtlasAcrossRequests(t *testing.T) {
 	}
 }
 
-func TestFontAtlasProviderToleratesCorruptManifestFont(t *testing.T) {
+func TestProviderToleratesCorruptManifestFont(t *testing.T) {
 	m, err := asset.Load(fstest.MapFS{
 		"manifest.json": {Data: []byte(`{"version":1,"fonts":[{"name":"bad","file":"bad.ttf"}]}`)},
 		"bad.ttf":       {Data: []byte("not a font")},
@@ -36,16 +37,16 @@ func TestFontAtlasProviderToleratesCorruptManifestFont(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := newFontAtlasProvider(m)
+	p, err := fontatlas.New(m)
 	if err != nil {
-		t.Fatalf("newFontAtlasProvider() error = %v, want the provider to degrade instead of failing", err)
+		t.Fatalf("New() error = %v, want the provider to degrade instead of failing", err)
 	}
 	if _, err := p.AtlasFor(m.Font("bad"), 18, "text"); err == nil {
 		t.Fatal("AtlasFor() for the corrupt font succeeded, want an error so callers fall back to the built-in atlas")
 	}
 }
 
-func testFontAtlasProvider(t *testing.T) *fontAtlasProvider {
+func testProvider(t *testing.T) *fontatlas.Provider {
 	t.Helper()
 	m, err := asset.Load(fstest.MapFS{
 		"manifest.json": {Data: []byte(`{"version":1,"fonts":[{"name":"heading","file":"heading.ttf"}]}`)},
@@ -54,7 +55,7 @@ func testFontAtlasProvider(t *testing.T) *fontAtlasProvider {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := newFontAtlasProvider(m)
+	p, err := fontatlas.New(m)
 	if err != nil {
 		t.Fatal(err)
 	}
