@@ -9,7 +9,6 @@ import (
 	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -116,7 +115,7 @@ func TestBuildFontZeroKeepsCanonicalTextWidth(t *testing.T) {
 func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{render.DrawText{
 			BaseCommand: render.BaseCommand{Clip: math2d.NewRect(
@@ -143,7 +142,7 @@ func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 func TestBuildSplitsTextRunsByAtlasWithoutChangingPainterOrder(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -169,7 +168,7 @@ func TestBuildSplitsTextRunsByAtlasWithoutChangingPainterOrder(t *testing.T) {
 func TestBuildRequestsAllFrameRunesOncePerAtlasKey(t *testing.T) {
 	provider := &recordingProvider{testTypefaceProvider: *newTestTypefaceProvider(t)}
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			textCommand(0, 1, "Á"),
@@ -189,7 +188,7 @@ func TestBuildRequestsAllFrameRunesOncePerAtlasKey(t *testing.T) {
 
 func TestBuildUsesCachedASCIIAtlasAndStillRequestsNewUnicode(t *testing.T) {
 	provider := newCachedRecordingProvider(t)
-	frame := runtime.Frame{
+	frame := Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			textCommand(0, 1, "cached ASCII"),
@@ -211,7 +210,7 @@ func TestBuildUsesCachedASCIIAtlasAndStillRequestsNewUnicode(t *testing.T) {
 func TestBuildTwoExternalFontsProduceSeparateAtlasRuns(t *testing.T) {
 	provider := newMultiFontTypefaceProvider(t)
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			textCommand(0, 1, "one"),
@@ -332,7 +331,7 @@ func buildTextRun(t *testing.T, provider AtlasProvider, text string, fontID rend
 		Color: render.RGBA(1, 1, 1, 1), Size: 18, Font: fontID,
 	}
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera:   testCamera(),
 		Commands: []render.Command{cmd},
 	}, 100, 100, provider, nil)

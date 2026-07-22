@@ -12,10 +12,11 @@ import (
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/internal/renderbatch"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
-	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )
@@ -325,7 +326,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	r.tess.SetSpriteArray(r.spriteArrayEnabled)
 	textBatchIDs := collectTextBatchIDs(frame.Commands)
 	r.prepTextBatches(textBatchIDs, frame.Camera, w, h)
-	runs := r.tess.Build(frame, w, h, r.fontProvider, r.texSizes)
+	runs := r.tess.Build(tess.Frame(frame), w, h, r.fontProvider, r.texSizes)
 
 	// tess ends here: command building/packing and atlas-coverage growth are
 	// done. Retained-batch repack (finalizeTextBatches, the sprite-batch
@@ -785,7 +786,7 @@ func (r *webgpuRenderer) ensureParticleTargets(n, ow, oh int) {
 // one particle offscreen target into the MSAA main pass with premultiplied
 // source-over.
 func (r *webgpuRenderer) createCompositePipeline() js.Value {
-	module := r.device.Call("createShaderModule", map[string]any{"code": particlesCompositeWGSL})
+	module := r.device.Call("createShaderModule", map[string]any{"code": shaders.ParticlesCompositeWGSL})
 	return r.device.Call("createRenderPipeline", map[string]any{
 		"layout": "auto",
 		"vertex": map[string]any{"module": module, "entryPoint": "vs_main"},
@@ -876,27 +877,27 @@ type particleTarget struct {
 }
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {
-	module := r.dev.CreateShaderModule(solidWGSL)
+	module := r.dev.CreateShaderModule(shaders.SolidWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createTextGlyphPipeline() js.Value {
-	module := r.dev.CreateShaderModule(textGlyphWGSL)
+	module := r.dev.CreateShaderModule(shaders.TextGlyphWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createTexturedPipeline() js.Value {
-	module := r.dev.CreateShaderModule(texturedWGSL)
+	module := r.dev.CreateShaderModule(shaders.TexturedWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createSpritePipeline() js.Value {
-	module := r.dev.CreateShaderModule(spriteWGSL)
+	module := r.dev.CreateShaderModule(shaders.SpriteWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
 func (r *webgpuRenderer) createSpriteArrayPipeline() js.Value {
-	module := r.dev.CreateShaderModule(spriteArrayWGSL)
+	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
 }
 
@@ -904,7 +905,7 @@ func (r *webgpuRenderer) createSpriteArrayPipeline() js.Value {
 // fullscreen triangle (no vertex buffer) sampling one mip level into the
 // next, one render pass per level.
 func (r *webgpuRenderer) createMipPipeline() js.Value {
-	module := r.dev.CreateShaderModule(mipmapWGSL)
+	module := r.dev.CreateShaderModule(shaders.MipmapWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.MipPipelineDesc(module)))
 }
 

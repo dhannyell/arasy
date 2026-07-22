@@ -7,6 +7,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/render"
@@ -258,8 +259,8 @@ func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
 
 	r.spriteBatchAnimLayout = layoutFor("")
 	r.spriteBatchAnimArrayLayout = layoutFor("2d-array")
-	r.spriteBatchAnimPipeline = pipelineFor(spriteBatchAnimWGSL, r.spriteBatchAnimLayout)
-	r.spriteBatchAnimArrayPipeline = pipelineFor(spriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout)
+	r.spriteBatchAnimPipeline = pipelineFor(shaders.SpriteBatchAnimWGSL, r.spriteBatchAnimLayout)
+	r.spriteBatchAnimArrayPipeline = pipelineFor(shaders.SpriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout)
 }
 
 // ensureBatchUniformArena grows the shared uniform arena before any slots are

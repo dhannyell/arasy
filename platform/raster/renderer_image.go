@@ -165,7 +165,7 @@ func (r *Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) 
 	}
 
 	// Check convexity before building the homography (matching
-	// platform/wasm/tess/image.go's imageQuadProjection): IsConvexQuad
+	// internal/render/gpu/tess/image.go's imageQuadProjection): IsConvexQuad
 	// rejects any collinear-triple corner set directly, while
 	// HomographyFromQuad only catches a degenerate quad incidentally, via a
 	// det()==0 fallback on the assembled matrix, after checks that target a

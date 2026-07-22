@@ -8,8 +8,8 @@ import (
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
-	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )

@@ -8,7 +8,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 const testEpsilon = 1e-5
@@ -156,7 +155,7 @@ func TestBuildSortsSolidCommandsByLayer(t *testing.T) {
 	first := render.RGBA(1, 0, 0, 1)
 	second := render.RGBA(0, 0, 1, 1)
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawRect{
@@ -193,7 +192,7 @@ func TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation(t *testing
 	dest := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10})
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawImage{Texture: 1, Dest: dest},

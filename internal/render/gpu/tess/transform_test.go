@@ -6,7 +6,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 // clipToScreen inverts screenToClip for the 100×100 test context, so a
@@ -160,7 +159,7 @@ func TestBuildTransformedImageUsesTexturedRunNotInstancedSprite(t *testing.T) {
 	dest := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 30, Y: 30})
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			render.DrawImage{

@@ -7,7 +7,7 @@ import (
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/platform/wasm/tess"
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/render"
 )
 

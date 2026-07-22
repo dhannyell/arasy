@@ -8,7 +8,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 type decodedTextGlyph struct {
@@ -70,7 +69,7 @@ func TestBuilderTextGlyphRecordsMatchLegacyTextQuads(t *testing.T) {
 	}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{Camera: testCamera(), Commands: []render.Command{cmd}}, 100, 100, atlas, nil)
+	runs := builder.Build(Frame{Camera: testCamera(), Commands: []render.Command{cmd}}, 100, 100, atlas, nil)
 	if len(runs) != 1 || runs[0].Kind != DrawRunText || runs[0].VertexCount != 2 {
 		t.Fatalf("runs = %+v, want one two-glyph text run", runs)
 	}

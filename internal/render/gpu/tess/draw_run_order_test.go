@@ -5,7 +5,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 // These tests cover Builder's heterogeneous StreamRun interleaving and
@@ -44,7 +43,7 @@ func TestBuildInterleavesKindsInPainterOrderWithinSameLayer(t *testing.T) {
 	sizes := TexSizes{{}, {8, 8}}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -80,7 +79,7 @@ func TestBuildSortsAcrossKindsByLayerNotInputOrder(t *testing.T) {
 	// Input order is [rect(layer 1), image(layer 0)], the reverse of the
 	// expected draw order: the lower-layer image must be dispatched first.
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(1),
@@ -106,7 +105,7 @@ func TestBuildPlacesMissingTexturePlaceholderBetweenSpriteRunsWithoutMerging(t *
 	sizes := TexSizes{{}, {8, 8}}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawImage(0, 1),
@@ -138,7 +137,7 @@ func TestBuildInterleavesTextWithSolidsInPainterOrder(t *testing.T) {
 	atlas := NewAtlas()
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),
@@ -167,9 +166,44 @@ func TestBuildInterleavesTextWithSolidsInPainterOrder(t *testing.T) {
 	}
 }
 
+func TestStreamRunsInterleaveRectImageTextImage(t *testing.T) {
+	atlas := NewAtlas()
+	sizes := TexSizes{{}, {8, 8}}
+
+	var builder Builder
+	runs := builder.Build(Frame{
+		Camera: testCamera(),
+		Commands: []render.Command{
+			drawRect(0),
+			drawImage(1, 1),
+			render.DrawText{
+				BaseCommand: render.BaseCommand{LayerValue: 2},
+				Position:    math2d.Vec2{X: 50, Y: 50},
+				Text:        "Hi",
+				Color:       render.RGBA(1, 1, 1, 1),
+				Size:        10,
+			},
+			drawImage(3, 1),
+		},
+	}, 100, 100, atlas, sizes)
+
+	wantKinds := []DrawRunKind{DrawRunSolid, DrawRunSprites, DrawRunText, DrawRunSprites}
+	if len(runs) != len(wantKinds) {
+		t.Fatalf("len(runs) = %d, want %d runs %v, got %+v", len(runs), len(wantKinds), wantKinds, runs)
+	}
+	for i, want := range wantKinds {
+		if runs[i].Kind != want {
+			t.Fatalf("runs[%d].Kind = %v, want %v", i, runs[i].Kind, want)
+		}
+	}
+	if runs[1].Texture != 1 || runs[3].Texture != 1 {
+		t.Fatalf("sprite textures = (%d, %d), want (1, 1)", runs[1].Texture, runs[3].Texture)
+	}
+}
+
 func TestBuildKeepsEveryParticleCommandInItsOwnPainterOrderedRun(t *testing.T) {
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera: testCamera(),
 		Commands: []render.Command{
 			drawRect(0),

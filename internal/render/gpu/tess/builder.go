@@ -5,8 +5,16 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
+
+// Frame is the render-only input to Build: camera plus the painter-ordered
+// commands of one frame. Identical in layout to runtime.Frame so hosts convert
+// with a plain tess.Frame(rtFrame); the core must not import the orchestration
+// layer.
+type Frame struct {
+	Camera   render.Camera
+	Commands []render.Command
+}
 
 // StreamRun identifies one ordered draw in Builder's shared streams.
 // ByteOffset is relative to the stream selected by Kind. VertexCount is a
@@ -50,7 +58,7 @@ func (b *Builder) SetSpriteArray(enabled bool) {
 }
 
 // Build tessellates a frame into this builder's reusable streams.
-func (b *Builder) Build(frame runtime.Frame, w, h int, provider AtlasProvider, sizes TexSizes) []StreamRun {
+func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes TexSizes) []StreamRun {
 	b.solid = b.solid[:0]
 	b.tex = b.tex[:0]
 	b.sprites = b.sprites[:0]
