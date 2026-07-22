@@ -47,7 +47,7 @@ jobs:
         run: |
           out=$(gofmt -l .)
           if [ -n "$out" ]; then
-            echo "arquivos fora do gofmt:"; echo "$out"; exit 1
+            echo "file out gofmt:"; echo "$out"; exit 1
           fi
       - name: vet
         run: go vet ./...
