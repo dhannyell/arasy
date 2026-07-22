@@ -7,7 +7,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 func retainedF32(records []byte, offset int) float32 {
@@ -85,7 +84,7 @@ func TestAppendRetainedSpriteRecordDegenerateSrcZeroesQuad(t *testing.T) {
 // either side must not merge across it.
 func TestStreamRunSpriteBatchBreaksMerge(t *testing.T) {
 	sizes := TexSizes{{}, {4, 4}}
-	frame := runtime.Frame{
+	frame := Frame{
 		Camera: render.Camera{
 			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 64, Y: 64}),
 			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 64, Y: 64}),

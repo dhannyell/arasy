@@ -3,9 +3,9 @@ package wasm
 import (
 	"math"
 
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/internal/renderbatch"
 	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 )
 

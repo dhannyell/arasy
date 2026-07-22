@@ -7,10 +7,10 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/internal/renderbatch"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
-	"github.com/dhannyell/frameforge/platform/wasm/tess"
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 )

@@ -7,7 +7,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 func TestAppendImageRectProducesSixVerticesWithUnitWAndFullUV(t *testing.T) {
@@ -279,7 +278,7 @@ func TestBuildSkipsNonConvexImageQuadBeforeTextureLookup(t *testing.T) {
 
 	for _, sizes := range []TexSizes{nil, {{0, 0}, {16, 16}}} {
 		var builder Builder
-		runs := builder.Build(runtime.Frame{
+		runs := builder.Build(Frame{
 			Camera:   testCamera(),
 			Commands: []render.Command{bowtie},
 		}, 100, 100, nil, sizes)

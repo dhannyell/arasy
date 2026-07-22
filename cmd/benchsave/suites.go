@@ -22,7 +22,7 @@ var benchSuites = []benchSuite{
 	{Name: "scene", Pkg: "./scene", Bench: "."},
 	{Name: "runtime", Pkg: "./runtime", Bench: "."},
 	{Name: "raster", Pkg: "./platform/raster", Bench: "."},
-	{Name: "tess", Pkg: "./platform/wasm/tess", Bench: "BenchmarkTess.*"},
+	{Name: "tess", Pkg: "./internal/render/gpu/tess", Bench: "BenchmarkTess.*"},
 	{
 		Name:      "particle",
 		Pkg:       "./particle",

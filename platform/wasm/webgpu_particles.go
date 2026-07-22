@@ -7,6 +7,7 @@ import (
 	"math"
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
@@ -168,7 +169,7 @@ func (g *gpuParticles) textureBindLayout() js.Value {
 }
 
 func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool) {
-	computeModule := g.device.Call("createShaderModule", map[string]any{"code": particlesComputeWGSL})
+	computeModule := g.device.Call("createShaderModule", map[string]any{"code": shaders.ParticlesComputeWGSL})
 	computePipelineLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.computeLayout},
 	})
@@ -181,7 +182,7 @@ func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool) {
 	g.emitPipeline = computePipeline("emit")
 	g.simulatePipeline = computePipeline("simulate")
 
-	renderModule := g.device.Call("createShaderModule", map[string]any{"code": particlesRenderWGSL})
+	renderModule := g.device.Call("createShaderModule", map[string]any{"code": shaders.ParticlesRenderWGSL})
 	renderLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.renderLayout, g.textureLayout},
 	})

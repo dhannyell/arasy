@@ -8,7 +8,6 @@ import (
 
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 )
 
 type decodedSprite struct {
@@ -70,7 +69,7 @@ func TestBuilderWritesSpriteRecordsAndSplitsTextureRuns(t *testing.T) {
 	}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera:   testCamera(),
 		Commands: []render.Command{first, second, third},
 	}, 100, 100, nil, TexSizes{{}, {64, 32}, {64, 32}})
@@ -135,7 +134,7 @@ func TestBuilderSpriteArrayKeepsInterleavedTexturesInOneRun(t *testing.T) {
 	}
 	var builder Builder
 	builder.SetSpriteArray(true)
-	runs := builder.Build(runtime.Frame{Camera: testCamera(), Commands: commands}, 100, 100, nil, TexSizes{{}, {64, 64}, {64, 64}})
+	runs := builder.Build(Frame{Camera: testCamera(), Commands: commands}, 100, 100, nil, TexSizes{{}, {64, 64}, {64, 64}})
 	if len(runs) != 1 || runs[0].Kind != DrawRunSprites || runs[0].VertexCount != 3 {
 		t.Fatalf("runs = %+v, want one three-sprite run", runs)
 	}
@@ -154,7 +153,7 @@ func TestBuilderFallbackSplitsInterleavedTexturesIntoPainterOrderedRuns(t *testi
 		render.DrawImage{Texture: 1, Dest: math2d.NewRect(math2d.Vec2{X: 20}, math2d.Vec2{X: 10, Y: 10})},
 	}
 	var builder Builder
-	runs := builder.Build(runtime.Frame{Camera: testCamera(), Commands: commands}, 100, 100, nil, TexSizes{{}, {64, 32}, {32, 64}})
+	runs := builder.Build(Frame{Camera: testCamera(), Commands: commands}, 100, 100, nil, TexSizes{{}, {64, 32}, {32, 64}})
 	if len(runs) != 3 {
 		t.Fatalf("len(runs) = %d, want three fallback texture runs: %+v", len(runs), runs)
 	}
@@ -170,7 +169,7 @@ func TestBuilderKeepsMissingTextureOnSolidPath(t *testing.T) {
 	missing := render.DrawImage{Texture: 2, Dest: math2d.NewRect(math2d.Vec2{X: 40, Y: 40}, math2d.Vec2{X: 20, Y: 20})}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera:   testCamera(),
 		Commands: []render.Command{known, missing},
 	}, 100, 100, nil, TexSizes{{}, {64, 64}})
@@ -195,7 +194,7 @@ func TestBuilderSkipsSpriteWithDegenerateClip(t *testing.T) {
 	}
 
 	var builder Builder
-	runs := builder.Build(runtime.Frame{
+	runs := builder.Build(Frame{
 		Camera:   testCamera(),
 		Commands: []render.Command{cmd},
 	}, 100, 100, nil, TexSizes{{}, {64, 64}})

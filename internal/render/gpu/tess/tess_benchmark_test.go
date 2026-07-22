@@ -8,7 +8,6 @@ import (
 	"github.com/dhannyell/frameforge/asset/typeface"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -318,7 +317,7 @@ func BenchmarkTessBuild(b *testing.B) {
 	b.Run("sprites", func(b *testing.B) {
 		for _, n := range []int{1000, 5000, 20000, 50000} {
 			commands := makeImageCommands(n)
-			frame := runtime.Frame{Camera: cam, Commands: commands}
+			frame := Frame{Camera: cam, Commands: commands}
 			b.Run(strconv.Itoa(n), func(b *testing.B) {
 				var builder Builder
 				b.ReportAllocs()
@@ -332,7 +331,7 @@ func BenchmarkTessBuild(b *testing.B) {
 	b.Run("mixed", func(b *testing.B) {
 		for _, n := range []int{1000, 20000} {
 			commands := makeMixedCommands(n)
-			frame := runtime.Frame{Camera: cam, Commands: commands}
+			frame := Frame{Camera: cam, Commands: commands}
 			b.Run(strconv.Itoa(n), func(b *testing.B) {
 				var builder Builder
 				b.ReportAllocs()
@@ -346,7 +345,7 @@ func BenchmarkTessBuild(b *testing.B) {
 	b.Run("circles", func(b *testing.B) {
 		for _, n := range []int{1000, 20000} {
 			commands := makeCircleCommands(n)
-			frame := runtime.Frame{Camera: cam, Commands: commands}
+			frame := Frame{Camera: cam, Commands: commands}
 			b.Run(strconv.Itoa(n), func(b *testing.B) {
 				var builder Builder
 				b.ReportAllocs()
@@ -371,7 +370,7 @@ func BenchmarkTessBuildText(b *testing.B) {
 
 	for _, n := range []int{1000, 20000} {
 		commands := makeTextCommands(n)
-		frame := runtime.Frame{Camera: cam, Commands: commands}
+		frame := Frame{Camera: cam, Commands: commands}
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			var builder Builder
 			b.ReportAllocs()
@@ -398,7 +397,7 @@ func BenchmarkTessBuildExternalText(b *testing.B) {
 			cmd.Font = 1
 			commands[i] = cmd
 		}
-		frame := runtime.Frame{Camera: cam, Commands: commands}
+		frame := Frame{Camera: cam, Commands: commands}
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			var builder Builder
 			_ = builder.Build(frame, 1920, 1080, provider, sizes)
@@ -420,7 +419,7 @@ func BenchmarkTessBuildClip(b *testing.B) {
 
 	for _, n := range []int{1000, 20000} {
 		commands := makeClipCommands(n)
-		frame := runtime.Frame{Camera: cam, Commands: commands}
+		frame := Frame{Camera: cam, Commands: commands}
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			var builder Builder
 			b.ReportAllocs()
@@ -444,7 +443,7 @@ func BenchmarkTessBuildUnsortedLayers(b *testing.B) {
 
 	for _, n := range []int{1000, 20000} {
 		commands := makeUnsortedMixedCommands(n)
-		frame := runtime.Frame{Camera: cam, Commands: commands}
+		frame := Frame{Camera: cam, Commands: commands}
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			var builder Builder
 			b.ReportAllocs()
@@ -465,7 +464,7 @@ func BenchmarkTessBuildTextureChurn(b *testing.B) {
 
 	for _, n := range []int{1000, 20000} {
 		commands := makeTextureChurnCommands(n)
-		frame := runtime.Frame{Camera: cam, Commands: commands}
+		frame := Frame{Camera: cam, Commands: commands}
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			var builder Builder
 			b.ReportAllocs()
@@ -487,7 +486,7 @@ func BenchmarkTessBuildImageQuadAndRotation(b *testing.B) {
 	b.Run("quad", func(b *testing.B) {
 		for _, n := range []int{1000, 20000} {
 			commands := makeImageQuadCommands(n)
-			frame := runtime.Frame{Camera: cam, Commands: commands}
+			frame := Frame{Camera: cam, Commands: commands}
 			b.Run(strconv.Itoa(n), func(b *testing.B) {
 				var builder Builder
 				b.ReportAllocs()
@@ -501,7 +500,7 @@ func BenchmarkTessBuildImageQuadAndRotation(b *testing.B) {
 	b.Run("rotated", func(b *testing.B) {
 		for _, n := range []int{1000, 20000} {
 			commands := makeRotatedImageCommands(n)
-			frame := runtime.Frame{Camera: cam, Commands: commands}
+			frame := Frame{Camera: cam, Commands: commands}
 			b.Run(strconv.Itoa(n), func(b *testing.B) {
 				var builder Builder
 				b.ReportAllocs()

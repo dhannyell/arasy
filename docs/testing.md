@@ -150,7 +150,7 @@ visivel no teste. Isso torna falhas visuais mais faceis de entender.
 
 ### `platform/wasm`
 
-O pipeline WebGPU separa a tessellacao pura em `platform/wasm/tess`; mantenha
+O pipeline WebGPU separa a tessellacao pura em `internal/render/gpu/tess`; mantenha
 ali testes semanticos de vertices, clipping, atlas e painter order. Canvas2D e
 WebGPU tambem possuem goldens visuais executados no Chromium por Playwright:
 
