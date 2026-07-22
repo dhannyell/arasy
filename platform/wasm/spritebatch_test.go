@@ -328,9 +328,9 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 	var slot [spriteBatchAnimUniformSize]byte
 	packSpriteBatchAnimUniforms(slot[:], camera, 16, 16, anim)
 
-	var cameraOnly [spriteUniformSize]byte
-	packSpriteUniforms(cameraOnly[:], camera, 16, 16)
-	if string(slot[:spriteUniformSize]) != string(cameraOnly[:]) {
+	var cameraOnly [tess.SpriteUniformSize]byte
+	tess.PackSpriteUniforms(cameraOnly[:], camera, 16, 16)
+	if string(slot[:tess.SpriteUniformSize]) != string(cameraOnly[:]) {
 		t.Fatal("first 32 bytes must be the shared camera uniform")
 	}
 

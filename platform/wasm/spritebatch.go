@@ -11,10 +11,9 @@ import (
 
 // Retained sprite batch GPU layouts. The record stride is fixed by
 // tess.SpriteStride; the animation record and uniform layouts must match the
-// WGSL SpriteAnim/BatchUniforms structs. spriteUniformSize is the shared
+// WGSL SpriteAnim/BatchUniforms structs. tess.SpriteUniformSize is the shared
 // camera uniform layout used by every sprite/text pipeline.
 const (
-	spriteUniformSize          = 32
 	spriteBatchAnimStride      = 32
 	spriteBatchAnimUniformSize = 80
 )
@@ -217,8 +216,8 @@ func uniformArenaSlotCapacity(current, required int) int {
 // camera uniform followed by the 48-byte animation uniform block (wrapped
 // time, bounce parameters, pulse) consumed by the animated sprite shaders.
 func packSpriteBatchAnimUniforms(dst []byte, camera render.Camera, w, h int, anim render.SpriteBatchAnimation) {
-	packSpriteUniforms(dst, camera, w, h)
-	writer := particleUniformWriter{dst: dst, offset: spriteUniformSize}
+	tess.PackSpriteUniforms(dst, camera, w, h)
+	writer := particleUniformWriter{dst: dst, offset: tess.SpriteUniformSize}
 	writer.f32(float64(renderbatch.WrapTime(anim.Time)))
 	writer.f32(anim.BounceHz)
 	writer.f32(anim.Intensity)

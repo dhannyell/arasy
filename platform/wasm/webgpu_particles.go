@@ -8,6 +8,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
+	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
@@ -30,6 +31,11 @@ const (
 	countersAliveOffset = 4
 	drawInstanceOffset  = 4
 )
+
+func (w *particleUniformWriter) vec2(value math2d.Vec2) {
+	w.f32(value.X)
+	w.f32(value.Y)
+}
 
 type gpuEmitter struct {
 	decl     particle.EffectDecl
@@ -601,7 +607,7 @@ func packUniforms(
 	w, h int,
 ) {
 	d := &e.decl
-	scale, offset, screenScale := worldToClip(camera, w, h)
+	scale, offset, screenScale := tess.WorldToClip(camera, w, h)
 	wobbleAxis := math2d.Vec2{}
 	if d.WobbleAmp != 0 {
 		angle := d.Direction + cmd.Dir

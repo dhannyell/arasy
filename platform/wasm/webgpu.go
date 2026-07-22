@@ -74,7 +74,7 @@ type webgpuRenderer struct {
 	textLabelCap         int
 	texCap               int
 	spriteCap            int
-	spriteUniformScratch [spriteUniformSize]byte
+	spriteUniformScratch [tess.SpriteUniformSize]byte
 	spriteArrayTexture   js.Value
 	spriteArrayBindGroup js.Value
 	spriteArrayEnabled   bool
@@ -231,7 +231,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(64 * 1024)
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(64 * 1024)
-	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(spriteUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
+	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(tess.SpriteUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 
 	r.createSpriteBatchAnimPipelines()
 	r.batchArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
@@ -491,7 +491,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		r.queue.Call("writeBuffer", r.spriteBuffer, 0, bytesToJS(spriteBytes))
 	}
 	if len(spriteBytes) > 0 || len(textGlyphBytes) > 0 || hasSpriteBatchDraw || hasTextBatchDraw {
-		packSpriteUniforms(r.spriteUniformScratch[:], frame.Camera, w, h)
+		tess.PackSpriteUniforms(r.spriteUniformScratch[:], frame.Camera, w, h)
 		r.queue.Call("writeBuffer", r.spriteUniform, 0, bytesToJS(r.spriteUniformScratch[:]))
 	}
 
