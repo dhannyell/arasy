@@ -32,13 +32,6 @@ type textureResources struct {
 	mipSampler       *wgpu.Sampler
 }
 
-var (
-	_ = buildTextures
-	_ = textureResources.updateTextures
-	_ = textureSamplerDescriptor
-	_ = mipSamplerDescriptor
-)
-
 func buildTextures(manifest asset.Manifest, resources textureResources, log *slog.Logger) ([]gpuTexture, tess.TexSizes) {
 	if log == nil {
 		log = slog.Default()

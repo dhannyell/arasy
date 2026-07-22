@@ -27,8 +27,6 @@ type textAtlasResources struct {
 	uniformBuffer     *wgpu.Buffer
 }
 
-var _ = textAtlasResources.textAtlasFor
-
 func (r textAtlasResources) textAtlasFor(cache map[tess.AtlasKey]gpuTextAtlas, provider tess.AtlasProvider, key tess.AtlasKey) (gpuTextAtlas, bool, error) {
 	atlas, err := provider.AtlasFor(key.Font, key.PX, "")
 	if err != nil || atlas == nil {

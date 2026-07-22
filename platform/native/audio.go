@@ -15,6 +15,7 @@ import (
 
 const (
 	audioSampleRate  = 48_000
+	audioChannels    = 2
 	maxCueVoices     = 32
 	maxCueVoicesClip = 4
 )
@@ -271,5 +272,5 @@ func clipDuration(clip *clipPCM) float64 {
 	if clip == nil || clip.Rate <= 0 {
 		return 0
 	}
-	return float64(len(clip.Samples)/2) / float64(clip.Rate)
+	return float64(len(clip.Samples)/audioChannels) / float64(clip.Rate)
 }
