@@ -31,6 +31,7 @@ type Renderer struct {
 	log    *slog.Logger
 
 	fontProvider *fontatlas.Provider
+	particles    *gpuParticles
 	textures     []gpuTexture
 	texSizes     tess.TexSizes
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
@@ -108,6 +109,14 @@ func NewRenderer(window *glfw.Window, clear render.Color, manifest asset.Manifes
 	renderer.textures, renderer.texSizes = buildTextures(manifest, resources, log)
 	if err = renderer.rebuildSpriteBindGroups(); err != nil {
 		return nil, err
+	}
+	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format)
+	if err != nil {
+		// Particle effects are optional presentation. Keep the native host usable
+		// when a driver rejects the compute/indirect pipeline, matching the WASM
+		// backend's best-effort particle path.
+		log.Warn("native particle renderer disabled", "err", err)
+		renderer.particles = nil
 	}
 	return renderer, nil
 }
@@ -187,11 +196,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	defer surfaceView.Release()
-	if err := r.encodeFrame(runs, surfaceView); err != nil {
+	if err := r.encodeFrame(runs, surfaceView, frame.Camera, width, height); err != nil {
 		r.recordErr(err)
 		return
 	}
 	r.device.surface.Present()
+	if r.particles != nil {
+		r.particles.endFrame()
+	}
 }
 
 // Resize updates the native surface from physical framebuffer dimensions.
@@ -219,6 +231,10 @@ func (r *Renderer) Close() {
 		atlas.release()
 	}
 	r.textAtlases = nil
+	if r.particles != nil {
+		r.particles.close()
+		r.particles = nil
+	}
 	for _, texture := range r.textures {
 		texture.release()
 	}
@@ -462,19 +478,33 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	return nil
 }
 
-func (r *Renderer) encodeFrame(runs []tess.StreamRun, surfaceView *wgpu.TextureView) error {
+func (r *Renderer) encodeFrame(runs []tess.StreamRun, surfaceView *wgpu.TextureView, camera render.Camera, width, height int) error {
 	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return fmt.Errorf("create render command encoder: %w", err)
 	}
 	defer encoder.Release()
+	if r.particles != nil {
+		sims := make([]particleSim, 0)
+		for _, run := range runs {
+			if run.Kind != tess.DrawRunParticles {
+				continue
+			}
+			if sim, ok := r.particles.prepare(run.Particles, camera, width, height); ok {
+				sims = append(sims, sim)
+			}
+		}
+		if err := r.particles.encode(encoder, sims); err != nil {
+			return fmt.Errorf("encode particle simulation: %w", err)
+		}
+	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{Label: "frameforge render pass", ColorAttachments: []wgpu.RenderPassColorAttachment{{View: r.msaaView, ResolveTarget: surfaceView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpDiscard, ClearValue: clearColor(r.clear)}}})
 	if err != nil {
 		return fmt.Errorf("begin render pass: %w", err)
 	}
 	defer pass.Release()
 	for _, run := range runs {
-		if err := r.drawRun(pass, run); err != nil {
+		if err := r.drawRun(pass, run, camera, width, height); err != nil {
 			return err
 		}
 	}
@@ -490,7 +520,7 @@ func (r *Renderer) encodeFrame(runs []tess.StreamRun, surfaceView *wgpu.TextureV
 	return nil
 }
 
-func (r *Renderer) drawRun(pass *wgpu.RenderPassEncoder, run tess.StreamRun) error {
+func (r *Renderer) drawRun(pass *wgpu.RenderPassEncoder, run tess.StreamRun, camera render.Camera, width, height int) error {
 	switch run.Kind {
 	case tess.DrawRunSolid:
 		pass.SetPipeline(r.solidPipeline)
@@ -525,7 +555,9 @@ func (r *Renderer) drawRun(pass *wgpu.RenderPassEncoder, run tess.StreamRun) err
 		pass.SetBindGroup(0, atlas.glyphBindGroup, nil)
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.TextGlyphStride*6), 0)
 	case tess.DrawRunParticles:
-		r.warnSkipped("particles")
+		if r.particles != nil {
+			r.particles.draw(pass, run.Particles, camera, width, height)
+		}
 	case tess.DrawRunSpriteBatch:
 		r.warnSkipped("sprite batches")
 	case tess.DrawRunTextBatch:
@@ -571,6 +603,9 @@ func alphaBlend() *wgpu.BlendState {
 }
 func premultipliedBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{Color: wgpu.BlendComponent{Operation: wgpu.BlendOperationAdd, SrcFactor: wgpu.BlendFactorOne, DstFactor: wgpu.BlendFactorOneMinusSrcAlpha}, Alpha: wgpu.BlendComponent{Operation: wgpu.BlendOperationAdd, SrcFactor: wgpu.BlendFactorOne, DstFactor: wgpu.BlendFactorOneMinusSrcAlpha}}
+}
+func additiveBlend() *wgpu.BlendState {
+	return &wgpu.BlendState{Color: wgpu.BlendComponent{Operation: wgpu.BlendOperationAdd, SrcFactor: wgpu.BlendFactorOne, DstFactor: wgpu.BlendFactorOne}, Alpha: wgpu.BlendComponent{Operation: wgpu.BlendOperationAdd, SrcFactor: wgpu.BlendFactorOne, DstFactor: wgpu.BlendFactorOne}}
 }
 func solidVertexLayout() []wgpu.VertexBufferLayout {
 	return []wgpu.VertexBufferLayout{{ArrayStride: tess.SolidVertexStride, StepMode: wgpu.VertexStepModeVertex, Attributes: []wgpu.VertexAttribute{{ShaderLocation: 0, Offset: 0, Format: wgpu.VertexFormatFloat32x2}, {ShaderLocation: 1, Offset: 8, Format: wgpu.VertexFormatFloat32x4}}}}
