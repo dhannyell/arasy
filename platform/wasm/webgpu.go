@@ -12,6 +12,7 @@ import (
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/frameforge/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
 	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/internal/renderbatch"
@@ -110,7 +111,7 @@ type webgpuRenderer struct {
 	log         *slog.Logger
 	diagnostics diagnostic.Once
 
-	fontProvider *fontAtlasProvider
+	fontProvider *fontatlas.Provider
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
 
 	// texSizes maps TextureID to pixel dimensions for the textured
@@ -157,7 +158,7 @@ type webgpuRenderer struct {
 }
 
 func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, log *slog.Logger) (*webgpuRenderer, error) {
-	fontProvider, err := newFontAtlasProvider(manifest)
+	fontProvider, err := fontatlas.New(manifest)
 	if err != nil {
 		return nil, err
 	}
