@@ -1,4 +1,4 @@
-package wasm
+package audio
 
 import "testing"
 
@@ -17,7 +17,7 @@ func TestScheduledTrackStartUsesRemainingSimulationTicks(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := scheduledTrackStart(10, test.currentTick, test.alpha, test.startTick, 0.5); got != test.want {
+			if got := ScheduledTrackStart(10, test.currentTick, test.alpha, test.startTick, 0.5); got != test.want {
 				t.Fatalf("scheduledTrackStart() = %v, want %v", got, test.want)
 			}
 		})
@@ -43,7 +43,7 @@ func TestScheduledPlaybackUsesAudioClockAndCompensatesLateDecode(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			start, offset, expired := scheduledPlayback(test.now, test.scheduledAt, test.duration, test.loop)
+			start, offset, expired := ScheduledPlayback(test.now, test.scheduledAt, test.duration, test.loop)
 			if start != test.wantStart || offset != test.wantOffset || expired != test.wantExpired {
 				t.Fatalf("scheduledPlayback() = (%v, %v, %t), want (%v, %v, %t)", start, offset, expired, test.wantStart, test.wantOffset, test.wantExpired)
 			}

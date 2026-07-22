@@ -16,6 +16,7 @@ type host struct {
 	driver   *runtime.Driver
 	renderer *Renderer
 	window   *glfw.Window
+	audio    *audioSink
 
 	pending  []input.Event
 	viewport math2d.Rect
@@ -43,6 +44,8 @@ func (h *host) registerCallbacks() {
 	h.window.SetFramebufferSizeCallback(func(_ *glfw.Window, _, _ int) {
 		h.fbDirty = true
 	})
+
+	// keyboard and mouse
 	h.window.SetKeyCallback(func(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, mods glfw.ModifierKey) {
 		if key == glfw.KeyEnter && action == glfw.Press && mods&glfw.ModAlt != 0 {
 			toggleFullscreen(h.window, &h.savedWindowed)
@@ -86,6 +89,16 @@ func (h *host) registerCallbacks() {
 			h.pending = append(h.pending, pointerLeaveEvent())
 		}
 	})
+
+	// -- Window
+
+	h.window.SetFocusCallback(func(_ *glfw.Window, focused bool) {
+		if focused {
+			h.audio.resume()
+		} else {
+			h.audio.suspend()
+		}
+	})
 }
 
 func (h *host) run() error {
@@ -100,7 +113,10 @@ func (h *host) run() error {
 			Events:   h.pending,
 		}, elapsed)
 		h.pending = h.pending[:0]
-		_ = audioOut
+
+		if h.audio != nil {
+			h.audio.consume(audioOut)
+		}
 
 		h.driver.RenderFrame(elapsed, h.renderer)
 		if err := h.renderer.Err(); err != nil {
