@@ -4,38 +4,15 @@ package wasm
 
 import (
 	"encoding/binary"
-	"math"
 	"syscall/js"
 
+	"github.com/dhannyell/frameforge/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/math2d"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/platform/wasm/gpu"
 	"github.com/dhannyell/frameforge/render"
 )
-
-const (
-	gpuParticleTTL = 300
-	// Hot/cold strides must match the WGSL ParticleHot/ParticleCold structs.
-	// The split keeps the simulate pass on the 24 mutable bytes; spawn-time
-	// state lives in the cold buffer only emit writes and render reads.
-	gpuParticleHotStride  = 24
-	gpuParticleColdStride = 32
-	gpuUniformSize        = 224 // must match the WGSL EmitterUniforms struct
-	particleWorkgroup     = 64
-	drawBufferSize        = 16 // DrawIndirectArgs: {vertices,instances,firstV,firstI}
-	// countersAliveOffset locates the alive cursor inside the counters buffer
-	// ({dead, alive, pad, pad}); the host zeroes it before each simulated
-	// frame. drawInstanceOffset does the same for the indirect instance count.
-	countersAliveOffset = 4
-	drawInstanceOffset  = 4
-)
-
-func (w *particleUniformWriter) vec2(value math2d.Vec2) {
-	w.f32(value.X)
-	w.f32(value.Y)
-}
 
 type gpuEmitter struct {
 	decl     particle.EffectDecl
@@ -57,7 +34,7 @@ type gpuEmitter struct {
 	computeBind js.Value // emit + simulate share one layout and group
 	renderBind  js.Value
 	textureBind js.Value
-	scratch     [gpuUniformSize]byte
+	scratch     [particlegpu.UniformSize]byte
 }
 
 type gpuParticles struct {
@@ -86,7 +63,7 @@ type gpuParticles struct {
 	missingTexture js.Value // magenta 1×1 for a declared texture that failed
 	sampler        js.Value
 
-	emitters map[emitterGPUKey]*gpuEmitter
+	emitters map[particlegpu.EmitterKey]*gpuEmitter
 	frame    uint64
 
 	// timing instrumentation: armTiming runs once per frame before the
@@ -98,11 +75,6 @@ type gpuParticles struct {
 	timingWrote bool
 }
 
-type emitterGPUKey struct {
-	effect  render.ParticleEffectID
-	emitter render.EmitterID
-}
-
 // newGpuParticles builds the shared particle GPU state once: bind group
 // layouts, the three compute pipelines, the render blend variants (plus
 // their single-sample offscreen twins when withOffscreen is set), the white
@@ -112,7 +84,7 @@ func newGpuParticles(r *webgpuRenderer, withOffscreen bool) *gpuParticles {
 		device:   r.device,
 		queue:    r.queue,
 		renderer: r,
-		emitters: make(map[emitterGPUKey]*gpuEmitter),
+		emitters: make(map[particlegpu.EmitterKey]*gpuEmitter),
 	}
 	g.computeLayout = g.computeBindLayout()
 	g.renderLayout = g.renderBindLayout()
@@ -253,13 +225,13 @@ func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmi
 	usage := js.Global().Get("GPUBufferUsage")
 	storage := usage.Get("STORAGE").Int() | usage.Get("COPY_DST").Int()
 
-	e.hot = g.buffer(decl.Capacity*gpuParticleHotStride, storage)
-	e.cold = g.buffer(decl.Capacity*gpuParticleColdStride, storage)
+	e.hot = g.buffer(decl.Capacity*particlegpu.HotStride, storage)
+	e.cold = g.buffer(decl.Capacity*particlegpu.ColdStride, storage)
 	e.alive = g.buffer(decl.Capacity*4, storage)
 	e.dead = g.buffer(decl.Capacity*4, storage)
 	e.counters = g.buffer(16, storage)
-	e.drawIndirect = g.buffer(drawBufferSize, storage|usage.Get("INDIRECT").Int())
-	e.uniforms = g.buffer(gpuUniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
+	e.drawIndirect = g.buffer(particlegpu.DrawArgsSize, storage|usage.Get("INDIRECT").Int())
+	e.uniforms = g.buffer(particlegpu.UniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int())
 
 	// Dead list starts full (every slot free), counters at {capacity, 0} and
 	// draw args at {3,0,0,0}: three vertices per instance, zero instances
@@ -412,7 +384,7 @@ func (g *gpuParticles) encodeSims(
 			emitPipelineSet = true
 		}
 		preparePass.Call("setBindGroup", 0, sim.e.computeBind)
-		preparePass.Call("dispatchWorkgroups", (sim.emitCount+particleWorkgroup-1)/particleWorkgroup)
+		preparePass.Call("dispatchWorkgroups", (sim.emitCount+particlegpu.Workgroup-1)/particlegpu.Workgroup)
 	}
 	preparePass.Call("end")
 
@@ -420,7 +392,7 @@ func (g *gpuParticles) encodeSims(
 	simulatePass.Call("setPipeline", g.simulatePipeline)
 	for _, sim := range sims {
 		simulatePass.Call("setBindGroup", 0, sim.e.computeBind)
-		simulatePass.Call("dispatchWorkgroups", (sim.e.capacity+particleWorkgroup-1)/particleWorkgroup)
+		simulatePass.Call("dispatchWorkgroups", (sim.e.capacity+particlegpu.Workgroup-1)/particlegpu.Workgroup)
 	}
 	simulatePass.Call("end")
 }
@@ -449,7 +421,7 @@ func (g *gpuParticles) prepareEmitter(
 		return nil, 0, false
 	}
 
-	key := emitterGPUKey{effect: cmd.Effect, emitter: cmd.Emitter}
+	key := particlegpu.EmitterKey{Effect: cmd.Effect, Emitter: cmd.Emitter}
 	e, exists := g.emitters[key]
 	// The first command for one emitter key owns simulation this frame. In
 	// particular, never destroy/recreate buffers for a later command with a
@@ -476,7 +448,7 @@ func (g *gpuParticles) prepareEmitter(
 		cmd.Dt,
 	)
 	emitCount := max(frame.Count, 0)
-	packUniforms(e.scratch[:], e, cmd, frame, emitCount, camera, w, h)
+	particlegpu.PackUniforms(e.scratch[:], e.decl, cmd, frame, emitCount, e.seed, e.capacity, camera, w, h)
 	g.queue.Call("writeBuffer", e.uniforms, 0, bytesToJS(e.scratch[:]))
 
 	if cmd.Dt <= 0 {
@@ -486,8 +458,8 @@ func (g *gpuParticles) prepareEmitter(
 	// Queue writes land before any pass in this frame's submission: reset the
 	// survivor-list cursor and the indirect instance count so the simulate
 	// scan rebuilds both. Skipped on paused frames, which must keep them.
-	g.queue.Call("writeBuffer", e.counters, countersAliveOffset, bytesToJS(packU32(0)))
-	g.queue.Call("writeBuffer", e.drawIndirect, drawInstanceOffset, bytesToJS(packU32(0)))
+	g.queue.Call("writeBuffer", e.counters, particlegpu.CountersAliveOffset, bytesToJS(packU32(0)))
+	g.queue.Call("writeBuffer", e.drawIndirect, particlegpu.DrawInstanceOffset, bytesToJS(packU32(0)))
 
 	// The GPU consumes the full requested hash range even when its dead stack
 	// is exhausted and some emit invocations drop their spawn.
@@ -520,7 +492,7 @@ func (g *gpuParticles) drawTo(
 	targetW, targetH int,
 	offscreen bool,
 ) {
-	e := g.emitters[emitterGPUKey{effect: cmd.Effect, emitter: cmd.Emitter}]
+	e := g.emitters[particlegpu.EmitterKey{Effect: cmd.Effect, Emitter: cmd.Emitter}]
 	if e == nil || e.seed != cmd.Seed || e.lastSeen != g.frame {
 		return
 	}
@@ -553,10 +525,10 @@ func (g *gpuParticles) drawTo(
 }
 
 // endFrame reclaims emitters that have not appeared in the command stream
-// for gpuParticleTTL frames.
+// for particlegpu.TTL frames.
 func (g *gpuParticles) endFrame() {
 	for key, e := range g.emitters {
-		if g.frame-e.lastSeen >= gpuParticleTTL {
+		if g.frame-e.lastSeen >= particlegpu.TTL {
 			e.destroy()
 			delete(g.emitters, key)
 		}
@@ -565,12 +537,12 @@ func (g *gpuParticles) endFrame() {
 }
 
 func (g *gpuParticles) bufferBytes() uint64 {
-	const perEmitterOverhead = gpuUniformSize + drawBufferSize + 16 // counters
+	const perEmitterOverhead = particlegpu.UniformSize + particlegpu.DrawArgsSize + 16 // counters
 	var total uint64
 	for _, emitter := range g.emitters {
 		// Hot/cold particle state plus survivor/dead index lists. This
 		// excludes shared pipelines, textures and browser/driver allocations.
-		total += uint64(emitter.capacity*(gpuParticleHotStride+gpuParticleColdStride+2*4) + perEmitterOverhead)
+		total += uint64(emitter.capacity*(particlegpu.HotStride+particlegpu.ColdStride+2*4) + perEmitterOverhead)
 	}
 	return total
 }
@@ -594,98 +566,9 @@ func (e *gpuEmitter) destroy() {
 	}
 }
 
-// packUniforms serializes EmitterUniforms in the exact declaration order of
-// particle_compute.wgsl and particle_render.wgsl. The fields are deliberately
-// ordered so WGSL uniform alignment introduces no internal padding.
-func packUniforms(
-	dst []byte,
-	e *gpuEmitter,
-	cmd render.DrawParticles,
-	frame particle.EmissionFrame,
-	emitCount int,
-	camera render.Camera,
-	w, h int,
-) {
-	d := &e.decl
-	scale, offset, screenScale := tess.WorldToClip(camera, w, h)
-	wobbleAxis := math2d.Vec2{}
-	if d.WobbleAmp != 0 {
-		angle := d.Direction + cmd.Dir
-		wobbleAxis = math2d.Vec2{X: -math.Sin(angle), Y: math.Cos(angle)}
-	}
-
-	writer := particleUniformWriter{dst: dst}
-	writer.vec4(d.ColorStart)
-	writer.vec4(d.ColorEnd)
-	writer.vec2(scale)
-	writer.vec2(offset)
-	writer.vec2(screenScale)
-	writer.vec2(math2d.Vec2{X: 2 / float64(w), Y: -2 / float64(h)})
-	writer.vec2(cmd.Pos)
-	writer.vec2(frame.PrevPos)
-	writer.vec2(d.Gravity)
-	writer.vec2(d.EmitExtent)
-	writer.vec2(particleEmitScale(cmd.EmitScale))
-	writer.vec2(wobbleAxis)
-	writer.f32(cmd.Dt)
-	writer.f32(d.Drag)
-	writer.u32(uint32(emitCount))
-	writer.u32(frame.Base)
-	writer.u32(uint32(e.seed))
-	writer.u32(uint32(e.seed >> 32))
-	writer.f32(d.Direction + cmd.Dir)
-	writer.f32(d.Spread)
-	writer.f32(d.Speed.Min)
-	writer.f32(d.Speed.Max)
-	writer.f32(d.Lifetime.Min)
-	writer.f32(d.Lifetime.Max)
-	writer.f32(d.SizeStart.Min)
-	writer.f32(d.SizeStart.Max)
-	writer.f32(d.SizeEnd.Min)
-	writer.f32(d.SizeEnd.Max)
-	writer.f32(d.Spin)
-	writer.f32(d.Rotation.Min)
-	writer.f32(d.Rotation.Max)
-	writer.f32(d.WobbleAmp)
-	writer.f32(d.WobbleFreq)
-	writer.f32(d.FadeIn)
-	writer.f32(d.FlipXFreq)
-	writer.u32(uint32(d.Shape))
-	writer.u32(uint32(d.VelMode))
-	writer.f32(d.EmitRadius)
-	writer.u32(uint32(e.capacity))
-}
-
-func (w *particleUniformWriter) vec4(value [4]float64) {
-	for _, component := range value {
-		w.f32(component)
-	}
-}
-
-// applyClipScissor maps a world-space clip to target pixels: camera screen
-// coordinates times scale, clamped to the target dimensions (scale is 1 for
-// the main pass, Config.ParticleOffscreenScale for offscreen targets). A zero
-// clip restores the full target. It returns false for an empty clipped region
-// so the caller can skip the indirect draw.
+// applyClipScissor applies the backend-independent particle scissor calculation.
 func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, scale float64, w, h int) bool {
-	if w <= 0 || h <= 0 {
-		return false
-	}
-	if clip.Width() <= 0 || clip.Height() <= 0 {
-		pass.Call("setScissorRect", 0, 0, w, h)
-		return true
-	}
-
-	minPoint := camera.WorldToScreen(clip.Min)
-	maxPoint := camera.WorldToScreen(clip.Max)
-	x0 := max(0, min(w, int(math.Floor(math.Min(minPoint.X, maxPoint.X)*scale))))
-	y0 := max(0, min(h, int(math.Floor(math.Min(minPoint.Y, maxPoint.Y)*scale))))
-	x1 := max(0, min(w, int(math.Ceil(math.Max(minPoint.X, maxPoint.X)*scale))))
-	y1 := max(0, min(h, int(math.Ceil(math.Max(minPoint.Y, maxPoint.Y)*scale))))
-	if x1 <= x0 || y1 <= y0 {
-		pass.Call("setScissorRect", 0, 0, w, h)
-		return false
-	}
-	pass.Call("setScissorRect", x0, y0, x1-x0, y1-y0)
-	return true
+	x, y, width, height, ok := particlegpu.ScissorRect(clip, camera, scale, w, h)
+	pass.Call("setScissorRect", x, y, width, height)
+	return ok
 }
