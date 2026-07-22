@@ -70,6 +70,12 @@ The web canvas serves the clips declared by `Config.Assets.AudioClips()` under
 `/audio/<path>` when given an `AudioFS`, sends a manifest to new clients, and
 transports audio messages over the WebSocket from the simulation loop.
 
+The Windows native host uses oto to mix voices and decodes WAV, MP3, and OGG
+at load time. It reconciles cues and tracks with the same semantics as the web
+host, applying loop, gain, pan, and fades in its PCM reader. The device context
+is process-global; no device timestamp enters simulation, and the sink
+suspends or resumes when focus changes.
+
 ## Rewind, Scrub, and Replay
 
 Audio follows the simulation timeline, but it is not part of

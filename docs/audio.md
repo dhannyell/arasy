@@ -70,6 +70,12 @@ O web canvas serve em `/audio/<path>` os clips declarados em
 para novos clientes e transmite mensagens de audio pelo WebSocket junto ao
 loop de simulacao.
 
+O host nativo Windows usa oto para mixar vozes e decodifica WAV, MP3 e OGG no
+carregamento. Ele reconcilia cues e tracks com a mesma semantica do host web,
+aplicando loop, ganho, pan e fades no leitor PCM. O contexto de dispositivo e
+global ao processo; nenhum timestamp do dispositivo entra na simulacao, e o
+sink suspende ou retoma ao perder ou recuperar foco.
+
 ## Rewind, scrub e replay
 
 Audio segue a timeline da simulacao, mas nao entra em `World.Checksum()`.
