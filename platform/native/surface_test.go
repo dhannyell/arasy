@@ -72,6 +72,40 @@ func TestChooseAlphaMode(t *testing.T) {
 	}
 }
 
+func TestChoosePresentMode(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tests := []struct {
+		name    string
+		modes   []wgpu.PresentMode
+		vsync   VSyncMode
+		want    wgpu.PresentMode
+		wantErr bool
+	}{
+		{name: "rejects missing fifo", modes: []wgpu.PresentMode{wgpu.PresentModeMailbox}, wantErr: true},
+		{name: "vsync on selects fifo", modes: []wgpu.PresentMode{wgpu.PresentModeMailbox, wgpu.PresentModeFifo}, vsync: VSyncOn, want: wgpu.PresentModeFifo},
+		{name: "vsync off prefers immediate", modes: []wgpu.PresentMode{wgpu.PresentModeFifo, wgpu.PresentModeImmediate, wgpu.PresentModeMailbox}, vsync: VSyncOff, want: wgpu.PresentModeImmediate},
+		{name: "vsync off falls back to mailbox", modes: []wgpu.PresentMode{wgpu.PresentModeFifo, wgpu.PresentModeMailbox}, vsync: VSyncOff, want: wgpu.PresentModeMailbox},
+		{name: "vsync off falls back to fifo", modes: []wgpu.PresentMode{wgpu.PresentModeFifo}, vsync: VSyncOff, want: wgpu.PresentModeFifo},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := choosePresentMode(test.modes, test.vsync, log)
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("choosePresentMode() error = nil, want error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("choosePresentMode() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestDecideSurfaceStatus(t *testing.T) {
 	tests := []struct {
 		name   string

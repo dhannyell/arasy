@@ -67,9 +67,9 @@ type Renderer struct {
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
 
-// NewRenderer creates a native streaming renderer for window. It is
-// provisional while the interactive native host API is still being shaped.
-func NewRenderer(window *glfw.Window, clear render.Color, manifest asset.Manifest, log *slog.Logger) (renderer *Renderer, err error) {
+// NewRenderer creates a native streaming renderer for window using vsync to
+// select its surface presentation mode.
+func NewRenderer(window *glfw.Window, clear render.Color, manifest asset.Manifest, vsync VSyncMode, log *slog.Logger) (renderer *Renderer, err error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -77,7 +77,7 @@ func NewRenderer(window *glfw.Window, clear render.Color, manifest asset.Manifes
 	if err != nil {
 		return nil, fmt.Errorf("create font atlas provider: %w", err)
 	}
-	d, err := newDevice(window, log)
+	d, err := newDevice(window, vsync, log)
 	if err != nil {
 		return nil, err
 	}

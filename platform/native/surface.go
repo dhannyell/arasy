@@ -5,6 +5,7 @@ package native
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -49,12 +50,34 @@ func chooseAlphaMode(modes []wgpu.CompositeAlphaMode, log *slog.Logger) (wgpu.Co
 }
 
 func containsPresentMode(modes []wgpu.PresentMode, want wgpu.PresentMode) bool {
-	for _, mode := range modes {
-		if mode == want {
-			return true
-		}
+	return slices.Contains(modes, want)
+}
+
+// choosePresentMode selects a present mode from the surface capabilities. FIFO
+// is required because it is the only mode the WebGPU spec guarantees. When
+// VSyncOff is requested, Immediate is preferred because it presents without
+// waiting for vertical blank. Mailbox remains a lower-latency synchronized
+// fallback; if neither is available, rendering continues with FIFO and a
+// warning.
+func choosePresentMode(modes []wgpu.PresentMode, vsync VSyncMode, log *slog.Logger) (wgpu.PresentMode, error) {
+	if !containsPresentMode(modes, wgpu.PresentModeFifo) {
+		return 0, fmt.Errorf("fifo present mode support is required")
 	}
-	return false
+	if vsync == VSyncOn {
+		return wgpu.PresentModeFifo, nil
+	}
+	switch {
+	case containsPresentMode(modes, wgpu.PresentModeImmediate):
+		return wgpu.PresentModeImmediate, nil
+	case containsPresentMode(modes, wgpu.PresentModeMailbox):
+		return wgpu.PresentModeMailbox, nil
+	default:
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("vsync-off requested but no non-vsync present mode is available; using fifo")
+		return wgpu.PresentModeFifo, nil
+	}
 }
 
 // decideSurfaceStatus maps a surface texture status to a frame-loop action.
