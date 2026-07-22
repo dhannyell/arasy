@@ -5,10 +5,10 @@ package native
 import (
 	"fmt"
 	"log/slog"
+	"unsafe"
 
 	"github.com/go-gl/glfw/v3.4/glfw"
-	"github.com/oliverbestmann/webgpu/wgpu"
-	"github.com/oliverbestmann/webgpu/wgpuglfw"
+	"github.com/go-webgpu/webgpu/wgpu"
 )
 
 type device struct {
@@ -32,15 +32,16 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 		}
 	}()
 
-	d.instance = wgpu.CreateInstance(nil)
-	if !d.instance.IsValid() {
-		return d, fmt.Errorf("create WebGPU instance")
+	if err = wgpu.Init(); err != nil {
+		return d, fmt.Errorf("initialize WebGPU: %w", err)
 	}
-
-	// CreateSurface bridges the GLFW window to wgpu-native.
-	d.surface = d.instance.CreateSurface(wgpuglfw.GetSurfaceDescriptor(window))
-	if !d.surface.IsValid() {
-		return d, fmt.Errorf("create WebGPU surface")
+	d.instance, err = wgpu.CreateInstance(nil)
+	if err != nil {
+		return d, fmt.Errorf("create WebGPU instance: %w", err)
+	}
+	d.surface, err = d.instance.CreateSurfaceFromWindowsHWND(0, uintptr(unsafe.Pointer(window.GetWin32Window())))
+	if err != nil {
+		return d, fmt.Errorf("create WebGPU surface: %w", err)
 	}
 
 	d.adapter, err = d.instance.RequestAdapter(&wgpu.RequestAdapterOptions{
@@ -49,23 +50,29 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU adapter: %w", err)
 	}
-	info := d.adapter.GetInfo()
+	info, err := d.adapter.Info()
+	if err != nil {
+		return d, fmt.Errorf("get WebGPU adapter info: %w", err)
+	}
 	log.Info("native WebGPU adapter selected",
 		"backend", info.BackendType,
 		"vendor", info.Vendor,
 		"device", info.Device,
 	)
 
-	// This binding panics when DeviceLostCallback crosses the cgo boundary, so
-	// device loss is observed through surface and submission errors instead.
-	d.device, err = d.adapter.RequestDevice(nil)
+	d.device, err = d.adapter.RequestDevice(&wgpu.DeviceDescriptor{
+		Label: "frameforge-device",
+	})
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU device: %w", err)
 	}
 
-	d.queue = d.device.GetQueue()
+	d.queue = d.device.Queue()
 
-	caps := d.surface.GetCapabilities(d.adapter)
+	caps, err := d.surface.GetCapabilities(d.adapter)
+	if err != nil {
+		return d, fmt.Errorf("get surface capabilities: %w", err)
+	}
 	format, err := chooseSurfaceFormat(caps.Formats)
 	if err != nil {
 		return d, err

@@ -3,11 +3,12 @@
 package native
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
 
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/go-webgpu/webgpu/wgpu"
 )
 
 func TestChooseSurfaceFormat(t *testing.T) {
@@ -106,25 +107,24 @@ func TestChoosePresentMode(t *testing.T) {
 	}
 }
 
-func TestDecideSurfaceStatus(t *testing.T) {
+func TestDecideSurfaceError(t *testing.T) {
 	tests := []struct {
-		name   string
-		status wgpu.SurfaceGetCurrentTextureStatus
-		want   surfaceAction
+		name string
+		err  error
+		want surfaceAction
 	}{
-		{name: "optimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessOptimal, want: actionRender},
-		{name: "suboptimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessSuboptimal, want: actionRender},
-		{name: "timeout", status: wgpu.SurfaceGetCurrentTextureStatusTimeout, want: actionSkip},
-		{name: "occluded", status: wgpu.SurfaceGetCurrentTextureStatusOccluded, want: actionSkip},
-		{name: "outdated", status: wgpu.SurfaceGetCurrentTextureStatusOutdated, want: actionReconfigure},
-		{name: "lost", status: wgpu.SurfaceGetCurrentTextureStatusLost, want: actionReconfigure},
-		{name: "error", status: wgpu.SurfaceGetCurrentTextureStatusError, want: actionFatal},
-		{name: "unknown", status: wgpu.SurfaceGetCurrentTextureStatus(99), want: actionFatal},
+		{name: "success", want: actionRender},
+		{name: "timeout", err: wgpu.ErrSurfaceTimeout, want: actionSkip},
+		{name: "occluded", err: wgpu.ErrSurfaceOccluded, want: actionSkip},
+		{name: "outdated", err: wgpu.ErrSurfaceNeedsReconfigure, want: actionReconfigure},
+		{name: "lost", err: wgpu.ErrSurfaceLost, want: actionReconfigure},
+		{name: "wrapped timeout", err: errors.Join(wgpu.ErrSurfaceTimeout), want: actionSkip},
+		{name: "other", err: errors.New("other"), want: actionFatal},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := decideSurfaceStatus(test.status); got != test.want {
-				t.Fatalf("decideSurfaceStatus(%v) = %v, want %v", test.status, got, test.want)
+			if got := decideSurfaceError(test.err); got != test.want {
+				t.Fatalf("decideSurfaceError(%v) = %v, want %v", test.err, got, test.want)
 			}
 		})
 	}

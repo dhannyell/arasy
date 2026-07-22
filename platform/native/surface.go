@@ -3,11 +3,12 @@
 package native
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/go-webgpu/webgpu/wgpu"
 )
 
 type surfaceAction uint8
@@ -80,17 +81,14 @@ func choosePresentMode(modes []wgpu.PresentMode, vsync VSyncMode, log *slog.Logg
 	}
 }
 
-// decideSurfaceStatus maps a surface texture status to a frame-loop action.
-func decideSurfaceStatus(status wgpu.SurfaceGetCurrentTextureStatus) surfaceAction {
-	switch status {
-	case wgpu.SurfaceGetCurrentTextureStatusSuccessOptimal,
-		wgpu.SurfaceGetCurrentTextureStatusSuccessSuboptimal:
+// decideSurfaceError maps a surface acquisition error to a frame-loop action.
+func decideSurfaceError(err error) surfaceAction {
+	switch {
+	case err == nil:
 		return actionRender
-	case wgpu.SurfaceGetCurrentTextureStatusTimeout,
-		wgpu.SurfaceGetCurrentTextureStatusOccluded:
+	case errors.Is(err, wgpu.ErrSurfaceTimeout), errors.Is(err, wgpu.ErrSurfaceOccluded):
 		return actionSkip
-	case wgpu.SurfaceGetCurrentTextureStatusOutdated,
-		wgpu.SurfaceGetCurrentTextureStatusLost:
+	case errors.Is(err, wgpu.ErrSurfaceNeedsReconfigure), errors.Is(err, wgpu.ErrSurfaceLost):
 		return actionReconfigure
 	default:
 		return actionFatal
@@ -106,6 +104,8 @@ func (d *device) configure(fbW, fbH int) bool {
 	}
 	d.config.Width = uint32(fbW)
 	d.config.Height = uint32(fbH)
-	d.surface.Configure(d.device, d.config)
+	if err := d.surface.Configure(d.device, d.config); err != nil {
+		return false
+	}
 	return true
 }

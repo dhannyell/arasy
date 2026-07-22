@@ -10,7 +10,8 @@ import (
 	"github.com/dhannyell/frameforge/asset/pixel"
 	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
 	"github.com/dhannyell/frameforge/runtime"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/go-webgpu/webgpu/wgpu"
+	"github.com/gogpu/gputypes"
 )
 
 // gpuTexture is one declared texture uploaded to the GPU with its complete
@@ -69,7 +70,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 		return gpuTexture{}, err
 	}
 	levels := mipLevelCount(width, height)
-	texture, err := r.device.TryCreateTexture(&wgpu.TextureDescriptor{
+	texture, err := r.device.CreateTexture(&wgpu.TextureDescriptor{
 		Label:         "frameforge texture",
 		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst | wgpu.TextureUsageRenderAttachment,
 		Dimension:     wgpu.TextureDimension2D,
@@ -90,7 +91,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 		result.release()
 		return gpuTexture{}, err
 	}
-	view, err := texture.TryCreateView(nil)
+	view, err := texture.CreateView(nil)
 	if err != nil {
 		result.release()
 		return gpuTexture{}, fmt.Errorf("create texture view: %w", err)
@@ -98,7 +99,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 	result.view = view
 	layout := r.texturedPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
-	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "frameforge textured bind group",
 		Layout: layout,
 		Entries: []wgpu.BindGroupEntry{
@@ -142,8 +143,8 @@ func (r textureResources) updateTextures(updates []runtime.TextureUpdate, textur
 }
 
 func (r textureResources) writeRGBA(texture *wgpu.Texture, pixels []byte, width, height int) error {
-	if err := r.queue.TryWriteTexture(
-		&wgpu.TexelCopyTextureInfo{Texture: texture, Aspect: wgpu.TextureAspectAll},
+	if err := r.queue.WriteTextureRaw(
+		&wgpu.TexelCopyTextureInfo{Texture: texture.Handle(), Aspect: wgpu.TextureAspectAll},
 		pixels,
 		&wgpu.TexelCopyBufferLayout{BytesPerRow: uint32(4 * width), RowsPerImage: uint32(height)},
 		&wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
@@ -157,7 +158,7 @@ func (r textureResources) generateMipmaps(texture *wgpu.Texture, width, height, 
 	if levels <= 1 {
 		return nil
 	}
-	encoder, err := r.device.TryCreateCommandEncoder(nil)
+	encoder, err := r.device.CreateCommandEncoder(nil)
 	if err != nil {
 		return fmt.Errorf("create mipmap command encoder: %w", err)
 	}
@@ -168,17 +169,19 @@ func (r textureResources) generateMipmaps(texture *wgpu.Texture, width, height, 
 			return err
 		}
 	}
-	commandBuffer, err := encoder.TryFinish(nil)
+	commandBuffer, err := encoder.Finish(nil)
 	if err != nil {
 		return fmt.Errorf("finish mipmap command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
-	r.queue.Submit(commandBuffer)
+	if _, err := r.queue.Submit(commandBuffer); err != nil {
+		return fmt.Errorf("submit mipmap commands: %w", err)
+	}
 	return nil
 }
 
 func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture *wgpu.Texture, level uint32) error {
-	source, err := texture.TryCreateView(&wgpu.TextureViewDescriptor{
+	source, err := texture.CreateView(&wgpu.TextureViewDescriptor{
 		Dimension:       wgpu.TextureViewDimension2D,
 		BaseMipLevel:    level - 1,
 		MipLevelCount:   1,
@@ -189,7 +192,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 		return fmt.Errorf("create source mip view: %w", err)
 	}
 	defer source.Release()
-	destination, err := texture.TryCreateView(&wgpu.TextureViewDescriptor{
+	destination, err := texture.CreateView(&wgpu.TextureViewDescriptor{
 		Dimension:       wgpu.TextureViewDimension2D,
 		BaseMipLevel:    level,
 		MipLevelCount:   1,
@@ -202,7 +205,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 	defer destination.Release()
 	layout := r.mipPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
-	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := r.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "frameforge mipmap bind group",
 		Layout: layout,
 		Entries: []wgpu.BindGroupEntry{
@@ -214,7 +217,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 		return fmt.Errorf("create mipmap bind group: %w", err)
 	}
 	defer bindGroup.Release()
-	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
+	pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		Label: "frameforge mipmap pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{{
 			View:       destination,
@@ -230,9 +233,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 	pass.SetPipeline(r.mipPipeline)
 	pass.SetBindGroup(0, bindGroup, nil)
 	pass.Draw(3, 1, 0, 0)
-	if err := pass.TryEnd(); err != nil {
-		return fmt.Errorf("end mipmap render pass: %w", err)
-	}
+	pass.End()
 	return nil
 }
 
@@ -261,29 +262,29 @@ func (t gpuTexture) release() {
 
 func textureSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge texture sampler",
-		MagFilter:     wgpu.FilterModeLinear,
-		MinFilter:     wgpu.FilterModeLinear,
-		MipmapFilter:  wgpu.MipmapFilterModeLinear,
-		MaxAnisotropy: 16,
+		Label:        "frameforge texture sampler",
+		MagFilter:    wgpu.FilterModeLinear,
+		MinFilter:    wgpu.FilterModeLinear,
+		MipmapFilter: gputypes.MipmapFilterModeLinear,
+		Anisotropy:   16,
 	}
 }
 
 func mipSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge mipmap sampler",
-		MagFilter:     wgpu.FilterModeLinear,
-		MinFilter:     wgpu.FilterModeLinear,
-		MaxAnisotropy: 1,
+		Label:      "frameforge mipmap sampler",
+		MagFilter:  wgpu.FilterModeLinear,
+		MinFilter:  wgpu.FilterModeLinear,
+		Anisotropy: 1,
 	}
 }
 
 func nearestSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge text atlas sampler",
-		MagFilter:     wgpu.FilterModeNearest,
-		MinFilter:     wgpu.FilterModeNearest,
-		MaxAnisotropy: 1,
+		Label:      "frameforge text atlas sampler",
+		MagFilter:  wgpu.FilterModeNearest,
+		MinFilter:  wgpu.FilterModeNearest,
+		Anisotropy: 1,
 	}
 }
 

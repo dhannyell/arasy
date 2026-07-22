@@ -11,7 +11,7 @@ import (
 	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
 	"github.com/dhannyell/frameforge/particle"
 	"github.com/dhannyell/frameforge/render"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/go-webgpu/webgpu/wgpu"
 )
 
 type gpuEmitter struct {
@@ -63,10 +63,10 @@ func newGpuParticles(
 		return wgpu.BindGroupLayoutEntry{
 			Binding:    binding,
 			Visibility: visibility,
-			Buffer:     wgpu.BufferBindingLayout{Type: typ},
+			Buffer:     &wgpu.BufferBindingLayout{Type: typ},
 		}
 	}
-	if g.computeLayout, err = device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	if g.computeLayout, err = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			storage(0, wgpu.ShaderStageCompute, wgpu.BufferBindingTypeStorage),
 			storage(1, wgpu.ShaderStageCompute, wgpu.BufferBindingTypeStorage),
@@ -79,7 +79,7 @@ func newGpuParticles(
 	}); err != nil {
 		return nil, fmt.Errorf("create particle compute layout: %w", err)
 	}
-	if g.renderLayout, err = device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	if g.renderLayout, err = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			storage(0, wgpu.ShaderStageVertex, wgpu.BufferBindingTypeUniform),
 			storage(1, wgpu.ShaderStageVertex, wgpu.BufferBindingTypeReadOnlyStorage),
@@ -90,12 +90,12 @@ func newGpuParticles(
 		g.close()
 		return nil, err
 	}
-	if g.textureLayout, err = device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	if g.textureLayout, err = device.CreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{
 				Binding:    0,
 				Visibility: wgpu.ShaderStageFragment,
-				Texture: wgpu.TextureBindingLayout{
+				Texture: &wgpu.TextureBindingLayout{
 					SampleType:    wgpu.TextureSampleTypeFloat,
 					ViewDimension: wgpu.TextureViewDimension2D,
 				},
@@ -103,7 +103,7 @@ func newGpuParticles(
 			{
 				Binding:    1,
 				Visibility: wgpu.ShaderStageFragment,
-				Sampler:    wgpu.SamplerBindingLayout{Type: wgpu.SamplerBindingTypeFiltering},
+				Sampler:    &wgpu.SamplerBindingLayout{Type: wgpu.SamplerBindingTypeFiltering},
 			},
 		},
 	},
@@ -121,14 +121,14 @@ func newGpuParticles(
 		g.close()
 		return nil, err
 	}
-	g.sampler, err = device.TryCreateSampler(
-		&wgpu.SamplerDescriptor{MagFilter: wgpu.FilterModeLinear, MinFilter: wgpu.FilterModeLinear, MaxAnisotropy: 1},
+	g.sampler, err = device.CreateSampler(
+		&wgpu.SamplerDescriptor{MagFilter: wgpu.FilterModeLinear, MinFilter: wgpu.FilterModeLinear, Anisotropy: 1},
 	)
 	if err != nil {
 		g.close()
 		return nil, err
 	}
-	computeLayout, err := device.TryCreatePipelineLayout(
+	computeLayout, err := device.CreatePipelineLayout(
 		&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.computeLayout}},
 	)
 	if err != nil {
@@ -136,33 +136,29 @@ func newGpuParticles(
 		return nil, err
 	}
 	defer computeLayout.Release()
-	cm, err := device.TryCreateShaderModule(
-		&wgpu.ShaderModuleDescriptor{WGSLSource: &wgpu.ShaderSourceWGSL{Code: shaders.ParticlesComputeWGSL}},
-	)
+	cm, err := device.CreateShaderModuleWGSL(shaders.ParticlesComputeWGSL)
 	if err != nil {
 		g.close()
 		return nil, err
 	}
 	defer cm.Release()
-	g.emitPipeline, err = device.TryCreateComputePipeline(
+	g.emitPipeline, err = device.CreateComputePipeline(
 		&wgpu.ComputePipelineDescriptor{
-			Layout:  computeLayout,
-			Compute: wgpu.ProgrammableStageDescriptor{Module: cm, EntryPoint: "emit"},
+			Layout: computeLayout, Module: cm, EntryPoint: "emit",
 		})
 	if err != nil {
 		g.close()
 		return nil, err
 	}
-	g.simulatePipeline, err = device.TryCreateComputePipeline(
+	g.simulatePipeline, err = device.CreateComputePipeline(
 		&wgpu.ComputePipelineDescriptor{
-			Layout:  computeLayout,
-			Compute: wgpu.ProgrammableStageDescriptor{Module: cm, EntryPoint: "simulate"},
+			Layout: computeLayout, Module: cm, EntryPoint: "simulate",
 		})
 	if err != nil {
 		g.close()
 		return nil, err
 	}
-	renderLayout, err := device.TryCreatePipelineLayout(
+	renderLayout, err := device.CreatePipelineLayout(
 		&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{g.renderLayout, g.textureLayout}},
 	)
 	if err != nil {
@@ -170,16 +166,14 @@ func newGpuParticles(
 		return nil, err
 	}
 	defer renderLayout.Release()
-	rm, err := device.TryCreateShaderModule(
-		&wgpu.ShaderModuleDescriptor{WGSLSource: &wgpu.ShaderSourceWGSL{Code: shaders.ParticlesRenderWGSL}},
-	)
+	rm, err := device.CreateShaderModuleWGSL(shaders.ParticlesRenderWGSL)
 	if err != nil {
 		g.close()
 		return nil, err
 	}
 	defer rm.Release()
 	makePipe := func(entry string, blend *wgpu.BlendState) (*wgpu.RenderPipeline, error) {
-		return device.TryCreateRenderPipeline(
+		return device.CreateRenderPipeline(
 			&wgpu.RenderPipelineDescriptor{
 				Layout:      renderLayout,
 				Vertex:      wgpu.VertexState{Module: rm, EntryPoint: "vs_main"},
@@ -209,7 +203,7 @@ func newGpuParticles(
 }
 
 func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureView, error) {
-	t, e := g.device.TryCreateTexture(
+	t, e := g.device.CreateTexture(
 		&wgpu.TextureDescriptor{
 			Usage: wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst, Dimension: wgpu.TextureDimension2D,
 			Size:          wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
@@ -220,9 +214,9 @@ func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureVie
 	if e != nil {
 		return nil, nil, e
 	}
-	if e = g.queue.TryWriteTexture(
+	if e = g.queue.WriteTextureRaw(
 		&wgpu.TexelCopyTextureInfo{
-			Texture: t, Aspect: wgpu.TextureAspectAll,
+			Texture: t.Handle(), Aspect: wgpu.TextureAspectAll,
 		},
 		px[:],
 		&wgpu.TexelCopyBufferLayout{BytesPerRow: 4, RowsPerImage: 1},
@@ -231,14 +225,14 @@ func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureVie
 		t.Release()
 		return nil, nil, e
 	}
-	v, e := t.TryCreateView(nil)
+	v, e := t.CreateView(nil)
 	return t, v, e
 }
 
 func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitter, error) {
 	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity}
 	mk := func(size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
-		return g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(size), Usage: usage})
+		return g.device.CreateBuffer(&wgpu.BufferDescriptor{Size: uint64(size), Usage: usage})
 	}
 	var err error
 	st := wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst
@@ -272,19 +266,19 @@ func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitt
 	for i := range d.Capacity {
 		binary.LittleEndian.PutUint32(init[i*4:], uint32(i))
 	}
-	if err = g.queue.TryWriteBuffer(e.dead, 0, init); err != nil {
+	if err = g.queue.WriteBuffer(e.dead, 0, init); err != nil {
 		e.destroy()
 		return nil, err
 	}
 	var args [16]byte
 	binary.LittleEndian.PutUint32(args[:], uint32(d.Capacity))
-	if err = g.queue.TryWriteBuffer(e.counters, 0, args[:]); err != nil {
+	if err = g.queue.WriteBuffer(e.counters, 0, args[:]); err != nil {
 		e.destroy()
 		return nil, err
 	}
 	binary.LittleEndian.PutUint32(args[:], 3)
 	binary.LittleEndian.PutUint32(args[4:], 0)
-	if err = g.queue.TryWriteBuffer(e.drawIndirect, 0, args[:]); err != nil {
+	if err = g.queue.WriteBuffer(e.drawIndirect, 0, args[:]); err != nil {
 		e.destroy()
 		return nil, err
 	}
@@ -307,30 +301,30 @@ func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitt
 }
 
 func (g *gpuParticles) bindCompute(e *gpuEmitter) (*wgpu.BindGroup, error) {
-	return g.device.TryCreateBindGroup(
+	return g.device.CreateBindGroup(
 		&wgpu.BindGroupDescriptor{
 			Layout: g.computeLayout,
 			Entries: []wgpu.BindGroupEntry{
-				{Binding: 0, Buffer: e.hot, Size: wgpu.WholeSize},
-				{Binding: 1, Buffer: e.alive, Size: wgpu.WholeSize},
-				{Binding: 2, Buffer: e.dead, Size: wgpu.WholeSize},
-				{Binding: 3, Buffer: e.counters, Size: wgpu.WholeSize},
-				{Binding: 4, Buffer: e.drawIndirect, Size: wgpu.WholeSize},
-				{Binding: 5, Buffer: e.uniforms, Size: wgpu.WholeSize},
-				{Binding: 6, Buffer: e.cold, Size: wgpu.WholeSize}},
+				{Binding: 0, Buffer: e.hot, Size: 0},
+				{Binding: 1, Buffer: e.alive, Size: 0},
+				{Binding: 2, Buffer: e.dead, Size: 0},
+				{Binding: 3, Buffer: e.counters, Size: 0},
+				{Binding: 4, Buffer: e.drawIndirect, Size: 0},
+				{Binding: 5, Buffer: e.uniforms, Size: 0},
+				{Binding: 6, Buffer: e.cold, Size: 0}},
 		},
 	)
 }
 
 func (g *gpuParticles) bindRender(e *gpuEmitter) (*wgpu.BindGroup, error) {
-	return g.device.TryCreateBindGroup(
+	return g.device.CreateBindGroup(
 		&wgpu.BindGroupDescriptor{
 			Layout: g.renderLayout,
 			Entries: []wgpu.BindGroupEntry{
-				{Binding: 0, Buffer: e.uniforms, Size: wgpu.WholeSize},
-				{Binding: 1, Buffer: e.hot, Size: wgpu.WholeSize},
-				{Binding: 2, Buffer: e.alive, Size: wgpu.WholeSize},
-				{Binding: 3, Buffer: e.cold, Size: wgpu.WholeSize}},
+				{Binding: 0, Buffer: e.uniforms, Size: 0},
+				{Binding: 1, Buffer: e.hot, Size: 0},
+				{Binding: 2, Buffer: e.alive, Size: 0},
+				{Binding: 3, Buffer: e.cold, Size: 0}},
 		},
 	)
 }
@@ -346,7 +340,7 @@ func (g *gpuParticles) bindTexture(d particle.EffectDecl) (*wgpu.BindGroup, bool
 			missing = false
 		}
 	}
-	b, e := g.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	b, e := g.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 		Layout: g.textureLayout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: v},
@@ -381,12 +375,12 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 	f := e.emission.Advance(cmd.Pos, d.EmitRate, cmd.Intensity, d.BurstSize, cmd.Burst, cmd.Dt)
 	n := max(f.Count, 0)
 	particlegpu.PackUniforms(e.scratch[:], d, cmd, f, n, e.seed, e.capacity, c, w, h)
-	if g.queue.TryWriteBuffer(e.uniforms, 0, e.scratch[:]) != nil || cmd.Dt <= 0 {
+	if g.queue.WriteBuffer(e.uniforms, 0, e.scratch[:]) != nil || cmd.Dt <= 0 {
 		return particleSim{}, false
 	}
 	var zero [4]byte
-	_ = g.queue.TryWriteBuffer(e.counters, particlegpu.CountersAliveOffset, zero[:])
-	_ = g.queue.TryWriteBuffer(e.drawIndirect, particlegpu.DrawInstanceOffset, zero[:])
+	_ = g.queue.WriteBuffer(e.counters, particlegpu.CountersAliveOffset, zero[:])
+	_ = g.queue.WriteBuffer(e.drawIndirect, particlegpu.DrawInstanceOffset, zero[:])
 	e.emission.Emitted += uint32(n)
 	return particleSim{e, n}, true
 }
@@ -395,8 +389,10 @@ func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) err
 	if len(s) == 0 {
 		return nil
 	}
-	p := encoder.BeginComputePass(nil)
-	defer p.Release()
+	p, err := encoder.BeginComputePass(nil)
+	if err != nil {
+		return err
+	}
 	p.SetPipeline(g.emitPipeline)
 	for _, v := range s {
 		if v.emit > 0 {
@@ -404,17 +400,20 @@ func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) err
 			p.DispatchWorkgroups(uint32((v.emit+particlegpu.Workgroup-1)/particlegpu.Workgroup), 1, 1)
 		}
 	}
-	if e := p.TryEnd(); e != nil {
-		return e
+	p.End()
+	p.Release()
+	p, err = encoder.BeginComputePass(nil)
+	if err != nil {
+		return err
 	}
-	p = encoder.BeginComputePass(nil)
 	defer p.Release()
 	p.SetPipeline(g.simulatePipeline)
 	for _, v := range s {
 		p.SetBindGroup(0, v.e.computeBind, nil)
 		p.DispatchWorkgroups(uint32((v.e.capacity+particlegpu.Workgroup-1)/particlegpu.Workgroup), 1, 1)
 	}
-	return p.TryEnd()
+	p.End()
+	return nil
 }
 
 func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, w, h int) {

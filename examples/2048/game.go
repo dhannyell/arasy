@@ -103,7 +103,7 @@ func (g *Game2048) Setup() runtime.Config {
 		Clear:         render.RGBA(1, 1, 1, 1),
 		Bounds:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldSize, Y: worldSize}),
 		SimulationHz:  60,
-		FPS:           60,
+		FPS:           120,
 		InputBindings: twenty48Bindings(),
 		HistoryLen:    1000,
 		Assets:        demoAssets,

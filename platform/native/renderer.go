@@ -15,7 +15,8 @@ import (
 	"github.com/dhannyell/frameforge/render"
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/go-webgpu/webgpu/wgpu"
+	"github.com/gogpu/gputypes"
 )
 
 const (
@@ -173,30 +174,23 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.recordErr(err)
 		return
 	}
-	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
-	if err != nil {
-		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
-		return
-	}
-	if surfaceTexture.Texture != nil {
-		defer surfaceTexture.Texture.Release()
-	}
-	switch decideSurfaceStatus(surfaceTexture.Status) {
+	surfaceTexture, _, err := r.device.surface.GetCurrentTexture()
+	switch decideSurfaceError(err) {
 	case actionSkip:
 		return
 	case actionReconfigure:
 		r.device.configure(width, height)
 		return
 	case actionFatal:
-		r.recordErr(fmt.Errorf("acquire surface texture: %s", surfaceTexture.Status))
+		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
 		return
-	case actionRender:
-		if surfaceTexture.Texture == nil {
-			r.recordErr(errors.New("acquire surface texture: success status without texture"))
-			return
-		}
 	}
-	surfaceView, err := surfaceTexture.Texture.TryCreateView(nil)
+	if surfaceTexture == nil || surfaceTexture.Texture == nil {
+		r.recordErr(errors.New("acquire surface texture: success without texture"))
+		return
+	}
+	defer surfaceTexture.Texture.Release()
+	surfaceView, err := surfaceTexture.Texture.CreateView(nil)
 	if err != nil {
 		r.recordErr(fmt.Errorf("create surface texture view: %w", err))
 		return
@@ -206,7 +200,10 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.recordErr(err)
 		return
 	}
-	r.device.surface.Present()
+	if err := r.device.surface.Present(surfaceTexture); err != nil {
+		r.recordErr(fmt.Errorf("present surface texture: %w", err))
+		return
+	}
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
@@ -323,15 +320,12 @@ func (r *Renderer) createPipeline(
 	buffers []wgpu.VertexBufferLayout,
 	blend *wgpu.BlendState,
 ) (*wgpu.RenderPipeline, error) {
-	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      "frameforge " + label + " shader",
-		WGSLSource: &wgpu.ShaderSourceWGSL{Code: source},
-	})
+	module, err := r.device.device.CreateShaderModuleWGSL(source)
 	if err != nil {
 		return nil, fmt.Errorf("create %s shader: %w", label, err)
 	}
 	defer module.Release()
-	pipeline, err := r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+	pipeline, err := r.device.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:       "frameforge " + label + " pipeline",
 		Layout:      nil,
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main", Buffers: buffers},
@@ -351,13 +345,13 @@ func (r *Renderer) createSamplers() error {
 	textureDesc := textureSamplerDescriptor()
 
 	var err error
-	r.textureSampler, err = r.device.device.TryCreateSampler(&textureDesc)
+	r.textureSampler, err = r.device.device.CreateSampler(&textureDesc)
 	if err != nil {
 		return fmt.Errorf("create texture sampler: %w", err)
 	}
 	mipDesc := mipSamplerDescriptor()
 
-	r.mipSampler, err = r.device.device.TryCreateSampler(&mipDesc)
+	r.mipSampler, err = r.device.device.CreateSampler(&mipDesc)
 	if err != nil {
 		return fmt.Errorf("create mip sampler: %w", err)
 	}
@@ -419,7 +413,7 @@ func (r *Renderer) createBuffers() error {
 }
 
 func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
-	buffer, err := r.device.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	buffer, err := r.device.device.CreateBuffer(&wgpu.BufferDescriptor{
 		Label: "frameforge " + label,
 		Size:  uint64(size),
 		Usage: usage,
@@ -449,7 +443,7 @@ func (r *Renderer) uploadStreams(
 		{r.textLabelBuffer, labels},
 	} {
 		if len(upload.data) > 0 {
-			if err := r.device.queue.TryWriteBuffer(upload.buffer, 0, upload.data); err != nil {
+			if err := r.device.queue.WriteBuffer(upload.buffer, 0, upload.data); err != nil {
 				return fmt.Errorf("upload stream: %w", err)
 			}
 		}
@@ -457,7 +451,7 @@ func (r *Renderer) uploadStreams(
 	if len(sprites) > 0 || len(glyphs) > 0 {
 		var uniforms [tess.SpriteUniformSize]byte
 		tess.PackSpriteUniforms(uniforms[:], camera, width, height)
-		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, 0, uniforms[:]); err != nil {
+		if err := r.device.queue.WriteBuffer(r.spriteUniform, 0, uniforms[:]); err != nil {
 			return fmt.Errorf("upload sprite uniform: %w", err)
 		}
 	}
@@ -561,14 +555,14 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 		if texture.spriteBindGroup != nil {
 			texture.spriteBindGroup.Release()
 		}
-		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		bindGroup, err := r.device.device.CreateBindGroup(&wgpu.BindGroupDescriptor{
 			Label:  "frameforge sprite bind group",
 			Layout: layout,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, TextureView: texture.view},
 				{Binding: 1, Sampler: r.textureSampler},
-				{Binding: 2, Buffer: r.spriteBuffer, Size: wgpu.WholeSize},
-				{Binding: 3, Buffer: r.spriteUniform, Size: wgpu.WholeSize},
+				{Binding: 2, Buffer: r.spriteBuffer, Size: 0},
+				{Binding: 3, Buffer: r.spriteUniform, Size: 0},
 			},
 		})
 		if err != nil {
@@ -601,7 +595,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	}
 	releaseTextureView(&r.msaaView)
 	releaseTexture(&r.msaaTexture)
-	texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+	texture, err := r.device.device.CreateTexture(&wgpu.TextureDescriptor{
 		Label:         "frameforge MSAA target",
 		Usage:         wgpu.TextureUsageRenderAttachment,
 		Dimension:     wgpu.TextureDimension2D,
@@ -613,7 +607,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	if err != nil {
 		return fmt.Errorf("create MSAA target: %w", err)
 	}
-	view, err := texture.TryCreateView(nil)
+	view, err := texture.CreateView(nil)
 	if err != nil {
 		texture.Release()
 		return fmt.Errorf("create MSAA view: %w", err)
@@ -628,7 +622,7 @@ func (r *Renderer) encodeFrame(
 	camera render.Camera,
 	width, height int,
 ) error {
-	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
+	encoder, err := r.device.device.CreateCommandEncoder(nil)
 	if err != nil {
 		return fmt.Errorf("create render command encoder: %w", err)
 	}
@@ -647,7 +641,7 @@ func (r *Renderer) encodeFrame(
 			return fmt.Errorf("encode particle simulation: %w", err)
 		}
 	}
-	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
+	pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
 		Label: "frameforge render pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
@@ -668,15 +662,15 @@ func (r *Renderer) encodeFrame(
 			return err
 		}
 	}
-	if err := pass.TryEnd(); err != nil {
-		return fmt.Errorf("end render pass: %w", err)
-	}
-	commandBuffer, err := encoder.TryFinish(nil)
+	pass.End()
+	commandBuffer, err := encoder.Finish(nil)
 	if err != nil {
 		return fmt.Errorf("finish render command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
-	r.device.queue.Submit(commandBuffer)
+	if _, err := r.device.queue.Submit(commandBuffer); err != nil {
+		return fmt.Errorf("submit render commands: %w", err)
+	}
 	return nil
 }
 
@@ -783,67 +777,66 @@ func clearColor(color render.Color) wgpu.Color {
 func alphaBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{
 		Color: wgpu.BlendComponent{
-			Operation: wgpu.BlendOperationAdd,
-			SrcFactor: wgpu.BlendFactorSrcAlpha,
-			DstFactor: wgpu.BlendFactorOneMinusSrcAlpha,
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorSrcAlpha,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
 		},
 		Alpha: wgpu.BlendComponent{
-			Operation: wgpu.BlendOperationAdd,
-			SrcFactor: wgpu.BlendFactorOne,
-			DstFactor: wgpu.BlendFactorOneMinusSrcAlpha,
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
 		},
 	}
 }
 func premultipliedBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{Color: wgpu.BlendComponent{
-		Operation: wgpu.BlendOperationAdd,
-		SrcFactor: wgpu.BlendFactorOne,
-		DstFactor: wgpu.BlendFactorOneMinusSrcAlpha},
+		Operation: gputypes.BlendOperationAdd,
+		SrcFactor: gputypes.BlendFactorOne,
+		DstFactor: gputypes.BlendFactorOneMinusSrcAlpha},
 		Alpha: wgpu.BlendComponent{
-			Operation: wgpu.BlendOperationAdd,
-			SrcFactor: wgpu.BlendFactorOne,
-			DstFactor: wgpu.BlendFactorOneMinusSrcAlpha,
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
 		},
 	}
 }
 func additiveBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{
 		Color: wgpu.BlendComponent{
-			Operation: wgpu.BlendOperationAdd,
-			SrcFactor: wgpu.BlendFactorOne,
-			DstFactor: wgpu.BlendFactorOne},
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOne},
 		Alpha: wgpu.BlendComponent{
-			Operation: wgpu.BlendOperationAdd,
-			SrcFactor: wgpu.BlendFactorOne,
-			DstFactor: wgpu.BlendFactorOne},
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOne},
 	}
 }
 
-func solidVertexLayout() []wgpu.VertexBufferLayout {
-	return []wgpu.VertexBufferLayout{
-		{
-			ArrayStride: tess.SolidVertexStride,
-			StepMode:    wgpu.VertexStepModeVertex,
-			Attributes: []wgpu.VertexAttribute{
-				{ShaderLocation: 0, Offset: 0, Format: wgpu.VertexFormatFloat32x2},
-				{ShaderLocation: 1, Offset: 8, Format: wgpu.VertexFormatFloat32x4},
-			},
-		},
+var (
+	solidVertexAttributes = [...]wgpu.VertexAttribute{
+		{ShaderLocation: 0, Offset: 0, Format: wgpu.VertexFormatFloat32x2},
+		{ShaderLocation: 1, Offset: 8, Format: wgpu.VertexFormatFloat32x4},
 	}
+	texturedVertexAttributes = [...]wgpu.VertexAttribute{
+		{ShaderLocation: 0, Offset: 0, Format: wgpu.VertexFormatFloat32x4},
+		{ShaderLocation: 1, Offset: 16, Format: wgpu.VertexFormatFloat32x4},
+		{ShaderLocation: 2, Offset: 32, Format: wgpu.VertexFormatFloat32x2},
+	}
+)
+
+func solidVertexLayout() []wgpu.VertexBufferLayout {
+	return []wgpu.VertexBufferLayout{{
+		ArrayStride: tess.SolidVertexStride, StepMode: wgpu.VertexStepModeVertex,
+		AttributeCount: uintptr(len(solidVertexAttributes)), Attributes: &solidVertexAttributes[0],
+	}}
 }
 
 func texturedVertexLayout() []wgpu.VertexBufferLayout {
-	return []wgpu.VertexBufferLayout{
-		{
-			ArrayStride: tess.TexVertexStride,
-			StepMode:    wgpu.VertexStepModeVertex,
-			Attributes: []wgpu.VertexAttribute{
-				{ShaderLocation: 0, Offset: 0, Format: wgpu.VertexFormatFloat32x4},
-				{ShaderLocation: 1, Offset: 16, Format: wgpu.VertexFormatFloat32x4},
-				{ShaderLocation: 2, Offset: 32, Format: wgpu.VertexFormatFloat32x2},
-			},
-		},
-	}
+	return []wgpu.VertexBufferLayout{{
+		ArrayStride: tess.TexVertexStride, StepMode: wgpu.VertexStepModeVertex,
+		AttributeCount: uintptr(len(texturedVertexAttributes)), Attributes: &texturedVertexAttributes[0],
+	}}
 }
 
 func releaseBuffer(buffer **wgpu.Buffer) {
