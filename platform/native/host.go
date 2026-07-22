@@ -103,7 +103,9 @@ func (h *host) registerCallbacks() {
 
 func (h *host) run() error {
 	var frameTimer runtime.FrameTimer
+	budget := frameBudget(h.driver.Config().FPS)
 	for !h.window.ShouldClose() {
+		frameStart := time.Now()
 		glfw.PollEvents()
 		h.resizeIfNeeded()
 
@@ -121,6 +123,12 @@ func (h *host) run() error {
 		h.driver.RenderFrame(elapsed, h.renderer)
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
+		}
+
+		if budget > 0 {
+			if remaining := budget - time.Since(frameStart); remaining > 0 {
+				time.Sleep(remaining)
+			}
 		}
 	}
 	return nil
@@ -149,4 +157,14 @@ func (h *host) scaleCursor(x, y float64) (float64, float64) {
 
 func viewportForFramebuffer(width, height int) math2d.Rect {
 	return math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
+}
+
+// frameBudget is the minimum wall-clock duration between rendered frames for
+// the configured FPS cap. A cap of zero or below means uncapped (zero is
+// normalized away by the driver; a negative cap is an explicit request).
+func frameBudget(fps int) time.Duration {
+	if fps <= 0 {
+		return 0
+	}
+	return time.Second / time.Duration(fps)
 }

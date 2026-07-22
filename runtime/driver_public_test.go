@@ -16,10 +16,11 @@ type pumpGame struct {
 	simulationHz int
 	updates      int
 	totalDT      float64
+	FPS          int
 }
 
 func (g *pumpGame) Setup() runtime.Config {
-	return runtime.Config{SimulationHz: g.simulationHz}
+	return runtime.Config{SimulationHz: g.simulationHz, FPS: g.FPS}
 }
 
 func (g *pumpGame) Init(ctx *runtime.UpdateContext) {}
@@ -138,6 +139,28 @@ func TestDriverStepAndAdvanceTimeReachSameStateForSameSimulatedDuration(t *testi
 	if stepDriver.State().Tick != timeDriver.State().Tick {
 		t.Fatalf("ticks step=%d time=%d, want equal", stepDriver.State().Tick, timeDriver.State().Tick)
 	}
+}
+
+func TestConfigFPSNormalization(t *testing.T) {
+	defaultFPSGame := &pumpGame{simulationHz: 30}
+	defaultFPSDriver := runtime.NewDriver(defaultFPSGame, testLogger())
+
+	setFPSGame := &pumpGame{simulationHz: 30, FPS: 120}
+	setFPSDriver := runtime.NewDriver(setFPSGame, testLogger())
+
+	uncappedFPSGame := &pumpGame{simulationHz: 30, FPS: -1}
+	uncappedFPSDriver := runtime.NewDriver(uncappedFPSGame, testLogger())
+
+	if defaultFPSDriver.Config().FPS != 60 {
+		t.Fatalf("got: %v; want: %v", defaultFPSDriver.Config().FPS, 60)
+	}
+	if setFPSDriver.Config().FPS != 120 {
+		t.Fatalf("got: %v; want: %v", defaultFPSDriver.Config().FPS, 60)
+	}
+	if uncappedFPSDriver.Config().FPS != -1 {
+		t.Fatalf("got: %v; want: %v", defaultFPSDriver.Config().FPS, 60)
+	}
+
 }
 
 func testLogger() *slog.Logger {

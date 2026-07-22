@@ -116,7 +116,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if cfg.SimulationHz <= 0 {
 		cfg.SimulationHz = defaultSimulationHz
 	}
-	if cfg.FPS <= 0 {
+	if cfg.FPS == 0 {
 		cfg.FPS = defaultFPS
 	}
 	if cfg.KeyframeInterval <= 0 {
