@@ -186,7 +186,7 @@ func (s *audioSink) reconcileTracks() {
 		if !ok || waiting.clip != track.Clip {
 			waiting = pendingTrack{
 				clip:  track.Clip,
-				start: scheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
+				start: audio.ScheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
 			}
 			s.pending[id] = waiting
 		}
@@ -195,7 +195,7 @@ func (s *audioSink) reconcileTracks() {
 		if !ok {
 			continue
 		}
-		start, offset, expired := scheduledPlayback(now, waiting.start, buffer.Get("duration").Float(), track.Loop)
+		start, offset, expired := audio.ScheduledPlayback(now, waiting.start, buffer.Get("duration").Float(), track.Loop)
 		if expired {
 			continue
 		}

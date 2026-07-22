@@ -1,8 +1,8 @@
-package wasm
+package audio
 
 import "math"
 
-func scheduledTrackStart(now float64, currentTick uint64, alpha float64, startTick uint64, tickSec float64) float64 {
+func ScheduledTrackStart(now float64, currentTick uint64, alpha float64, startTick uint64, tickSec float64) float64 {
 	if startTick == 0 {
 		return now
 	}
@@ -10,7 +10,7 @@ func scheduledTrackStart(now float64, currentTick uint64, alpha float64, startTi
 	return now + remainingTicks*tickSec
 }
 
-func scheduledPlayback(now, scheduledAt, duration float64, loop bool) (start, offset float64, expired bool) {
+func ScheduledPlayback(now, scheduledAt, duration float64, loop bool) (start, offset float64, expired bool) {
 	if now <= scheduledAt {
 		return scheduledAt, 0, false
 	}
