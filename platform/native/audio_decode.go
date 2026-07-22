@@ -60,7 +60,7 @@ func decodeClip(data []byte, path string, targetRate int) (*clipPCM, error) {
 		clip = resampleLinear(clip, targetRate)
 	}
 
-	return clip, err
+	return clip, nil
 }
 
 func detectFormat(data []byte, path string) audioType {

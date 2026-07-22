@@ -26,16 +26,23 @@ type voice struct {
 	fadeRemaining int
 	stopAtZero    bool
 
+	panLeft  float64
+	panRight float64
+
 	pending    [4]byte
 	pendingOff int
 	pendingLen int
 }
 
 func newVoice(pcm []int16, loop bool, pan, gain float64) *voice {
+	clamped := clampPan(pan)
+	theta := (clamped + 1) * math.Pi / 4
 	return &voice{
 		pcm:        pcm,
 		loop:       loop,
-		pan:        clampPan(pan),
+		pan:        clamped,
+		panLeft:    math.Cos(theta),
+		panRight:   math.Sin(theta),
 		gain:       gain,
 		targetGain: gain,
 	}
@@ -79,9 +86,8 @@ func (v *voice) nextFrame() bool {
 	right := v.pcm[v.pos*2+1]
 	v.pos++
 
-	theta := (v.pan + 1) * math.Pi / 4
-	leftGain := v.gain * math.Cos(theta)
-	rightGain := v.gain * math.Sin(theta)
+	leftGain := v.gain * v.panLeft
+	rightGain := v.gain * v.panRight
 	binary.LittleEndian.PutUint16(v.pending[:2], uint16(scaleSample(left, leftGain)))
 	binary.LittleEndian.PutUint16(v.pending[2:], uint16(scaleSample(right, rightGain)))
 	v.pendingOff = 0

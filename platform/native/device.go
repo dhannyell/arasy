@@ -20,8 +20,6 @@ type device struct {
 	config   *wgpu.SurfaceConfiguration
 }
 
-var _ = newDevice
-
 func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *device, err error) {
 	if log == nil {
 		log = slog.Default()
