@@ -17,9 +17,10 @@ import (
 // mip chain. TextureID zero remains unavailable so tess can emit its magenta
 // missing-texture placeholder.
 type gpuTexture struct {
-	texture   *wgpu.Texture
-	view      *wgpu.TextureView
-	bindGroup *wgpu.BindGroup
+	texture         *wgpu.Texture
+	view            *wgpu.TextureView
+	bindGroup       *wgpu.BindGroup
+	spriteBindGroup *wgpu.BindGroup
 }
 
 type textureResources struct {
@@ -248,6 +249,9 @@ func (r textureResources) valid() error {
 }
 
 func (t gpuTexture) release() {
+	if t.spriteBindGroup != nil {
+		t.spriteBindGroup.Release()
+	}
 	if t.bindGroup != nil {
 		t.bindGroup.Release()
 	}
