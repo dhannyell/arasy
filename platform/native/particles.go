@@ -21,6 +21,7 @@ type gpuEmitter struct {
 	capacity                                                 int
 	lastSeen                                                 uint64
 	missingTexture                                           bool
+	bufferBytes                                              uint64
 	hot, cold, alive, dead, counters, drawIndirect, uniforms *wgpu.Buffer
 	computeBind, renderBind, textureBind                     *wgpu.BindGroup
 	scratch                                                  [particlegpu.UniformSize]byte
@@ -235,9 +236,18 @@ func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureVie
 	return t, v, e
 }
 
+func (g *gpuParticles) bufferBytes() uint64 {
+	var total uint64
+	for _, emitter := range g.emitters {
+		total += emitter.bufferBytes
+	}
+	return total
+}
+
 func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitter, error) {
 	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity}
 	mk := func(size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
+		e.bufferBytes += uint64(size)
 		return g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(size), Usage: usage})
 	}
 	var err error

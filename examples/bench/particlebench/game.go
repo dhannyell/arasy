@@ -105,7 +105,7 @@ func (g *Game) Setup() runtime.Config {
 			Aspect:   render.AspectExpand,
 		},
 		SimulationHz: 60,
-		FPS:          60,
+		FPS:          -1,
 		Clear:        render.RGBA8(4, 9, 18, 255),
 		Assets:       g.assets,
 		UITheme:      theme,
@@ -342,9 +342,9 @@ func (g *Game) gpuTimeLabel() string {
 }
 
 func (g *Game) memoryLabel() string {
-	ram := "RAM JS  unavailable"
+	ram := "RAM  unavailable"
 	if g.stats.hasJSHeap {
-		ram = fmt.Sprintf("RAM JS  %s / %s", formatBytes(g.stats.jsHeap), formatBytes(g.stats.jsHeapMax))
+		ram = fmt.Sprintf("RAM  %s / %s", formatBytes(g.stats.jsHeap), formatBytes(g.stats.jsHeapMax))
 	}
 	gpu := "GPU buffers  unavailable"
 	if g.stats.hasGPU {

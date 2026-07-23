@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/dhannyell/frameforge/asset"
 	"github.com/dhannyell/frameforge/internal/diagnostic"
@@ -62,8 +63,12 @@ type Renderer struct {
 	msaaWidth   int
 	msaaHeight  int
 
-	diagnostics diagnostic.Once
-	err         error
+	diagnostics        diagnostic.Once
+	err                error
+	timeCPU            bool
+	cpuTess, cpuUpload time.Duration
+	cpuEncode          time.Duration
+	cpuPhasesSet       bool
 }
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
@@ -160,14 +165,25 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	r.tess.SetSpriteArray(false)
+	var phaseStart time.Time
+	if r.timeCPU {
+		phaseStart = time.Now()
+	}
 	runs := r.tess.Build(tess.Frame(frame), width, height, r.fontProvider, r.texSizes)
 	solid, textured := r.tess.Streams()
 	sprites := r.tess.SpriteStream()
 	textGlyphs := r.tess.TextGlyphStream()
 	textLabels := r.tess.TextLabelStream()
+	if r.timeCPU {
+		r.cpuTess = time.Since(phaseStart)
+		phaseStart = time.Now()
+	}
 	if err := r.uploadStreams(solid, textured, sprites, textGlyphs, textLabels, frame.Camera, width, height); err != nil {
 		r.recordErr(err)
 		return
+	}
+	if r.timeCPU {
+		r.cpuUpload = time.Since(phaseStart)
 	}
 	if err := r.ensureMSAATarget(width, height); err != nil {
 		r.recordErr(err)
@@ -202,14 +218,50 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	defer surfaceView.Release()
+	if r.timeCPU {
+		phaseStart = time.Now()
+	}
 	if err := r.encodeFrame(runs, surfaceView, frame.Camera, width, height); err != nil {
 		r.recordErr(err)
 		return
+	}
+	if r.timeCPU {
+		r.cpuEncode = time.Since(phaseStart)
+		r.cpuPhasesSet = true
 	}
 	r.device.surface.Present()
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
+}
+
+// SetCPUTiming enables CPU-side phase instrumentation.
+func (r *Renderer) SetCPUTiming(enabled bool) {
+	if r != nil {
+		r.timeCPU = enabled
+	}
+}
+
+// SetGPUTiming is retained for option compatibility. The current binding's
+// C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
+func (r *Renderer) SetGPUTiming(bool) {}
+
+// renderCPUTimings reports CPU-side wall times for tessellation, upload and
+// command encoding. These values exclude GPU execution time.
+func (r *Renderer) renderCPUTimings() (time.Duration, time.Duration, time.Duration, bool) {
+	if r == nil {
+		return 0, 0, 0, false
+	}
+	return r.cpuTess, r.cpuUpload, r.cpuEncode, r.cpuPhasesSet
+}
+
+// particleGPUBufferBytes reports resident particle buffer allocations. A nil
+// particle renderer means this metric is unavailable.
+func (r *Renderer) particleGPUBufferBytes() (uint64, bool) {
+	if r == nil || r.particles == nil {
+		return 0, false
+	}
+	return r.particles.bufferBytes(), true
 }
 
 // Resize updates the native surface from physical framebuffer dimensions.

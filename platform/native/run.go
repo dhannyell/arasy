@@ -7,10 +7,44 @@ import (
 	"image"
 	"log/slog"
 	goruntime "runtime"
+	"time"
 
 	"github.com/dhannyell/frameforge/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
+
+// FrameMetrics describes native frame pacing and host/renderer timings.
+type FrameMetrics struct {
+	FPS           float64
+	FrameTime     time.Duration
+	MeanFrameTime time.Duration
+	P99FrameTime  time.Duration
+
+	InputToSubmit    time.Duration
+	InputToSubmitSet bool
+
+	// HeapInUse and HeapSys are Go process memory measurements.
+	HeapInUse uint64
+	HeapSys   uint64
+	HeapSet   bool
+
+	GPUBufferBytes uint64
+	GPUBufferSet   bool
+
+	// GPUFrameTime is asynchronous submit-to-completion latency, not GPU
+	// execution time. Timestamp queries are unavailable in the current binding.
+	GPUFrameTime    time.Duration
+	GPUFrameTimeSet bool
+
+	CPUTickTime   time.Duration
+	CPURenderTime time.Duration
+	CPUTimingSet  bool
+
+	CPUTessTime     time.Duration
+	CPUUploadTime   time.Duration
+	CPUEncodeTime   time.Duration
+	CPUBreakdownSet bool
+}
 
 const (
 	defaultTitle  = "FrameForge"
@@ -44,6 +78,17 @@ type Options struct {
 	Icon image.Image
 	// Log receives host diagnostics. The default is slog.Default().
 	Log *slog.Logger
+	// Metrics emits periodic frame-pacing reports through Log.
+	Metrics bool
+	// GPUTiming enables the asynchronous GPU completion probe for metric reports.
+	GPUTiming bool
+	// FrameMetrics receives periodic frame-pacing reports. Nil disables delivery.
+	FrameMetrics func(FrameMetrics)
+
+	// SmoothPacing enables a ~1ms busy-spin tail on the frame limiter for tighter
+	// pacing (video capture, latency benchmarks) at the cost of one busy core.
+	// Off by default: the plain sleep cap keeps CPU low.
+	SmoothPacing bool
 }
 
 func normalizedOptions(opts Options) Options {
@@ -98,6 +143,8 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if err != nil {
 		return err
 	}
+	renderer.SetCPUTiming(opts.Metrics || opts.FrameMetrics != nil)
+	renderer.SetGPUTiming(opts.GPUTiming)
 	defer renderer.Close()
 
 	h := newHost(driver, renderer, window, opts)

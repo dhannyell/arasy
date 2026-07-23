@@ -4,7 +4,10 @@ package native
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
+
+	metrics "runtime/metrics"
 
 	"github.com/dhannyell/frameforge/input"
 	"github.com/dhannyell/frameforge/math2d"
@@ -12,11 +15,25 @@ import (
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 
+type cpuPhaseReporter interface {
+	renderCPUTimings() (tess, upload, encode time.Duration, ok bool)
+}
+
+type gpuBufferReporter interface {
+	particleGPUBufferBytes() (bytes uint64, ok bool)
+}
+
 type host struct {
-	driver   *runtime.Driver
-	renderer *Renderer
-	window   *glfw.Window
-	audio    *audioSink
+	driver      *runtime.Driver
+	renderer    *Renderer
+	window      *glfw.Window
+	audio       *audioSink
+	metrics     *runtime.FrameStatsTracker
+	onMetrics   func(FrameMetrics)
+	log         *slog.Logger
+	logMetrics  bool
+	lastInputAt time.Time
+	heapSamples []metrics.Sample
 
 	pending  []input.Event
 	viewport math2d.Rect
@@ -24,20 +41,53 @@ type host struct {
 
 	savedWindowed windowRect
 	altEnter      bool
+
+	spinMargin time.Duration
 }
 
 func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, opts Options) *host {
 	fbW, fbH := window.GetFramebufferSize()
-	return &host{
-		driver:   driver,
-		renderer: renderer,
-		window:   window,
-		viewport: viewportForFramebuffer(fbW, fbH),
+	h := &host{
+		driver:     driver,
+		renderer:   renderer,
+		window:     window,
+		log:        opts.Log,
+		onMetrics:  opts.FrameMetrics,
+		logMetrics: opts.Metrics,
+		viewport:   viewportForFramebuffer(fbW, fbH),
 		savedWindowed: windowRect{
 			width:  opts.Width,
 			height: opts.Height,
 		},
 	}
+	if opts.Metrics || opts.FrameMetrics != nil {
+		h.metrics = &runtime.FrameStatsTracker{}
+		h.heapSamples = []metrics.Sample{
+			{Name: "/memory/classes/heap/objects:bytes"},
+			{Name: "/memory/classes/total:bytes"},
+		}
+	}
+	if opts.SmoothPacing {
+		h.spinMargin = time.Millisecond
+	}
+	return h
+}
+
+func (h *host) noteInput() {
+	if h.lastInputAt.IsZero() {
+		h.lastInputAt = time.Now()
+	}
+}
+
+func (h *host) readHeap() (uint64, uint64, bool) {
+	if len(h.heapSamples) == 0 {
+		return 0, 0, false
+	}
+	metrics.Read(h.heapSamples)
+	if h.heapSamples[0].Value.Kind() != metrics.KindUint64 || h.heapSamples[1].Value.Kind() != metrics.KindUint64 {
+		return 0, 0, false
+	}
+	return h.heapSamples[0].Value.Uint64(), h.heapSamples[1].Value.Uint64(), true
 }
 
 func (h *host) registerCallbacks() {
@@ -63,6 +113,7 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.noteInput()
 		h.pending = append(h.pending, keyEvent(code, action == glfw.Press))
 	})
 	h.window.SetMouseButtonCallback(func(_ *glfw.Window, button glfw.MouseButton, action glfw.Action, _ glfw.ModifierKey) {
@@ -74,18 +125,25 @@ func (h *host) registerCallbacks() {
 			return
 		}
 		x, y := h.scaledCursor()
+		h.noteInput()
 		h.pending = append(h.pending, mouseButtonEvent(code, action == glfw.Press, x, y))
 	})
 	h.window.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
 		x, y = h.scaleCursor(x, y)
+		h.noteInput()
 		h.pending = append(h.pending, pointerMoveEvent(x, y))
 	})
 	h.window.SetScrollCallback(func(_ *glfw.Window, dx, dy float64) {
 		x, y := h.scaledCursor()
-		h.pending = append(h.pending, wheelEvents(dx, dy, x, y)...)
+		events := wheelEvents(dx, dy, x, y)
+		if len(events) > 0 {
+			h.noteInput()
+			h.pending = append(h.pending, events...)
+		}
 	})
 	h.window.SetCursorEnterCallback(func(_ *glfw.Window, entered bool) {
 		if !entered {
+			h.noteInput()
 			h.pending = append(h.pending, pointerLeaveEvent())
 		}
 	})
@@ -103,13 +161,21 @@ func (h *host) registerCallbacks() {
 
 func (h *host) run() error {
 	var frameTimer runtime.FrameTimer
-	budget := frameBudget(h.driver.Config().FPS)
+	pacer := framePacer{
+		budget:     frameBudget(h.driver.Config().FPS),
+		spinMargin: h.spinMargin,
+	}
 	for !h.window.ShouldClose() {
-		frameStart := time.Now()
 		glfw.PollEvents()
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
+		inputAt := h.lastInputAt
+		h.lastInputAt = time.Time{}
+		var tickStart time.Time
+		if h.metrics != nil {
+			tickStart = time.Now()
+		}
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{
 			Viewport: &h.viewport,
 			Events:   h.pending,
@@ -120,16 +186,44 @@ func (h *host) run() error {
 			h.audio.consume(audioOut)
 		}
 
+		var tickEnd time.Time
+		if h.metrics != nil {
+			tickEnd = time.Now()
+		}
 		h.driver.RenderFrame(elapsed, h.renderer)
+		renderEnd := time.Now()
+		if h.metrics != nil {
+			if stats, ok := h.metrics.Observe(elapsed); ok {
+				m := FrameMetrics{
+					FPS: stats.FPS, FrameTime: stats.FrameTime,
+					MeanFrameTime: stats.MeanFrameTime, P99FrameTime: stats.P99FrameTime,
+					CPUTickTime: tickEnd.Sub(tickStart), CPURenderTime: renderEnd.Sub(tickEnd), CPUTimingSet: true,
+				}
+				if !inputAt.IsZero() {
+					m.InputToSubmit = renderEnd.Sub(inputAt)
+					m.InputToSubmitSet = true
+				}
+				m.HeapInUse, m.HeapSys, m.HeapSet = h.readHeap()
+				if reporter, ok := any(h.renderer).(cpuPhaseReporter); ok {
+					m.CPUTessTime, m.CPUUploadTime, m.CPUEncodeTime, m.CPUBreakdownSet = reporter.renderCPUTimings()
+				}
+				if reporter, ok := any(h.renderer).(gpuBufferReporter); ok {
+					m.GPUBufferBytes, m.GPUBufferSet = reporter.particleGPUBufferBytes()
+				}
+				if h.logMetrics {
+					attrs := []any{"fps", m.FPS, "frame_ms", m.FrameTime.Seconds() * 1000, "mean_ms", m.MeanFrameTime.Seconds() * 1000, "p99_ms", m.P99FrameTime.Seconds() * 1000}
+					h.log.Info("native frame metrics", attrs...)
+				}
+				if h.onMetrics != nil {
+					h.onMetrics(m)
+				}
+			}
+		}
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
 		}
 
-		if budget > 0 {
-			if remaining := budget - time.Since(frameStart); remaining > 0 {
-				time.Sleep(remaining)
-			}
-		}
+		pacer.wait()
 	}
 	return nil
 }
@@ -157,14 +251,4 @@ func (h *host) scaleCursor(x, y float64) (float64, float64) {
 
 func viewportForFramebuffer(width, height int) math2d.Rect {
 	return math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
-}
-
-// frameBudget is the minimum wall-clock duration between rendered frames for
-// the configured FPS cap. A cap of zero or below means uncapped (zero is
-// normalized away by the driver; a negative cap is an explicit request).
-func frameBudget(fps int) time.Duration {
-	if fps <= 0 {
-		return 0
-	}
-	return time.Second / time.Duration(fps)
 }
