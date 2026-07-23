@@ -41,6 +41,8 @@ type Driver struct {
 	renderDt   float64
 	animStore  ui.AnimStore
 
+	splash *splashPlayer
+
 	pendingReset bool
 
 	// Recording keeps the full input log while explicit recording is enabled.
