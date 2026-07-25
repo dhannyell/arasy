@@ -3,7 +3,7 @@ package runtime
 import (
 	"time"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 type Frame struct {

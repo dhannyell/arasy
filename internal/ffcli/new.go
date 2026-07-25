@@ -53,7 +53,7 @@ var newCmd = &cobra.Command{
 		}
 		data := projectTemplateData{
 			Module: module, Name: name, GoVersion: strings.TrimPrefix(runtime.Version(), "go"),
-			EngineModule: "github.com/dhannyell/frameforge", EngineVersion: "v0.0.0", EngineReplace: newEngineReplace,
+			EngineModule: "github.com/dhannyell/arasy", EngineVersion: "v0.0.0", EngineReplace: newEngineReplace,
 		}
 		if err := renderProject(dir, data); err != nil {
 			return err

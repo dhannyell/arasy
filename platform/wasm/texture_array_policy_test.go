@@ -3,7 +3,7 @@ package wasm
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 )
 
 func TestPlanSpriteTextureArray(t *testing.T) {

@@ -3,9 +3,9 @@ package ui
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/ease"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/ease"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 const defaultEffectDuration = 1.0

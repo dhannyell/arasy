@@ -5,9 +5,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/render"
 	"golang.org/x/image/font/gofont/goregular"
 )
 

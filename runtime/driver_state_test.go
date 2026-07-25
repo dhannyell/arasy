@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 // statefulGame is a minimal StatefulGame built on StateSlot[int]: no

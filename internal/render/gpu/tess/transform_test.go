@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // clipToScreen inverts screenToClip for the 100×100 test context, so a

@@ -1,6 +1,6 @@
 package browserinput
 
-import "github.com/dhannyell/frameforge/input"
+import "github.com/dhannyell/arasy/input"
 
 // KeyboardCode translates a DOM KeyboardEvent.code into a frameforge input code.
 func KeyboardCode(code string) (input.SourceCode, bool) {

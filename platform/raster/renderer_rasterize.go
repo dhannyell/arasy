@@ -7,7 +7,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func drawLine(img *image.RGBA, from, to math2d.Vec2, width float64, bounds image.Rectangle, c color.RGBA) {

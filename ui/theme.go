@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/dhannyell/frameforge/render"
+import "github.com/dhannyell/arasy/render"
 
 // Theme groups widget styles used by runtime.Config.
 type Theme struct {

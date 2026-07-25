@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/render"
 )
 
 type characterizationGame struct {

@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/scene"
 )
 
 // newProjectile creates an entity with Transform, Velocity, Height, Ballistics,

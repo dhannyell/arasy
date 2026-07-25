@@ -4,11 +4,11 @@ import (
 	"image"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/scene"
-	"github.com/dhannyell/frameforge/ui"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
+	"github.com/dhannyell/arasy/ui"
 )
 
 // UpdateContext is passed to Game.Init and Game.Update.

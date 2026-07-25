@@ -5,7 +5,7 @@ package native
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/audio"
+	"github.com/dhannyell/arasy/audio"
 )
 
 func TestAudioSinkLimitsCueVoices(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/audio"
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/audio"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func TestRhythmAudioCoversGameplayAndScrub(t *testing.T) {

@@ -6,10 +6,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/platform/raster"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/platform/raster"
+	"github.com/dhannyell/arasy/render"
 )
 
 // makeTex2x2 builds a 2×2 texture with one distinct color per pixel.

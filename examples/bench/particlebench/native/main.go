@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/dhannyell/frameforge/examples/bench/particlebench"
-	"github.com/dhannyell/frameforge/platform/native"
+	"github.com/dhannyell/arasy/examples/bench/particlebench"
+	"github.com/dhannyell/arasy/platform/native"
 )
 
 func main() {

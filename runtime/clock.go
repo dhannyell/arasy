@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/dhannyell/frameforge/loop"
+	"github.com/dhannyell/arasy/loop"
 )
 
 const defaultMaxCatchUp = 5

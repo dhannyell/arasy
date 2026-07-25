@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func TestVec2Add(t *testing.T) {

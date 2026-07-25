@@ -1,6 +1,6 @@
 package scene
 
-import "github.com/dhannyell/frameforge/render"
+import "github.com/dhannyell/arasy/render"
 
 // WorldView is the read face of a World, handed to Game.Render. Render may
 // run zero, one or many times between fixed ticks, so any mutation there

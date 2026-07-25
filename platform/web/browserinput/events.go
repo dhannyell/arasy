@@ -1,6 +1,6 @@
 package browserinput
 
-import "github.com/dhannyell/frameforge/input"
+import "github.com/dhannyell/arasy/input"
 
 // KeyEvent converts a DOM KeyboardEvent.code and button direction into a
 // validated frameforge event.

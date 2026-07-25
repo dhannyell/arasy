@@ -12,11 +12,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
+	"github.com/dhannyell/arasy/scene"
 )
 
 var seekBenchSizes = []int{100, 1000}

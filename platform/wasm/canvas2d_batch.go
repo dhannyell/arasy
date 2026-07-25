@@ -3,9 +3,9 @@ package wasm
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // Canvas2D retained-batch caps: the dev adapter truncates content beyond

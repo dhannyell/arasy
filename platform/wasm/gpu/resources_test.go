@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/dhannyell/frameforge/platform/wasm/gpu"
+	"github.com/dhannyell/arasy/platform/wasm/gpu"
 )
 
 func TestBuildTextureResourcesRecordsSetupInOrder(t *testing.T) {

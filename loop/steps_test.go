@@ -3,7 +3,7 @@ package loop_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/loop"
+	"github.com/dhannyell/arasy/loop"
 )
 
 func TestStepsAccumulatesFractionalSpeed(t *testing.T) {

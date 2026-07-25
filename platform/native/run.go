@@ -9,7 +9,7 @@ import (
 	goruntime "runtime"
 	"time"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 

@@ -7,9 +7,9 @@ import (
 	"io/fs"
 	"math"
 
-	"github.com/dhannyell/frameforge/audio"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/arasy/audio"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
 )
 
 const (

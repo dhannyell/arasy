@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dhannyell/frameforge/internal/ffcli"
+import "github.com/dhannyell/arasy/internal/ffcli"
 
 func main() {
 	ffcli.Execute()

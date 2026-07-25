@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/runtime"
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/runtime"
+	"github.com/dhannyell/arasy/scene"
 )
 
 // debugPanel is the in-browser dev overlay for the WASM host. It drives the

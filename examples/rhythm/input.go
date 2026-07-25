@@ -1,8 +1,8 @@
 package rhythm
 
 import (
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 var laneActions = [...]input.Action{actionLane0, actionLane1, actionLane2, actionLane3}

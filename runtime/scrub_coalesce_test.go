@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/arasy/input"
 )
 
 // TestScrubCoalescesMultipleCommands verifies that when multiple ScrubToTick

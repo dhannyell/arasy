@@ -1,5 +1,5 @@
 # FrameForge
-[![CI](https://github.com/dhannyell/frameforge/actions/workflows/ci.yml/badge.svg)](...)
+[![CI](https://github.com/dhannyell/arasy/actions/workflows/ci.yml/badge.svg)](...)
 
 FrameForge is an experimental 2D engine written in Go.
 
@@ -167,9 +167,9 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/cmd/demos/breakout"
-	"github.com/dhannyell/frameforge/platform/wasm"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/cmd/demos/breakout"
+	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {

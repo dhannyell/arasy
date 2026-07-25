@@ -5,12 +5,12 @@ import (
 	"image"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
 	"golang.org/x/image/font"
 )
 

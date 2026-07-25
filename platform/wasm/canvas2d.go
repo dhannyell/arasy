@@ -8,12 +8,12 @@ import (
 	"math"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 const imageQuadTriangleOverlap = 0.25

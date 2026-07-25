@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/audio"
+	"github.com/dhannyell/arasy/audio"
 )
 
 type audioSink struct {

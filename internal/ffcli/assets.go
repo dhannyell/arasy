@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/arasy/asset"
 	"github.com/spf13/cobra"
 )
 

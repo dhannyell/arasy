@@ -3,8 +3,8 @@ package render_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 func TestClipCommandsSetsClipOnUnclippedCommands(t *testing.T) {

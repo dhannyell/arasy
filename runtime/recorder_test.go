@@ -3,7 +3,7 @@ package runtime
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/scene"
 )
 
 func TestRecorderCapturesOnlyKeyframeTicks(t *testing.T) {

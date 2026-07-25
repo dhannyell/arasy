@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/runtime"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 

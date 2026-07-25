@@ -1,6 +1,6 @@
 goos: windows
 goarch: amd64
-pkg: github.com/dhannyell/frameforge/runtime
+pkg: github.com/dhannyell/arasy/runtime
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
 BenchmarkDriverBack/entities=100-16         	      84	  26349901 ns/op	 3781231 B/op	   23298 allocs/op
 BenchmarkDriverBack/entities=100-16         	      97	  25401554 ns/op	 3781196 B/op	   23298 allocs/op
@@ -23,4 +23,4 @@ BenchmarkDriverBack/entities=1000-16        	       7	 307950514 ns/op	25756396 
 BenchmarkDriverBack/entities=1000-16        	       7	 303793300 ns/op	25756401 B/op	   30606 allocs/op
 BenchmarkDriverBack/entities=1000-16        	       7	 306360186 ns/op	25756629 B/op	   30607 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/runtime	58.544s
+ok  	github.com/dhannyell/arasy/runtime	58.544s

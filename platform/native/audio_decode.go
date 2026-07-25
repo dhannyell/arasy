@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 	mp3Decoder "github.com/hajimehoshi/go-mp3"
 	"github.com/jfreymuth/oggvorbis"
 )

@@ -1,6 +1,6 @@
 package particle
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // EmissionState is the per-emitter CPU accounting shared by every backend:
 // the fractional emission accumulator, the cumulative burst tracker and the

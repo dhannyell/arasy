@@ -4,7 +4,7 @@ import (
 	"slices"
 	"sort"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 // BatchOp identifies the operation of a retained-batch update: replace the

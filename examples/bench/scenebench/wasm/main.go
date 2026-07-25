@@ -5,8 +5,8 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/bench/scenebench"
-	"github.com/dhannyell/frameforge/platform/wasm"
+	"github.com/dhannyell/arasy/examples/bench/scenebench"
+	"github.com/dhannyell/arasy/platform/wasm"
 )
 
 func main() {

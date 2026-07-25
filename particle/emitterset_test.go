@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
 )
 
 // testEffectDecl builds an EffectDecl in Go, mirroring the manifest used by

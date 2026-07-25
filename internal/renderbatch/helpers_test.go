@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func assertNear(t *testing.T, name string, got, want, tolerance float64) {

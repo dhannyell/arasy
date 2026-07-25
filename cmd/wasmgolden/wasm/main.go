@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/cmd/wasmgolden"
-	"github.com/dhannyell/frameforge/platform/wasm"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/cmd/wasmgolden"
+	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dhannyell/frameforge/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/diagnostic"
 )
 
 func TestOnceLogDeduplicatesByCodeAndID(t *testing.T) {

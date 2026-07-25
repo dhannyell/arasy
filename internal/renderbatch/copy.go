@@ -1,6 +1,6 @@
 package renderbatch
 
-import "github.com/dhannyell/frameforge/render"
+import "github.com/dhannyell/arasy/render"
 
 // CopySprites returns a defensive copy of instances for a backend to store.
 // The caller may reuse or mutate its slice after the call without affecting

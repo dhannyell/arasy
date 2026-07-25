@@ -5,7 +5,7 @@ package native
 import (
 	"fmt"
 
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 

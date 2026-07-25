@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 func fontUI(t *testing.T, theme Theme) *UI {

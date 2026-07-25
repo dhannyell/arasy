@@ -1,9 +1,9 @@
 package ui
 
 import (
-	"github.com/dhannyell/frameforge/ease"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/ease"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // drawFace adapts *UI to the Drawer contract for the Render phase.

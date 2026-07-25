@@ -10,16 +10,16 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/internal/render/gpu/fontatlas"
-	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
-	"github.com/dhannyell/frameforge/internal/renderbatch"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/platform/wasm/gpu"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
+	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/platform/wasm/gpu"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 var errWebGPUUnavailable = errors.New("webgpu unavailable")

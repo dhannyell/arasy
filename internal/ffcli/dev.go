@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dhannyell/frameforge/internal/wasmserve"
+	"github.com/dhannyell/arasy/internal/wasmserve"
 	"github.com/spf13/cobra"
 )
 

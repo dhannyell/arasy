@@ -3,7 +3,7 @@ package audio_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/audio"
+	"github.com/dhannyell/arasy/audio"
 )
 
 func TestStateClone(t *testing.T) {

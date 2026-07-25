@@ -8,8 +8,8 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 var (

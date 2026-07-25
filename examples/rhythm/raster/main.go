@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/dhannyell/frameforge/examples/rhythm"
-	"github.com/dhannyell/frameforge/platform/raster"
+	"github.com/dhannyell/arasy/examples/rhythm"
+	"github.com/dhannyell/arasy/platform/raster"
 )
 
 func main() {

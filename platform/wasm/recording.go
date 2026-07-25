@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // recordingPanel wires the .ffrp recording/replay controls embedded in the

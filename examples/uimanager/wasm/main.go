@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/dhannyell/frameforge/examples/uimanager"
-	"github.com/dhannyell/frameforge/platform/wasm"
+	"github.com/dhannyell/arasy/examples/uimanager"
+	"github.com/dhannyell/arasy/platform/wasm"
 )
 
 func main() {

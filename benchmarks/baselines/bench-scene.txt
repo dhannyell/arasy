@@ -1,6 +1,6 @@
 goos: windows
 goarch: amd64
-pkg: github.com/dhannyell/frameforge/scene
+pkg: github.com/dhannyell/arasy/scene
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
 BenchmarkCollisionOverlapsAllPairs/narrow/10/spread-16         	 1694065	      1458 ns/op	       0 B/op	       0 allocs/op
 BenchmarkCollisionOverlapsAllPairs/narrow/10/spread-16         	 1672760	      1443 ns/op	       0 B/op	       0 allocs/op
@@ -933,4 +933,4 @@ BenchmarkWorldChurnMidRemoval/live=5000/mid-remove-respawn-16                   
 BenchmarkWorldChurnMidRemoval/live=5000/mid-remove-respawn-16                                             	   74942	     33019 ns/op	     116 B/op	       0 allocs/op
 BenchmarkWorldChurnMidRemoval/live=5000/mid-remove-respawn-16                                             	   78439	     33430 ns/op	     111 B/op	       0 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/scene	2817.829s
+ok  	github.com/dhannyell/arasy/scene	2817.829s

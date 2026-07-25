@@ -1,9 +1,9 @@
 package uimanager
 
 import (
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/ui"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/ui"
 )
 
 // ─── palette ──────────────────────────────────────────────────────────────────

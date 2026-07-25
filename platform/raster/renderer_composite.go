@@ -3,8 +3,8 @@ package raster
 import (
 	"image/color"
 
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
 )
 
 type tintFactors struct {

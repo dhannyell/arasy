@@ -4,11 +4,11 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/scene"
-	"github.com/dhannyell/frameforge/ui"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
+	"github.com/dhannyell/arasy/ui"
 )
 
 // uiClickGame is a minimal game whose state transitions on a UI button click,

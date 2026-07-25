@@ -1,6 +1,6 @@
 goos: windows
 goarch: amd64
-pkg: github.com/dhannyell/frameforge/particle
+pkg: github.com/dhannyell/arasy/particle
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
 BenchmarkEmitterStep/empty_65536-16         	 2487860	       977.3 ns/op	       0 B/op	       0 allocs/op
 BenchmarkEmitterStep/empty_65536-16         	 2612708	      1023 ns/op	       0 B/op	       0 allocs/op
@@ -83,4 +83,4 @@ BenchmarkEmitterAlive/full_65536-16                  	    1279	   1882279 ns/op	
 BenchmarkEmitterAlive/full_65536-16                  	    1260	   1899310 ns/op	       0 B/op	       0 allocs/op
 BenchmarkEmitterAlive/full_65536-16                  	    1288	   1910352 ns/op	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/particle	191.677s
+ok  	github.com/dhannyell/arasy/particle	191.677s

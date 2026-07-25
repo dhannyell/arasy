@@ -7,9 +7,9 @@ import (
 	"math"
 	"sync"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
 )
 
 var missingTextureColor = color.RGBA{R: 255, G: 0, B: 255, A: 255}

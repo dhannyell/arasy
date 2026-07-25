@@ -3,7 +3,7 @@ package ease_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/ease"
+	"github.com/dhannyell/arasy/ease"
 )
 
 var allKinds = []ease.Kind{

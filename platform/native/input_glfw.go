@@ -3,7 +3,7 @@
 package native
 
 import (
-	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/arasy/input"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 

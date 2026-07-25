@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func spriteUpdates(id render.SpriteBatchID, op runtime.BatchOp, n int) []runtime.SpriteBatchUpdate {

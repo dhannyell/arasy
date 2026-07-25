@@ -3,7 +3,7 @@ package render
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // Projection maps scalar height to render-only body and ground-shadow

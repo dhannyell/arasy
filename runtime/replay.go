@@ -3,8 +3,8 @@ package runtime
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // Recording is the input log and tick count needed for Replay.

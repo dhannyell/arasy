@@ -5,8 +5,8 @@ import (
 	"math"
 	"slices"
 
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func GenerateLeague(seed uint64) ([]Club, []Fixture) {

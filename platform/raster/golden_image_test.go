@@ -6,9 +6,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // goldenImageTexture builds a deterministic 8×8 texture: a 2×2 checkerboard

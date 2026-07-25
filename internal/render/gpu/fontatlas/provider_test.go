@@ -4,8 +4,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/render/gpu/fontatlas"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
