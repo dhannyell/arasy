@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
-	"github.com/dhannyell/frameforge/ui"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
+	"github.com/dhannyell/arasy/ui"
 )
 
 //go:embed assets

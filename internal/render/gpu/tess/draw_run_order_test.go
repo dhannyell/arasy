@@ -3,8 +3,8 @@ package tess
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // These tests cover Builder's heterogeneous StreamRun interleaving and

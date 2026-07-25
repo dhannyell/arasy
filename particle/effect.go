@@ -4,7 +4,7 @@
 // snapshots, checksums, replays or recordings.
 package particle
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // MaxCapacity caps one emitter so its WebGPU particle storage stays at about
 // 3.5 MiB (65,536 particles x 56 bytes across the hot/cold buffers). CPU

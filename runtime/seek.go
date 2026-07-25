@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"math"
 
-	"github.com/dhannyell/frameforge/scene"
-	"github.com/dhannyell/frameforge/ui"
+	"github.com/dhannyell/arasy/scene"
+	"github.com/dhannyell/arasy/ui"
 )
 
 // seek.go handles seeking: moving the driver to a recorded tick by restoring

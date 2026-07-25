@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // SimulateRound runs all fixtures for the current round and advances Round by 1.

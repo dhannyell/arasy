@@ -3,7 +3,7 @@ package runtime
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/scene"
 )
 
 const (

@@ -391,7 +391,7 @@ Center = {25,40}
 
 `Contains` reports whether a point is inside the rectangle.
 
-Recommended edge rule for FrameForge:
+Recommended edge rule for Arasy:
 
 ```text
 Min inclusive

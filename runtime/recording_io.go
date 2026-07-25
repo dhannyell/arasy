@@ -8,17 +8,17 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 var (
-	ErrNotARecording              = errors.New("not a frameforge recording")
-	ErrUnsupportedRecordingFormat = errors.New("unsupported frameforge recording format")
+	ErrNotARecording              = errors.New("not an arasy recording")
+	ErrUnsupportedRecordingFormat = errors.New("unsupported arasy recording format")
 )
 
 const (
-	recordingMagic             = "FFRP"
+	recordingMagic             = "ARRP"
 	recordingVersion    uint16 = 1
 	maxRecordingEvents         = 10_000_000
 	maxRecordingAnchors        = 1_000_000
@@ -247,7 +247,7 @@ func ReadRecording(r io.Reader) (Recording, error) {
 	return rec, nil
 }
 
-// MarshalBinary serializes the recording to its FFRP binary form as a byte
+// MarshalBinary serializes the recording to its ARRP binary form as a byte
 // slice. It is the byte-oriented convenience over WriteTo for platforms that
 // obtain deliver bytes through a non-file channel (e.g. a browser File API
 // download). The format is identical to WriteTo; see WriteTo for the layout.
@@ -259,7 +259,7 @@ func (r Recording) MarshalBinary() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// ReadRecordingFromBytes parses an FFRP byte slice. It is the byte-oriented
+// ReadRecordingFromBytes parses an ARRP byte slice. It is the byte-oriented
 // convenience over ReadRecording for platforms that load bytes through a
 // non-file channel (e.g. a browser File API upload).
 func ReadRecordingFromBytes(data []byte) (Recording, error) {

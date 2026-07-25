@@ -3,7 +3,7 @@ package wasm
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func gridSizeForCorners(t *testing.T, corners [4]math2d.Vec2) int {

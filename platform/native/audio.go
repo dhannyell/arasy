@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dhannyell/frameforge/audio"
+	"github.com/dhannyell/arasy/audio"
 	"github.com/ebitengine/oto/v3"
 )
 

@@ -3,7 +3,7 @@ package wasm
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 const triangleMiterLimit = 4

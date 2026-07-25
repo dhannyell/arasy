@@ -15,10 +15,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/platform/raster"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/platform/raster"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // Cross-backend conformance: render the canonical fixtures through the

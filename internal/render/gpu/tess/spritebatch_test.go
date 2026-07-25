@@ -5,8 +5,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 func retainedF32(records []byte, offset int) float32 {

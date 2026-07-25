@@ -1,6 +1,6 @@
 goos: windows
 goarch: amd64
-pkg: github.com/dhannyell/frameforge/platform/wasm/tess
+pkg: github.com/dhannyell/arasy/platform/wasm/tess
 cpu: AMD Ryzen 7 5800X3D 8-Core Processor           
 BenchmarkTessBuild/images/1000-16    	    8143	    345643 ns/op	  904989 B/op	      20 allocs/op
 BenchmarkTessBuild/images/1000-16    	    7230	    321263 ns/op	  904987 B/op	      20 allocs/op
@@ -93,4 +93,4 @@ BenchmarkTessBytes/TexBytes/images_20000-16         	    1519	   1498479 ns/op	 
 BenchmarkTessBytes/TexBytes/images_20000-16         	    1532	   1450889 ns/op	 4800515 B/op	       1 allocs/op
 BenchmarkTessBytes/TexBytes/images_20000-16         	    1628	   1350075 ns/op	 4800514 B/op	       1 allocs/op
 PASS
-ok  	github.com/dhannyell/frameforge/platform/wasm/tess	220.052s
+ok  	github.com/dhannyell/arasy/platform/wasm/tess	220.052s

@@ -1,10 +1,10 @@
-package ffcli
+package cli
 
 import (
 	"fmt"
 	"os"
 
-	"github.com/dhannyell/frameforge/internal/wasmserve"
+	"github.com/dhannyell/arasy/internal/wasmserve"
 	"github.com/spf13/cobra"
 )
 
@@ -27,7 +27,7 @@ var devCmd = &cobra.Command{
 		if title == "" {
 			title = defaultTitle(pkg)
 		}
-		dir, err := os.MkdirTemp("", "frameforge-dev-*")
+		dir, err := os.MkdirTemp("", "Arasy-dev-*")
 		if err != nil {
 			return err
 		}

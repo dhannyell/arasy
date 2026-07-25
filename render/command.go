@@ -1,6 +1,6 @@
 package render
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 type TextAlign uint8
 type TextBaseline uint8

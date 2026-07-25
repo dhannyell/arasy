@@ -12,7 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/arasy/asset"
 )
 
 func TestLoadSingleManifestResolvesTexturesAndSprites(t *testing.T) {

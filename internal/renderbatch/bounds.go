@@ -3,8 +3,8 @@ package renderbatch
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // IsFiniteRect reports whether every coordinate of r is finite (no NaN or

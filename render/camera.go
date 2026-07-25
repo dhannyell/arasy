@@ -3,7 +3,7 @@ package render
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // AspectMode controls how the camera adapts when World and Viewport have

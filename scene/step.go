@@ -1,6 +1,6 @@
 package scene
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // StepConfig configures one simulation step.
 type StepConfig struct {

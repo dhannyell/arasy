@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func TestFrameTimerFirstFrameAndReset(t *testing.T) {

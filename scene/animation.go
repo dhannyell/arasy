@@ -1,8 +1,8 @@
 package scene
 
 import (
-	"github.com/dhannyell/frameforge/ease"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/ease"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func (w *World) advanceAnimations(dt float64) {

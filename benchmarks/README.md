@@ -1,6 +1,6 @@
 # Benchmarking Guide
 
-This directory contains benchmark baselines and reports for frameforge's performance-critical code paths.
+This directory contains benchmark baselines and reports for Arasy's performance-critical code paths.
 
 ## Structure
 

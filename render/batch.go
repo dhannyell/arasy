@@ -1,6 +1,6 @@
 package render
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // SpriteBatchID identifies a retained sprite batch published by the game.
 // IDs are chosen by the game, are valid only for the current run, and are

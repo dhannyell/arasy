@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 func benchSpriteBatchInstances(n int, textureCount int) []render.SpriteInstance {

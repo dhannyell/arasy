@@ -4,7 +4,7 @@ import (
 	"math"
 	"math/bits"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // Emitter is the CPU-side state of one live effect instance. Software

@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 func (u *UI) buttonIn(id, label string, rect math2d.Rect, space Space) {

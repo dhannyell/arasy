@@ -1,7 +1,7 @@
 # Camera, World, And Viewport
 
 This guide explains the difference between `World` and `Viewport` in
-FrameForge's camera.
+Arasy's camera.
 
 These concepts matter because the engine should not mix game coordinates with
 screen pixels.
@@ -98,7 +98,7 @@ The game position stays the same.
 
 `World` represents the game area the camera sees.
 
-In FrameForge:
+In Arasy:
 
 ```go
 World: math2d.NewRect(
@@ -126,7 +126,7 @@ goal:   {100,37.5}
 
 `Viewport` represents the image/screen area where the world is drawn.
 
-In FrameForge:
+In Arasy:
 
 ```go
 Viewport: math2d.NewRect(
@@ -390,7 +390,7 @@ image:
 Y grows downward
 ```
 
-FrameForge's camera does not flip the Y axis by itself.
+Arasy's camera does not flip the Y axis by itself.
 
 It assumes `World` and `Viewport` use the same orientation.
 

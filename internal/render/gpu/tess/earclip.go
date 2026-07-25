@@ -3,7 +3,7 @@ package tess
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 const earClipEpsilon = 1e-9

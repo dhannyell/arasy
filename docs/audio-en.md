@@ -1,6 +1,6 @@
 # Audio
 
-This guide describes FrameForge's audio model: games declare clips, emit
+This guide describes Arasy's audio model: games declare clips, emit
 deterministic intents through `ctx.Audio`, and hosts consume output from the
 `runtime.Driver`.
 

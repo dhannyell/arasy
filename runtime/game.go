@@ -1,8 +1,8 @@
 package runtime
 
 import (
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
 )
 
 // Game is the user-facing contract.

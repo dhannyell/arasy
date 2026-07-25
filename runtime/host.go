@@ -3,9 +3,9 @@ package runtime
 import (
 	"time"
 
-	"github.com/dhannyell/frameforge/audio"
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/audio"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // FrameTimer turns host timestamps into frame deltas. The first sample after

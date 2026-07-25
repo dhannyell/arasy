@@ -8,12 +8,12 @@ import (
 	"math"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 const imageQuadTriangleOverlap = 0.25
@@ -208,7 +208,7 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 
 	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
 	if !c.ready && c.pendingTextures == 0 {
-		c.canvas.Call("setAttribute", "data-frameforge-ready", "canvas2d")
+		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
 	}
 }

@@ -1,5 +1,5 @@
 {
-  "name": "frameforge-browser-tests",
+  "name": "Arasy-browser-tests",
   "private": true,
   "scripts": {
     "test:wasm-golden": "node tests/wasm/build.mjs && playwright test tests/wasm/golden.spec.js",

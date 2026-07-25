@@ -3,8 +3,8 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/particles"
-	"github.com/dhannyell/frameforge/platform/raster"
+	"github.com/dhannyell/arasy/examples/particles"
+	"github.com/dhannyell/arasy/platform/raster"
 )
 
 func main() {

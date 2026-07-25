@@ -6,11 +6,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/render/gpu/particlegpu"
-	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
+	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/render"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/arasy/input"
 )
 
 func TestReplayReproducesChecksum(t *testing.T) {

@@ -3,7 +3,7 @@ package uimanager
 import (
 	"slices"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 type Screen uint8

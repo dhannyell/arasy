@@ -9,7 +9,7 @@ import (
 	goruntime "runtime"
 	"time"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 
@@ -47,7 +47,7 @@ type FrameMetrics struct {
 }
 
 const (
-	defaultTitle  = "FrameForge"
+	defaultTitle  = "Arasy"
 	defaultWidth  = 1280
 	defaultHeight = 720
 )
@@ -64,7 +64,7 @@ const (
 
 // Options configures the native desktop host.
 type Options struct {
-	// Title is the window title. The default is "FrameForge".
+	// Title is the window title. The default is "Arasy".
 	Title string
 	// Width is the initial logical window width. The default is 1280.
 	Width int

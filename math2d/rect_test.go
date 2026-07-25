@@ -3,7 +3,7 @@ package math2d_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func TestNewRect(t *testing.T) {

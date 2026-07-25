@@ -6,9 +6,9 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // TestDrawImageQuadMatchesDrawImage is the equivalence anchor for the whole

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/dhannyell/frameforge/examples/2048"
-	"github.com/dhannyell/frameforge/platform/raster"
+	"github.com/dhannyell/arasy/examples/2048"
+	"github.com/dhannyell/arasy/platform/raster"
 )
 
 func main() {

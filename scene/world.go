@@ -1,6 +1,6 @@
 package scene
 
-import "github.com/dhannyell/frameforge/render"
+import "github.com/dhannyell/arasy/render"
 
 const defaultCellSize = 64
 

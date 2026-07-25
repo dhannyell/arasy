@@ -1,4 +1,4 @@
-package ffcli
+package cli
 
 import (
 	"os"
@@ -13,7 +13,7 @@ func TestRenderProjectBuildsWithLocalEngine(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-game")
 	err := renderProject(dir, projectTemplateData{
 		Module: "example.com/my-game", Name: "mygame", GoVersion: strings.TrimPrefix(runtime.Version(), "go"),
-		EngineModule: "github.com/dhannyell/frameforge", EngineVersion: "v0.0.0", EngineReplace: repoRoot(t),
+		EngineModule: "github.com/dhannyell/arasy", EngineVersion: "v0.0.0", EngineReplace: repoRoot(t),
 	})
 	if err != nil {
 		t.Fatal(err)

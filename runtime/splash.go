@@ -4,9 +4,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/dhannyell/frameforge/internal/renderbatch"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // SplashSegment is one entry in the boot splash sequence: a sprite shown for

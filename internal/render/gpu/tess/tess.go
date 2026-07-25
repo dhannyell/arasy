@@ -1,8 +1,8 @@
 package tess
 
 import (
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // Vertex is one interleaved vertex: clip-space position and straight-alpha

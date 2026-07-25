@@ -13,8 +13,8 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/render"
 )
 
 const (

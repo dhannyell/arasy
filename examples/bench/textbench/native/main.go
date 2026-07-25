@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/dhannyell/frameforge/examples/bench/textbench"
-	"github.com/dhannyell/frameforge/platform/native"
+	"github.com/dhannyell/arasy/examples/bench/textbench"
+	"github.com/dhannyell/arasy/platform/native"
 )
 
 func main() {

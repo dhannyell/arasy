@@ -6,15 +6,15 @@ import (
 	"log/slog"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 )
 
-// recordingPanel wires the .ffrp recording/replay controls embedded in the
+// recordingPanel wires the .arrp recording/replay controls embedded in the
 // unified debug panel. It exposes:
 //
 //   - Record / Stop: toggle driver.StartRecording/StopRecording.
-//   - Save: download the stopped recording as a .ffrp file via a Blob URL.
-//   - Load: pick a .ffrp file, read its bytes, VerifyRecording + Replay, and
+//   - Save: download the stopped recording as a .arrp file via a Blob URL.
+//   - Load: pick a .arrp file, read its bytes, VerifyRecording + Replay, and
 //     swap the host driver onto the reconstructed one.
 //   - a status line synced each frame from DriveState.
 //
@@ -125,7 +125,7 @@ func (p *recordingPanel) toggleRecording() {
 }
 
 // saveRecording serializes the active recording and triggers a browser
-// download of the .ffrp bytes via a Blob URL.
+// download of the .arrp bytes via a Blob URL.
 func (p *recordingPanel) saveRecording() {
 	if p.pendingRecord {
 		p.setStatus("recording hasn't started yet — wait for reset")
@@ -161,15 +161,15 @@ func (p *recordingPanel) saveRecording() {
 	url := js.Global().Get("URL").Call("createObjectURL", blob)
 	a := doc.Call("createElement", "a")
 	a.Set("href", url)
-	a.Set("download", "frameforge-replay.ffrp")
+	a.Set("download", "arasy-replay.arrp")
 	doc.Get("body").Call("appendChild", a)
 	a.Call("click")
 	doc.Get("body").Call("removeChild", a)
 	js.Global().Get("URL").Call("revokeObjectURL", url)
-	p.setStatus("saved frameforge-replay.ffrp")
+	p.setStatus("saved arasy-replay.arrp")
 }
 
-// loadRecording reads the picked .ffrp file, verifies it, and swaps the host
+// loadRecording reads the picked .arrp file, verifies it, and swaps the host
 // onto the reconstructed driver so the browser keeps rendering the replay.
 func (p *recordingPanel) loadRecording(fileEl js.Value) {
 	files := fileEl.Get("files")

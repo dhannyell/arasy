@@ -3,7 +3,7 @@ package input_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
+	"github.com/dhannyell/arasy/input"
 )
 
 // These tests cover the sticky-press latch: hosts collect OS/browser input

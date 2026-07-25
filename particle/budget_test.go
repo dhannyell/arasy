@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/arasy/particle"
 )
 
 func TestNewBudgetStartsAtCeiling(t *testing.T) {

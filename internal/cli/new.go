@@ -1,4 +1,4 @@
-package ffcli
+package cli
 
 import (
 	"embed"
@@ -33,7 +33,7 @@ var (
 
 var newCmd = &cobra.Command{
 	Use:   "new <module-path>",
-	Short: "create a minimal frameforge game project",
+	Short: "create a minimal arasy game project",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		module := args[0]
@@ -53,12 +53,12 @@ var newCmd = &cobra.Command{
 		}
 		data := projectTemplateData{
 			Module: module, Name: name, GoVersion: strings.TrimPrefix(runtime.Version(), "go"),
-			EngineModule: "github.com/dhannyell/frameforge", EngineVersion: "v0.0.0", EngineReplace: newEngineReplace,
+			EngineModule: "github.com/dhannyell/arasy", EngineVersion: "v0.0.0", EngineReplace: newEngineReplace,
 		}
 		if err := renderProject(dir, data); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created %s\nnext steps:\n  cd %s\n  go mod tidy\n  frameforge dev ./wasm\n", module, dir)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created %s\nnext steps:\n  cd %s\n  go mod tidy\n  arasy dev ./wasm\n", module, dir)
 		return err
 	},
 }
@@ -87,7 +87,7 @@ func ensureDestinationEmpty(dir string) error {
 func init() {
 	newCmd.Flags().StringVarP(&newDir, "dir", "d", "", "destination directory (defaults to the module name)")
 	newCmd.Flags().StringVar(&newName, "name", "", "Go package name (defaults to the sanitized module name)")
-	newCmd.Flags().StringVar(&newEngineReplace, "engine-replace", "", "local frameforge repository path; required to compile while the engine is private")
+	newCmd.Flags().StringVar(&newEngineReplace, "engine-replace", "", "local arasy repository path; required to compile while the engine is private")
 	rootCmd.AddCommand(newCmd)
 }
 

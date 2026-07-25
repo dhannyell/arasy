@@ -3,7 +3,7 @@
 Build and serve the standalone browser benchmark:
 
 ```powershell
-go run ./cmd/frameforge dev ./examples/bench/scenebench/wasm -a 127.0.0.1:8095
+go run ./cmd/Arasy dev ./examples/bench/scenebench/wasm -a 127.0.0.1:8095
 ```
 
 It spawns N `scene.World` entities with `Transform` + `Velocity` +

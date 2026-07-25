@@ -4,7 +4,7 @@ import (
 	"image"
 	"sort"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 // TextureUpdate carries new pixel data for a dynamic texture.

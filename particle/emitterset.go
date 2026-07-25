@@ -1,6 +1,6 @@
 package particle
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // InstanceKey identifies one live effect instance. It mirrors the render
 // command's (effect, emitter) pair without importing the render package.

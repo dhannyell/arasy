@@ -3,7 +3,7 @@ package render_test
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 func TestMeasureTextUsesCanonicalMonospaceMetrics(t *testing.T) {

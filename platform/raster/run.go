@@ -13,10 +13,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // Options configures an offline raster render run.

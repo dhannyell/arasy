@@ -6,12 +6,12 @@ import (
 	"encoding/binary"
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/internal/render/gpu/particlegpu"
-	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/particle"
-	"github.com/dhannyell/frameforge/platform/wasm/gpu"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
+	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/particle"
+	"github.com/dhannyell/arasy/platform/wasm/gpu"
+	"github.com/dhannyell/arasy/render"
 )
 
 type gpuEmitter struct {

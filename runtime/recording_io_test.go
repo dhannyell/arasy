@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
@@ -135,7 +135,7 @@ func TestReadRecordingRejectsInvalidEvent(t *testing.T) {
 }
 
 // TestRecordingCapturesViewportForUIHitTesting is the regression test for the
-// breakout .ffrp replay bug: a recording made on a platform surface different
+// breakout .arrp replay bug: a recording made on a platform surface different
 // from the game's Config default viewport (e.g. a responsive browser canvas)
 // must capture and restore that viewport, or a UI button click that started
 // the game live is missed during replay — the game stays frozen in its menu

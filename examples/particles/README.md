@@ -1,6 +1,6 @@
 # Particle example
 
-This example showcases FrameForge's particle system in four seasonal scenes:
+This example showcases Arasy's particle system in four seasonal scenes:
 
 - spring: petals, leaves, pollen, butterflies, and dandelion seeds;
 - summer: fire, smoke, embers, fireflies, ash, and heat haze;
@@ -21,7 +21,7 @@ $env:GOOS='js'; $env:GOARCH='wasm'
 go build -o output/wasm/particles/app.wasm ./examples/particles/wasm
 Remove-Item Env:GOOS; Remove-Item Env:GOARCH
 
-go run ./cmd/frameforge dev -s output/wasm/particles -a 127.0.0.1:8090
+go run ./cmd/Arasy dev -s output/wasm/particles -a 127.0.0.1:8090
 ```
 
 Open `http://127.0.0.1:8090` in a browser. The buttons at the top switch between

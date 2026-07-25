@@ -3,9 +3,9 @@ package ui
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/ease"
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/ease"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func TestFirstScreenDoesNotAnimate(t *testing.T) {

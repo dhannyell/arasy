@@ -5,7 +5,7 @@ package wasm
 import (
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/platform/wasm/gpu"
+	"github.com/dhannyell/arasy/platform/wasm/gpu"
 )
 
 // jsDevice adapts WebGPU resource setup to the js-free gpu.Device seam.

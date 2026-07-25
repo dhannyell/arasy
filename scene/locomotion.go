@@ -3,7 +3,7 @@ package scene
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 // applyLocomotion steers agents with Locomotion + MoveIntent toward their

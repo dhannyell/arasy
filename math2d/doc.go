@@ -1,4 +1,4 @@
-// Package math2d provides basic 2D math primitives used by Frameforge.
+// Package math2d provides basic 2D math primitives used by Arasy.
 //
 // It contains small, dependency-free types for positions, directions,
 // distances and rectangular bounds. These primitives are shared by rendering,
@@ -14,7 +14,7 @@
 //
 //	next := position.Add(velocity)
 //
-// Coordinates in Frameforge are represented with float64 values. Individual
+// Coordinates in Arasy are represented with float64 values. Individual
 // systems may define their own coordinate spaces, such as screen pixels,
 // world units or normalized field coordinates.
 package math2d

@@ -5,9 +5,9 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/examples/assets"
-	"github.com/dhannyell/frameforge/platform/wasm"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/examples/assets"
+	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {

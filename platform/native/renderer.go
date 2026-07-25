@@ -8,13 +8,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/internal/render/gpu/fontatlas"
-	"github.com/dhannyell/frameforge/internal/render/gpu/shaders"
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
+	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -376,7 +376,7 @@ func (r *Renderer) createPipeline(
 	blend *wgpu.BlendState,
 ) (*wgpu.RenderPipeline, error) {
 	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
-		Label:      "frameforge " + label + " shader",
+		Label:      "Arasy " + label + " shader",
 		WGSLSource: &wgpu.ShaderSourceWGSL{Code: source},
 	})
 	if err != nil {
@@ -384,7 +384,7 @@ func (r *Renderer) createPipeline(
 	}
 	defer module.Release()
 	pipeline, err := r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label:       "frameforge " + label + " pipeline",
+		Label:       "Arasy " + label + " pipeline",
 		Layout:      nil,
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main", Buffers: buffers},
 		Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
@@ -472,7 +472,7 @@ func (r *Renderer) createBuffers() error {
 
 func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
 	buffer, err := r.device.device.TryCreateBuffer(&wgpu.BufferDescriptor{
-		Label: "frameforge " + label,
+		Label: "Arasy " + label,
 		Size:  uint64(size),
 		Usage: usage,
 	})
@@ -614,7 +614,7 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 			texture.spriteBindGroup.Release()
 		}
 		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
-			Label:  "frameforge sprite bind group",
+			Label:  "Arasy sprite bind group",
 			Layout: layout,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, TextureView: texture.view},
@@ -654,7 +654,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	releaseTextureView(&r.msaaView)
 	releaseTexture(&r.msaaTexture)
 	texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
-		Label:         "frameforge MSAA target",
+		Label:         "Arasy MSAA target",
 		Usage:         wgpu.TextureUsageRenderAttachment,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
@@ -700,7 +700,7 @@ func (r *Renderer) encodeFrame(
 		}
 	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label: "frameforge render pass",
+		Label: "Arasy render pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{
 			{
 				View:          r.msaaView,

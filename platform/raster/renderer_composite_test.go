@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/dhannyell/frameforge/particle"
+	"github.com/dhannyell/arasy/particle"
 )
 
 func TestBlitScaledModeAdditiveSaturatesEveryChannel(t *testing.T) {

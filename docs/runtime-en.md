@@ -1,6 +1,6 @@
 # Runtime
 
-This guide explains the role of the `runtime` package in FrameForge.
+This guide explains the role of the `runtime` package in Arasy.
 
 `runtime` is the layer that connects a game to a platform without making the
 game know about Canvas, HTTP, PNG files, native windows, or any other edge

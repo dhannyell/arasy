@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 func TestStoreCopyFromMatchesCloneAfterRemoveAndReadd(t *testing.T) {

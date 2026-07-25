@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	twenty48 "github.com/dhannyell/frameforge/examples/2048"
-	"github.com/dhannyell/frameforge/platform/native"
+	twenty48 "github.com/dhannyell/arasy/examples/2048"
+	"github.com/dhannyell/arasy/platform/native"
 )
 
 func main() {

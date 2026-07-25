@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/dhannyell/frameforge/examples/football"
-	"github.com/dhannyell/frameforge/platform/raster"
+	"github.com/dhannyell/arasy/examples/football"
+	"github.com/dhannyell/arasy/platform/raster"
 )
 
 func main() {

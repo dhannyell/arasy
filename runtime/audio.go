@@ -3,8 +3,8 @@ package runtime
 import (
 	"maps"
 
-	"github.com/dhannyell/frameforge/audio"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/audio"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 const (

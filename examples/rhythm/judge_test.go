@@ -3,7 +3,7 @@ package rhythm
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func TestJudgeDeltaWindows(t *testing.T) {

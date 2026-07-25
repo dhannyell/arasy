@@ -1,6 +1,6 @@
 package render
 
-import "github.com/dhannyell/frameforge/math2d"
+import "github.com/dhannyell/arasy/math2d"
 
 // ClipCommands sets clip as the Clip rect on each command in cmds that
 // doesn't already carry a clip of its own (BaseCommand.Clip's zero value

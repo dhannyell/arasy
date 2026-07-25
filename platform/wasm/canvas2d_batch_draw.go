@@ -5,10 +5,10 @@ package wasm
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/internal/diagnostic"
-	"github.com/dhannyell/frameforge/internal/renderbatch"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // canvasBatchView returns the world-space rect a batch must intersect to

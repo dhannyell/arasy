@@ -9,9 +9,9 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // dynamicManifest declares two dynamic textures (no static textures), 2x2

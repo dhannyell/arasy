@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 // mouseMove, mouseDown, mouseUp build pointer events in screen-pixel space,

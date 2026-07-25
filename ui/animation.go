@@ -3,8 +3,8 @@ package ui
 import (
 	"math"
 
-	"github.com/dhannyell/frameforge/ease"
-	"github.com/dhannyell/frameforge/math2d"
+	"github.com/dhannyell/arasy/ease"
+	"github.com/dhannyell/arasy/math2d"
 )
 
 const animGCMaxAge = 120

@@ -1,6 +1,6 @@
 package wasm
 
-import "github.com/dhannyell/frameforge/internal/render/gpu/tess"
+import "github.com/dhannyell/arasy/internal/render/gpu/tess"
 
 type spriteTextureArrayPlan struct {
 	Enabled bool

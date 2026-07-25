@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/internal/replaytest"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/replaytest"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 var update = flag.Bool("update", false, "rewrite golden replay fixtures")
@@ -15,7 +15,7 @@ var update = flag.Bool("update", false, "rewrite golden replay fixtures")
 // TestGoldenReplay drives ~1800 ticks (30s at 60Hz) of real breakout
 // gameplay through the live API — click Play, launch the ball, sweep the
 // paddle back and forth, auto-relaunch after every life lost — and verifies
-// it against a committed FFRP recording plus a fingerprint of the final
+// it against a committed ARRP recording plus a fingerprint of the final
 // MatchState. Checksum anchors alone would catch most of this drift (World
 // holds the ball/paddle/bricks), but the fingerprint also locks in
 // score/lives, which the anchors only summarize as an opaque hash.

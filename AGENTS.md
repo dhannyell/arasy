@@ -1,4 +1,4 @@
-﻿# AGENTS.md
+# AGENTS.md
 
 Instructions for IA agents working in this repository.
 
@@ -32,8 +32,8 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Rhythm: offline smoke render, then dev server (builds + rebuilds on browser reload).
 go run ./examples/rhythm/raster
-go run ./cmd/frameforge dev ./examples/rhythm/wasm -a 127.0.0.1:8090
-go run ./cmd/frameforge build ./examples/breakout/wasm -o dist/breakout
+go run ./cmd/Arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
+go run ./cmd/Arasy build ./examples/breakout/wasm -o dist/breakout
 
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
@@ -42,7 +42,7 @@ go test ./examples/breakout ./examples/2048 ./examples/rhythm -run TestGoldenRep
 ```
 
 Golden PRs must explain the visual change; unexplained diffs are regressions.
-Golden replays (`internal/replaytest`, committed `.ffrp` + `.state.txt`
+Golden replays (`internal/replaytest`, committed `.arrp` + `.state.txt`
 fixtures under each demo's `testdata/`) follow the same rule for simulation
 changes.
 
@@ -185,7 +185,7 @@ of every frame like `DrawImage`/`DrawText` streaming.
 - Engine packages stay independent of app-specific rules.
 - Prefer small explicit APIs; add complexity under project pressure.
 - Render commands stay backend-agnostic. Measure before optimizing.
-- Stdlib preferred; engine packages keep third-party dependencies limited to `golang.org/x/image` where already used. CLI tooling under `internal/ffcli` may use `spf13/cobra`.
+- Stdlib preferred; engine packages keep third-party dependencies limited to `golang.org/x/image` where already used. CLI tooling under `internal/cli` may use `spf13/cobra`.
 
 ## Float Discipline
 
@@ -209,7 +209,7 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 | `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` (incl. `examples/...` golden replays) + Canvas2D visual golden; WebGPU golden remains a local/browser gate |
 | `arm64` | `go test ./...` (native arm64) |
 
-`wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes. Golden replays (`examples/*/testdata/*.ffrp`) run on all four Go architectures (x86-64, windows, arm64, wasm) via `go test ./examples/...`, extending the same net to the full driver+input+UI+audio+game pipeline.
+`wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes. Golden replays (`examples/*/testdata/*.arrp`) run on all four Go architectures (x86-64, windows, arm64, wasm) via `go test ./examples/...`, extending the same net to the full driver+input+UI+audio+game pipeline.
 
 ## Reference Docs
 - `README.md` -- capabilities, quick start, demo instructions

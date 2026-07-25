@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/asset/typeface"
-	"github.com/dhannyell/frameforge/internal/render/gpu/tess"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/render"
 )
 
 // Provider owns CPU-side glyph atlases. tess.Build submits all text for one

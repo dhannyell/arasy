@@ -9,8 +9,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dhannyell/frameforge/asset"
-	"github.com/dhannyell/frameforge/asset/pixel"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/pixel"
 )
 
 func TestDecodeRGBAPremultipliesAlpha(t *testing.T) {

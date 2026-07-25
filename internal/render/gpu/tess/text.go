@@ -4,8 +4,8 @@ import (
 	"math"
 	"unicode/utf8"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // AppendText tessellates a DrawText command into textured triangles.

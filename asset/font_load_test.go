@@ -5,7 +5,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/dhannyell/frameforge/asset"
+	"github.com/dhannyell/arasy/asset"
 )
 
 func TestLoadFontsAssignsDeterministicIndependentIDs(t *testing.T) {

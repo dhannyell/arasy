@@ -6,10 +6,10 @@ import (
 	"math"
 	"testing"
 
-	"github.com/dhannyell/frameforge/asset/pixel"
-	"github.com/dhannyell/frameforge/internal/renderbatch"
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/asset/pixel"
+	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // assertImagesIdentical requires pixel-exact equality: retained batches are

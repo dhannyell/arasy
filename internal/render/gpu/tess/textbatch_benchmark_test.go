@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/dhannyell/frameforge/render"
+	"github.com/dhannyell/arasy/render"
 )
 
 // makeTextBatchLabels generates short HUD-style labels spread over a

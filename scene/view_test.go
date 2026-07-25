@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dhannyell/frameforge/math2d"
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/scene"
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
 )
 
 // forbiddenMutationNames are exact method names WorldView must never expose.

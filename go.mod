@@ -1,4 +1,4 @@
-module github.com/dhannyell/frameforge
+module github.com/dhannyell/arasy
 
 go 1.26.4
 

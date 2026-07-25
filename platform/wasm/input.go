@@ -5,8 +5,8 @@ package wasm
 import (
 	"syscall/js"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/platform/web/browserinput"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/platform/web/browserinput"
 )
 
 func (h *host) registerInputListeners() {

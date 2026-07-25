@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/dhannyell/frameforge/input"
-	"github.com/dhannyell/frameforge/internal/replaytest"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/replaytest"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 var update = flag.Bool("update", false, "rewrite golden replay fixtures")
@@ -15,7 +15,7 @@ var update = flag.Bool("update", false, "rewrite golden replay fixtures")
 // TestGoldenReplay drives real 2048 gameplay through the live API — click
 // Play, cycle through the four move directions to generate merges and
 // runtime.Rand-driven spawns, click through Game Over / Win overlays to
-// keep playing — and verifies it against a committed FFRP recording plus a
+// keep playing — and verifies it against a committed ARRP recording plus a
 // fingerprint of the final matchState.
 //
 // This is the case checksum anchors alone do NOT cover: 2048 keeps no

@@ -1,15 +1,15 @@
-# FrameForge
-[![CI](https://github.com/dhannyell/frameforge/actions/workflows/ci.yml/badge.svg)](...)
+# Arasy
+[![CI](https://github.com/dhannyell/arasy/actions/workflows/ci.yml/badge.svg)](...)
 
-FrameForge is an experimental 2D engine written in Go.
+Arasy is an experimental 2D engine written in Go.
 
 The project is focused on learning, clarity, deterministic simulation, and low coupling between core engine concepts and rendering backends. It currently provides a small foundation for 2D math, fixed timestep loops, render commands, a portable runtime driver, a raster renderer, and a lightweight scene/entity model.
 
-FrameForge is not trying to compete with commercial engines. The goal is to build a compact, inspectable engine from first principles using mostly the Go standard library.
+Arasy is not trying to compete with commercial engines. The goal is to build a compact, inspectable engine from first principles using mostly the Go standard library.
 
 ## Status
 
-FrameForge is in early development.
+Arasy is in early development.
 
 Current capabilities:
 
@@ -167,9 +167,9 @@ package main
 import (
 	"log/slog"
 
-	"github.com/dhannyell/frameforge/cmd/demos/breakout"
-	"github.com/dhannyell/frameforge/platform/wasm"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/cmd/demos/breakout"
+	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {
@@ -235,7 +235,7 @@ $env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/breakout/app.wasm ./
 
 Run the Wasm server, pointing it to the generated Wasm file.
 ```powershell
- go run ./cmd/wasmserve -dir .\output\wasm\breakout\ -title "frameforge wasm" -addr 127.0.0.1:8080   
+ go run ./cmd/wasmserve -dir .\output\wasm\breakout\ -title "Arasy wasm" -addr 127.0.0.1:8080   
 ```
 Then open `http://localhost:8080` in your browser.
 Both demos include a screen-space UI overlay (score panel, reset button) and
@@ -281,4 +281,4 @@ go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 
 ## License
 
-FrameForge is licensed under the [MIT License](LICENSE).
+Arasy is licensed under the [MIT License](LICENSE).

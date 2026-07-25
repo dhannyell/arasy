@@ -3,8 +3,8 @@ package wasmgolden
 import (
 	"testing"
 
-	"github.com/dhannyell/frameforge/render"
-	"github.com/dhannyell/frameforge/runtime"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func TestParticleGoldenFixturePrimesAdvancesThenFreezes(t *testing.T) {
