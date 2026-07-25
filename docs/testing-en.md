@@ -280,6 +280,12 @@ P4 is the headline: input floats are forced finite by the decoder, so any NaN or
 Inf it finds was produced by the simulation itself (e.g. extreme-but-finite
 `Body.InvMass` or `Ballistics.DragK`), not injected.
 
+One event record in three decodes to an `EventAxisChanged` on a bound gamepad
+axis rather than a button edge. That is the only path on which the `Mapper`
+consumes `Event.Value`, so it is also the only way the value bytes of a record
+can affect the simulation. `TestAxisEventDrivesSimulation` proves the path is
+live end to end.
+
 ### How they run
 
 1. **As regression tests, for free**, on every `go test ./...` — the Go test
@@ -293,6 +299,13 @@ Inf it finds was produced by the simulation itself (e.g. extreme-but-finite
    go test ./internal/simfuzz -fuzz FuzzRewindConvergence -fuzztime 120s
    # etc.
    ```
+
+3. **In CI**, through the `.github/workflows/fuzz.yml` workflow, daily and on
+   demand (`workflow_dispatch`) — **not** on pull requests. Fuzzing with a fixed
+   budget is a poor pull-request gate: it either blocks merges on a flaky
+   timeout, or it is marked non-blocking and then nobody reads it. The
+   pull-request signal already exists and is free: the seed corpus runs as part
+   of `go test ./...`.
 
 ### Triage flow
 

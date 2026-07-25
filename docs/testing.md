@@ -296,6 +296,12 @@ P4 e o destaque: floats de entrada são forçadamente finitos pelo decodificador
 então qualquer NaN ou Inf que ele encontra foi produzido pela propria simulação
 (p.ex. `Body.InvMass` ou `Ballistics.DragK` extremos, mas finitos), não injetado.
 
+Um registro de evento em cada três decodifica para um `EventAxisChanged` num
+eixo de gamepad ligado, em vez de uma borda de botão. Esse é o único caminho em
+que o `Mapper` consome `Event.Value`, então também é o único jeito de os bytes
+de valor de um registro afetarem a simulação. `TestAxisEventDrivesSimulation`
+prova que o caminho está vivo de ponta a ponta.
+
 ### Como rodam
 
 1. **Como teste de regressão, de graça**, em todo `go test ./...` -- o framework
@@ -309,6 +315,12 @@ então qualquer NaN ou Inf que ele encontra foi produzido pela propria simulaç�
    go test ./internal/simfuzz -fuzz FuzzRewindConvergence -fuzztime 120s
    # etc.
    ```
+
+3. **No CI**, pelo workflow `.github/workflows/fuzz.yml`, diariamente e sob
+   demanda (`workflow_dispatch`) -- **não** em pull request. Fuzzing com
+   orçamento fixo não é um bom portão de PR: ou trava merges num timeout
+   instável, ou é marcado como não bloqueante e aí ninguém olha. O sinal de PR
+   já existe e é de graça: o corpus semente roda em `go test ./...`.
 
 ### Fluxo de triagem
 

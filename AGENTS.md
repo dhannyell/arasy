@@ -134,7 +134,6 @@ platform/* -> asset/pixel -> asset
 - Benchmarks go in dedicated `*_benchmark_test.go` files.
 - `internal/simfuzz` provides twelve fuzz targets for simulation determinism (see `docs/testing.md`).
 
-
 ## Render Interpolation
 
 The engine provides built-in render interpolation for official platforms (WASM,
