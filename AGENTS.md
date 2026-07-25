@@ -132,6 +132,8 @@ platform/* -> asset/pixel -> asset
 - `package foo_test` by default; `package foo` only when testing internals.
 - Helpers: call `t.Helper()`, move to shared file when used across several test files.
 - Benchmarks go in dedicated `*_benchmark_test.go` files.
+- `internal/simfuzz` provides twelve fuzz targets for simulation determinism (see `docs/testing.md`).
+
 
 ## Render Interpolation
 

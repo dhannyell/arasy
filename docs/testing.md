@@ -1,24 +1,24 @@
 # Estrutura de testes
 
-Este documento registra a convencao de organizacao dos testes da Arasy.
-O objetivo e manter o padrao idiomatico de Go, com testes perto do codigo, sem
-deixar os pacotes virarem arquivos gigantes por acumulacao.
+Este documento registra a convenção de organização dos testes da Arasy.
+O objetivo e manter o padrão idiomático de Go, com testes perto do código, sem
+deixar os pacotes virarem arquivos gigantes por acumulação.
 
 ## Principios
 
-- Testes ficam no mesmo diretorio do pacote que exercitam.
-- Arquivos de teste sao nomeados por comportamento ou responsabilidade, nao
-  necessariamente por espelhar um arquivo de producao.
-- Preferir varios arquivos pequenos e focados a um unico `*_test.go` grande.
-- Testes devem documentar comportamento observavel e decisoes de simulacao.
-- Helpers de teste devem ser pequenos, explicitos e locais ao pacote.
+- Testes ficam no mesmo diretório do pacote que exercitam.
+- Arquivos de teste são nomeados por comportamento ou responsabilidade, não
+  necessariamente por espelhar um arquivo de produção.
+- Preferir vários arquivos pequenos e focados a um unico `*_test.go` grande.
+- Testes devem documentar comportamento observável e decisões de simulação.
+- Helpers de teste devem ser pequenos, explícitos e locais ao pacote.
 - Benchmarks ficam separados em `*_benchmark_test.go`.
 
 ## Pacote do teste
 
-Use `package foo_test` por padrao quando o teste puder validar a API publica do
-pacote. Isso mantem o acoplamento baixo e simula como usuarios reais usam o
-codigo.
+Use `package foo_test` por padrão quando o teste puder validar a API publica do
+pacote. Isso mantém o acoplamento baixo e simula como usuários reais usam o
+código.
 
 Exemplos atuais:
 
@@ -31,7 +31,7 @@ platform/raster -> package raster_test
 ```
 
 Use `package foo` quando o contrato importante depende de estado interno do
-pacote ou quando o teste e uma caracterizacao deliberada de uma implementacao
+pacote ou quando o teste e uma caracterização deliberada de uma implementação
 interna.
 
 Exemplos atuais:
@@ -42,7 +42,7 @@ ui      -> package ui
 platform/wasm -> package wasm
 ```
 
-Essa escolha deve ser intencional. Ao adicionar um novo arquivo de teste em um
+Essa escolha deve ser intencional. Ao adicionar um novo arquivo de teste num
 pacote misto, siga o estilo existente do assunto que esta sendo testado.
 
 ## Nome dos arquivos
@@ -69,14 +69,14 @@ renderer_test.go
 misc_test.go
 ```
 
-Esses nomes ainda sao aceitaveis para pacotes pequenos, mas quando o arquivo
-comeca a misturar familias de comportamento, divida.
+Esses nomes ainda são aceitáveis para pacotes pequenos, mas quando o arquivo
+começa a misturar famílias de comportamento, divida.
 
 ## Organizacao recomendada por pacote
 
 ### `scene`
 
-`scene` concentra simulacao, ECS, colisao, debug e checksum. Os testes devem
+`scene` concentra simulação, ECS, colisão, debug e checksum. Os testes devem
 ficar separados por sistema ou contrato:
 
 ```text
@@ -101,7 +101,7 @@ Ao adicionar componente novo ao `World`, cubra pelo menos:
 - set/get/remove;
 - `Clone`;
 - `Despawn`;
-- `Checksum`, quando o componente fizer parte do estado de simulacao.
+- `Checksum`, quando o componente fizer parte do estado de simulação.
 
 ### `runtime`
 
@@ -123,14 +123,14 @@ debug_test.go
 seek_benchmark_test.go
 ```
 
-Use nomes explicitos quando um teste for regressao de bug ou caracterizacao de
-semantica. Comentarios sao bem-vindos quando explicam a historia do bug ou a
-razao deterministica da expectativa.
+Use nomes explícitos quando um teste for regressão de bug ou caracterização de
+semantica. Comentários são bem-vindos quando explicam a história do bug ou a
+razão determinística da expectativa.
 
 ### `platform/raster`
 
 O rasterizador tem testes pixel-level. Separe por primitiva ou regra de
-composicao:
+composição:
 
 ```text
 renderer_core_test.go
@@ -146,13 +146,13 @@ renderer_benchmark_test.go
 ```
 
 Mantenha assertions de pixel em helpers pequenos, mas deixe o comando render
-visivel no teste. Isso torna falhas visuais mais faceis de entender.
+visível no teste. Isso torna falhas visuais mais fáceis de entender.
 
 ### `platform/wasm`
 
-O pipeline WebGPU separa a tessellacao pura em `internal/render/gpu/tess`; mantenha
-ali testes semanticos de vertices, clipping, atlas e painter order. Canvas2D e
-WebGPU tambem possuem goldens visuais executados no Chromium por Playwright:
+O pipeline WebGPU separa a tessellate pura em `internal/render/gpu/tess`; mantenha
+ali testes semânticos de vertices, clipping, atlas e painter order. Canvas2D e
+WebGPU também possuem goldens visuais executados no Chromium por Playwright:
 
 ```powershell
 npm ci
@@ -162,12 +162,12 @@ npm run update:wasm-golden # somente apos mudanca visual intencional
 ```
 
 Os projetos `canvas2d` e `webgpu` usam baselines separados. O teste WebGPU deve
-falhar se o host cair silenciosamente para Canvas2D. Artefatos de diferenca
+falhar se o host cair silenciosamente para Canvas2D. Artefatos de diferença
 ficam em `test-results/` e nao devem ser commitados.
 
 ### `render`
 
-Separe transformacao de camera, aspect ratio, cores e comandos:
+Separe transformação de camera, aspect ratio, cores e comandos:
 
 ```text
 camera_transform_test.go
@@ -183,7 +183,7 @@ arquivos enquanto cada arquivo contar uma unica historia clara.
 
 ## Helpers
 
-Use helpers quando eles removem repeticao sem esconder o caso de teste.
+Use helpers quando eles removem repetição sem esconder o caso de teste.
 
 Bons exemplos:
 
@@ -202,15 +202,15 @@ Regras para helpers:
 
 ## Integracao e testes pesados
 
-Testes de integracao podem ficar no pacote que exercitam quando ainda sao
-rapidos e estaveis. Se um teste precisar de servidor, WebSocket, tempo real ou
+Testes de integração podem ficar no pacote que exercitam quando ainda são
+rápidos e estáveis. Se um teste precisar de servidor, WebSocket, tempo real ou
 jogo completo, deixe isso claro no nome:
 
 ```text
 scrub_integration_test.go
 ```
 
-Se testes Go de integracao ficarem lentos ou instaveis, use build tag:
+Se testes, Go de integracao ficarem lentos ou instaveis, use build tag:
 
 ```go
 //go:build integration
@@ -223,20 +223,20 @@ go test ./...
 go test -tags=integration ./caminho/do/pacote
 ```
 
-Nao use build tag cedo demais. Enquanto a suite completa continuar rapida e
-estavel, manter tudo em `go test ./...` e melhor para feedback.
+Não use build tag cedo demais. Enquanto a suíte completa continuar rápida e
+estável, manter tudo em `go test ./...` e melhor para feedback.
 
-Testes que precisam de DOM, Canvas2D ou WebGPU nao usam `go_js_wasm_exec`, que
-nao fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
+Testes que precisam de DOM, Canvas2D ou WebGPU não usam `go_js_wasm_exec`, que
+não fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
 comando `npm run test:wasm-golden`.
 
 ## Conformidade cross-backend
 
-`cmd/wasmgolden/conformance_test.go` renderiza a cena canonica do
+`cmd/wasmgolden/conformance_test.go` renderiza a cena canónica do
 `wasmgolden` no raster (in-process, sem browser) e diffa contra os goldens
-Playwright commitados de canvas2d e webgpu, com orcamento de pixels
+Playwright commitados de canvas2d e webgpu, com orçamento de pixels
 divergentes calibrado por fixture. Roda em `go test ./cmd/wasmgolden` em
-toda perna nativa do CI. Regenerou golden do browser
+toda a perna nativa do CI. Regenerou golden do browser
 (`npm run update:wasm-golden`)? Rode a conformidade em seguida.
 
 ## Benchmarks
@@ -250,25 +250,97 @@ seek_benchmark_test.go
 renderer_benchmark_test.go
 ```
 
-Quando o benchmark virar uma familia oficial, registre a suite em
+Quando o benchmark virar uma familia oficial, registre a suíte em
 `cmd/benchsave/suites.go` para que `go run ./cmd/benchsave -list-suites` a
 encontre.
 
 ## Quando dividir um arquivo
 
-Divida um arquivo de teste quando uma destas condicoes aparecer:
+Divida um arquivo de teste quando uma destas condições aparecer:
 
-- ele mistura duas ou mais familias de comportamento;
-- ele passa de algumas centenas de linhas e a navegacao fica cansativa;
-- novos testes estao sendo adicionados longe dos helpers ou fixtures que usam;
-- o nome do arquivo ja nao descreve bem o conteudo.
+- ele mistura duas ou mais famílias de comportamento;
+- ele passa de algumas centenas de linhas e a navegação fica cansativa;
+- novos testes estão sendo adicionados longe dos helpers ou fixtures que usam;
+- o nome do arquivo já não descreve bem o conteúdo.
 
 Ao dividir, prefira mover testes inteiros sem alterar comportamento. Depois, em
-um segundo passo, considere extrair helpers se a repeticao continuar clara.
+um segundo passo, considere extrair helpers se a repetição continuar clara.
+
+
+## Fuzzing da simulacao
+
+`internal/simfuzz` oferece doze alvos de fuzz que conduzem um `runtime.Game`
+dedicado (o "fuzz game") por um `runtime.Driver` real, exercitando o pipeline
+completo `input -> Driver -> World`. Cada alvo decodifica um `Script` dos bytes
+do fuzzer (decodificador total e determinístico), spawna entidades com o
+vocabulário completo de componentes do `scene` e replays um log monotónico de
+eventos de input. P2 também conduz o caminho real de UI/jogo do Breakout, e P5
+é semeado pelos três recordings golden commitados.
+
+| Alvo | Propriedade | O que verifica |
+|------|-------------|----------------|
+| `FuzzDeterminism` | P1 | Dois drivers independentes, mesmo script -> checksum identico a cada tick |
+| `FuzzReplayFidelity` | P2 | Gravar -> `VerifyRecording` -> checksum do replay == run viva |
+| `FuzzRewindConvergence` | P3 | Avancar ate N, rebobinar para K<N, avancar de novo ate N -> mesmo checksum |
+| `FuzzNumericSanity` | P4 | Nenhum NaN/Inf em qualquer componente de qualquer entidade viva apos qualquer tick |
+| `FuzzRecordingCodec` | P5 | `Recording` -> bytes -> `Recording` faz round-trip estavel |
+| `FuzzNoPanic` | P6 | Input arbitrario (possivelmente invalido) nunca causa panic no engine |
+| `FuzzResetReproducibility` | P7 | `ControlReset` no meio da run reconstrui o mundo de forma deterministica; checksums por tick apos o reset sao identicos aos de uma run nova |
+| `FuzzScrubBidirectional` | P8 | Saltos de scrub repetidos (N -> K1 -> K2 -> ... -> N) cada um cai no checksum original, exercitando o thinning do archive de keyframes |
+| `FuzzSpeedIndependence` | P9 | `ControlSetSpeed` muda o ritmo de ticks, nunca o estado por tick; historicos de speed diferentes dao checksums identicos |
+| `FuzzDespawnMidRun` | P10 | Um despawn disparado por input acontece exatamente uma vez, permanece finito/determinístico e converge após rewind |
+| `FuzzSubstepTunneling` | P11 | Um cenário moldado de projétil rápido/parede fina exercita CCD com substeps, permanece finito/determinístico e nunca atravessa a parede |
+| `FuzzForkAfterScrubDeterminism` | P12 | Scrub + input novo cria um fork que coincide com uma run limpa do novo futuro e difere do futuro abandonado |
+
+P4 e o destaque: floats de entrada são forçadamente finitos pelo decodificador,
+então qualquer NaN ou Inf que ele encontra foi produzido pela propria simulação
+(p.ex. `Body.InvMass` ou `Ballistics.DragK` extremos, mas finitos), não injetado.
+
+### Como rodam
+
+1. **Como teste de regressão, de graça**, em todo `go test ./...` -- o framework
+   de testes do Go executa o ‘corpus’ semente de toda funcao `FuzzXxx` mais os
+   arquivos commitados em `testdata/fuzz/<Target>/`. Custo: milissegundos.
+
+2. **Como fuzzer de verdade**, sob demanda com `-fuzz`:
+
+   ```powershell
+   go test ./internal/simfuzz -fuzz FuzzDeterminism -fuzztime 300s
+   go test ./internal/simfuzz -fuzz FuzzRewindConvergence -fuzztime 120s
+   # etc.
+   ```
+
+### Fluxo de triagem
+
+1. Um alvo de fuzz falha -> o helper de checagem chama `t.Fatalf`.
+2. `dumpRepro` grava uma entrada válida de corpus do Go (`.txt`) e um replay
+   `.arrp` em `testdata/repro/<Target>/`; a mensagem de falha informa ambos.
+   O próprio fuzz runner também pode persistir o input minimizado diretamente
+   em `testdata/fuzz/<Target>/`.
+3. Mova o `.txt` para o diretório de corpus do alvo
+   (`testdata/fuzz/<Target>/`) e commite-o com o replay correspondente em
+   `testdata/replays/<Target>/` **antes** de qualquer fix.
+4. Corrija o bug, depois verifique que o arquivo de repro passa.
+5. Commite o repro e o fix em commits separados para a regressão ser revisavel
+   de forma independente.
+
+`TestReproRoundTrip` prova que um artefato do `dumpRepro` recarrega e
+redecodifica para o mesmo cenário.
+
+### Adicionando um novo alvo
+
+1. Defina o helper de checagem em um arquivo `*_test.go` específico do
+   comportamento.
+2. Adicione um wrapper `Fuzz*` em `fuzz_properties_test.go`.
+3. Semeie-o com `addSimulationSeeds`, `addRecordingSeeds` ou um seed específico
+   deliberadamente moldado.
+4. Confirme a descoberta com `go test ./internal/simfuzz -list '^Fuzz'`.
+
+Novos alvos nunca devem causar panic; o decodificador e total.
 
 ## Comandos de verificacao
 
-Antes de finalizar mudancas de teste:
+Antes de finalizar mudanças de teste:
 
 ```powershell
 gofmt -w <arquivos alterados>
