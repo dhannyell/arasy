@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -77,6 +78,45 @@ func TestReadRecordingRejectsUnsupportedVersion(t *testing.T) {
 	_, err := ReadRecording(bytes.NewReader(buf.Bytes()))
 	if !errors.Is(err, ErrUnsupportedRecordingFormat) {
 		t.Fatalf("error = %v, want ErrUnsupportedRecordingFormat", err)
+	}
+}
+
+// TestReadRecordingDoesNotPreallocateFromHeaderCounts pins the fix for a
+// header whose element counts are not backed by any payload. The counts are
+// attacker-controlled on the untrusted-upload path, and sizing the slices from
+// them let 66 bytes of header reserve hundreds of megabytes before the read
+// failed. Parsing must stay proportional to the bytes actually present.
+func TestReadRecordingDoesNotPreallocateFromHeaderCounts(t *testing.T) {
+	var buf bytes.Buffer
+	buf.WriteString(recordingMagic)
+	for _, field := range []any{
+		recordingVersion,
+		uint64(0), uint64(0), // ticks, seed
+		float64(0), float64(0), float64(0), float64(0), // viewport
+		uint32(maxRecordingAnchors),
+		uint32(maxRecordingEvents),
+		uint32(maxRecordingAnchors),
+	} {
+		if err := binary.Write(&buf, binary.LittleEndian, field); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data := buf.Bytes()
+
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	_, err := ReadRecordingFromBytes(data)
+	runtime.ReadMemStats(&after)
+
+	if err == nil {
+		t.Fatal("expected an error for a header with no payload")
+	}
+	// Generous: the honest cost is a few kilobytes. The pre-fix cost was
+	// ~400 MB, so this catches a regression by three orders of magnitude.
+	const budget = 1 << 20
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > budget {
+		t.Fatalf("parsing %d bytes allocated %d bytes, want at most %d",
+			len(data), allocated, budget)
 	}
 }
 

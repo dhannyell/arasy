@@ -23,6 +23,18 @@ const maxSubsteps = 32
 // Entities with Height but no Ballistics get Z-only integration with an
 // inelastic ground, letting a consumer drive flight manually. Entities with
 // Ballistics + Height but no Velocity get gravity-driven Z-only integration.
+//
+// # Stability
+//
+// Drag and Magnus are both integrated with unconditionally stable forms, so
+// the integrator has no regime to switch on and behaves continuously in the
+// step size. Drag is implicit — v <- v / (1 + DragK*|v|*dt) — which is
+// monotonic and never reverses the velocity; the explicit form it replaces
+// reversed it once DragK*|v|*dt exceeded 1 and then diverged to Inf. Magnus
+// is a Cayley rotation, which is exactly norm-preserving; the explicit form
+// it replaces injected energy and overflowed once |MagnusK*Omega*dt| exceeded
+// 1. Neither is a branch on a float comparison, which keeps a one-ULP
+// difference from turning into a large state divergence.
 func (w *World) advanceBallistics(dt float64) {
 	for _, id := range w.heights.ids {
 		h, _ := w.heights.get(id)
@@ -58,21 +70,41 @@ func (w *World) advanceBallistics(dt float64) {
 		// Speed magnitude for quadratic drag.
 		speed := math.Sqrt(float64(vx*vx) + float64(vy*vy) + float64(vz*vz))
 
-		// Drag: a_d = -DragK * |v| * v
-		dragX := bal.DragK * speed * vx
-		dragY := bal.DragK * speed * vy
-		dragZ := bal.DragK * speed * vz
+		// Every explicit float64 conversion below wraps a *product*: an
+		// unshielded multiplication feeding an addition may fuse into an FMA
+		// across statements, which is architecture-dependent. Rounding the
+		// product first leaves the addition nothing to fuse.
 
-		// Magnus: a_m = MagnusK * omega * perpendicular(v_horizontal)
-		magX := bal.MagnusK * omega * (-vy)
-		magY := bal.MagnusK * omega * vx
+		// Quadratic drag, integrated implicitly: v <- v / (1 + DragK*|v|*dt).
+		// The step is skipped when the coefficient is not a positive finite
+		// number, so a zero DragK costs nothing and a NaN one cannot poison
+		// the velocity for every later tick.
+		dragStep := float64(float64(bal.DragK*speed) * dt)
+		if dragStep > 0 {
+			dragScale := 1.0 / (1.0 + dragStep)
+			vx *= dragScale
+			vy *= dragScale
+			vz *= dragScale
+		}
 
-		// Semi-implicit Euler: accelerate. The explicit float64 conversions on
-		// the sum-of-products stop FMA fusion, keeping the integrator
-		// bit-identical across architectures.
-		vel.Linear.X -= float64((dragX - magX) * dt)
-		vel.Linear.Y -= float64((dragY - magY) * dt)
-		h.VZ -= float64((dragZ + bal.Gravity) * dt)
+		// Magnus as a Cayley rotation. It is exactly norm-preserving and
+		// bounded for any step size, so it needs no regime switch either. A
+		// zero rate makes the transform the exact identity; the guard is a
+		// cost saver, not a semantic one.
+		if magnusRate := bal.MagnusK * omega; magnusRate != 0 {
+			halfStep := float64(float64(magnusRate*dt) * 0.5)
+			halfStepSq := float64(halfStep * halfStep)
+			denom := 1.0 + halfStepSq
+			diagonal := 1.0 - halfStepSq
+			offDiagonal := float64(2.0 * halfStep)
+			rotatedX := (float64(diagonal*vx) - float64(offDiagonal*vy)) / denom
+			rotatedY := (float64(offDiagonal*vx) + float64(diagonal*vy)) / denom
+			vx, vy = rotatedX, rotatedY
+		}
+
+		vel.Linear.X = vx
+		vel.Linear.Y = vy
+		h.VZ = vz - float64(bal.Gravity*dt)
 
 		// Integrate Z.
 		h.Z += float64(h.VZ * dt)

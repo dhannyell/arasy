@@ -67,6 +67,51 @@ func TestBallisticsDragReducesRange(t *testing.T) {
 	}
 }
 
+func TestBallisticsQuadraticDragStaysFiniteAtHighSpeed(t *testing.T) {
+	w := scene.NewWorld()
+	bal := scene.Ballistics{DragK: 1}
+	id := newProjectile(w, math2d.Vec2{}, 122, 0, 0, bal)
+
+	dt := 1.0 / 60.0
+	previous := 122.0
+	for tick := 1; tick <= 60; tick++ {
+		w.AdvanceBallisticsExport(dt)
+		velocity, _ := w.Velocity(id)
+		speed := velocity.Linear.X
+		if math.IsNaN(speed) || math.IsInf(speed, 0) {
+			t.Fatalf("tick %d: quadratic drag produced non-finite velocity %v", tick, speed)
+		}
+		if speed < 0 {
+			t.Fatalf("tick %d: drag reversed velocity to %v", tick, speed)
+		}
+		if speed > previous {
+			t.Fatalf("tick %d: drag increased speed from %v to %v", tick, previous, speed)
+		}
+		previous = speed
+	}
+}
+
+func TestBallisticsMagnusStepPreservesHorizontalSpeed(t *testing.T) {
+	w := scene.NewWorld()
+	bal := scene.Ballistics{MagnusK: 1e6}
+	id := newProjectile(w, math2d.Vec2{}, 10, 4, 0, bal)
+	w.SetSpin(id, scene.Spin{Omega: 1e6})
+
+	before := math.Sqrt(116)
+	for tick := 1; tick <= 60; tick++ {
+		w.AdvanceBallisticsExport(1.0 / 60.0)
+		velocity, _ := w.Velocity(id)
+		after := math.Sqrt(float64(velocity.Linear.X*velocity.Linear.X) +
+			float64(velocity.Linear.Y*velocity.Linear.Y))
+		if math.IsNaN(after) || math.IsInf(after, 0) {
+			t.Fatalf("tick %d: Magnus step produced non-finite speed %v", tick, after)
+		}
+		if math.Abs(after-before) > 1e-9 {
+			t.Fatalf("tick %d: Magnus changed horizontal speed from %v to %v", tick, before, after)
+		}
+	}
+}
+
 func TestBallisticsMagnusCurvesFlight(t *testing.T) {
 	// Ball moving right (vx=10) with positive spin -> should curve in Y direction.
 	w := scene.NewWorld()

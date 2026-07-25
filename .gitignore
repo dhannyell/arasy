@@ -52,6 +52,11 @@ qodana.yaml
 *.arrp
 # Golden replay fixtures are committed test data, not ad-hoc local recordings.
 !examples/*/testdata/*.arrp
+# Fuzz replay fixtures are committed test data.
+!internal/simfuzz/testdata/**/*.arrp
+# Fuzz repros are transient triage artifacts; the matching Go corpus entry is
+# moved into testdata/fuzz/<Target>/ when the failure is accepted.
+internal/simfuzz/testdata/repro/
 *.wasm
 
 # Benchmark runs (ad-hoc); only committed baselines are versioned.

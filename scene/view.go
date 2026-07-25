@@ -34,5 +34,10 @@ func (v WorldView) Damping(id EntityID) (Damping, bool)               { return v
 func (v WorldView) Body(id EntityID) (Body, bool)                     { return v.w.Body(id) }
 func (v WorldView) CircleCollider(id EntityID) (CircleCollider, bool) { return v.w.CircleCollider(id) }
 func (v WorldView) RectCollider(id EntityID) (RectCollider, bool)     { return v.w.RectCollider(id) }
+func (v WorldView) Height(id EntityID) (Height, bool)                 { return v.w.Height(id) }
+func (v WorldView) Spin(id EntityID) (Spin, bool)                     { return v.w.Spin(id) }
+func (v WorldView) Ballistics(id EntityID) (Ballistics, bool)         { return v.w.Ballistics(id) }
+func (v WorldView) Locomotion(id EntityID) (Locomotion, bool)         { return v.w.Locomotion(id) }
+func (v WorldView) MoveIntent(id EntityID) (MoveIntent, bool)         { return v.w.MoveIntent(id) }
 func (v WorldView) Contacts() []Contact                               { return v.w.Contacts() }
 func (v WorldView) StepTick() uint64                                  { return v.w.StepTick() }

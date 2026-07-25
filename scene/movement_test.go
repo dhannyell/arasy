@@ -144,6 +144,22 @@ func TestWorldApplyDampingClampsAtZero(t *testing.T) {
 	}
 }
 
+func TestWorldApplyDampingNeverAccelerates(t *testing.T) {
+	world := scene.NewWorld()
+	entity := world.Spawn()
+	world.SetVelocity(entity, scene.Velocity{
+		Linear: math2d.Vec2{X: 3, Y: -4},
+	})
+	world.SetDamping(entity, scene.Damping{Linear: -1e6})
+
+	world.ApplyDamping(1)
+
+	velocity, _ := world.Velocity(entity)
+	if velocity.Linear != (math2d.Vec2{X: 3, Y: -4}) {
+		t.Fatalf("negative damping accelerated velocity: %+v", velocity.Linear)
+	}
+}
+
 func TestWorldApplyDampingSkipsEntityWithoutVelocity(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()

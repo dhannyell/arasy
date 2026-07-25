@@ -22,7 +22,20 @@ const (
 	recordingVersion    uint16 = 1
 	maxRecordingEvents         = 10_000_000
 	maxRecordingAnchors        = 1_000_000
+	// maxRecordingPrealloc bounds the capacity reserved up front for the
+	// element slices. The counts in the header are attacker-controlled for a
+	// file loaded from an untrusted source (ReadRecordingFromBytes is the
+	// browser upload path), and they are not redundant with the payload
+	// length, so sizing a slice from a count lets a few dozen bytes of header
+	// reserve hundreds of megabytes. The slices grow as elements actually
+	// decode instead; a real recording pays a handful of amortized regrowths.
+	maxRecordingPrealloc = 1024
 )
+
+// initialCap returns the capacity to reserve for a header-declared count.
+func initialCap(count uint32) int {
+	return min(int(count), maxRecordingPrealloc)
+}
 
 // WriteTo serializes the recording to a versioned little-endian binary stream.
 func (r Recording) WriteTo(w io.Writer) (int64, error) {
@@ -182,22 +195,25 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		return Recording{}, fmt.Errorf("recording has %d viewport changes, max %d", viewportCount, maxRecordingAnchors)
 	}
 
-	rec.Anchors = make([]Anchor, anchorCount)
-	for i := range rec.Anchors {
-		if err := cr.read(&rec.Anchors[i].Tick); err != nil {
+	rec.Anchors = make([]Anchor, 0, initialCap(anchorCount))
+	for range anchorCount {
+		var anchor Anchor
+		if err := cr.read(&anchor.Tick); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Anchors[i].Checksum); err != nil {
+		if err := cr.read(&anchor.Checksum); err != nil {
 			return Recording{}, err
 		}
+		rec.Anchors = append(rec.Anchors, anchor)
 	}
 
-	rec.Events = make([]input.Event, eventCount)
-	for i := range rec.Events {
+	rec.Events = make([]input.Event, 0, initialCap(eventCount))
+	for i := range eventCount {
+		var event input.Event
 		var device uint8
 		var code uint16
 		var kind uint8
-		if err := cr.read(&rec.Events[i].Tick); err != nil {
+		if err := cr.read(&event.Tick); err != nil {
 			return Recording{}, err
 		}
 		if err := cr.read(&device); err != nil {
@@ -209,39 +225,42 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		if err := cr.read(&kind); err != nil {
 			return Recording{}, err
 		}
-		rec.Events[i].Source = input.Source{Device: input.DeviceKind(device), Code: input.SourceCode(code)}
-		rec.Events[i].Kind = input.EventKind(kind)
-		if err := cr.read(&rec.Events[i].Value); err != nil {
+		event.Source = input.Source{Device: input.DeviceKind(device), Code: input.SourceCode(code)}
+		event.Kind = input.EventKind(kind)
+		if err := cr.read(&event.Value); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Events[i].X); err != nil {
+		if err := cr.read(&event.X); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Events[i].Y); err != nil {
+		if err := cr.read(&event.Y); err != nil {
 			return Recording{}, err
 		}
-		if !rec.Events[i].Valid() {
+		if !event.Valid() {
 			return Recording{}, fmt.Errorf("invalid event at index %d", i)
 		}
+		rec.Events = append(rec.Events, event)
 	}
 
-	rec.Viewports = make([]ViewportChange, viewportCount)
-	for i := range rec.Viewports {
-		if err := cr.read(&rec.Viewports[i].Tick); err != nil {
+	rec.Viewports = make([]ViewportChange, 0, initialCap(viewportCount))
+	for range viewportCount {
+		var change ViewportChange
+		if err := cr.read(&change.Tick); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Viewports[i].Viewport.Min.X); err != nil {
+		if err := cr.read(&change.Viewport.Min.X); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Viewports[i].Viewport.Min.Y); err != nil {
+		if err := cr.read(&change.Viewport.Min.Y); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Viewports[i].Viewport.Max.X); err != nil {
+		if err := cr.read(&change.Viewport.Max.X); err != nil {
 			return Recording{}, err
 		}
-		if err := cr.read(&rec.Viewports[i].Viewport.Max.Y); err != nil {
+		if err := cr.read(&change.Viewport.Max.Y); err != nil {
 			return Recording{}, err
 		}
+		rec.Viewports = append(rec.Viewports, change)
 	}
 
 	return rec, nil

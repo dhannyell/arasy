@@ -46,9 +46,17 @@ func (w *World) applyDamping(dt float64) {
 			continue
 		}
 
+		// Damping removes energy and never adds it, so the factor is confined
+		// to [0, 1]: a negative Damping.Linear would otherwise accelerate the
+		// entity exponentially toward Inf. A NaN coefficient fails both
+		// comparisons, so it is mapped to 1 (no-op) rather than poisoning the
+		// velocity for every later tick.
 		factor := 1 - float64(damping.Linear*dt)
-		if factor < 0 {
+		switch {
+		case factor < 0:
 			factor = 0
+		case !(factor <= 1):
+			factor = 1
 		}
 
 		velocity.Linear = velocity.Linear.Mul(factor)
