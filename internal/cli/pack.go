@@ -29,7 +29,7 @@ var packCmd = &cobra.Command{
 		if output == "" {
 			output = filepath.Join("dist", defaultTitle(pkg)+".zip")
 		}
-		staging, err := os.MkdirTemp("", "frameforge-pack-*")
+		staging, err := os.MkdirTemp("", "Arasy-pack-*")
 		if err != nil {
 			return err
 		}

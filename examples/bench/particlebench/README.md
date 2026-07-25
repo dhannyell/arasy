@@ -3,7 +3,7 @@
 Build and serve the standalone browser benchmark:
 
 ```powershell
-go run ./cmd/frameforge dev ./examples/bench/particlebench/wasm -a 127.0.0.1:8091
+go run ./cmd/Arasy dev ./examples/bench/particlebench/wasm -a 127.0.0.1:8091
 ```
 
 It starts with a target of 100 live particles, doubles that target every three

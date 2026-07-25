@@ -19,7 +19,7 @@ func TestHandlerServesGeneratedIndex(t *testing.T) {
 
 	handler := newHandler(ServerOptions{
 		Dir:          dir,
-		Title:        "frameforge test",
+		Title:        "Arasy test",
 		WASMFile:     "demo.wasm",
 		WASMExecPath: wasmExec,
 	})
@@ -32,7 +32,7 @@ func TestHandlerServesGeneratedIndex(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 	body := rec.Body.String()
-	if !strings.Contains(body, "<title>frameforge test</title>") {
+	if !strings.Contains(body, "<title>Arasy test</title>") {
 		t.Fatalf("index body missing title:\n%s", body)
 	}
 	if !strings.Contains(body, `fetch("demo.wasm")`) {
@@ -49,7 +49,7 @@ func TestHandlerServesWASMExecFromConfiguredPath(t *testing.T) {
 
 	handler := newHandler(ServerOptions{
 		Dir:          dir,
-		Title:        "frameforge test",
+		Title:        "Arasy test",
 		WASMFile:     "app.wasm",
 		WASMExecPath: wasmExec,
 	})
@@ -78,7 +78,7 @@ func TestHandlerServesArtifactsFromDirectory(t *testing.T) {
 
 	handler := newHandler(ServerOptions{
 		Dir:          dir,
-		Title:        "frameforge test",
+		Title:        "Arasy test",
 		WASMFile:     "app.wasm",
 		WASMExecPath: wasmExec,
 	})

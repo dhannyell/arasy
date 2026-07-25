@@ -505,7 +505,7 @@ Visualmente:
 
 `Contains` diz se um ponto esta dentro do retangulo.
 
-Regra de borda recomendada para Frameforge:
+Regra de borda recomendada para Arasy:
 
 ```text
 Min inclusivo

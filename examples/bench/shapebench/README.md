@@ -3,7 +3,7 @@
 Build and serve the standalone browser benchmark:
 
 ```powershell
-go run ./cmd/frameforge dev ./examples/bench/shapebench/wasm -a 127.0.0.1:8094
+go run ./cmd/Arasy dev ./examples/bench/shapebench/wasm -a 127.0.0.1:8094
 ```
 
 It bounces its own slice of solid-geometry shapes (position, velocity,

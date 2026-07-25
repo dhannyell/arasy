@@ -1,6 +1,6 @@
 # Audio
 
-Este guia explica o modelo de audio do FrameForge: jogos declaram clips,
+Este guia explica o modelo de audio do Arasy: jogos declaram clips,
 emitem eventos deterministas em `ctx.Audio`, e hosts consomem a saida pelo
 `runtime.Driver`.
 

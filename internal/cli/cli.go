@@ -1,4 +1,4 @@
-// package cli is a simple command line interface for arasy
+// Package cli is a simple command line interface for arasy
 package cli
 
 import (

@@ -818,7 +818,7 @@ func (r *webgpuRenderer) signalReadyAfterPresent() {
 		var secondFrame js.Func
 		secondFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
 			secondFrame.Release()
-			r.canvas.Call("setAttribute", "data-frameforge-ready", "webgpu")
+			r.canvas.Call("setAttribute", "data-arasy-ready", "webgpu")
 			r.ready = true
 			return nil
 		})

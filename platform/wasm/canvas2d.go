@@ -208,7 +208,7 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 
 	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
 	if !c.ready && c.pendingTextures == 0 {
-		c.canvas.Call("setAttribute", "data-frameforge-ready", "canvas2d")
+		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
 	}
 }

@@ -71,7 +71,7 @@ func TestMeasureUsesProportionalAdvancesAndNotDefFallback(t *testing.T) {
 func TestMeasureAndAscentHandleLineMetricsAndNonPositiveSizes(t *testing.T) {
 	face := mustParse(t, goregular.TTF)
 
-	measurement := face.Measure("FrameForge", 16)
+	measurement := face.Measure("Arasy", 16)
 	ascent := face.Ascent(16)
 	if ascent <= 0 || ascent >= measurement.Y {
 		t.Fatalf("Ascent(16) = %v, want within (0, line height %v)", ascent, measurement.Y)

@@ -1,6 +1,6 @@
 # UI
 
-This guide explains FrameForge's `ui` package.
+This guide explains Arasy's `ui` package.
 
 The package implements a small immediate-mode UI intended for HUDs, simple
 menus, debug overlays, and lightweight tools inside the engine.

@@ -27,7 +27,7 @@ var devCmd = &cobra.Command{
 		if title == "" {
 			title = defaultTitle(pkg)
 		}
-		dir, err := os.MkdirTemp("", "frameforge-dev-*")
+		dir, err := os.MkdirTemp("", "Arasy-dev-*")
 		if err != nil {
 			return err
 		}

@@ -70,7 +70,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 	}
 	levels := mipLevelCount(width, height)
 	texture, err := r.device.TryCreateTexture(&wgpu.TextureDescriptor{
-		Label:         "frameforge texture",
+		Label:         "Arasy texture",
 		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst | wgpu.TextureUsageRenderAttachment,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
@@ -99,7 +99,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 	layout := r.texturedPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
-		Label:  "frameforge textured bind group",
+		Label:  "Arasy textured bind group",
 		Layout: layout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: view},
@@ -203,7 +203,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 	layout := r.mipPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
-		Label:  "frameforge mipmap bind group",
+		Label:  "Arasy mipmap bind group",
 		Layout: layout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: source},
@@ -215,7 +215,7 @@ func (r textureResources) generateMipLevel(encoder *wgpu.CommandEncoder, texture
 	}
 	defer bindGroup.Release()
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label: "frameforge mipmap pass",
+		Label: "Arasy mipmap pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{{
 			View:       destination,
 			LoadOp:     wgpu.LoadOpClear,
@@ -261,7 +261,7 @@ func (t gpuTexture) release() {
 
 func textureSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge texture sampler",
+		Label:         "Arasy texture sampler",
 		MagFilter:     wgpu.FilterModeLinear,
 		MinFilter:     wgpu.FilterModeLinear,
 		MipmapFilter:  wgpu.MipmapFilterModeLinear,
@@ -271,7 +271,7 @@ func textureSamplerDescriptor() wgpu.SamplerDescriptor {
 
 func mipSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge mipmap sampler",
+		Label:         "Arasy mipmap sampler",
 		MagFilter:     wgpu.FilterModeLinear,
 		MinFilter:     wgpu.FilterModeLinear,
 		MaxAnisotropy: 1,
@@ -280,7 +280,7 @@ func mipSamplerDescriptor() wgpu.SamplerDescriptor {
 
 func nearestSamplerDescriptor() wgpu.SamplerDescriptor {
 	return wgpu.SamplerDescriptor{
-		Label:         "frameforge text atlas sampler",
+		Label:         "Arasy text atlas sampler",
 		MagFilter:     wgpu.FilterModeNearest,
 		MinFilter:     wgpu.FilterModeNearest,
 		MaxAnisotropy: 1,

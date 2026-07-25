@@ -29,7 +29,7 @@ func Golden(t *testing.T, update bool, dir, name string, newGame func() runtime.
 	fingerprint func(game runtime.Game) string, script Script) {
 	t.Helper()
 
-	recPath := filepath.Join(dir, name+".ARRP")
+	recPath := filepath.Join(dir, name+".arrp")
 	statePath := filepath.Join(dir, name+".state.txt")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 

@@ -26,7 +26,7 @@ type Options struct {
 	// panel starts hidden and is toggled with the Backquote/~ key.
 	DevTools bool
 	// RecordReplay enables an in-browser recording/replay panel: start/stop
-	// recording, download the .ffrp binary, and load a .ffrp to verify+replay.
+	// recording, download the .arrp binary, and load a .arrp to verify+replay.
 	// Default false; production builds leave it off. Requires GameFactory.
 	RecordReplay bool
 	// GameFactory builds a fresh game instance for Verify/Replay. Replay
@@ -72,7 +72,7 @@ func Run(game runtime.Game, opts Options) error {
 
 // RunDriver starts the browser WASM host for an existing driver and blocks
 // forever. It mirrors platform/web/canvas.RunDriver so an app that built its
-// own driver (e.g. to load a .ffrp before serving) can still use the host.
+// own driver (e.g. to load a .arrp before serving) can still use the host.
 func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	log := opts.Log
 	if log == nil {

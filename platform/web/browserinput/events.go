@@ -3,7 +3,7 @@ package browserinput
 import "github.com/dhannyell/arasy/input"
 
 // KeyEvent converts a DOM KeyboardEvent.code and button direction into a
-// validated frameforge event.
+// validated Arasy event.
 func KeyEvent(code string, down bool) (input.Event, bool) {
 	key, ok := KeyboardCode(code)
 	if !ok {

@@ -1,6 +1,6 @@
 # Estrutura de testes
 
-Este documento registra a convencao de organizacao dos testes da FrameForge.
+Este documento registra a convencao de organizacao dos testes da Arasy.
 O objetivo e manter o padrao idiomatico de Go, com testes perto do codigo, sem
 deixar os pacotes virarem arquivos gigantes por acumulacao.
 

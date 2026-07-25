@@ -1,6 +1,6 @@
 # Test Structure
 
-This document records FrameForge's test organization convention. The goal is
+This document records Arasy's test organization convention. The goal is
 to keep idiomatic Go tests close to the code without letting packages turn into
 large catch-all test files.
 

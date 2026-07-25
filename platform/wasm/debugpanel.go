@@ -317,7 +317,7 @@ func formatFloat(v float64) string {
 }
 
 const debugPanelHTML = `
-<div class="ff-debug-title">frameforge debug</div>
+<div class="ff-debug-title">Arasy debug</div>
 <div id="ff-debug-stats" class="ff-debug-stats">tick=0</div>
 <div class="ff-debug-row ff-debug-status-row">
   <span id="ff-debug-recording">recording=false</span>
@@ -350,9 +350,9 @@ const debugPanelHTML = `
 <div id="ff-recording-tools" class="ff-debug-section">
   <div class="ff-debug-row">
     <button id="ff-rec-record" type="button">Record</button>
-    <button id="ff-rec-save" type="button">Save .ffrp</button>
-    <button id="ff-rec-load" type="button">Load .ffrp</button>
-    <input id="ff-rec-file" type="file" accept=".ffrp" style="display:none">
+    <button id="ff-rec-save" type="button">Save .arrp</button>
+    <button id="ff-rec-load" type="button">Load .arrp</button>
+    <input id="ff-rec-file" type="file" accept=".arrp" style="display:none">
   </div>
   <div id="ff-rec-status" class="ff-debug-message">recording idle</div>
 </div>

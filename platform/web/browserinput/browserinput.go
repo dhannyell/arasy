@@ -2,7 +2,7 @@ package browserinput
 
 import "github.com/dhannyell/arasy/input"
 
-// KeyboardCode translates a DOM KeyboardEvent.code into a frameforge input code.
+// KeyboardCode translates a DOM KeyboardEvent.code into a Arasy input code.
 func KeyboardCode(code string) (input.SourceCode, bool) {
 	switch code {
 	case "KeyA":
@@ -78,7 +78,7 @@ func KeyboardCode(code string) (input.SourceCode, bool) {
 	}
 }
 
-// MouseButtonCode translates a DOM MouseEvent.button into a frameforge input code.
+// MouseButtonCode translates a DOM MouseEvent.button into a Arasy input code.
 func MouseButtonCode(button int) (input.SourceCode, bool) {
 	switch button {
 	case 0:

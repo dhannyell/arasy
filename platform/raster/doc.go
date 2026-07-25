@@ -1,4 +1,4 @@
-// Package raster renders FrameForge render commands into images using the Go
+// Package raster renders Arasy render commands into images using the Go
 // standard library.
 //
 // It converts backend-agnostic render commands into pixels in an image.RGBA

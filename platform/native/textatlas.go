@@ -57,7 +57,7 @@ func (r textAtlasResources) createTextAtlas(atlas *tess.Atlas) (gpuTextAtlas, er
 		return gpuTextAtlas{}, fmt.Errorf("text atlas has invalid dimensions %dx%d", width, height)
 	}
 	texture, err := r.device.TryCreateTexture(&wgpu.TextureDescriptor{
-		Label:         "frameforge text atlas",
+		Label:         "Arasy text atlas",
 		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
@@ -97,7 +97,7 @@ func (r textAtlasResources) createTextAtlas(atlas *tess.Atlas) (gpuTextAtlas, er
 		return gpuTextAtlas{}, fmt.Errorf("text atlas has invalid metric stream")
 	}
 	metricBuffer, err := r.device.TryCreateBuffer(&wgpu.BufferDescriptor{
-		Label: "frameforge text metrics",
+		Label: "Arasy text metrics",
 		Usage: wgpu.BufferUsageStorage | wgpu.BufferUsageCopyDst,
 		Size:  uint64(len(metricBytes)),
 	})
@@ -123,7 +123,7 @@ func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sam
 	layout := r.textGlyphPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
-		Label:  "frameforge text glyph bind group",
+		Label:  "Arasy text glyph bind group",
 		Layout: layout,
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: view},
