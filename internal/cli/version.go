@@ -1,4 +1,4 @@
-package ffcli
+package cli
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ var version = "dev"
 
 var versionCmd = &cobra.Command{
 	Use:   "version",
-	Short: "print the frameforge CLI version",
+	Short: "print the arasy CLI version",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), version)
 		return err

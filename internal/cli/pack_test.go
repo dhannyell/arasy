@@ -1,4 +1,4 @@
-package ffcli
+package cli
 
 import (
 	"archive/zip"

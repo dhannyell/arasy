@@ -1,4 +1,4 @@
-package ffcli
+package cli
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [package]",
-	Short: "check the frameforge development environment",
+	Short: "check the arasy development environment",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
@@ -53,7 +53,7 @@ var doctorCmd = &cobra.Command{
 				return err
 			}
 		} else {
-			dir, tempErr := os.MkdirTemp("", "frameforge-doctor-*")
+			dir, tempErr := os.MkdirTemp("", "arasy-doctor-*")
 			if tempErr != nil {
 				if err := doctorPrintf(out, "FAIL wasm build: %v\n", tempErr); err != nil {
 					return err
