@@ -155,8 +155,6 @@ func (g *Game) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 	}
 }
 
-func (g *Game) Render(_ *runtime.RenderContext) []render.Command { return nil }
-
 func (g *Game) trackedIDs() []scene.EntityID {
 	count := clamp(g.State.Count, 0, len(g.State.IDs))
 	return g.State.IDs[:count]
