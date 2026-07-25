@@ -122,3 +122,39 @@ jobs:
           go-version-file: go.mod
       - name: test
         run: go test ./...
+
+  fuzz:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - FuzzDeterminism
+          - FuzzReplayFidelity
+          - FuzzRewindConvergence
+          - FuzzNumericSanity
+          - FuzzRecordingCodec
+          - FuzzNoPanic
+          - FuzzResetReproducibility
+          - FuzzScrubBidirectional
+          - FuzzSpeedIndependence
+          - FuzzDespawnMidRun
+          - FuzzSubstepTunneling
+          - FuzzForkAfterScrubDeterminism
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: fuzz ${{ matrix.target }}
+        run: go test ./internal/simfuzz -run '^$' -fuzz '^${{ matrix.target }}$' -fuzztime 120s
+      - name: upload fuzz repros on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-repro-${{ matrix.target }}
+          path: |
+            internal/simfuzz/testdata/repro/
+            internal/simfuzz/testdata/fuzz/
+          if-no-files-found: ignore
