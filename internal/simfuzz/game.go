@@ -88,6 +88,10 @@ func (g *Game) Setup() runtime.Config {
 func (g *Game) Init(ctx *runtime.UpdateContext) {
 	g.State = gameState{}
 	g.scanErr = nil
+	// Render-only: the projection lifts a sprite by its Z and drops a ground
+	// shadow, which is what makes a ballistic case readable when replayed. It
+	// is not part of the checksum, so it cannot move a fuzz result.
+	ctx.World.SetProjection(fuzzProjection)
 	ids := make([]scene.EntityID, 0, min(len(g.script.Entities), MaxEntities))
 	SpawnFromScript(ctx.World, g.script, fuzzBounds, &ids)
 	g.State.Count = copy(g.State.IDs[:], ids)

@@ -38,3 +38,40 @@ func TestRenderDrawsEveryLiveEntity(t *testing.T) {
 			shapes, live, want)
 	}
 }
+
+// TestRenderLiftsEntityByHeight covers the 2.5D half: an entity off the ground
+// must be drawn lifted and given a shadow, which is what makes a ballistic
+// case readable rather than a dot sliding around the floor. Reading Z here
+// depends on WorldView.Height, so this also pins that the view keeps exposing
+// it.
+func TestRenderLiftsEntityByHeight(t *testing.T) {
+	const groundY, z = 0.0, 20.0
+	script := DecodeScript(seedBytesWithData(2, CompTransform|CompHeight, concatBytes(
+		packF64(0), packF64(groundY), packF64(0), packF64(1), packF64(1), // Transform
+		packF64(z), packF64(0), // Height: Z, VZ
+	)))
+	driver := runtime.NewDriver(NewGame(script), quietLog)
+	driver.Step()
+
+	var marker *render.DrawCircle
+	shadows := 0
+	for _, cmd := range driver.Frame(0).Commands {
+		switch shape := cmd.(type) {
+		case render.DrawCircle:
+			marker = &shape
+		case render.DrawEllipse:
+			shadows++
+		}
+	}
+
+	if marker == nil {
+		t.Fatal("Render drew no marker for the airborne entity")
+	}
+	if want := groundY - z*fuzzProjection.LiftPerZ; marker.Center.Y != want {
+		t.Errorf("marker drawn at Y=%v, want %v: the entity was not lifted by its height",
+			marker.Center.Y, want)
+	}
+	if shadows != 1 {
+		t.Errorf("got %d ground shadows, want exactly 1", shadows)
+	}
+}

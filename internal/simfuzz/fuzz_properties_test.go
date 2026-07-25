@@ -19,7 +19,7 @@ func seedBytes(ticks int, masks ...uint32) []byte {
 func FuzzDeterminism(f *testing.F) {
 	addSimulationSeeds(f, seedBytes(60,
 		CompTransform|CompVelocity|CompCircleCollider,
-		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin,
+		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin|CompCircleSprite,
 		CompTransform|CompLocomotion|CompMoveIntent))
 	f.Fuzz(func(t *testing.T, data []byte) { checkDeterminism(t, data) })
 }
@@ -28,7 +28,7 @@ func FuzzDeterminism(f *testing.F) {
 func FuzzReplayFidelity(f *testing.F) {
 	addSimulationSeeds(f, seedBytes(60,
 		CompTransform|CompVelocity|CompCircleCollider|CompCircleSprite,
-		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin|CompRectCollider))
+		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin|CompRectCollider|CompCircleSprite))
 	f.Fuzz(func(t *testing.T, data []byte) {
 		checkReplayFidelity(t, data)
 		checkBreakoutReplayFidelity(t, data)
@@ -46,7 +46,7 @@ func FuzzRewindConvergence(f *testing.F) {
 // FuzzNumericSanity (P4): no NaN/Inf in any component after any tick.
 func FuzzNumericSanity(f *testing.F) {
 	addSimulationSeeds(f, seedBytes(60,
-		CompTransform|CompVelocity|CompBody|CompBallistics|CompHeight|CompSpin,
+		CompTransform|CompVelocity|CompBody|CompBallistics|CompHeight|CompSpin|CompCircleSprite,
 		CompTransform|CompLocomotion|CompMoveIntent|CompCircleCollider))
 	f.Fuzz(func(t *testing.T, data []byte) { checkNumericSanity(t, data) })
 }
@@ -70,7 +70,7 @@ func FuzzNoPanic(f *testing.F) {
 func FuzzResetReproducibility(f *testing.F) {
 	addSimulationSeeds(f, seedBytes(60,
 		CompTransform|CompVelocity|CompCircleCollider,
-		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin))
+		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin|CompCircleSprite))
 	f.Fuzz(func(t *testing.T, data []byte) { checkResetReproducibility(t, data) })
 }
 
@@ -98,7 +98,7 @@ func FuzzSpeedIndependence(f *testing.F) {
 func FuzzDespawnMidRun(f *testing.F) {
 	addSimulationSeeds(f, seedBytes(60,
 		CompTransform|CompVelocity|CompCircleCollider,
-		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin,
+		CompTransform|CompBody|CompBallistics|CompHeight|CompSpin|CompCircleSprite,
 		CompTransform|CompLocomotion|CompMoveIntent))
 	f.Fuzz(func(t *testing.T, data []byte) { checkDespawnMidRun(t, data) })
 }
