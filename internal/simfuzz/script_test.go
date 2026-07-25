@@ -2,7 +2,54 @@ package simfuzz
 
 import (
 	"testing"
+
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/runtime"
 )
+
+// TestAxisEventDrivesSimulation proves the analog path is live end to end: a
+// bound EventAxisChanged must reach the fuzz game and move the world. Button
+// events cannot cover this — the mapper reads Event.Value only for
+// EventAxisChanged — so without this test a broken axis binding would silently
+// turn every axis event the decoder emits into a no-op, and the value bytes of
+// a third of all event records would stop meaning anything.
+func TestAxisEventDrivesSimulation(t *testing.T) {
+	script := DecodeScript(seedBytes(20, CompTransform|CompVelocity))
+
+	idle := runtime.NewDriver(NewGame(script), quietLog)
+	steered := runtime.NewDriver(NewGame(script), quietLog)
+	axis := input.Event{
+		Source: fuzzAxisSources[0],
+		Kind:   input.EventAxisChanged,
+		Value:  0.75,
+	}
+	for range script.MaxTicks {
+		idle.Step()
+		steered.ApplyInput([]input.Event{axis})
+		steered.Step()
+	}
+
+	if steered.Checksum() == idle.Checksum() {
+		t.Fatal("axis events did not change the simulation: the analog binding is dead")
+	}
+}
+
+// TestAxisValuesAreFinite pins the decoder contract that P4 depends on: a
+// non-finite value found by the numeric-sanity scan must have been produced by
+// the simulation, never handed to it from the corpus.
+func TestAxisValuesAreFinite(t *testing.T) {
+	for _, raw := range [][]byte{
+		{0, 0, 0, 0},
+		{0xFF, 0xFF, 0xFF, 0xFF},
+		{0xFF, 0xFF, 0xFF, 0x7F},
+		{0x00, 0x00, 0x00, 0x80},
+	} {
+		got := axisValueFromBytes(raw)
+		if !isFinite(got) || got < -1 || got >= 1 {
+			t.Errorf("axisValueFromBytes(%v) = %v, want a finite value in [-1, 1)", raw, got)
+		}
+	}
+}
 
 func TestDecodeScriptIsTotal(t *testing.T) {
 	cases := []struct {

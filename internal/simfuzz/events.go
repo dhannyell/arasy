@@ -18,13 +18,37 @@ var fuzzBoundSources = []input.Source{
 	input.Keyboard(input.KeySpace),
 }
 
+// fuzzAxisSources are the gamepad analog sources the fuzz game binds. They
+// exist so the decoder can emit EventAxisChanged, the only event kind for
+// which the mapper reads Event.Value (input/mapper.go). Without them the
+// value bytes of every event record are inert and the analog path — the one
+// a gamepad host drives — has no determinism coverage at all.
+var fuzzAxisSources = []input.Source{
+	{Device: input.DeviceGamepad, Code: input.GamepadLeftStickX},
+	{Device: input.DeviceGamepad, Code: input.GamepadLeftStickY},
+}
+
 // eventRecordLen is the per-event byte width decoded from the script tail.
 const eventRecordLen = 11
 
+// axisValueFromBytes maps raw bytes to a finite analog value in [-1, 1), the
+// range a gamepad host emits. Raw float bits are deliberately not used: a NaN
+// injected from outside says nothing about the engine's own numerics, and the
+// property under test is what the pipeline produces, not what it is handed.
+func axisValueFromBytes(raw []byte) float64 {
+	return float64(int32(binary.LittleEndian.Uint32(raw))) / float64(int64(1)<<31)
+}
+
 // decodeEvents reads a monotonic input event log from data starting at offset.
-// Each event targets a bound key (so it drives the sim) with a kind and a tick
-// delta; ticks accumulate and are clamped to [0, maxTicks-1]. Truncated records
-// are zero-padded. The result is total: never panics, always valid events.
+// Each event targets a bound source (so it drives the sim) with a kind and a
+// tick delta; ticks accumulate and are clamped to [0, maxTicks-1]. Truncated
+// records are zero-padded. The result is total: never panics, always valid
+// events.
+//
+// One record in three decodes to an EventAxisChanged on a bound gamepad axis
+// instead of a keyboard button edge. That is the only path on which the mapper
+// consumes Event.Value, so it is also the only way the value bytes of a record
+// can affect the simulation.
 func decodeEvents(data []byte, offset, maxTicks int) []input.Event {
 	if offset >= len(data) || maxTicks <= 0 {
 		return nil
@@ -36,12 +60,9 @@ func decodeEvents(data []byte, offset, maxTicks int) []input.Event {
 	}
 	events := make([]input.Event, 0, count)
 	tick := 0
-	for i := 0; i < count; i++ {
+	for range count {
 		rec := readBytes(data, &offset, eventRecordLen)
-		keyIdx := int(rec[0]) % len(fuzzBoundSources)
-		kind := input.EventKind(rec[1] % 2) // Down / Up
 		delta := int(rec[2])
-		value := math.Float64frombits(binary.LittleEndian.Uint64(rec[3:11]))
 		tick += delta
 		if tick >= maxTicks {
 			tick = maxTicks - 1
@@ -49,12 +70,21 @@ func decodeEvents(data []byte, offset, maxTicks int) []input.Event {
 		if tick < 0 {
 			tick = 0
 		}
-		events = append(events, input.Event{
-			Tick:   uint64(tick),
-			Source: fuzzBoundSources[keyIdx],
-			Kind:   kind,
-			Value:  value,
-		})
+
+		event := input.Event{Tick: uint64(tick)}
+		switch rec[1] % 3 {
+		case 0:
+			event.Source = fuzzBoundSources[int(rec[0])%len(fuzzBoundSources)]
+			event.Kind = input.EventButtonDown
+		case 1:
+			event.Source = fuzzBoundSources[int(rec[0])%len(fuzzBoundSources)]
+			event.Kind = input.EventButtonUp
+		default:
+			event.Source = fuzzAxisSources[int(rec[0])%len(fuzzAxisSources)]
+			event.Kind = input.EventAxisChanged
+			event.Value = axisValueFromBytes(rec[3:7])
+		}
+		events = append(events, event)
 	}
 	return events
 }

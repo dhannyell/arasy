@@ -24,6 +24,8 @@ var fuzzBindings = []input.Binding{
 	{Source: fuzzBoundSources[2], Action: input.ActionMoveY, Scale: 1},
 	{Source: fuzzBoundSources[3], Action: input.ActionMoveY, Scale: -1},
 	{Source: fuzzBoundSources[4], Action: input.ActionJump, Scale: 1},
+	{Source: fuzzAxisSources[0], Action: input.ActionMoveX, Scale: 1},
+	{Source: fuzzAxisSources[1], Action: input.ActionMoveY, Scale: 1},
 }
 
 const (
@@ -32,9 +34,17 @@ const (
 	fuzzArchiveBudget = 4
 )
 
+// gameState is everything the fuzz game carries across a keyframe restore.
+// Anything a property asserts on after a rewind must live here: fields kept
+// outside the StateSlot survive a backward seek unchanged and would be read
+// as if they belonged to the restored tick. It stays a pure value type — no
+// reference fields — so StateSlot needs no Clone hook.
 type gameState struct {
-	IDs   [MaxEntities]scene.EntityID
-	Count int
+	IDs               [MaxEntities]scene.EntityID
+	Count             int
+	DespawnCount      int
+	FirstTransform    scene.Transform
+	HasFirstTransform bool
 }
 
 // Game is the dedicated fuzz game: a minimal runtime.Game that spawns the full
@@ -44,12 +54,12 @@ type gameState struct {
 type Game struct {
 	runtime.StateSlot[gameState]
 
-	script            Script
-	history           bool
-	scanErr           error
-	despawnCount      int
-	firstTransform    scene.Transform
-	hasFirstTransform bool
+	script  Script
+	history bool
+	// scanErr is a per-tick observation of the world, not simulation state, so
+	// it deliberately stays outside the StateSlot: it is written by PostStep
+	// and read by the caller before the next Step.
+	scanErr error
 }
 
 // NewGame builds a fuzz game for the given script.
@@ -78,9 +88,6 @@ func (g *Game) Setup() runtime.Config {
 func (g *Game) Init(ctx *runtime.UpdateContext) {
 	g.State = gameState{}
 	g.scanErr = nil
-	g.despawnCount = 0
-	g.firstTransform = scene.Transform{}
-	g.hasFirstTransform = false
 	ids := make([]scene.EntityID, 0, min(len(g.script.Entities), MaxEntities))
 	SpawnFromScript(ctx.World, g.script, fuzzBounds, &ids)
 	g.State.Count = copy(g.State.IDs[:], ids)
@@ -133,7 +140,7 @@ func (g *Game) despawnOne(ctx *runtime.UpdateContext) {
 	for _, id := range g.trackedIDs() {
 		if _, ok := ctx.World.Transform(id); ok {
 			ctx.World.Despawn(id)
-			g.despawnCount++
+			g.State.DespawnCount++
 			return
 		}
 	}
@@ -144,7 +151,7 @@ func (g *Game) despawnOne(ctx *runtime.UpdateContext) {
 func (g *Game) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
 	g.scanErr = scanNaNInf(ctx.World, g.trackedIDs())
 	if ids := g.trackedIDs(); len(ids) > 0 {
-		g.firstTransform, g.hasFirstTransform = ctx.World.Transform(ids[0])
+		g.State.FirstTransform, g.State.HasFirstTransform = ctx.World.Transform(ids[0])
 	}
 }
 

@@ -138,8 +138,13 @@ func checkDeterminism(t testing.TB, data []byte) {
 	script := DecodeScript(data)
 	_, _, a := runDriver(script)
 	_, _, b := runDriver(script)
-	n := min(len(a), len(b))
-	for i := range n {
+	// Both runs step the same script, so a length difference is itself a
+	// divergence. Comparing only the shared prefix would hide it.
+	if len(a) != len(b) {
+		t.Fatalf("tick count diverged: %d != %d\nrepro: %s",
+			len(a), len(b), dumpRepro(t, "FuzzDeterminism", data))
+	}
+	for i := range a {
 		if a[i] != b[i] {
 			t.Fatalf("checksum diverged at tick %d: %d != %d\nrepro: %s",
 				i, a[i], b[i], dumpRepro(t, "FuzzDeterminism", data))

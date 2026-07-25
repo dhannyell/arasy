@@ -133,9 +133,9 @@ func checkDespawnMidRun(t testing.TB, data []byte) {
 			driver.ApplyInput(despawnByTick[uint64(tick)])
 			driver.Step()
 			if tick == int(jumpTick) {
-				if game.despawnCount != 1 {
+				if game.State.DespawnCount != 1 {
 					t.Fatalf("despawn target ran %d times, want exactly one\nrepro: %s",
-						game.despawnCount, dumpRepro(t, "FuzzDespawnMidRun", data))
+						game.State.DespawnCount, dumpRepro(t, "FuzzDespawnMidRun", data))
 				}
 			}
 			if err := game.scanErr; err != nil {
@@ -147,7 +147,11 @@ func checkDespawnMidRun(t testing.TB, data []byte) {
 	}
 	_, _, a := runA()
 	driverB, _, b := runA()
-	for i := range min(len(a), len(b)) {
+	if len(a) != len(b) {
+		t.Fatalf("despawn tick count diverged: %d != %d\nrepro: %s",
+			len(a), len(b), dumpRepro(t, "FuzzDespawnMidRun", data))
+	}
+	for i := range a {
 		if a[i] != b[i] {
 			t.Fatalf("despawn determinism diverged at tick %d: %d != %d\nrepro: %s",
 				i, a[i], b[i], dumpRepro(t, "FuzzDespawnMidRun", data))
@@ -221,8 +225,11 @@ func checkForkAfterScrubDeterminism(t testing.TB, data []byte) {
 		t.Fatalf("fork after scrub diverged: %d != %d (k=%d n=%d)\nrepro: %s",
 			got, want, k, n, dumpRepro(t, "FuzzForkAfterScrubDeterminism", data))
 	}
+	// A fork that reproduces the abandoned future proves nothing, but it is a
+	// property of the generated input, not an engine defect: the fork stream
+	// can legitimately re-derive the base state. Skip rather than fail, so the
+	// target reports only real divergence.
 	if want == baseChecksum {
-		t.Fatalf("fork input did not change the abandoned future (k=%d n=%d)\nrepro: %s",
-			k, n, dumpRepro(t, "FuzzForkAfterScrubDeterminism", data))
+		t.Skip("fork input did not change the abandoned future")
 	}
 }

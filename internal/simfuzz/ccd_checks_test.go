@@ -25,13 +25,13 @@ func checkSubstepTunneling(t testing.TB, data []byte) {
 				tick+1, err, dumpRepro(t, "FuzzSubstepTunneling", data))
 		}
 		checksums = append(checksums, driver.Checksum())
-		if !game.hasFirstTransform {
+		if !game.State.HasFirstTransform {
 			t.Fatalf("substep projectile disappeared at tick %d\nrepro: %s",
 				tick+1, dumpRepro(t, "FuzzSubstepTunneling", data))
 		}
-		if game.firstTransform.Position.X > scenario.WallX {
+		if game.State.FirstTransform.Position.X > scenario.WallX {
 			t.Fatalf("substep projectile tunneled at tick %d: x=%f wall=%f\nrepro: %s",
-				tick+1, game.firstTransform.Position.X, scenario.WallX,
+				tick+1, game.State.FirstTransform.Position.X, scenario.WallX,
 				dumpRepro(t, "FuzzSubstepTunneling", data))
 		}
 	}

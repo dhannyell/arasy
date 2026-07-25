@@ -96,22 +96,52 @@ func decodeSubstepScenario(data []byte) substepScenario {
 	}
 }
 
+const (
+	// maxForkEvents caps the forked input stream so a case cannot spend the
+	// whole fuzz budget replaying one timeline.
+	maxForkEvents = 32
+	// forkTickSpread bounds the tick gap between consecutive forked events,
+	// keeping them dense enough to land inside the forked window.
+	forkTickSpread = 8
+)
+
 // decodeForkEvents reads a second, bound input event stream from a different
 // region of data than decodeEvents, for P12: the "new input" applied after a
 // scrub to fork the timeline. It reads from the middle of the input so it does
 // not collide with the base event log decoded from the tail by DecodeScript.
+// Only the arrow keys are used: Space drives the fuzz game's despawn path, and
+// keeping it out leaves the forked and reference timelines differing purely in
+// steering input. Like every other decoder here it is total — any bytes give
+// valid, in-range events.
 func decodeForkEvents(data []byte, maxTicks int) []input.Event {
 	if maxTicks < 3 {
 		return nil
 	}
 
 	k := maxTicks / 2
-	// Always create a fresh edge in the forked future. Arrow keys affect the
-	// fuzz game's velocity path without triggering its despawn behavior.
-	_ = data
-	source := input.Keyboard(input.KeyArrowRight)
-	return []input.Event{
-		{Tick: uint64(k), Source: source, Kind: input.EventButtonUp},
-		{Tick: uint64(k + 1), Source: source, Kind: input.EventButtonDown},
+	steering := fuzzBoundSources[:4]
+	events := make([]input.Event, 0, maxForkEvents)
+	tick := k
+	for i := len(data) / 3; i+2 <= len(data) && len(events) < maxForkEvents; i += 2 {
+		tick += 1 + int(data[i])%forkTickSpread
+		if tick >= maxTicks {
+			break
+		}
+		events = append(events, input.Event{
+			Tick:   uint64(tick),
+			Source: steering[int(data[i+1])%len(steering)],
+			Kind:   input.EventKind(int(data[i+1]/128) % 2),
+		})
 	}
+
+	// Guarantee at least one edge in the forked future: an empty fork would
+	// make P12 compare a timeline against itself and prove nothing.
+	if len(events) == 0 {
+		source := input.Keyboard(input.KeyArrowRight)
+		events = append(events,
+			input.Event{Tick: uint64(k), Source: source, Kind: input.EventButtonUp},
+			input.Event{Tick: uint64(k + 1), Source: source, Kind: input.EventButtonDown},
+		)
+	}
+	return events
 }

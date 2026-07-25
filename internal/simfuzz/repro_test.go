@@ -2,6 +2,7 @@ package simfuzz
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -78,8 +79,31 @@ func TestCommittedNumericReplay(t *testing.T) {
 	verifyCommittedReplay(t, replayPath, DecodeScript(data))
 }
 
+// updateReplays regenerates the committed regression replays. They pin the
+// timeline of a fixed bug, so they legitimately move whenever the simulation
+// or the script decoder changes on purpose — and then a stale fixture reports
+// an anchor mismatch that reads like a physics regression. Regenerate with:
+//
+//	go test ./internal/simfuzz -run TestCommitted -update
+//
+// in a dedicated commit that says why the timeline moved. The durable guards
+// for these two bugs live in scene/ballistics_test.go and scene/movement_test.go;
+// these fixtures prove the failure stays reproducible end to end.
+var updateReplays = flag.Bool("update", false, "regenerate committed regression replays")
+
 func verifyCommittedReplay(t *testing.T, replayPath string, script Script) {
 	t.Helper()
+	if *updateReplays {
+		rec, _ := recordScript(script)
+		data, err := rec.MarshalBinary()
+		if err != nil {
+			t.Fatalf("encode committed replay %s: %v", replayPath, err)
+		}
+		if err := os.WriteFile(replayPath, data, 0o644); err != nil {
+			t.Fatalf("write committed replay %s: %v", replayPath, err)
+		}
+		t.Logf("regenerated %s (%d bytes)", replayPath, len(data))
+	}
 	replayData, err := os.ReadFile(replayPath)
 	if err != nil {
 		t.Fatalf("read committed replay %s: %v", replayPath, err)

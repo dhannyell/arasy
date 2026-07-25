@@ -32,29 +32,55 @@ func addSimulationSeeds(f *testing.F, targetSeeds ...[]byte) {
 	f.Add(maxVelocitySeed())
 
 	for _, path := range goldenReplayPaths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			f.Fatalf("read golden replay seed %s: %v", path, err)
+		if _, rec, ok := readGoldenReplay(f, path); ok {
+			f.Add(scriptSeedFromRecording(rec))
 		}
-		rec, err := runtime.ReadRecordingFromBytes(data)
-		if err != nil {
-			f.Fatalf("decode golden replay seed %s: %v", path, err)
-		}
-		f.Add(scriptSeedFromRecording(rec))
 	}
 }
 
 func addRecordingSeeds(f *testing.F) {
 	f.Helper()
 	for _, path := range goldenReplayPaths {
+		if data, _, ok := readGoldenReplay(f, path); ok {
+			f.Add(data)
+		}
+	}
+}
+
+// readGoldenReplay loads a demo golden replay for use as seed material. A
+// failure is logged and skipped rather than fatal: seeding is best-effort, and
+// TestGoldenReplaySeedsAreReadable owns that signal. Failing here instead
+// meant a recording-format change took all twelve fuzz targets down at once —
+// and with them `go test ./...` for the whole repository.
+func readGoldenReplay(tb testing.TB, path string) ([]byte, runtime.Recording, bool) {
+	tb.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		tb.Logf("skipping golden replay seed %s: %v", path, err)
+		return nil, runtime.Recording{}, false
+	}
+	rec, err := runtime.ReadRecordingFromBytes(data)
+	if err != nil {
+		tb.Logf("skipping golden replay seed %s: %v", path, err)
+		return nil, runtime.Recording{}, false
+	}
+	return data, rec, true
+}
+
+// TestGoldenReplaySeedsAreReadable is the single, clearly named failure for a
+// demo golden replay that stops being usable as seed material — a recording
+// format change, a renamed demo, a regenerated fixture. It reports every
+// broken path rather than stopping at the first.
+func TestGoldenReplaySeedsAreReadable(t *testing.T) {
+	for _, path := range goldenReplayPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			f.Fatalf("read recording corpus %s: %v", path, err)
+			t.Errorf("read golden replay seed %s: %v", path, err)
+			continue
 		}
 		if _, err := runtime.ReadRecordingFromBytes(data); err != nil {
-			f.Fatalf("decode recording corpus %s: %v", path, err)
+			t.Errorf("decode golden replay seed %s: %v", path, err)
 		}
-		f.Add(data)
 	}
 }
 
