@@ -17,7 +17,7 @@ module.exports = defineConfig({
   },
   snapshotPathTemplate: 'platform/wasm/testdata/golden/{projectName}/{arg}{ext}',
   webServer: {
-    command: `go run ./cmd/Arasy/ serve output/wasm/golden/ -a 127.0.0.1:${goldenPort}`,
+    command: `go run ./cmd/arasy/ serve output/wasm/golden/ -a 127.0.0.1:${goldenPort}`,
     url: `http://127.0.0.1:${goldenPort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
