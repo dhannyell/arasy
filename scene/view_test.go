@@ -34,6 +34,48 @@ func TestWorldViewExposesNoMutators(t *testing.T) {
 	}
 }
 
+// TestWorldViewMirrorsWorldComponentReaders is the other half of the guard
+// above. TestWorldViewExposesNoMutators checks that nothing extra leaks into
+// the view; this checks that nothing is missing from it. Without it the view
+// silently fell five components behind World when the 2.5D work landed, and a
+// game's Render simply could not read an entity's height, spin, ballistics,
+// locomotion or move intent.
+func TestWorldViewMirrorsWorldComponentReaders(t *testing.T) {
+	worldType := reflect.TypeFor[*scene.World]()
+	viewType := reflect.TypeFor[scene.WorldView]()
+	entityType := reflect.TypeFor[scene.EntityID]()
+	boolType := reflect.TypeFor[bool]()
+
+	readers := 0
+	for i := range worldType.NumMethod() {
+		method := worldType.Method(i)
+		// Component reader shape: func(EntityID) (T, bool). Index 0 of a
+		// method obtained from a type is the receiver.
+		signature := method.Type
+		if signature.NumIn() != 2 || signature.In(1) != entityType {
+			continue
+		}
+		if signature.NumOut() != 2 || signature.Out(1) != boolType {
+			continue
+		}
+		readers++
+
+		viewMethod, ok := viewType.MethodByName(method.Name)
+		if !ok {
+			t.Errorf("World exposes component reader %s but WorldView does not: "+
+				"a game's Render cannot read that component", method.Name)
+			continue
+		}
+		if got, want := viewMethod.Type.Out(0), signature.Out(0); got != want {
+			t.Errorf("WorldView.%s returns %s, World returns %s", method.Name, got, want)
+		}
+	}
+
+	if readers == 0 {
+		t.Fatal("reflection found no component readers on World — shape matching broke")
+	}
+}
+
 // TestWorldViewRenderCommandsMatchesWorld guards that View() is a pure
 // delegation: a view of a populated World returns the same commands as the
 // World itself.
