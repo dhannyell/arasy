@@ -13,7 +13,7 @@ var update = flag.Bool("update", false, "rewrite golden replay fixtures")
 
 // TestGoldenReplay reuses runRhythmGameplay's scripted tap/hold/miss chart
 // coverage (audio scheduling, holds, per-tick judging) and verifies it
-// against a committed FFRP recording plus a fingerprint of the final
+// against a committed ARRP recording plus a fingerprint of the final
 // MatchState.
 func TestGoldenReplay(t *testing.T) {
 	var last *Game

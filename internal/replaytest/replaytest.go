@@ -1,4 +1,4 @@
-// Package replaytest verifies committed FFRP golden replays: a recorded
+// Package replaytest verifies committed ARRP golden replays: a recorded
 // input log whose checksum anchors and final game state must reproduce
 // exactly on every architecture the CI runs.
 package replaytest
@@ -18,7 +18,7 @@ import (
 type Script func(d *runtime.Driver)
 
 // Golden verifies (or, with update, regenerates) a golden replay:
-//   - <dir>/<name>.ffrp        — the recording (events + anchors)
+//   - <dir>/<name>.ARRP        — the recording (events + anchors)
 //   - <dir>/<name>.state.txt   — fingerprint of the final game state
 //
 // newGame must return a fresh Game each call (Golden calls it up to three
@@ -29,7 +29,7 @@ func Golden(t *testing.T, update bool, dir, name string, newGame func() runtime.
 	fingerprint func(game runtime.Game) string, script Script) {
 	t.Helper()
 
-	recPath := filepath.Join(dir, name+".ffrp")
+	recPath := filepath.Join(dir, name+".ARRP")
 	statePath := filepath.Join(dir, name+".state.txt")
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 

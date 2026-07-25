@@ -49,9 +49,9 @@ skills-lock.json
 *.err
 qodana.yaml
 .harper*
-*.ffrp
+*.arrp
 # Golden replay fixtures are committed test data, not ad-hoc local recordings.
-!examples/*/testdata/*.ffrp
+!examples/*/testdata/*.arrp
 *.wasm
 
 # Benchmark runs (ad-hoc); only committed baselines are versioned.

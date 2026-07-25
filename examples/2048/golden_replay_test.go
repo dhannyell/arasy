@@ -15,7 +15,7 @@ var update = flag.Bool("update", false, "rewrite golden replay fixtures")
 // TestGoldenReplay drives real 2048 gameplay through the live API — click
 // Play, cycle through the four move directions to generate merges and
 // runtime.Rand-driven spawns, click through Game Over / Win overlays to
-// keep playing — and verifies it against a committed FFRP recording plus a
+// keep playing — and verifies it against a committed ARRP recording plus a
 // fingerprint of the final matchState.
 //
 // This is the case checksum anchors alone do NOT cover: 2048 keeps no
