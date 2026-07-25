@@ -50,6 +50,9 @@ func (w *World) applyDamping(dt float64) {
 		if factor < 0 {
 			factor = 0
 		}
+		if factor > 1 {
+			factor = 1
+		}
 
 		velocity.Linear = velocity.Linear.Mul(factor)
 		w.velocities.set(id, velocity)

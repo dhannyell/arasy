@@ -58,21 +58,47 @@ func (w *World) advanceBallistics(dt float64) {
 		// Speed magnitude for quadratic drag.
 		speed := math.Sqrt(float64(vx*vx) + float64(vy*vy) + float64(vz*vz))
 
-		// Drag: a_d = -DragK * |v| * v
-		dragX := bal.DragK * speed * vx
-		dragY := bal.DragK * speed * vy
-		dragZ := bal.DragK * speed * vz
+		magnusRate := bal.MagnusK * omega
+		dragStep := float64(bal.DragK*speed) * dt
+		magnusStep := float64(magnusRate * dt)
 
-		// Magnus: a_m = MagnusK * omega * perpendicular(v_horizontal)
-		magX := bal.MagnusK * omega * (-vy)
-		magY := bal.MagnusK * omega * vx
+		if dragStep >= 0 && dragStep <= 1 && magnusStep >= -1 && magnusStep <= 1 {
+			// Preserve the established explicit-Euler result in its stable
+			// range, including its cross-architecture FMA barriers.
+			dragX := bal.DragK * speed * vx
+			dragY := bal.DragK * speed * vy
+			dragZ := bal.DragK * speed * vz
+			magX := magnusRate * (-vy)
+			magY := magnusRate * vx
+			vel.Linear.X -= float64((dragX - magX) * dt)
+			vel.Linear.Y -= float64((dragY - magY) * dt)
+			h.VZ -= float64((dragZ + bal.Gravity) * dt)
+		} else {
+			// Explicit quadratic drag reverses velocity when DragK*|v|*dt > 1
+			// and then grows without bound. Its closed-form speed update stays
+			// finite and monotonic in that stiff regime.
+			if bal.DragK > 0 && speed > 0 {
+				dragScale := 1.0 / (1.0 + dragStep)
+				vx *= dragScale
+				vy *= dragScale
+				vz *= dragScale
+			}
 
-		// Semi-implicit Euler: accelerate. The explicit float64 conversions on
-		// the sum-of-products stop FMA fusion, keeping the integrator
-		// bit-identical across architectures.
-		vel.Linear.X -= float64((dragX - magX) * dt)
-		vel.Linear.Y -= float64((dragY - magY) * dt)
-		h.VZ -= float64((dragZ + bal.Gravity) * dt)
+			// A Cayley step makes stiff Magnus coupling a bounded rotation.
+			// Explicit Euler injects energy and can overflow when |rate*dt|>1.
+			halfStep := float64(magnusRate*dt) * 0.5
+			halfStepSq := halfStep * halfStep
+			denom := 1.0 + halfStepSq
+			diagonal := 1.0 - halfStepSq
+			offDiagonal := 2.0 * halfStep
+			rotatedX := (float64(diagonal*vx) - float64(offDiagonal*vy)) / denom
+			rotatedY := (float64(offDiagonal*vx) + float64(diagonal*vy)) / denom
+			vx, vy = rotatedX, rotatedY
+
+			vel.Linear.X = vx
+			vel.Linear.Y = vy
+			h.VZ = vz - float64(bal.Gravity*dt)
+		}
 
 		// Integrate Z.
 		h.Z += float64(h.VZ * dt)
