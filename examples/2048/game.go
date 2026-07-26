@@ -1,15 +1,11 @@
 package twenty48
 
 import (
-	"testing/fstest"
-
-	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/ui"
-	"golang.org/x/image/font/gofont/goregular"
 )
 
 type phase int
@@ -362,17 +358,6 @@ func spawnTile(state *matchState) (int, bool) {
 	}
 	state.board[idx] = value
 	return idx, true
-}
-
-func loadDemoAssets() asset.Manifest {
-	manifest, err := asset.Load(fstest.MapFS{
-		"manifest.json":        &fstest.MapFile{Data: []byte(`{"version":1,"fonts":[{"name":"go-regular","file":"fonts/Go-Regular.ttf"}]}`)},
-		"fonts/Go-Regular.ttf": &fstest.MapFile{Data: goregular.TTF},
-	})
-	if err != nil {
-		panic("load 2048 font manifest: " + err.Error())
-	}
-	return manifest
 }
 
 func twenty48Bindings() []input.Binding {

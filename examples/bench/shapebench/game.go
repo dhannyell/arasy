@@ -159,7 +159,6 @@ type frameStats struct {
 // path's scaling behavior across primitive kinds.
 type Game struct {
 	assets asset.Manifest
-	font   render.FontID
 
 	shapes     []shapeState
 	shapeCount int
