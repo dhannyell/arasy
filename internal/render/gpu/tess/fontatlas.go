@@ -298,6 +298,31 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 	return atlas, nil
 }
 
+// NewDefaultFaceAtlas is like NewAtlasForFace but substitutes
+// render.MeasureText advances for every glyph, preserving font-0's canonical
+// deterministic layout regardless of the default face's real metrics.
+func NewDefaultFaceAtlas(px int, parsed *typeface.Face, runes []rune) (*Atlas, error) {
+	atlas, err := NewAtlasForFace(0, px, parsed, runes)
+	if err != nil {
+		return nil, err
+	}
+	measured := render.MeasureText("M", float64(px))
+	adv := float32(measured.X * float64(px) / measured.Y)
+	for i := range atlas.metrics {
+		atlas.metrics[i].width = adv
+	}
+	for r, g := range atlas.Glyphs {
+		g.Advance = float64(adv)
+		atlas.Glyphs[r] = g
+	}
+	for r := rune(atlasFirstRune); r <= rune(atlasLastRune); r++ {
+		g := atlas.asciiGlyphs[r]
+		g.Advance = float64(adv)
+		atlas.asciiGlyphs[r] = g
+	}
+	return atlas, nil
+}
+
 // GlyphMetricStream returns immutable atlas metadata in the storage-buffer
 // layout consumed by the instanced text shader.
 func (a *Atlas) GlyphMetricStream() []byte {

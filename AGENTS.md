@@ -211,6 +211,16 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 
 `wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes. Golden replays (`examples/*/testdata/*.arrp`) run on all four Go architectures (x86-64, windows, arm64, wasm) via `go test ./examples/...`, extending the same net to the full driver+input+UI+audio+game pipeline.
 
+## Embedded Default Font
+
+The engine embeds Go Mono (BSD-3, via `golang.org/x/image/font/gofont/gomono`)
+as the default font for `FontID(0)`. Text layout for `font 0` still uses
+`render.MeasureText` (monospace 0.6 advance, deterministic). Builds with
+
+    Arasy build --no-default-font
+
+exclude the ~140 KB TTF, falling back to the built-in 7×13 bitmap font.
+
 ## Reference Docs
 - `README.md` -- capabilities, quick start, demo instructions
 - `docs/runtime.md` -- runtime guide (tick semantics, Driver API, rewind)

@@ -119,17 +119,27 @@ func TestPlanTextBatchDegeneratePixelSizeSkipsLabel(t *testing.T) {
 	}
 }
 
-func TestTextBatchCoverageAggregatesRunesPerKeyAndSkipsBuiltin(t *testing.T) {
+func TestTextBatchCoverageAggregatesRunesPerKey(t *testing.T) {
 	labels := []render.TextLabel{
-		textBatchLabel(0, "skip me"), // built-in font needs no coverage request
+		textBatchLabel(0, "ça"), // font 0 included: the embedded default font grows dynamically
 		textBatchLabel(1, "AB"),
 		textBatchLabel(1, "BC"),
 		textBatchLabel(2, "Z"),
 	}
 	coverage := TextBatchCoverage(testCamera(), 100, 100, labels)
 
-	if len(coverage) != 2 {
-		t.Fatalf("coverage keys = %d, want 2 (font 1 and font 2, built-in excluded)", len(coverage))
+	if len(coverage) != 3 {
+		t.Fatalf("coverage keys = %d, want 3 (fonts 0, 1 and 2)", len(coverage))
+	}
+	key0 := AtlasKey{Font: 0, PX: 10}
+	set0, ok := coverage[key0]
+	if !ok || len(set0) != 2 {
+		t.Fatalf("coverage[%+v] = %v, want the union {ç,a}", key0, set0)
+	}
+	for _, r := range []rune{'ç', 'a'} {
+		if _, ok := set0[r]; !ok {
+			t.Fatalf("coverage[%+v] missing rune %q", key0, r)
+		}
 	}
 	key1 := AtlasKey{Font: 1, PX: 10}
 	set1, ok := coverage[key1]
@@ -147,8 +157,8 @@ func TestTextBatchCoverageAggregatesRunesPerKeyAndSkipsBuiltin(t *testing.T) {
 	}
 }
 
-func TestTextBatchCoverageEmptyWhenOnlyBuiltinOrTextless(t *testing.T) {
-	labels := []render.TextLabel{textBatchLabel(0, "A"), {Font: 1, Text: "", Size: 10}}
+func TestTextBatchCoverageEmptyWhenTextless(t *testing.T) {
+	labels := []render.TextLabel{{Font: 0, Text: "", Size: 10}, {Font: 1, Text: "", Size: 10}}
 	if coverage := TextBatchCoverage(testCamera(), 100, 100, labels); coverage != nil {
 		t.Fatalf("coverage = %v, want nil", coverage)
 	}

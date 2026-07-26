@@ -11,8 +11,9 @@ import (
 )
 
 var (
-	packOutput string
-	packTitle  string
+	packOutput        string
+	packTitle         string
+	packNoDefaultFont bool
 )
 
 var packCmd = &cobra.Command{
@@ -36,7 +37,7 @@ var packCmd = &cobra.Command{
 		defer func() { _ = removeTempDir(staging) }()
 		stopInterruptCleanup := watchTempDirInterrupt(staging)
 		defer stopInterruptCleanup()
-		if err := buildWASM(pkg, staging, title, true, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		if err := buildWASM(pkg, staging, title, true, packNoDefaultFont, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
 		return zipBuild(output, staging)
@@ -46,6 +47,7 @@ var packCmd = &cobra.Command{
 func init() {
 	packCmd.Flags().StringVarP(&packOutput, "output", "o", "", "output ZIP path")
 	packCmd.Flags().StringVar(&packTitle, "title", "", "HTML page title")
+	packCmd.Flags().BoolVar(&packNoDefaultFont, "no-default-font", false, "exclude the embedded default font (~140 KB); FontID 0 falls back to the built-in 7x13 bitmap")
 	rootCmd.AddCommand(packCmd)
 }
 
