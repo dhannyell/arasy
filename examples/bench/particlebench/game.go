@@ -96,7 +96,6 @@ func NewGame() (*Game, error) {
 
 func (g *Game) Setup() runtime.Config {
 	theme := ui.DefaultTheme()
-	theme.Font = g.assets.Font("default")
 
 	return runtime.Config{
 		Camera: render.Camera{

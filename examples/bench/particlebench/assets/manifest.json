@@ -1,8 +1,5 @@
 {
   "version": 1,
-  "fonts": [
-    {"name":  "default", "file": "fonts/Go-Regular.ttf"}
-  ],
   "effects": [
     {
       "name": "benchmark_particles",

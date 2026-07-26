@@ -38,7 +38,7 @@ func assertFontZeroGolden(t *testing.T, name string, img *image.RGBA) {
 
 func assertFontZeroGoldenTolerance(t *testing.T, name string, img *image.RGBA, channelTolerance uint8) {
 	t.Helper()
-	compareGolden(t, goldenFontVariant, name, img, channelTolerance)
+	compareGolden(t, "", name, img, channelTolerance)
 }
 
 func compareGolden(t *testing.T, variant, name string, img *image.RGBA, channelTolerance uint8) {

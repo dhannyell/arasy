@@ -35,8 +35,6 @@ const (
 	undoCharges           = 3
 )
 
-var demoAssets = loadDemoAssets()
-
 type matchState struct {
 	board     board
 	score     uint64
@@ -92,7 +90,6 @@ func (g *Game2048) RestoreGameState(state runtime.GameState) { g.state.RestoreGa
 
 func (g *Game2048) Setup() runtime.Config {
 	theme := ui.DefaultTheme()
-	theme.Font = demoAssets.Font("go-regular")
 
 	return runtime.Config{
 		Camera: render.Camera{
@@ -103,10 +100,9 @@ func (g *Game2048) Setup() runtime.Config {
 		Clear:         render.RGBA(1, 1, 1, 1),
 		Bounds:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldSize, Y: worldSize}),
 		SimulationHz:  60,
-		FPS:           59,
+		FPS:           60,
 		InputBindings: twenty48Bindings(),
 		HistoryLen:    1000,
-		Assets:        demoAssets,
 		UITheme:       theme,
 		Seed:          rngSeed,
 	}

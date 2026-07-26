@@ -10,10 +10,7 @@ import (
 )
 
 func main() {
-	game, err := shapebench.NewGame()
-	if err != nil {
-		panic(err)
-	}
+	game := &shapebench.Game{}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
 		ForceCanvas2D: false,
