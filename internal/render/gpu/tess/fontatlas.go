@@ -45,9 +45,13 @@ type Glyph struct {
 
 // Atlas stores the bitmap font texture and per-rune UV coordinates.
 type Atlas struct {
-	Key    AtlasKey
-	Image  *image.Alpha
-	Glyphs map[rune]Glyph
+	Key   AtlasKey
+	Image *image.Alpha
+	// LinearFilter is true for rasterized TTF/OpenType atlases. The bitmap
+	// fallback deliberately keeps nearest-neighbor sampling so its pixels stay
+	// crisp.
+	LinearFilter bool
+	Glyphs       map[rune]Glyph
 	// asciiGlyphs bypasses map lookups for printable ASCII, which every atlas
 	// owns. The map remains the source of truth for dynamic Unicode coverage.
 	asciiGlyphs [128]Glyph
@@ -162,14 +166,15 @@ func NewAtlas() *Atlas {
 	}
 
 	return &Atlas{
-		Key:         AtlasKey{Font: 0, PX: glyphHeight},
-		Image:       img,
-		Glyphs:      glyphs,
-		asciiGlyphs: asciiGlyphs,
-		coverage:    runeSet(atlasFirstRune, atlasLastRune, nil),
-		metrics:     glyphMetrics,
-		Ascent:      fixedFloat(metrics.Ascent),
-		Height:      fixedFloat(metrics.Height),
+		Key:          AtlasKey{Font: 0, PX: glyphHeight},
+		Image:        img,
+		LinearFilter: false,
+		Glyphs:       glyphs,
+		asciiGlyphs:  asciiGlyphs,
+		coverage:     runeSet(atlasFirstRune, atlasLastRune, nil),
+		metrics:      glyphMetrics,
+		Ascent:       fixedFloat(metrics.Ascent),
+		Height:       fixedFloat(metrics.Height),
 	}
 }
 
@@ -283,14 +288,15 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 		glyphMetrics[glyph.index] = metricForGlyph(glyph)
 	}
 	atlas := &Atlas{
-		Key:         AtlasKey{Font: fontID, PX: px},
-		Image:       img,
-		Glyphs:      glyphs,
-		asciiGlyphs: asciiGlyphs,
-		coverage:    requested,
-		metrics:     glyphMetrics,
-		Ascent:      fixedFloat(metrics.Ascent),
-		Height:      fixedFloat(metrics.Height),
+		Key:          AtlasKey{Font: fontID, PX: px},
+		Image:        img,
+		LinearFilter: true,
+		Glyphs:       glyphs,
+		asciiGlyphs:  asciiGlyphs,
+		coverage:     requested,
+		metrics:      glyphMetrics,
+		Ascent:       fixedFloat(metrics.Ascent),
+		Height:       fixedFloat(metrics.Height),
 	}
 	if err := fontFace.Close(); err != nil {
 		return nil, fmt.Errorf("create font atlas: close font face: %w", err)
@@ -300,7 +306,9 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 
 // NewDefaultFaceAtlas is like NewAtlasForFace but substitutes
 // render.MeasureText advances for every glyph, preserving font-0's canonical
-// deterministic layout regardless of the default face's real metrics.
+// deterministic layout regardless of the default face's real metrics. The
+// glyph metrics retain each glyph's visual bounds so narrow glyphs are not
+// stretched to fill the monospace advance.
 func NewDefaultFaceAtlas(px int, parsed *typeface.Face, runes []rune) (*Atlas, error) {
 	atlas, err := NewAtlasForFace(0, px, parsed, runes)
 	if err != nil {
@@ -308,9 +316,6 @@ func NewDefaultFaceAtlas(px int, parsed *typeface.Face, runes []rune) (*Atlas, e
 	}
 	measured := render.MeasureText("M", float64(px))
 	adv := float32(measured.X * float64(px) / measured.Y)
-	for i := range atlas.metrics {
-		atlas.metrics[i].width = adv
-	}
 	for r, g := range atlas.Glyphs {
 		g.Advance = float64(adv)
 		atlas.Glyphs[r] = g

@@ -287,6 +287,15 @@ func nearestSamplerDescriptor() wgpu.SamplerDescriptor {
 	}
 }
 
+func linearTextSamplerDescriptor() wgpu.SamplerDescriptor {
+	return wgpu.SamplerDescriptor{
+		Label:         "Arasy smooth text atlas sampler",
+		MagFilter:     wgpu.FilterModeLinear,
+		MinFilter:     wgpu.FilterModeLinear,
+		MaxAnisotropy: 1,
+	}
+}
+
 func mipLevelCount(width, height int) int {
 	maximum := width
 	if height > maximum {

@@ -129,6 +129,13 @@ func NearestSamplerDesc() map[string]any {
 	return map[string]any{"magFilter": "nearest", "minFilter": "nearest"}
 }
 
+// LinearSamplerDesc is used for rasterized TTF/OpenType text atlases. The
+// atlas has transparent padding around each glyph, so linear sampling does
+// not bleed neighboring glyphs into the result.
+func LinearSamplerDesc() map[string]any {
+	return map[string]any{"magFilter": "linear", "minFilter": "linear"}
+}
+
 func TextureDesc(w, h, levels int) map[string]any {
 	return map[string]any{
 		"size": []any{w, h}, "format": "rgba8unorm", "mipLevelCount": levels,

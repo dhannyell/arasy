@@ -24,7 +24,7 @@ func TestGoldenDebugOverlay(t *testing.T) {
 		scene.WithDebugCellSize(8),
 	)...)
 
-	assertGolden(t, "debug_overlay", goldenRenderer().Render(commands))
+	assertFontZeroGolden(t, "debug_overlay", goldenRenderer().Render(commands))
 }
 
 func TestGoldenCameraAspect(t *testing.T) {

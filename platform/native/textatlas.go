@@ -85,6 +85,9 @@ func (r textAtlasResources) createTextAtlas(atlas *tess.Atlas) (gpuTextAtlas, er
 	}
 	result.view = view
 	samplerDescriptor := nearestSamplerDescriptor()
+	if atlas.LinearFilter {
+		samplerDescriptor = linearTextSamplerDescriptor()
+	}
 	sampler, err := r.device.TryCreateSampler(&samplerDescriptor)
 	if err != nil {
 		result.release()
