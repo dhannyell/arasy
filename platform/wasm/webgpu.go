@@ -957,7 +957,11 @@ func (r *webgpuRenderer) createTextAtlas(atlas *tess.Atlas) gpuTextAtlas {
 	texture := r.dev.CreateTexture(gpu.R8TextureDesc(width, height))
 	r.dev.WriteTexture(map[string]any{"texture": texture}, atlas.Image.Pix, gpu.TextureWriteLayout(width, height), gpu.TextureWriteSize(width, height))
 	view := r.dev.CreateView(texture, nil)
-	sampler := r.dev.CreateSampler(gpu.NearestSamplerDesc())
+	samplerDesc := gpu.NearestSamplerDesc()
+	if atlas.LinearFilter {
+		samplerDesc = gpu.LinearSamplerDesc()
+	}
+	sampler := r.dev.CreateSampler(samplerDesc)
 	viewValue := jsHandle(view)
 	samplerValue := jsHandle(sampler)
 	metricBytes := atlas.GlyphMetricStream()

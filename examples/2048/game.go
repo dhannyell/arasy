@@ -1,15 +1,11 @@
 package twenty48
 
 import (
-	"testing/fstest"
-
-	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/ui"
-	"golang.org/x/image/font/gofont/goregular"
 )
 
 type phase int
@@ -34,8 +30,6 @@ const (
 	dragThreshold         = 3.0
 	undoCharges           = 3
 )
-
-var demoAssets = loadDemoAssets()
 
 type matchState struct {
 	board     board
@@ -92,7 +86,6 @@ func (g *Game2048) RestoreGameState(state runtime.GameState) { g.state.RestoreGa
 
 func (g *Game2048) Setup() runtime.Config {
 	theme := ui.DefaultTheme()
-	theme.Font = demoAssets.Font("go-regular")
 
 	return runtime.Config{
 		Camera: render.Camera{
@@ -103,10 +96,9 @@ func (g *Game2048) Setup() runtime.Config {
 		Clear:         render.RGBA(1, 1, 1, 1),
 		Bounds:        math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldSize, Y: worldSize}),
 		SimulationHz:  60,
-		FPS:           59,
+		FPS:           60,
 		InputBindings: twenty48Bindings(),
 		HistoryLen:    1000,
-		Assets:        demoAssets,
 		UITheme:       theme,
 		Seed:          rngSeed,
 	}
@@ -366,17 +358,6 @@ func spawnTile(state *matchState) (int, bool) {
 	}
 	state.board[idx] = value
 	return idx, true
-}
-
-func loadDemoAssets() asset.Manifest {
-	manifest, err := asset.Load(fstest.MapFS{
-		"manifest.json":        &fstest.MapFile{Data: []byte(`{"version":1,"fonts":[{"name":"go-regular","file":"fonts/Go-Regular.ttf"}]}`)},
-		"fonts/Go-Regular.ttf": &fstest.MapFile{Data: goregular.TTF},
-	})
-	if err != nil {
-		panic("load 2048 font manifest: " + err.Error())
-	}
-	return manifest
 }
 
 func twenty48Bindings() []input.Binding {

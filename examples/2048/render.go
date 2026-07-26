@@ -121,7 +121,7 @@ func drawTile(value uint64, rect math2d.Rect, scale float64, rectLayer, textLaye
 			Text:        strconv.FormatUint(value, 10),
 			Color:       tileTextColor(value),
 			Size:        tileTextSize(value) * scale,
-			Font:        demoAssets.Font("go-regular"),
+			Font:        0,
 			Align:       render.AlignCenter,
 			Baseline:    render.BaselineMiddle,
 		},

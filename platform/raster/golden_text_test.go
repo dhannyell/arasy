@@ -75,7 +75,7 @@ func TestGoldenText(t *testing.T) {
 		},
 	})
 
-	assertGolden(t, "text", img)
+	assertFontZeroGolden(t, "text", img)
 }
 
 func TestGoldenTypeface(t *testing.T) {
@@ -143,5 +143,5 @@ func TestGoldenTypeface(t *testing.T) {
 	// x/image's anti-aliased glyph rasterizer can round edge coverage by one
 	// channel value across platforms. Keep this tolerance local to the external
 	// typeface golden; the remaining raster goldens stay pixel-exact.
-	assertGoldenTolerance(t, "typeface", img, 1)
+	assertFontZeroGoldenTolerance(t, "typeface", img, 1)
 }

@@ -42,18 +42,19 @@ func textPixelSize(c ctx, size float64) int {
 	return int(math.Round(c.cam.WorldScalarToScreen(size)))
 }
 
-// TextBatchCoverage aggregates, for every label whose Font is not the
-// built-in font, the (FontID, pixel size) key and the rune set it needs, at
-// the pixel size PlanTextBatch will request. Built-in-font labels are
-// omitted: the built-in atlas already covers every printable rune it can
-// render and needs no growth request. Callers request coverage for these
-// keys before PlanTextBatch, so a repack never grows atlas coverage itself.
+// TextBatchCoverage aggregates, for every label, the (FontID, pixel size)
+// key and the rune set it needs, at the pixel size PlanTextBatch will
+// request. Font 0 labels are included: when the embedded default font is
+// compiled in, its atlas grows dynamically like any user font. Providers
+// serving the fixed built-in bitmap atlas simply ignore the growth request.
+// Callers request coverage for these keys before PlanTextBatch, so a repack
+// never grows atlas coverage itself.
 func TextBatchCoverage(cam render.Camera, w, h int, labels []render.TextLabel) map[AtlasKey]map[rune]struct{} {
 	c := ctx{cam: cam, w: float64(w), h: float64(h)}
 	var coverage map[AtlasKey]map[rune]struct{}
 	for i := range labels {
 		label := &labels[i]
-		if label.Font == 0 || label.Text == "" {
+		if label.Text == "" {
 			continue
 		}
 		px := textPixelSize(c, label.Size)

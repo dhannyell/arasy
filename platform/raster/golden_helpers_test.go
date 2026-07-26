@@ -17,12 +17,33 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 func assertGolden(t *testing.T, name string, img *image.RGBA) {
+	t.Helper()
 	assertGoldenTolerance(t, name, img, 0)
 }
 
 func assertGoldenTolerance(t *testing.T, name string, img *image.RGBA, channelTolerance uint8) {
 	t.Helper()
-	path := filepath.Join("testdata", "golden", name+".png")
+	compareGolden(t, "", name, img, channelTolerance)
+}
+
+// assertFontZeroGolden compares a frame that draws text with FontID 0. Which
+// font FontID 0 resolves to is a build-time choice — the embedded default font
+// normally, the built-in 7x13 bitmap under arr_no_default_font — so each build
+// variant owns its own golden set (see goldenFontVariant) and both stay
+// pixel-exact instead of one absorbing the other's glyphs as tolerance.
+func assertFontZeroGolden(t *testing.T, name string, img *image.RGBA) {
+	t.Helper()
+	assertFontZeroGoldenTolerance(t, name, img, 0)
+}
+
+func assertFontZeroGoldenTolerance(t *testing.T, name string, img *image.RGBA, channelTolerance uint8) {
+	t.Helper()
+	compareGolden(t, "", name, img, channelTolerance)
+}
+
+func compareGolden(t *testing.T, variant, name string, img *image.RGBA, channelTolerance uint8) {
+	t.Helper()
+	path := filepath.Join("testdata", "golden", variant, name+".png")
 
 	if *update {
 		writePNG(t, path, img)
@@ -37,7 +58,7 @@ func assertGoldenTolerance(t *testing.T, name string, img *image.RGBA, channelTo
 		return
 	}
 
-	failurePath := filepath.Join("testdata", "failures", name+".png")
+	failurePath := filepath.Join("testdata", "failures", variant, name+".png")
 	writePNG(t, failurePath, img)
 	t.Errorf("%s: %d pixels differ (first at %v); got image saved to %s",
 		name, diff.count, diff.first, failurePath)

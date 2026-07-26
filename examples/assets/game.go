@@ -116,7 +116,6 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 		},
 	})
 
-	heading := ctx.Assets.Font("heading")
 	commands = append(commands,
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: 2},
@@ -131,7 +130,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 			Text:        "Manifest Go Regular: AV iii MMM",
 			Color:       render.RGBA(1, 0.84, 0.35, 1),
 			Size:        4,
-			Font:        heading,
+			Font:        0,
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: 2},

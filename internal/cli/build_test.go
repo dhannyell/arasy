@@ -4,13 +4,25 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestWasmBuildArgsNoDefaultFont(t *testing.T) {
+	withFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, true), " ")
+	if !strings.Contains(withFlag, "-tags arr_no_default_font") {
+		t.Fatalf("args = %q, want -tags arr_no_default_font", withFlag)
+	}
+	withoutFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, false), " ")
+	if strings.Contains(withoutFlag, "-tags") {
+		t.Fatalf("args = %q, want no -tags when the flag is off", withoutFlag)
+	}
+}
 
 func TestBuildWASMProducesStaticArtifacts(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "build")
 	pkg := filepath.Join(repoRoot(t), "examples", "breakout", "wasm")
-	if err := buildWASM(pkg, out, "Breakout", true, io.Discard, io.Discard); err != nil {
+	if err := buildWASM(pkg, out, "Breakout", true, false, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"app.wasm", "index.html", "wasm_exec.js"} {

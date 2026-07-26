@@ -113,6 +113,9 @@ func TestOtherDescriptorsMatchLiteralFixtures(t *testing.T) {
 	if got, want := gpu.NearestSamplerDesc(), map[string]any{"magFilter": "nearest", "minFilter": "nearest"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("nearest sampler differs: got %#v, want %#v", got, want)
 	}
+	if got, want := gpu.LinearSamplerDesc(), map[string]any{"magFilter": "linear", "minFilter": "linear"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("linear sampler differs: got %#v, want %#v", got, want)
+	}
 	if got, want := gpu.R8TextureDesc(2, 3), map[string]any{"size": []any{2, 3}, "format": "r8unorm", "usage": gpu.TextureUsageTextureBinding | gpu.TextureUsageCopyDst}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("r8 texture differs: got %#v, want %#v", got, want)
 	}

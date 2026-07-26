@@ -8,9 +8,7 @@
 package shapebench
 
 import (
-	"embed"
 	"fmt"
-	"io/fs"
 	"math"
 	"strconv"
 	"strings"
@@ -23,9 +21,6 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/ui"
 )
-
-//go:embed assets
-var embeddedAssets embed.FS
 
 const (
 	worldWidth  = 1920
@@ -164,7 +159,6 @@ type frameStats struct {
 // path's scaling behavior across primitive kinds.
 type Game struct {
 	assets asset.Manifest
-	font   render.FontID
 
 	shapes     []shapeState
 	shapeCount int
@@ -174,24 +168,8 @@ type Game struct {
 	stats frameStats
 }
 
-func NewGame() (*Game, error) {
-	sub, err := fs.Sub(embeddedAssets, "assets")
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := asset.Load(sub)
-	if err != nil {
-		return nil, err
-	}
-	return &Game{
-		assets: manifest,
-		font:   manifest.Font("default"),
-	}, nil
-}
-
 func (g *Game) Setup() runtime.Config {
 	theme := ui.DefaultTheme()
-	theme.Font = g.assets.Font("default")
 
 	return runtime.Config{
 		Camera: render.Camera{

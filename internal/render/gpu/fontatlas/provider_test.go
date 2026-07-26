@@ -5,7 +5,9 @@ import (
 	"testing/fstest"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"golang.org/x/image/font/gofont/goregular"
 )
 
@@ -60,4 +62,48 @@ func testProvider(t *testing.T) *fontatlas.Provider {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestProviderDefaultFontAtlasGrowsWithText(t *testing.T) {
+	if typeface.DefaultFace() == nil {
+		t.Skip("default font compiled out (arr_no_default_font)")
+	}
+	p := testProvider(t)
+
+	atlas, err := p.AtlasFor(0, 18, "ção")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if atlas.Key != (tess.AtlasKey{Font: 0, PX: 18}) {
+		t.Fatalf("atlas.Key = %+v, want {Font: 0, PX: 18}", atlas.Key)
+	}
+	for _, r := range []rune{'ç', 'ã', 'o'} {
+		if _, ok := atlas.Glyphs[r]; !ok {
+			t.Fatalf("default font atlas is missing %q", r)
+		}
+	}
+
+	again, err := p.AtlasFor(0, 18, "ço")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again != atlas {
+		t.Fatal("atlas rebuilt without any newly requested rune")
+	}
+
+	grown, err := p.AtlasFor(0, 18, "é")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if grown == atlas {
+		t.Fatal("atlas not rebuilt for a newly requested rune")
+	}
+	if _, ok := grown.Glyphs['é']; !ok {
+		t.Fatal("grown atlas is missing 'é'")
+	}
+
+	cached, ok := p.CachedAtlas(0, 18)
+	if !ok || cached != grown {
+		t.Fatal("CachedAtlas(0, 18) did not return the grown default atlas")
+	}
 }

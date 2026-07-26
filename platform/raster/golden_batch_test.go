@@ -99,5 +99,5 @@ func TestGoldenRetainedBatches(t *testing.T) {
 		render.DrawTextBatch{Batch: 6},
 	})
 
-	assertGolden(t, "retained-batches", img)
+	assertFontZeroGolden(t, "retained-batches", img)
 }

@@ -112,6 +112,32 @@ func TestBuildFontZeroKeepsCanonicalTextWidth(t *testing.T) {
 	}
 }
 
+func TestDefaultFaceAtlasPreservesNarrowGlyphBounds(t *testing.T) {
+	face := typeface.DefaultFace()
+	if face == nil {
+		t.Skip("default font compiled out (arr_no_default_font)")
+	}
+
+	atlas, err := NewDefaultFaceAtlas(18, face, []rune{'!'})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !atlas.LinearFilter {
+		t.Fatal("default TTF atlas must use linear filtering")
+	}
+	glyph := atlas.glyph('!')
+	if glyph.Width <= 0 || glyph.Height <= 0 {
+		t.Fatalf("exclamation glyph bounds = %vx%v, want visible glyph", glyph.Width, glyph.Height)
+	}
+	if glyph.Width >= glyph.Advance {
+		t.Fatalf("exclamation glyph width = %v, advance = %v; want a narrow glyph within its monospace cell", glyph.Width, glyph.Advance)
+	}
+	metric := atlas.metrics[glyph.index]
+	if math.Abs(float64(metric.width)-glyph.Width) > testEpsilon {
+		t.Fatalf("exclamation metric width = %v, glyph width = %v; visual bounds must not use the layout advance", metric.width, glyph.Width)
+	}
+}
+
 func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 	provider := newTestTypefaceProvider(t)
 	var builder Builder

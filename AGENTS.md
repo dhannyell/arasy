@@ -205,12 +205,32 @@ Review sum-of-product expressions for explicit `float64()` on the product operan
 |---|---|
 | `quality` | actionlint, golangci-lint (forbidigo), govulncheck |
 | `test` | `gofmt`, `go vet`, `go test ./...` (x86-64) |
+| `no-default-font` | `go test -tags arr_no_default_font ./...` + js/wasm build+vet with the tag (the embedded default font compiled out) |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` (Windows compat) |
 | `wasm` | `GOOS=js go build ./...` + `go vet ./...` + sim-path tests via `go_js_wasm_exec` (incl. `examples/...` golden replays) + Canvas2D visual golden; WebGPU golden remains a local/browser gate |
 | `arm64` | `go test ./...` (native arm64) |
 
 `wasm` + `arm64` = cross-arch determinism net. Golden checksum (`scene/testdata/checksum_golden.json`) must match x86-64, arm64, and wasm. Regenerate in a dedicated commit on x86-64 when format changes. Golden replays (`examples/*/testdata/*.arrp`) run on all four Go architectures (x86-64, windows, arm64, wasm) via `go test ./examples/...`, extending the same net to the full driver+input+UI+audio+game pipeline.
+
+## Embedded Default Font
+
+The engine embeds Go Mono (BSD-3, via `golang.org/x/image/font/gofont/gomono`)
+as the default font for `FontID(0)`. Text layout for `font 0` still uses
+`render.MeasureText` (monospace 0.6 advance, deterministic). Builds with
+
+    Arasy build --no-default-font
+
+exclude the ~140 KB TTF, falling back to the built-in 7×13 bitmap font.
+
+Raster goldens whose frames draw text with `FontID(0)` exist in both variants:
+`platform/raster/testdata/golden/` for the embedded font and
+`platform/raster/testdata/golden/bitmap/` for the opt-out. Regenerate the
+second set with
+
+    go test -tags arr_no_default_font ./platform/raster -run TestGolden -update
+
+Both sets stay pixel-exact; the `no-default-font` CI job guards the opt-out.
 
 ## Reference Docs
 - `README.md` -- capabilities, quick start, demo instructions

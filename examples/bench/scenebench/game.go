@@ -8,9 +8,7 @@
 package scenebench
 
 import (
-	"embed"
 	"fmt"
-	"io/fs"
 	"math"
 	"strconv"
 	"strings"
@@ -24,9 +22,6 @@ import (
 	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/ui"
 )
-
-//go:embed assets
-var embeddedAssets embed.FS
 
 const (
 	worldWidth  = 1920
@@ -95,21 +90,8 @@ type Game struct {
 	stats frameStats
 }
 
-func NewGame() (*Game, error) {
-	sub, err := fs.Sub(embeddedAssets, "assets")
-	if err != nil {
-		return nil, err
-	}
-	manifest, err := asset.Load(sub)
-	if err != nil {
-		return nil, err
-	}
-	return &Game{assets: manifest}, nil
-}
-
 func (g *Game) Setup() runtime.Config {
 	theme := ui.DefaultTheme()
-	theme.Font = g.assets.Font("default")
 
 	return runtime.Config{
 		Camera: render.Camera{
