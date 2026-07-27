@@ -25,8 +25,10 @@ type EmissionFrame struct {
 }
 
 // Advance accounts one frame. dt <= 0 emits nothing but still tracks the
-// emitter position (pause/scrub). The first call seeds LastBurst/LastPos
-// without firing a retroactive burst. Advance does not consume Emitted:
+// emitter position (pause/scrub). The first call seeds LastPos without
+// lerping spawn origins from nowhere, and seeds LastBurst so that a counter
+// already non-zero on the very first frame fires exactly ONE burst -- see the
+// seeding note below. Advance does not consume Emitted:
 // the caller advances it by the number of particles actually spawned.
 // A CPU pool may clamp below Count; a GPU emit pass consumes the full range
 // even when a full pool drops some spawns, keeping later hash lanes stable.
@@ -39,7 +41,20 @@ func (s *EmissionState) Advance(
 	dt float64,
 ) EmissionFrame {
 	if !s.started {
-		s.LastBurst = burst
+		// Seeding, not adoption. Adopting the incoming counter wholesale meant
+		// an emitter switched on with Burst already non-zero never saw an
+		// increment, so its opening burst silently never fired -- a trap for
+		// exactly the common case of "spawn this effect, already bursting, on
+		// the frame it appears". Seeding one below makes the ordinary
+		// comparison fire it.
+		//
+		// Clamped to one burst on purpose: an emitter picked up mid-stream with
+		// a counter of 500 owes one burst, not 500. Positions still seed
+		// as-is, so the first frame lerps spawn origins from where the emitter
+		// actually is rather than from the origin.
+		if burst > 0 {
+			s.LastBurst = burst - 1
+		}
 		s.LastPos = pos
 		s.started = true
 	}
