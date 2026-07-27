@@ -12,21 +12,25 @@ import (
 )
 
 type fakeTrackPlayer struct {
-	reader io.ReadSeeker
-	seeks  []int64
+	reader   io.ReadSeeker
+	seeks    []int64
+	buffered int
 }
 
 func (p *fakeTrackPlayer) Play()             {}
 func (p *fakeTrackPlayer) IsPlaying() bool   { return true }
-func (p *fakeTrackPlayer) BufferedSize() int { return 0 }
+func (p *fakeTrackPlayer) BufferedSize() int { return p.buffered }
 func (p *fakeTrackPlayer) Seek(offset int64, whence int) (int64, error) {
 	p.seeks = append(p.seeks, offset)
 	return p.reader.Seek(offset, whence)
 }
 
-func TestAudioSinkResyncsScheduledTrackThroughPlayerSeek(t *testing.T) {
+func newTrackTestSink(seconds float64) (*audioSink, *[]*fakeTrackPlayer) {
 	clipID := audio.ClipID("music")
-	clip := &clipPCM{Rate: audioSampleRate, Samples: make([]int16, audioSampleRate*audioChannels*8)}
+	clip := &clipPCM{
+		Rate:    audioSampleRate,
+		Samples: make([]int16, int(seconds*audioSampleRate)*audioChannels),
+	}
 	var players []*fakeTrackPlayer
 	sink := &audioSink{
 		clips:   map[audio.ClipID]*clipPCM{clipID: clip},
@@ -42,25 +46,107 @@ func TestAudioSinkResyncsScheduledTrackThroughPlayerSeek(t *testing.T) {
 			return player
 		},
 	}
-	track := audio.Track{Clip: clipID, Loop: true, StartTick: 2}
+	return sink, &players
+}
 
-	// The late first observation starts one second into the track.
-	sink.consume(audio.Output{Tick: 3, Tracks: map[audio.TrackID]audio.Track{"music": track}})
-	if len(players) != 1 {
-		t.Fatalf("players = %d, want 1", len(players))
-	}
-	// A continuous timeline leaves the player at its expected playhead.
-	sink.consume(audio.Output{Tick: 3, Tracks: map[audio.TrackID]audio.Track{"music": track}})
-	if len(players[0].seeks) != 0 {
-		t.Fatalf("continuous playback seeks = %v, want none", players[0].seeks)
+func TestActiveTrackAudiblePlayheadSubtractsBufferedFrames(t *testing.T) {
+	v := newVoice(make([]int16, 1000*audioChannels), false, 0, 1)
+	v.setPosition(700)
+	track := activeTrack{
+		player: &fakeTrackPlayer{buffered: 200 * bytesPerAudioFrame},
+		voice:  v,
+		frames: 1000,
 	}
 
-	// At tick 5, the desired playhead is three seconds. The native sink must
-	// seek the Oto player (not reset it), which also clears its read-ahead.
+	got, ok := track.audiblePlayhead(1000)
+	if !ok || got != 0.5 {
+		t.Fatalf("audiblePlayhead() = (%v, %t), want (0.5, true)", got, ok)
+	}
+}
+
+func TestActiveTrackAudiblePlayheadWrapsMultipleBufferedLoops(t *testing.T) {
+	v := newVoice(make([]int16, 100*audioChannels), true, 0, 1)
+	v.setPosition(20)
+	track := activeTrack{
+		player: &fakeTrackPlayer{buffered: 250 * bytesPerAudioFrame},
+		voice:  v,
+		frames: 100,
+		loop:   true,
+	}
+
+	got, ok := track.audiblePlayhead(1000)
+	if !ok || got != 0.07 {
+		t.Fatalf("audiblePlayhead() = (%v, %t), want (0.07, true)", got, ok)
+	}
+}
+
+func TestAudioSinkResyncsBackwardScrubThroughPlayerSeek(t *testing.T) {
+	sink, players := newTrackTestSink(8)
+	track := audio.Track{Clip: "music", Loop: true, StartTick: 2}
+
+	// The late first observation starts three seconds into the track.
 	sink.consume(audio.Output{Tick: 5, Tracks: map[audio.TrackID]audio.Track{"music": track}})
-	want := int64(3 * audioSampleRate * bytesPerAudioFrame)
-	if len(players[0].seeks) != 1 || players[0].seeks[0] != want {
-		t.Fatalf("seek offsets = %v, want [%d]", players[0].seeks, want)
+	if len(*players) != 1 {
+		t.Fatalf("players = %d, want 1", len(*players))
+	}
+
+	// Scrubbing back to tick 3 moves the desired playhead to one second.
+	sink.consume(audio.Output{Tick: 3, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	want := int64(audioSampleRate * bytesPerAudioFrame)
+	if len((*players)[0].seeks) != 1 || (*players)[0].seeks[0] != want {
+		t.Fatalf("seek offsets = %v, want [%d]", (*players)[0].seeks, want)
+	}
+}
+
+func TestAudioSinkContinuousPlaybackDoesNotSeek(t *testing.T) {
+	sink, players := newTrackTestSink(8)
+	track := audio.Track{Clip: "music", Loop: true, StartTick: 2}
+
+	sink.consume(audio.Output{Tick: 3, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if len(*players) != 1 {
+		t.Fatalf("players = %d, want 1", len(*players))
+	}
+
+	// Advance the audible reader and both clocks by one second.
+	sink.active["music"].voice.setPosition(2 * audioSampleRate)
+	sink.start = sink.start.Add(-time.Second)
+	sink.consume(audio.Output{Tick: 4, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if len((*players)[0].seeks) != 0 {
+		t.Fatalf("continuous playback seeks = %v, want none", (*players)[0].seeks)
+	}
+}
+
+func TestAudioSinkRemovesFinishedOneShot(t *testing.T) {
+	sink, _ := newTrackTestSink(2)
+	track := audio.Track{Clip: "music", StartTick: 1}
+
+	sink.consume(audio.Output{Tick: 1, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if _, ok := sink.active["music"]; !ok {
+		t.Fatal("track did not become active")
+	}
+
+	sink.consume(audio.Output{Tick: 4, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if _, ok := sink.active["music"]; ok {
+		t.Fatal("finished one-shot remains active")
+	}
+}
+
+func TestAudioSinkReturnsActiveTrackToPendingAfterBackwardScrub(t *testing.T) {
+	sink, _ := newTrackTestSink(8)
+	track := audio.Track{Clip: "music", Loop: true, StartTick: 2}
+
+	sink.consume(audio.Output{Tick: 3, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if _, ok := sink.active["music"]; !ok {
+		t.Fatal("track did not become active")
+	}
+
+	sink.consume(audio.Output{Tick: 0, Tracks: map[audio.TrackID]audio.Track{"music": track}})
+	if _, ok := sink.active["music"]; ok {
+		t.Fatal("pending track remains active after backward scrub")
+	}
+	pending, ok := sink.pending["music"]
+	if !ok || pending.clip != "music" {
+		t.Fatalf("pending track = (%v, %t), want music", pending, ok)
 	}
 }
 

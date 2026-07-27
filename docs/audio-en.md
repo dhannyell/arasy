@@ -52,6 +52,13 @@ difference to its precise audio clock; no device timestamp enters simulation.
 Zero starts immediately. If decoding finishes late, the host advances the
 playhead by the delay instead of restarting the timeline.
 
+When a track is created without `StartTick`, the runtime anchors it to the
+current tick. Repeating `SetTrack` for the same clip preserves that anchor;
+changing the clip creates a new one. Use `PauseTrack` and `ResumeTrack` to
+freeze only the music: paused time is subtracted from the playhead when it
+resumes. This is independent of the global simulation pause, which also
+suspends the audio context of interactive hosts.
+
 ## Host Contract
 
 Hosts call `Driver.ConsumeAudio()` after advancing simulation, from the same
@@ -65,10 +72,6 @@ ApplyInput -> AdvanceTime/Step -> ConsumeAudio -> deliver to audio backend
 accumulate until consumed, with a bounded queue. Tracks are continuous state:
 the host compares desired tracks with what is playing, starts missing tracks,
 stops stale tracks, and adjusts gain when needed.
-
-The web canvas serves the clips declared by `Config.Assets.AudioClips()` under
-`/audio/<path>` when given an `AudioFS`, sends a manifest to new clients, and
-transports audio messages over the WebSocket from the simulation loop.
 
 The Windows native host uses oto to mix voices and decodes WAV, MP3, and OGG
 at load time. It reconciles cues and tracks with the same semantics as the web
@@ -85,7 +88,7 @@ Audio follows the simulation timeline, but it is not part of
 |---|---|---|
 | Normal play | emitted and drained once | reconciled by the host |
 | Rewind | pending future cues are discarded | restored by snapshot |
-| Scrub | re-simulated cues are suppressed | reconstructed for target tick |
+| Scrub | re-simulated cues are suppressed | playhead is reconstructed for the target tick |
 | Fork after scrub | cues emit again on the new timeline | follow new state |
 | Explicit replay | does not change checksum | state is reconstructed |
 

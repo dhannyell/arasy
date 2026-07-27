@@ -150,11 +150,15 @@ func (t *activeTrack) audiblePlayhead(rate int) (float64, bool) {
 		return 0, false
 	}
 	audible := t.voice.position() - t.player.BufferedSize()/bytesPerAudioFrame
-	if audible < 0 {
-		if !t.loop {
-			return 0, false
+	if t.loop {
+		audible %= t.frames
+		if audible < 0 {
+			audible += t.frames
 		}
-		audible += t.frames
+		return float64(audible) / float64(rate), true
+	}
+	if audible < 0 {
+		return 0, false
 	}
 	return float64(audible) / float64(rate), true
 }

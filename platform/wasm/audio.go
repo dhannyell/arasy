@@ -201,8 +201,25 @@ func (s *audioSink) reconcileTracks() {
 		case audio.PlayheadUnanchored:
 			s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
 		case audio.PlayheadPending:
-			active.source.Call("stop", now)
-			delete(s.active, id)
+			scheduledStart := audio.ScheduledTrackStart(
+				now,
+				s.tick,
+				s.alpha,
+				desired.StartTick,
+				s.tickSec,
+			)
+			if audio.NeedsResync(
+				active.start,
+				scheduledStart,
+				0,
+				audio.DefaultResyncToleranceSec,
+				false,
+			) {
+				active.source.Call("stop", now)
+				delete(s.active, id)
+				continue
+			}
+			s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
 		case audio.PlayheadFinished:
 			active.source.Call("stop", now)
 			delete(s.active, id)
