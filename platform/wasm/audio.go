@@ -5,6 +5,7 @@ package wasm
 import (
 	"io/fs"
 	"log/slog"
+	"math"
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/audio"
@@ -23,13 +24,18 @@ type audioSink struct {
 	tickSec  float64
 
 	callbacks []js.Func
+
+	simulationPaused bool
 }
 
 type activeTrack struct {
-	source js.Value
-	gain   js.Value
-	clip   audio.ClipID
-	start  float64
+	source      js.Value
+	gain        js.Value
+	clip        audio.ClipID
+	start       float64
+	startOffset float64
+	loop        bool
+	paused      bool
 }
 
 type pendingTrack struct {
@@ -63,10 +69,21 @@ func newAudioSink(clips []audio.Clip, files fs.FS, simulationHz int, log *slog.L
 	return s
 }
 
+func (t activeTrack) audiblePlayhead(now, duration float64) (float64, bool) {
+	if now < t.start {
+		return 0, false
+	}
+	position := (now - t.start) + t.startOffset
+	if t.loop && duration > 0 {
+		position = math.Mod(position, duration)
+	}
+	return position, true
+}
+
 func (s *audioSink) registerUnlock() {
 	unlock := js.FuncOf(func(this js.Value, args []js.Value) any {
 		s.unlocked = true
-		if !documentHidden() && s.ctx.Get("state").String() == "suspended" {
+		if !documentHidden() && s.ctx.Get("state").String() == "suspended" && !s.simulationPaused {
 			s.ctx.Call("resume")
 		}
 		return nil
@@ -78,7 +95,7 @@ func (s *audioSink) registerUnlock() {
 			}
 			return nil
 		}
-		if s.unlocked && s.ctx.Get("state").String() == "suspended" {
+		if s.unlocked && s.ctx.Get("state").String() == "suspended" && !s.simulationPaused {
 			s.ctx.Call("resume")
 		}
 		return nil
@@ -156,10 +173,72 @@ func (s *audioSink) playCues(cues []audio.Cue) {
 
 func (s *audioSink) reconcileTracks() {
 	now := s.ctx.Get("currentTime").Float()
-	for id, track := range s.active {
-		if _, ok := s.desired[id]; !ok {
-			s.fadeAndStop(track, now, 0)
+	for id, active := range s.active {
+		desired, isDesired := s.desired[id]
+		if !isDesired {
+			s.fadeAndStop(active, now, 0)
 			delete(s.active, id)
+			continue
+		}
+		if active.clip != desired.Clip {
+			continue
+		}
+		if desired.Paused {
+			s.pauseTrack(id, active, desired.FadeSec, now)
+			continue
+		}
+
+		duration := s.buffers[active.clip].Get("duration").Float()
+		expected, state := audio.ExpectedTrackPlayhead(
+			float64(s.tick),
+			s.alpha,
+			desired,
+			s.tickSec,
+			duration,
+		)
+
+		switch state {
+		case audio.PlayheadUnanchored:
+			s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
+		case audio.PlayheadPending:
+			scheduledStart := audio.ScheduledTrackStart(
+				now,
+				s.tick,
+				s.alpha,
+				desired.StartTick,
+				s.tickSec,
+			)
+			if audio.NeedsResync(
+				active.start,
+				scheduledStart,
+				0,
+				audio.DefaultResyncToleranceSec,
+				false,
+			) {
+				active.source.Call("stop", now)
+				delete(s.active, id)
+				continue
+			}
+			s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
+		case audio.PlayheadFinished:
+			active.source.Call("stop", now)
+			delete(s.active, id)
+		case audio.PlayheadPlaying:
+			if active.paused {
+				s.resyncTrack(id, active, desired, s.buffers[active.clip], expected, now)
+				continue
+			}
+			actual, ok := active.audiblePlayhead(now, duration)
+			if !ok {
+				s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
+				continue
+			}
+			isResync := audio.NeedsResync(actual, expected, duration, audio.DefaultResyncToleranceSec, active.loop)
+			if isResync {
+				s.resyncTrack(id, active, desired, s.buffers[active.clip], expected, now)
+				continue
+			}
+			s.retuneTrack(active, desired.Gain, desired.FadeSec, now)
 		}
 	}
 	for id := range s.pending {
@@ -174,6 +253,9 @@ func (s *audioSink) reconcileTracks() {
 		gainValue := track.Gain
 
 		if active && current.clip == track.Clip {
+			if track.Paused {
+				continue
+			}
 			s.retuneTrack(current, gainValue, fadeSec, now)
 			continue
 		}
@@ -182,14 +264,11 @@ func (s *audioSink) reconcileTracks() {
 			delete(s.active, id)
 		}
 
-		waiting, ok := s.pending[id]
-		if !ok || waiting.clip != track.Clip {
-			waiting = pendingTrack{
-				clip:  track.Clip,
-				start: audio.ScheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
-			}
-			s.pending[id] = waiting
+		waiting := pendingTrack{
+			clip:  track.Clip,
+			start: audio.ScheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
 		}
+		s.pending[id] = waiting
 
 		buffer, ok := s.buffers[track.Clip]
 		if !ok {
@@ -209,9 +288,33 @@ func (s *audioSink) reconcileTracks() {
 		source.Call("connect", gain)
 		gain.Call("connect", s.ctx.Get("destination"))
 		source.Call("start", start, offset)
-		s.active[id] = activeTrack{source: source, gain: gain, clip: track.Clip, start: start}
+		s.active[id] = activeTrack{
+			source:      source,
+			gain:        gain,
+			clip:        track.Clip,
+			start:       start,
+			startOffset: offset,
+			loop:        track.Loop,
+			paused:      false,
+		}
 		delete(s.pending, id)
 	}
+}
+
+func (s *audioSink) pauseTrack(id audio.TrackID, track activeTrack, fadeSec, now float64) {
+	if track.paused {
+		return
+	}
+	gain := track.gain.Get("gain")
+	gain.Call("cancelScheduledValues", now)
+	if now < track.start {
+		gain.Call("setValueAtTime", 0, track.start)
+	} else {
+		gain.Call("setValueAtTime", gain.Get("value").Float(), now)
+		gain.Call("linearRampToValueAtTime", 0, now+fadeSec)
+	}
+	track.paused = true
+	s.active[id] = track
 }
 
 func (s *audioSink) retuneTrack(track activeTrack, gainValue, fadeSec, now float64) {
@@ -236,6 +339,59 @@ func (s *audioSink) fadeAndStop(track activeTrack, now, fadeSec float64) {
 	gain.Call("setValueAtTime", gain.Get("value").Float(), now)
 	gain.Call("linearRampToValueAtTime", 0, now+fadeSec)
 	track.source.Call("stop", now+fadeSec)
+}
+
+func (s *audioSink) resyncTrack(
+	id audio.TrackID,
+	current activeTrack,
+	track audio.Track,
+	buffer js.Value,
+	offset, now float64,
+) {
+	old := current.gain.Get("gain")
+	old.Call("cancelScheduledValues", now)
+	old.Call("setValueAtTime", old.Get("value").Float(), now)
+	old.Call("linearRampToValueAtTime", 0, now+audio.DefaultResyncFadeSec)
+	current.source.Call("stop", now+audio.DefaultResyncFadeSec)
+
+	source := s.ctx.Call("createBufferSource")
+	source.Set("buffer", buffer)
+	source.Set("loop", track.Loop)
+	gain := s.ctx.Call("createGain")
+	gain.Get("gain").Call("setValueAtTime", 0, now)
+	gain.Get("gain").Call("linearRampToValueAtTime", track.Gain, now+audio.DefaultResyncFadeSec)
+	source.Call("connect", gain)
+	gain.Call("connect", s.ctx.Get("destination"))
+	source.Call("start", now, offset)
+
+	s.active[id] = activeTrack{
+		source:      source,
+		gain:        gain,
+		clip:        track.Clip,
+		start:       now,
+		startOffset: offset,
+		loop:        track.Loop,
+		paused:      false,
+	}
+}
+
+func (s *audioSink) setAudioContextState(paused bool) {
+	if s.simulationPaused == paused {
+		return
+	}
+	s.simulationPaused = paused
+
+	state := s.ctx.Get("state").String()
+	if paused {
+		if state == "running" {
+			s.ctx.Call("suspend")
+		}
+		return
+	}
+
+	if s.unlocked && !documentHidden() && state == "suspended" {
+		s.ctx.Call("resume")
+	}
 }
 
 func jsErrorString(args []js.Value) string {

@@ -1,6 +1,9 @@
 package audio
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestScheduledTrackStartUsesRemainingSimulationTicks(t *testing.T) {
 	tests := []struct {
@@ -48,5 +51,80 @@ func TestScheduledPlaybackUsesAudioClockAndCompensatesLateDecode(t *testing.T) {
 				t.Fatalf("scheduledPlayback() = (%v, %v, %t), want (%v, %v, %t)", start, offset, expired, test.wantStart, test.wantOffset, test.wantExpired)
 			}
 		})
+	}
+}
+
+func TestExpectedPlayhead(t *testing.T) {
+	tests := []struct {
+		name        string
+		currentTick float64
+		alpha       float64
+		startTick   uint64
+		duration    float64
+		loop        bool
+		wantOffset  float64
+		wantState   PlayheadState
+	}{
+		{name: "unanchored", currentTick: 10, startTick: 0, duration: 3, wantState: PlayheadUnanchored},
+		{name: "pending", currentTick: 9, alpha: 0.5, startTick: 10, duration: 3, wantState: PlayheadPending},
+		{name: "playing", currentTick: 12, alpha: 0.5, startTick: 10, duration: 3, wantOffset: 1.25, wantState: PlayheadPlaying},
+		{name: "finished one shot", currentTick: 16, startTick: 10, duration: 3, wantState: PlayheadFinished},
+		{name: "loop wraps", currentTick: 25, startTick: 10, duration: 3, loop: true, wantOffset: 1.5, wantState: PlayheadPlaying},
+		{name: "unknown duration keeps raw offset", currentTick: 25, startTick: 10, wantOffset: 7.5, wantState: PlayheadPlaying},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			offset, state := ExpectedPlayhead(test.currentTick, test.alpha, test.startTick, 0.5, test.duration, test.loop)
+			if offset != test.wantOffset || state != test.wantState {
+				t.Fatalf("ExpectedPlayhead() = (%v, %v), want (%v, %v)", offset, state, test.wantOffset, test.wantState)
+			}
+		})
+	}
+}
+
+func TestExpectedTrackPlayheadSubtractsPausedTicks(t *testing.T) {
+	track := Track{StartTick: 10, PausedTicks: 2}
+
+	offset, state := ExpectedTrackPlayhead(20, 0, track, 0.5, 30)
+	if offset != 4 || state != PlayheadPlaying {
+		t.Fatalf("resumed ExpectedTrackPlayhead() = (%v, %v), want (4, %v)", offset, state, PlayheadPlaying)
+	}
+
+	track.Paused = true
+	track.PausedAtTick = 15
+	offset, state = ExpectedTrackPlayhead(20, 0, track, 0.5, 30)
+	if offset != 1.5 || state != PlayheadPlaying {
+		t.Fatalf("paused ExpectedTrackPlayhead() = (%v, %v), want (1.5, %v)", offset, state, PlayheadPlaying)
+	}
+}
+
+func TestPlayheadDistance(t *testing.T) {
+	tests := []struct {
+		name     string
+		a, b     float64
+		duration float64
+		loop     bool
+		want     float64
+	}{
+		{name: "linear", a: 3.25, b: 1, want: 2.25},
+		{name: "circular loop boundary", a: 0.01, b: 9.99, duration: 10, loop: true, want: 0.02},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := PlayheadDistance(test.a, test.b, test.duration, test.loop); math.Abs(got-test.want) > 1e-9 {
+				t.Fatalf("PlayheadDistance() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestNeedsResync(t *testing.T) {
+	if NeedsResync(DefaultResyncToleranceSec, 0, 0, DefaultResyncToleranceSec, false) {
+		t.Fatal("NeedsResync() = true at the tolerance boundary, want false")
+	}
+	if !NeedsResync(DefaultResyncToleranceSec+0.001, 0, 0, DefaultResyncToleranceSec, false) {
+		t.Fatal("NeedsResync() = false above the tolerance boundary, want true")
 	}
 }

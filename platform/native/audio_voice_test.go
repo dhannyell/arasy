@@ -124,6 +124,26 @@ func TestVoiceOneShotEndsAtEOF(t *testing.T) {
 	}
 }
 
+func TestVoiceSeekUsesPCMByteOffsets(t *testing.T) {
+	v := newVoice([]int16{100, 200, 300, 400}, false, -1, 1)
+	offset, err := v.Seek(bytesPerAudioFrame, io.SeekStart)
+	if err != nil {
+		t.Fatalf("Seek() error = %v", err)
+	}
+	if offset != bytesPerAudioFrame {
+		t.Fatalf("Seek() offset = %d, want %d", offset, bytesPerAudioFrame)
+	}
+
+	got, err := readVoiceFrames(v, 1)
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+	want := []int16{300, 0}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("samples after Seek = %v, want %v", got, want)
+	}
+}
+
 func readVoiceFrames(v *voice, frames int) ([]int16, error) {
 	data := make([]byte, frames*4)
 	n, err := v.Read(data)

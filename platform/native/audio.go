@@ -4,6 +4,7 @@ package native
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"sync"
@@ -12,6 +13,8 @@ import (
 	"github.com/dhannyell/arasy/audio"
 	"github.com/ebitengine/oto/v3"
 )
+
+const bytesPerAudioFrame = audioChannels * 2 // FormatSignedInt16LE
 
 const (
 	audioSampleRate  = 48_000
@@ -27,37 +30,58 @@ var processAudioContext struct {
 	err   error
 }
 
+type trackPlayer interface {
+	Play()
+	IsPlaying() bool
+	BufferedSize() int
+	Seek(offset int64, whence int) (int64, error)
+}
+
 type audioSink struct {
-	ctx       *oto.Context
-	clips     map[audio.ClipID]*clipPCM
-	active    map[audio.TrackID]*activeTrack
-	pending   map[audio.TrackID]pendingTrack
-	desired   map[audio.TrackID]audio.Track
-	cueVoices []*cueVoice
-	retiring  []*oto.Player
-	log       *slog.Logger
-	start     time.Time
-	tick      uint64
-	alpha     float64
-	tickSec   float64
-	closed    bool
+	ctx              *oto.Context
+	clips            map[audio.ClipID]*clipPCM
+	active           map[audio.TrackID]*activeTrack
+	pending          map[audio.TrackID]pendingTrack
+	desired          map[audio.TrackID]audio.Track
+	cueVoices        []*cueVoice
+	retiring         []trackPlayer
+	log              *slog.Logger
+	start            time.Time
+	tick             uint64
+	alpha            float64
+	tickSec          float64
+	closed           bool
+	newPlayer        func(io.Reader) trackPlayer
+	simulationPaused bool
+	unfocused        bool
+	contextSuspended bool
 }
 
 type cueVoice struct {
 	clip   audio.ClipID
-	player *oto.Player
+	player trackPlayer
 }
 
 type activeTrack struct {
-	player *oto.Player
+	player trackPlayer
 	voice  *voice
 	clip   audio.ClipID
 	start  float64
+	frames int
+	loop   bool
+	paused bool
 }
 
 type pendingTrack struct {
 	clip  audio.ClipID
 	start float64
+}
+
+func (s *audioSink) player(r io.Reader) trackPlayer {
+	if s.newPlayer != nil {
+		return s.newPlayer(r)
+	}
+	return s.ctx.NewPlayer(r)
 }
 
 func newAudioSink(clips []audio.Clip, files fs.FS, simulationHz int, log *slog.Logger) (*audioSink, error) {
@@ -116,6 +140,43 @@ func nativeAudioContext() (*oto.Context, error) {
 	return processAudioContext.ctx, nil
 }
 
+// audiblePlayhead reports the position the device is actually playing, in
+// seconds from the start of the clip. The reader runs ahead of the device by
+// the player's buffered bytes (half a second by default), so that read-ahead
+// is subtracted; a negative result means the reader already wrapped past the
+// loop point while the buffer still holds the tail.
+func (t *activeTrack) audiblePlayhead(rate int) (float64, bool) {
+	if t.frames == 0 || rate <= 0 {
+		return 0, false
+	}
+	audible := t.voice.position() - t.player.BufferedSize()/bytesPerAudioFrame
+	if t.loop {
+		audible %= t.frames
+		if audible < 0 {
+			audible += t.frames
+		}
+		return float64(audible) / float64(rate), true
+	}
+	if audible < 0 {
+		return 0, false
+	}
+	return float64(audible) / float64(rate), true
+}
+
+// resyncTrack repositions an active track. Seek clears the player's buffered
+// read-ahead, then gain is rebuilt from zero to avoid a click on restart.
+func (t *activeTrack) resyncTrack(offset, gain float64, rate int) {
+	byteOffset := int64(offset * float64(rate*bytesPerAudioFrame))
+	_, err := t.player.Seek(byteOffset, io.SeekStart)
+	if err != nil {
+		return
+	}
+	t.voice.setGain(0, 0, rate)
+	t.voice.setGain(gain, audio.DefaultResyncFadeSec, rate)
+	t.player.Play()
+	t.paused = false
+}
+
 func (s *audioSink) consume(out audio.Output) {
 	if s.closed {
 		return
@@ -138,7 +199,7 @@ func (s *audioSink) playCues(cues []audio.Cue) {
 			continue
 		}
 		v := newVoice(clip.Samples, false, cue.Pan, cue.Gain)
-		player := s.ctx.NewPlayer(v)
+		player := s.player(v)
 		player.Play()
 		s.cueVoices = append(s.cueVoices, &cueVoice{clip: cue.Clip, player: player})
 	}
@@ -146,13 +207,61 @@ func (s *audioSink) playCues(cues []audio.Cue) {
 
 func (s *audioSink) reconcileTracks() {
 	now := time.Since(s.start).Seconds()
-	for id, track := range s.active {
-		if _, ok := s.desired[id]; !ok {
-			track.voice.fadeOut(0, audioSampleRate)
-			s.retiring = append(s.retiring, track.player)
+	for id, active := range s.active {
+		desired, isDesired := s.desired[id]
+		if !isDesired {
+			active.voice.fadeOut(0, audioSampleRate)
+			s.retiring = append(s.retiring, active.player)
 			delete(s.active, id)
+			continue
+		}
+		if active.clip != desired.Clip {
+			continue
+		}
+		if desired.Paused {
+			s.pauseTrack(active, desired.FadeSec)
+			continue
+		}
+
+		duration := clipDuration(s.clips[desired.Clip])
+		expected, state := audio.ExpectedTrackPlayhead(
+			float64(s.tick),
+			s.alpha,
+			desired,
+			s.tickSec,
+			duration,
+		)
+
+		switch state {
+		case audio.PlayheadUnanchored:
+			active.voice.setGain(desired.Gain, desired.FadeSec, audioSampleRate)
+		case audio.PlayheadPending:
+			active.voice.fadeOut(0, audioSampleRate)
+			s.retiring = append(s.retiring, active.player)
+			delete(s.active, id)
+		case audio.PlayheadFinished:
+			active.voice.fadeOut(0, audioSampleRate)
+			s.retiring = append(s.retiring, active.player)
+			delete(s.active, id)
+		case audio.PlayheadPlaying:
+			if active.paused {
+				active.resyncTrack(expected, desired.Gain, audioSampleRate)
+				continue
+			}
+			actual, ok := active.audiblePlayhead(audioSampleRate)
+			if !ok {
+				active.voice.setGain(desired.Gain, desired.FadeSec, audioSampleRate)
+				continue
+			}
+			isResync := audio.NeedsResync(actual, expected, duration, audio.DefaultResyncToleranceSec, active.loop)
+			if isResync {
+				active.resyncTrack(expected, desired.Gain, audioSampleRate)
+				continue
+			}
+			active.voice.setGain(desired.Gain, desired.FadeSec, audioSampleRate)
 		}
 	}
+
 	for id := range s.pending {
 		if _, ok := s.desired[id]; !ok {
 			delete(s.pending, id)
@@ -162,6 +271,9 @@ func (s *audioSink) reconcileTracks() {
 	for id, track := range s.desired {
 		current, active := s.active[id]
 		if active && current.clip == track.Clip {
+			if track.Paused {
+				continue
+			}
 			current.voice.setGain(track.Gain, track.FadeSec, audioSampleRate)
 			continue
 		}
@@ -171,19 +283,23 @@ func (s *audioSink) reconcileTracks() {
 			delete(s.active, id)
 		}
 
-		waiting, ok := s.pending[id]
-		if !ok || waiting.clip != track.Clip {
-			waiting = pendingTrack{
-				clip:  track.Clip,
-				start: audio.ScheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
-			}
-			s.pending[id] = waiting
+		waiting := pendingTrack{
+			clip:  track.Clip,
+			start: audio.ScheduledTrackStart(now, s.tick, s.alpha, track.StartTick, s.tickSec),
 		}
+		s.pending[id] = waiting
 
 		clip, ok := s.clips[track.Clip]
 		if !ok {
 			continue
 		}
+
+		// Unlike Web Audio, oto has no scheduled start: hold the track in pending
+		// until its start instant arrives.
+		if now < waiting.start {
+			continue
+		}
+
 		start, offset, expired := audio.ScheduledPlayback(now, waiting.start, clipDuration(clip), track.Loop)
 		if expired {
 			continue
@@ -192,9 +308,16 @@ func (s *audioSink) reconcileTracks() {
 		v := newVoice(clip.Samples, track.Loop, 0, 0)
 		v.setPosition(int(offset * audioSampleRate))
 		v.setGain(track.Gain, track.FadeSec, audioSampleRate)
-		player := s.ctx.NewPlayer(v)
+		player := s.player(v)
 		player.Play()
-		s.active[id] = &activeTrack{player: player, voice: v, clip: track.Clip, start: start}
+		s.active[id] = &activeTrack{
+			player: player,
+			voice:  v,
+			clip:   track.Clip,
+			start:  start,
+			frames: len(clip.Samples) / audioChannels,
+			loop:   track.Loop,
+		}
 		delete(s.pending, id)
 	}
 }
@@ -266,6 +389,45 @@ func (s *audioSink) close() {
 	s.pending = nil
 	s.desired = nil
 	s.closed = true
+}
+
+func (s *audioSink) pauseTrack(track *activeTrack, fadeSec float64) {
+	if track.paused {
+		return
+	}
+
+	track.voice.setGain(0, fadeSec, audioSampleRate)
+	track.paused = true
+}
+
+func (s *audioSink) setAudioContextState(paused bool) {
+	if s == nil || s.closed || s.simulationPaused == paused {
+		return
+	}
+	s.simulationPaused = paused
+	s.syncAudioContext()
+}
+
+func (s *audioSink) setFocused(focused bool) {
+	if s == nil || s.closed || s.unfocused == !focused {
+		return
+	}
+	s.unfocused = !focused
+	s.syncAudioContext()
+}
+
+func (s *audioSink) syncAudioContext() {
+	shouldSuspend := s.simulationPaused || s.unfocused
+	if s.contextSuspended == shouldSuspend {
+		return
+	}
+	s.contextSuspended = shouldSuspend
+
+	if shouldSuspend {
+		s.suspend()
+		return
+	}
+	s.resume()
 }
 
 func clipDuration(clip *clipPCM) float64 {

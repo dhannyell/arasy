@@ -71,6 +71,48 @@ func (g *audioGame) Update(ctx *runtime.UpdateContext, dt float64) {
 
 func (g *audioGame) Render(ctx *runtime.RenderContext) []render.Command { return nil }
 
+type pausedTrackGame struct{}
+
+func (pausedTrackGame) Setup() runtime.Config { return runtime.Config{} }
+
+func (pausedTrackGame) Init(ctx *runtime.UpdateContext) {
+	ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Loop: true, StartTick: 1})
+}
+
+func (pausedTrackGame) Update(ctx *runtime.UpdateContext, _ float64) {
+	switch ctx.Tick {
+	case 0, 1, 4:
+		ctx.Audio.PauseTrack("music")
+	case 2:
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Gain: 0.5, Loop: true, StartTick: 1})
+	case 3, 6:
+		ctx.Audio.ResumeTrack("music")
+	}
+}
+
+func (pausedTrackGame) Render(ctx *runtime.RenderContext) []render.Command { return nil }
+
+type anchoredTrackGame struct{}
+
+func (anchoredTrackGame) Setup() runtime.Config { return runtime.Config{} }
+
+func (anchoredTrackGame) Init(*runtime.UpdateContext) {}
+
+func (anchoredTrackGame) Update(ctx *runtime.UpdateContext, _ float64) {
+	switch ctx.Tick {
+	case 1:
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Loop: true})
+	case 2:
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Gain: 0.5, Loop: true})
+	case 3:
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "other", Loop: true})
+	case 4:
+		ctx.Audio.SetTrack("music", audio.Track{Clip: "music", Loop: true, StartTick: 99})
+	}
+}
+
+func (anchoredTrackGame) Render(*runtime.RenderContext) []render.Command { return nil }
+
 // TestAudioCueStampedAndDrainedOnce verifies that a cue fired at tick 3
 // appears in ConsumeAudio with the correct tick, seq, gain, and clip, and
 // that a subsequent consume returns empty cues (drained) but still carries
@@ -441,5 +483,57 @@ func TestAudioDeterminismWithExplicitReplay(t *testing.T) {
 	if replayChecksum != originalChecksum {
 		t.Errorf("replay checksum %d != original %d — audio perturbed simulation",
 			replayChecksum, originalChecksum)
+	}
+}
+
+func TestAudioTrackPauseAccumulatesAndSetTrackPreservesState(t *testing.T) {
+	driver := runtime.NewDriver(pausedTrackGame{}, slog.New(slog.DiscardHandler))
+	for range 7 {
+		driver.Step()
+	}
+
+	track, ok := driver.ConsumeAudio().Tracks["music"]
+	if !ok {
+		t.Fatal("music track missing")
+	}
+	if track.Paused {
+		t.Fatal("music track remains paused after ResumeTrack")
+	}
+	if track.PausedTicks != 5 {
+		t.Fatalf("paused ticks = %d, want 5", track.PausedTicks)
+	}
+	if track.PausedAtTick != 0 {
+		t.Fatalf("paused-at tick = %d, want 0 after resume", track.PausedAtTick)
+	}
+	if track.Gain != 0.5 {
+		t.Fatalf("gain after SetTrack = %v, want 0.5", track.Gain)
+	}
+}
+
+func TestAudioTrackAutoAnchorPreservesSameClipAndHonorsExplicitAnchor(t *testing.T) {
+	driver := runtime.NewDriver(anchoredTrackGame{}, slog.New(slog.DiscardHandler))
+	stepTo := func(tick uint64) audio.Track {
+		t.Helper()
+		for driver.State().Tick < tick {
+			driver.Step()
+		}
+		track, ok := driver.ConsumeAudio().Tracks["music"]
+		if !ok {
+			t.Fatal("music track missing")
+		}
+		return track
+	}
+
+	if got := stepTo(2).StartTick; got != 1 {
+		t.Fatalf("initial auto anchor = %d, want 1", got)
+	}
+	if got := stepTo(3).StartTick; got != 1 {
+		t.Fatalf("same-clip auto anchor = %d, want preserved 1", got)
+	}
+	if got := stepTo(4).StartTick; got != 3 {
+		t.Fatalf("replacement auto anchor = %d, want 3", got)
+	}
+	if got := stepTo(5).StartTick; got != 99 {
+		t.Fatalf("explicit anchor = %d, want 99", got)
 	}
 }
