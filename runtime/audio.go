@@ -59,11 +59,52 @@ func (a *driverAudio) setTrack(id audio.TrackID, track audio.Track) {
 		a.state.Tracks = make(map[audio.TrackID]audio.Track)
 	}
 	track.Gain = normalizeGain(track.Gain)
+	if track.StartTick == 0 {
+		// Anchor the track to the current tick so hosts can verify its playhead
+		// after a seek. Re-setting the same clip keeps the original anchor:
+		// games that reaffirm a track every tick must not re-anchor it.
+		track.StartTick = a.tick
+		if previous, ok := a.state.Tracks[id]; ok && previous.Clip == track.Clip {
+			track.StartTick = previous.StartTick
+		}
+	}
+	if previous, ok := a.state.Tracks[id]; ok && previous.Clip == track.Clip {
+		track.Paused = previous.Paused
+		track.PausedAtTick = previous.PausedAtTick
+		track.PausedTicks = previous.PausedTicks
+	}
 	a.state.Tracks[id] = track
 }
 
 func (a *driverAudio) stopTrack(id audio.TrackID) {
 	delete(a.state.Tracks, id)
+}
+
+func (a *driverAudio) pauseTrack(id audio.TrackID) {
+	if a.state.Tracks == nil {
+		return
+	}
+	track, ok := a.state.Tracks[id]
+	if !ok || track.Paused {
+		return
+	}
+	track.Paused = true
+	track.PausedAtTick = a.tick
+	a.state.Tracks[id] = track
+}
+
+func (a *driverAudio) resumeTrack(id audio.TrackID) {
+	if a.state.Tracks == nil {
+		return
+	}
+	track, ok := a.state.Tracks[id]
+	if !ok || !track.Paused || track.PausedAtTick > a.tick {
+		return
+	}
+	track.Paused = false
+	track.PausedTicks += a.tick - track.PausedAtTick
+	track.PausedAtTick = 0
+	a.state.Tracks[id] = track
 }
 
 func (a *driverAudio) reset() {
@@ -107,4 +148,12 @@ func (p *AudioPort) SetTrack(id audio.TrackID, track audio.Track) {
 
 func (p *AudioPort) StopTrack(id audio.TrackID) {
 	p.audio.stopTrack(id)
+}
+
+func (p *AudioPort) PauseTrack(id audio.TrackID) {
+	p.audio.pauseTrack(id)
+}
+
+func (p *AudioPort) ResumeTrack(id audio.TrackID) {
+	p.audio.resumeTrack(id)
 }
