@@ -151,11 +151,7 @@ func (h *host) registerCallbacks() {
 	// -- Window
 
 	h.window.SetFocusCallback(func(_ *glfw.Window, focused bool) {
-		if focused {
-			h.audio.resume()
-		} else {
-			h.audio.suspend()
-		}
+		h.audio.setFocused(focused)
 	})
 }
 
@@ -183,6 +179,7 @@ func (h *host) run() error {
 		h.pending = h.pending[:0]
 
 		if h.audio != nil {
+			h.audio.setAudioContextState(h.driver.State().Paused)
 			h.audio.consume(audioOut)
 		}
 

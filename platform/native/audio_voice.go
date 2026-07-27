@@ -4,6 +4,7 @@ package native
 
 import (
 	"encoding/binary"
+	"errors"
 	"io"
 	"math"
 	"sync"
@@ -133,6 +134,36 @@ func (v *voice) setPosition(frame int) {
 	v.pendingLen = 0
 }
 
+// Seek implements io.Seeker in PCM bytes for oto.Player. A frame is one
+// interleaved stereo signed-16-bit sample pair.
+func (v *voice) Seek(offset int64, whence int) (int64, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	const bytesPerFrame = audioChannels * 2
+	length := int64(len(v.pcm) / audioChannels * bytesPerFrame)
+	current := int64(v.pos * bytesPerFrame)
+	var target int64
+	switch whence {
+	case io.SeekStart:
+		target = offset
+	case io.SeekCurrent:
+		target = current + offset
+	case io.SeekEnd:
+		target = length + offset
+	default:
+		return 0, errors.New("native/audio: invalid seek origin")
+	}
+	if target < 0 || target > length || target%bytesPerFrame != 0 {
+		return 0, errors.New("native/audio: invalid PCM seek offset")
+	}
+
+	v.pos = int(target / bytesPerFrame)
+	v.pendingOff = 0
+	v.pendingLen = 0
+	return target, nil
+}
+
 func (v *voice) fadeOut(fadeSec float64, rate int) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -154,6 +185,12 @@ func (v *voice) advanceFade() {
 			v.stopAtZero = true
 		}
 	}
+}
+
+func (v *voice) position() int {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.pos
 }
 
 func clampPan(pan float64) float64 {
