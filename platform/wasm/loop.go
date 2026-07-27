@@ -30,6 +30,7 @@ func (h *host) startLoop() {
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
 		h.pending = h.pending[:0]
 		if h.audio != nil {
+			h.audio.setAudioContextState(h.driver.State().Paused)
 			h.audio.consume(audioOut)
 		}
 		var tickEnd float64
