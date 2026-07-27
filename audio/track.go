@@ -20,4 +20,8 @@ type Track struct {
 	// Audio-capable hosts translate it to their own precise clock. Zero starts
 	// immediately, preserving the useful zero value.
 	StartTick uint64
+
+	Paused       bool
+	PausedAtTick uint64
+	PausedTicks  uint64
 }
