@@ -226,9 +226,17 @@ func outerJoinPoints(prev, center, next math2d.Vec2, half float64) (math2d.Vec2,
 	}
 	in = math2d.Vec2{X: in.X / inLength, Y: in.Y / inLength}
 	out = math2d.Vec2{X: out.X / outLength, Y: out.Y / outLength}
-	sign := 1.0
-	if cross(in, out) < 0 {
-		sign = -1
+	turn := cross(in, out)
+	if math.Abs(turn) <= 1e-12 {
+		return math2d.Vec2{}, math2d.Vec2{}, false
+	}
+	// The outside of a turn is opposite its signed normal: a positive
+	// (counter-clockwise) turn opens on the right, while a negative turn
+	// opens on the left. Choosing the inside leaves triangular cracks between
+	// the independently tessellated segment quads.
+	sign := -1.0
+	if turn < 0 {
+		sign = 1
 	}
 	a := center.Add(math2d.Vec2{X: -in.Y * half * sign, Y: in.X * half * sign})
 	b := center.Add(math2d.Vec2{X: -out.Y * half * sign, Y: out.X * half * sign})
