@@ -64,6 +64,64 @@ commitados ao log se um step consumir o estado deles (fork), ou descartados
 se outro scrub/back/reset rebobinar antes. Isso garante que "so olhar" nunca
 destroi o futuro.
 
+## Modo assistir
+
+Rebobinar e reconstruir um tick e so metade da jornada: ate aqui, o unico
+jeito de seguir e rodar a simulacao ao vivo, o que forka a partir
+dali. O modo assistir e o segundo jeito: reproduzir a gravacao tick a tick --
+play, pause, step, velocidade -- sem nunca forkar.
+
+```text
+ramificar (play ao vivo a partir de um tick rebobinado)  -> fork
+assistir  (ControlReplayPlay/Pause/Step)                 -> consome o journal, nunca forka
+```
+
+Enquanto assistindo, o `Driver` avanca lendo eventos e mudancas de viewport ja
+gravados, na mesma ordem canonica de um step normal. Nao ha escrita: nenhum
+fork, nenhuma truncagem do log, nenhum commit de input staged. Input ao vivo
+que chegar durante o modo fica em staging (a mesma politica do scrub) e e
+descartado a cada avanco -- "so assistir" nao destroi o futuro, exatamente
+como "so olhar" via scrub.
+
+### Comandos
+
+| Comando | Efeito | Sai do modo? |
+|---|---|---|
+| `ControlReplayPlay` | entra no modo (se fora) e toca a partir do tick atual | nao |
+| `ControlReplayPause` | pausa o playback | nao (permanece) |
+| `ControlReplayStep` | entra no modo (se fora), avanca 1 tick e pausa | nao |
+| `ControlPlay` | assume controle: retoma play ao vivo | **sim** |
+| `ControlStep` | assume controle: avanca 1 tick ao vivo | **sim** |
+| `ControlPause` | pausa; equivalente a `ControlReplayPause` dentro do modo | nao |
+| `ControlScrubToTick` / `ControlBack*` | reposiciona, pausa | nao |
+| `ControlReset` | reseta tudo | sim |
+
+`ControlPlay`/`ControlStep` sao o gesto explicito de "assumir controle": o
+proximo step forka a partir dali, exatamente como hoje. Reposicionar (scrub,
+back) nunca e esse gesto -- so pausa e permanece assistindo.
+
+Ao alcancar o tick final gravado (`MaxRecordedTick`), o playback pausa
+automaticamente e permanece no modo -- o usuario pode rebobinar e reassistir,
+ou assumir controle dali (o que e play normal, sem perda, ja que o tick final
+ja e o topo da timeline). Velocidade (`ControlSetSpeed`) e o catch-up clamp do
+relogio se aplicam ao playback do mesmo jeito que ao play ao vivo: o modo
+assistir so troca a fonte dos ticks (journal em vez de `Game.Update` ao vivo),
+nao o agendamento.
+
+Cues de audio sao audiveis durante o playback -- e a primeira audicao de quem
+carregou a gravacao. Durante o scrub elas continuam mudas, porque ja foram
+ouvidas na execucao original. Veja `docs/audio.md`.
+
+### `ReplayForViewing`
+
+`runtime.Replay` reconstroi so o estado final, sem manter keyframes -- e o
+suficiente para verificacao e testes. `runtime.ReplayForViewing` reconstroi
+igual, mas mantem o recorder de keyframes ligado durante a reconstrucao e
+devolve o driver pausado, no modo assistir, no tick final. E a funcao certa
+para adotar uma gravacao num host interativo: scrub para tras fica barato
+desde o primeiro salto (nao precisa esperar a janela densa se formar de novo)
+e o driver ja sai pronto para tocar.
+
 ## Checksum: a prova de que o scrub e exato
 
 `World.Checksum()` e um hash deterministico do estado da simulacao, e

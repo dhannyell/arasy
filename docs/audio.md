@@ -88,6 +88,7 @@ Audio segue a timeline da simulacao, mas nao entra em `World.Checksum()`.
 | Scrub | cues re-simulados sao suprimidos | playhead e reconstruido para o tick alvo |
 | Fork apos scrub | cues voltam a emitir na nova timeline | seguem o novo estado |
 | Replay explicito | nao altera checksum | estado e reconstruido |
+| Playback de replay (modo assistir) | emitidos normalmente, como play ao vivo | reconciliadas; playhead re-sincronizado no host ao adotar a gravacao |
 
 Emita audio apenas em `Init`, `Update` ou `PostStep`. Nunca em `Render`: frames
 podem rodar em frequencia diferente dos ticks e quebrariam determinismo.
