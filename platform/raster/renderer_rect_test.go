@@ -87,6 +87,30 @@ func TestRendererDrawsRoundedRect(t *testing.T) {
 	assertPixel(t, img.At(5, 5), color.RGBA{R: 255, G: 255, B: 255, A: 255})
 }
 
+func TestRendererPreservesRoundedRectUnderTransform(t *testing.T) {
+	renderer := newTestRenderer()
+	renderer.Width = 100
+	renderer.Height = 100
+	renderer.Camera.World = math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
+	renderer.Camera.Viewport = renderer.Camera.World
+	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 80, Y: 80})
+
+	img := renderer.Render([]render.Command{
+		render.DrawRect{
+			BaseCommand: render.BaseCommand{
+				Transform: math2d.Scale(math2d.Vec2{X: 0.8, Y: 0.8}).About(rect.Center()),
+			},
+			Rect:         rect,
+			Fill:         render.RGBA(1, 1, 1, 1),
+			CornerRadius: 20,
+		},
+	})
+
+	assertPixel(t, img.At(19, 19), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+	assertPixel(t, img.At(34, 19), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+	assertPixel(t, img.At(50, 50), color.RGBA{R: 255, G: 255, B: 255, A: 255})
+}
+
 func TestRendererDrawsRectWithStroke(t *testing.T) {
 	renderer := newTestRenderer()
 
