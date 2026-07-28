@@ -515,7 +515,12 @@ func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline
 		if err != nil { panic(err) }
 		transform = math2d.Translate(point).Mul(transform)
 	}
-	opacity := node.opacity * svgScalar(timeline, node.animation, node.animation.opacity, 1)
+	opacity := node.opacity
+	if len(node.animation.opacity) != 0 {
+		// CSS animations replace the underlying presentation attribute while
+		// active. Multiplying would keep opacity="0" elements invisible.
+		opacity = svgScalar(timeline, node.animation, node.animation.opacity, node.opacity)
+	}
 	builder.Push(render.Group{Transform: transform, Opacity: opacity})
 	base := render.BaseCommand{}
 	switch node.kind {

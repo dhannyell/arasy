@@ -42,3 +42,25 @@ func TestGenerateRejectsInvalidPublicNames(t *testing.T) {
 		t.Fatal("Generate accepted invalid names")
 	}
 }
+
+func TestGenerateAnimatedOpacityOverridesPresentationAttribute(t *testing.T) {
+	source := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10">
+<style>.visible{animation:show 1s linear both}@keyframes show{from{opacity:0}to{opacity:1}}</style>
+<circle class="visible" cx="5" cy="5" r="4" opacity="0"/>
+</svg>`)
+	document, err := Parse(source, Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated, err := Generate(document, GenerateOptions{Package: "sample", Name: "Sample"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(generated)
+	if !strings.Contains(text, "opacity = svgScalar(timeline, node.animation, node.animation.opacity, node.opacity)") {
+		t.Fatal("generated animation does not override the presentation opacity")
+	}
+	if strings.Contains(text, "node.opacity * svgScalar") {
+		t.Fatal("generated animation still multiplies the presentation opacity")
+	}
+}
