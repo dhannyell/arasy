@@ -111,6 +111,10 @@ func (s rasterSink) VisitPolygon(command render.DrawPolygon) {
 	s.renderer.drawPolygon(s.image, command)
 }
 
+func (s rasterSink) VisitTriangles(command render.DrawTriangles) {
+	s.renderer.drawTriangles(s.image, command)
+}
+
 func (s rasterSink) VisitImage(command render.DrawImage) {
 	s.renderer.drawImage(s.image, command)
 }

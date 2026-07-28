@@ -21,7 +21,10 @@ func (s *recordingSink) VisitLine(render.DrawLine)       { s.visits = append(s.v
 func (s *recordingSink) VisitText(render.DrawText)       { s.visits = append(s.visits, "text") }
 func (s *recordingSink) VisitArc(render.DrawArc)         { s.visits = append(s.visits, "arc") }
 func (s *recordingSink) VisitPolygon(render.DrawPolygon) { s.visits = append(s.visits, "polygon") }
-func (s *recordingSink) VisitImage(render.DrawImage)     { s.visits = append(s.visits, "image") }
+func (s *recordingSink) VisitTriangles(render.DrawTriangles) {
+	s.visits = append(s.visits, "triangles")
+}
+func (s *recordingSink) VisitImage(render.DrawImage) { s.visits = append(s.visits, "image") }
 func (s *recordingSink) VisitImageQuad(render.DrawImageQuad) {
 	s.visits = append(s.visits, "imageQuad")
 }
@@ -88,6 +91,7 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 		render.DrawText{},
 		render.DrawArc{},
 		render.DrawPolygon{},
+		render.DrawTriangles{},
 		render.DrawImage{},
 		render.DrawImageQuad{},
 		render.DrawParticles{},
@@ -99,11 +103,11 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 	render.Each(commands, sink)
 
 	want := []string{
-		"rect", "circle", "ellipse", "point", "line", "text", "arc", "polygon", "image", "imageQuad", "particles",
+		"rect", "circle", "ellipse", "point", "line", "text", "arc", "polygon", "triangles", "image", "imageQuad", "particles",
 		"spriteBatch", "textBatch",
 	}
 	if !reflect.DeepEqual(sink.visits, want) {
-		t.Fatalf("visits = %v, want %v (each of the 13 command kinds must dispatch exactly once)", sink.visits, want)
+		t.Fatalf("visits = %v, want %v (each command kind must dispatch exactly once)", sink.visits, want)
 	}
 }
 

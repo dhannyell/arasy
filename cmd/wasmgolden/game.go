@@ -114,6 +114,14 @@ func (g *game) Render(ctx *runtime.RenderContext) []render.Command {
 			Stroke:      render.RGBA8(255, 255, 255, 255),
 			StrokeWidth: 1.2,
 		},
+		render.DrawTriangles{
+			BaseCommand: render.BaseCommand{LayerValue: 8, Clip: clip},
+			Vertices: []math2d.Vec2{
+				{X: 69, Y: 61}, {X: 83, Y: 61}, {X: 88, Y: 70}, {X: 64, Y: 70},
+			},
+			Indices: []uint32{0, 1, 2, 0, 2, 3},
+			Color:   render.RGBA(0.95, 0.48, 0.18, 0.82),
+		},
 		render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: 1, Clip: clip},
 			Texture:     texture,

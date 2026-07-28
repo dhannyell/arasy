@@ -330,6 +330,12 @@ func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
 	s.solidEnd(start)
 }
 
+func (s *streamSink) VisitTriangles(cmd render.DrawTriangles) {
+	start := s.solidBegin(cmd.Clip)
+	AppendTriangles(&s.builder.solidMesh, s.ctx, cmd)
+	s.solidEnd(start)
+}
+
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
 	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Particles: cmd})
 	s.hasLast = false

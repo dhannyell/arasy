@@ -145,6 +145,15 @@ type DrawPolygon struct {
 	StrokeWidth float64
 }
 
+// DrawTriangles draws indexed solid-color triangles. Indices are interpreted
+// in groups of three and must reference Vertices.
+type DrawTriangles struct {
+	BaseCommand
+	Vertices []math2d.Vec2
+	Indices  []uint32
+	Color    Color
+}
+
 // DrawImage draws a texture, or a sub-rectangle of it, into a destination
 // rectangle in world coordinates.
 type DrawImage struct {
@@ -238,6 +247,7 @@ func (DrawLine) isRenderCommand()        {}
 func (DrawText) isRenderCommand()        {}
 func (DrawArc) isRenderCommand()         {}
 func (DrawPolygon) isRenderCommand()     {}
+func (DrawTriangles) isRenderCommand()   {}
 func (DrawImage) isRenderCommand()       {}
 func (DrawImageQuad) isRenderCommand()   {}
 func (DrawParticles) isRenderCommand()   {}

@@ -247,6 +247,10 @@ func composeCommand(command Command, state groupState) (Command, bool, error) {
 		cmd.Fill = withOpacity(cmd.Fill, state.opacity)
 		cmd.Stroke = withOpacity(cmd.Stroke, state.opacity)
 		return cmd, !emptyRect(cmd.Clip), nil
+	case DrawTriangles:
+		cmd.BaseCommand, _ = composeBase(cmd.BaseCommand, state)
+		cmd.Color = withOpacity(cmd.Color, state.opacity)
+		return cmd, !emptyRect(cmd.Clip), nil
 	case DrawImage:
 		cmd.BaseCommand, _ = composeBase(cmd.BaseCommand, state)
 		cmd.Tint = imageTintOpacity(cmd.Tint, state.opacity)

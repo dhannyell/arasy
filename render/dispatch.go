@@ -15,6 +15,7 @@ type CommandSink interface {
 	VisitText(DrawText)
 	VisitArc(DrawArc)
 	VisitPolygon(DrawPolygon)
+	VisitTriangles(DrawTriangles)
 	VisitImage(DrawImage)
 	VisitImageQuad(DrawImageQuad)
 	VisitParticles(DrawParticles)
@@ -66,6 +67,8 @@ func EachOrdered(commands []Command, sink CommandSink) {
 			sink.VisitArc(command)
 		case DrawPolygon:
 			sink.VisitPolygon(command)
+		case DrawTriangles:
+			sink.VisitTriangles(command)
 		case DrawImage:
 			sink.VisitImage(command)
 		case DrawImageQuad:

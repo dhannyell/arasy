@@ -53,6 +53,7 @@ func TestBuilderCoversStreamingCommands(t *testing.T) {
 		render.DrawEllipse{Fill: white}, render.DrawPoint{Color: white},
 		render.DrawLine{Color: white}, render.DrawText{Color: white},
 		render.DrawArc{Color: white}, render.DrawPolygon{Fill: white},
+		render.DrawTriangles{Color: white},
 		render.DrawImage{}, render.DrawImageQuad{},
 	}
 	for _, command := range commands {
