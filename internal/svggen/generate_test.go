@@ -63,4 +63,9 @@ func TestGenerateAnimatedOpacityOverridesPresentationAttribute(t *testing.T) {
 	if strings.Contains(text, "node.opacity * svgScalar") {
 		t.Fatal("generated animation still multiplies the presentation opacity")
 	}
+	opacityGuard := strings.Index(text, "if opacity <= 0")
+	transformEvaluation := strings.Index(text, "transform := svgAffine")
+	if opacityGuard < 0 || transformEvaluation < 0 || opacityGuard > transformEvaluation {
+		t.Fatal("generated runtime does not skip transparent nodes before geometry evaluation")
+	}
 }

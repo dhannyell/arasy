@@ -505,6 +505,15 @@ func svgAffine(t anim.Timeline, animation svgAnimation, fallback math2d.Affine) 
 
 func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline anim.Timeline, font func(uint16) render.FontID) {
 	node := nodes[index]
+	opacity := node.opacity
+	if len(node.animation.opacity) != 0 {
+		// CSS animations replace the underlying presentation attribute while
+		// active. Multiplying would keep opacity="0" elements invisible.
+		opacity = svgScalar(timeline, node.animation, node.animation.opacity, node.opacity)
+	}
+	if opacity <= 0 {
+		return
+	}
 	transform := svgAffine(timeline, node.animation, node.transform)
 	if node.origin != (math2d.Vec2{}) && len(node.animation.transform) != 0 {
 		transform = transform.About(node.origin)
@@ -514,12 +523,6 @@ func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline
 		point, _, err := svgPaths[node.motionPath].PointAt(progress, 0.25)
 		if err != nil { panic(err) }
 		transform = math2d.Translate(point).Mul(transform)
-	}
-	opacity := node.opacity
-	if len(node.animation.opacity) != 0 {
-		// CSS animations replace the underlying presentation attribute while
-		// active. Multiplying would keep opacity="0" elements invisible.
-		opacity = svgScalar(timeline, node.animation, node.animation.opacity, node.opacity)
 	}
 	builder.Push(render.Group{Transform: transform, Opacity: opacity})
 	base := render.BaseCommand{}
