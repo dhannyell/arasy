@@ -14,9 +14,10 @@ type Vertex struct {
 
 // Mesh accumulates triangles for the solid-color pipeline.
 type Mesh struct {
-	Vertices []Vertex
-	stream   *[]byte
-	collect  bool
+	Vertices    []Vertex
+	strokeJoins [][2]math2d.Vec2
+	stream      *[]byte
+	collect     bool
 }
 
 func (m *Mesh) reset(stream *[]byte, collect bool) {
