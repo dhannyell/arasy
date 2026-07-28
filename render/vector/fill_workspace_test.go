@@ -50,3 +50,55 @@ func TestAppendFillWithWorkspaceMatchesStatelessOutputAndReusesBuffers(t *testin
 		t.Fatal("triangulation buffer was reallocated")
 	}
 }
+
+func TestCompoundFillWorkspaceMatchesStatelessOutputAndReusesBuffers(t *testing.T) {
+	var pathBuilder Builder
+	pathBuilder.MoveTo(math2d.Vec2{})
+	pathBuilder.LineTo(math2d.Vec2{X: 20})
+	pathBuilder.LineTo(math2d.Vec2{X: 20, Y: 20})
+	pathBuilder.LineTo(math2d.Vec2{Y: 20})
+	pathBuilder.Close()
+	pathBuilder.MoveTo(math2d.Vec2{X: 5, Y: 5})
+	pathBuilder.LineTo(math2d.Vec2{X: 5, Y: 15})
+	pathBuilder.LineTo(math2d.Vec2{X: 15, Y: 15})
+	pathBuilder.LineTo(math2d.Vec2{X: 15, Y: 5})
+	pathBuilder.Close()
+	path, err := pathBuilder.Build()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	style := FillStyle{Color: render.RGBA8(40, 120, 220, 255), Tolerance: 0.25}
+	want, err := path.AppendFill(nil, render.BaseCommand{}, style)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workspace FillWorkspace
+	got, err := path.AppendFillWithWorkspace(nil, render.BaseCommand{}, style, &workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatal("workspace output differs from stateless output")
+	}
+
+	firstPoint := &workspace.points[:cap(workspace.points)][0]
+	firstIndex := &workspace.indices[:cap(workspace.indices)][0]
+	firstScanY := &workspace.scanY[:cap(workspace.scanY)][0]
+	firstCrossing := &workspace.crossings[:cap(workspace.crossings)][0]
+	if _, err := path.AppendFillWithWorkspace(nil, render.BaseCommand{}, style, &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if &workspace.points[:cap(workspace.points)][0] != firstPoint {
+		t.Fatal("point buffer was reallocated")
+	}
+	if &workspace.indices[:cap(workspace.indices)][0] != firstIndex {
+		t.Fatal("index buffer was reallocated")
+	}
+	if &workspace.scanY[:cap(workspace.scanY)][0] != firstScanY {
+		t.Fatal("scanline buffer was reallocated")
+	}
+	if &workspace.crossings[:cap(workspace.crossings)][0] != firstCrossing {
+		t.Fatal("crossing buffer was reallocated")
+	}
+}

@@ -10,7 +10,7 @@ var (
 	ErrEmptyPath          = errors.New("vector: path is empty")
 	ErrInvalidTolerance   = errors.New("vector: tolerance must be finite and greater than zero")
 	ErrFlattenDepth       = errors.New("vector: curve did not converge within the flattening depth limit")
-	ErrFillContour        = errors.New("vector: fill requires exactly one closed contour")
+	ErrFillContour        = errors.New("vector: fill requires closed contours")
 	ErrSelfIntersection   = errors.New("vector: self-intersecting contours are not supported")
 	ErrDegenerateGeometry = errors.New("vector: geometry is degenerate")
 	ErrInvalidStroke      = errors.New("vector: stroke style is invalid")
