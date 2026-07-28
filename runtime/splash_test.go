@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -196,6 +197,27 @@ func TestEngineSplashRendersWithoutManifest(t *testing.T) {
 	d.RenderSplashFrame(0, r)
 	if len(r.frames[0].Commands) == 0 {
 		t.Fatal("engine splash segment produced no commands")
+	}
+}
+
+// TestEngineSplashBackgroundMatchesBrandOnTallViewport guards the seam this
+// was meant to fix: on a viewport far from the compiled animation's own
+// 16:9, the letterboxed area is small (tall phone screens), so the outer
+// background must match the animation's own painted backdrop instead of an
+// unrelated Config.Clear, or the two show up as a visible box.
+func TestEngineSplashBackgroundMatchesBrandOnTallViewport(t *testing.T) {
+	d := newTestDriver(t, Config{Clear: render.RGBA8(200, 30, 30, 255)})
+	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 390, Y: 844}))
+
+	r := &splashCaptureRenderer{}
+	d.RenderSplashFrame(0, r)
+
+	rect, ok := r.frames[0].Commands[0].(render.DrawRect)
+	if !ok {
+		t.Fatalf("Commands[0] = %T, want the background render.DrawRect", r.frames[0].Commands[0])
+	}
+	if rect.Fill != enginesplash.EngineSplashBackground {
+		t.Fatalf("background = %+v, want the brand backdrop %+v (not Config.Clear)", rect.Fill, enginesplash.EngineSplashBackground)
 	}
 }
 

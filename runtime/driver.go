@@ -169,9 +169,10 @@ func buildSplashPlaylist(cfg Config) []SplashSegment {
 			Content: func(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect) []render.Command {
 				return enginesplash.AppendArasySplash(dst, timeline, viewport, enginesplash.ArasySplashResources{})
 			},
-			MinTime:   enginesplash.EngineSplashMinTime,
-			Fade:      enginesplash.EngineSplashFade,
-			Skippable: false,
+			MinTime:    enginesplash.EngineSplashMinTime,
+			Fade:       enginesplash.EngineSplashFade,
+			Skippable:  false,
+			Background: enginesplash.EngineSplashBackground,
 		})
 	}
 	for _, decl := range cfg.Assets.Splash() {

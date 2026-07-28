@@ -47,6 +47,14 @@ type SplashSegment struct {
 	MinTime   float64 // minimum on-screen seconds
 	Fade      float64 // cross-fade seconds at each edge; 0 = hard cut
 	Skippable bool
+
+	// Background paints behind this segment's content, covering the full
+	// viewport (never faded). Zero value uses Config.Clear. Content whose
+	// own asset already paints a flat backdrop only covering its own
+	// letterboxed area (like the compiled engine animation) should set this
+	// to the same color, or the two backgrounds seam together whenever the
+	// viewport's aspect ratio isn't the content's own.
+	Background render.Color
 }
 
 // splashPlayer drives the boot splash sequence. It never touches d.tick, the
@@ -99,9 +107,14 @@ func (d *Driver) splashFrame() Frame {
 	seg := d.splash.segments[d.splash.index]
 	alpha := splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade)
 
-	// The background clear is never faded — only the segment content is.
+	background := seg.Background
+	if background == (render.Color{}) {
+		background = d.cfg.Clear
+	}
+
+	// The background is never faded — only the segment content is.
 	commands := []render.Command{
-		render.DrawRect{Rect: d.viewport, Fill: d.cfg.Clear},
+		render.DrawRect{Rect: d.viewport, Fill: background},
 	}
 
 	var builder render.Builder
