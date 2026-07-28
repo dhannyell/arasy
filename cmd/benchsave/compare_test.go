@@ -90,6 +90,15 @@ func TestBaselineRootDirUsesParentForRunsDir(t *testing.T) {
 	}
 }
 
+func TestNormalizeBenchmarkOutputRemovesFormattingWhitespace(t *testing.T) {
+	input := "goos: windows\r\ncpu: Example CPU   \r\nBenchmarkA-16  10  100 ns/op\t\n"
+	want := "goos: windows\ncpu: Example CPU\nBenchmarkA-16  10  100 ns/op\n"
+
+	if got := normalizeBenchmarkOutput(input); got != want {
+		t.Fatalf("normalizeBenchmarkOutput() = %q, want %q", got, want)
+	}
+}
+
 func TestBuildComparisonAggregatesRepeatedRuns(t *testing.T) {
 	oldResults := []benchmarkResult{
 		{Name: "BenchmarkA-16", NsPerOp: "100", BytesOp: "10", AllocsOp: "1"},

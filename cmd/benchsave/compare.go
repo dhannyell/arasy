@@ -69,12 +69,23 @@ func saveTempBenchmarkOutput(output string) (string, error) {
 		}
 	}(tmpfile)
 
-	if _, err := tmpfile.WriteString(output); err != nil {
+	if _, err := tmpfile.WriteString(normalizeBenchmarkOutput(output)); err != nil {
 		_ = os.Remove(tmpfile.Name())
 		return "", fmt.Errorf("failed to write temp file: %w", err)
 	}
 
 	return tmpfile.Name(), nil
+}
+
+// normalizeBenchmarkOutput removes formatting-only whitespace that can make
+// benchstat treat otherwise identical metadata (notably Go's padded cpu line)
+// as different benchmark configurations.
+func normalizeBenchmarkOutput(output string) string {
+	lines := strings.Split(output, "\n")
+	for index := range lines {
+		lines[index] = strings.TrimRight(lines[index], " \t\r")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // runBenchstat invokes golang.org/x/perf/cmd/benchstat with two files
@@ -566,7 +577,7 @@ func saveBaseline(outDir, family, rawOutput string) error {
 		return fmt.Errorf("failed to create baseline directory: %w", err)
 	}
 	baselinePath := filepath.Join(baselineDirPath, "bench-"+sanitizeName(family)+".txt")
-	if err := os.WriteFile(baselinePath, []byte(rawOutput), 0o644); err != nil {
+	if err := os.WriteFile(baselinePath, []byte(normalizeBenchmarkOutput(rawOutput)), 0o644); err != nil {
 		return fmt.Errorf("failed to write baseline: %w", err)
 	}
 	return nil
