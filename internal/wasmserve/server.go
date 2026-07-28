@@ -215,13 +215,19 @@ const wasmShellHTML = `<!doctype html>
             /* The poster is a full frame of the same 1920x1080 composition
                the compiled splash renders — sized to fill the viewport with
                the same letterboxed "contain" fit, not a small centered icon,
-               so it reads at the same scale the animation takes over at. */
+               so it reads at the same scale the animation takes over at.
+               flex: 1 (with min-height: 0, needed since flex items default
+               to min-height: auto) shares the column with #ar-bar below it
+               instead of claiming the full column height and pushing the
+               bar out of view. */
+            flex: 1 1 auto;
+            min-height: 0;
             width: 100%%;
-            height: 100%%;
             object-fit: contain;
         }
 
         #ar-bar {
+            flex: none;
             width: min(80vw, 320px);
             height: 3px;
             margin-top: 24px;
