@@ -107,22 +107,41 @@ func viewportChangesToLog(changes []ViewportChange) []viewportEntry {
 	return log
 }
 
-// Replay reconstructs a recording on a fresh Driver.
+// Replay reconstructs a recording on a fresh Driver, returning it at the
+// final tick with no keyframes retained. Use it when only the final state
+// matters (verification, tests); use ReplayForViewing when the driver will
+// be adopted by an interactive host for scrubbing and playback.
 // It mutates the game instance it receives; pass a fresh game unless the
 // caller intentionally wants replay to adopt the reconstructed state.
 func Replay(game Game, log *slog.Logger, rec Recording) *Driver {
-	return replayWithViewport(game, log, rec, rec.Viewport, viewportChangesToLog(rec.Viewports))
+	return replayWithViewport(game, log, rec, rec.Viewport, viewportChangesToLog(rec.Viewports), false)
+}
+
+// ReplayForViewing reconstructs a recording like Replay, but keeps the
+// keyframe recorder populated during reconstruction and returns the driver
+// paused at the final tick in watch mode. Use it when the reconstructed
+// driver will be adopted by an interactive host for scrubbing and playback;
+// use Replay when only the final state matters (verification, tests).
+func ReplayForViewing(game Game, log *slog.Logger, rec Recording) *Driver {
+	driver := replayWithViewport(game, log, rec, rec.Viewport, viewportChangesToLog(rec.Viewports), true)
+	driver.controls.paused = true
+	driver.controls.replayMode = true
+	return driver
 }
 
 // replayWithViewport also replays viewport changes for UI hit-testing.
-// Each viewport entry is applied before input events at the same tick.
-func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry) *Driver {
+// Each viewport entry is applied before input events at the same tick. With
+// keepRecorder, the keyframe recorder stays populated during reconstruction
+// instead of being dropped, at the cost of a world clone per keyframe.
+func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry, keepRecorder bool) *Driver {
 	driver := newDriver(game, log, &rec.Seed)
 
-	// Replay only needs the final state; snapshot capture would clone the
-	// whole World every tick.
-	driver.recorder = nil
-	// cues were already heard on the live run
+	if !keepRecorder {
+		// The final state is all that's needed; snapshot capture would clone
+		// the whole World every tick for nothing.
+		driver.recorder = nil
+	}
+	// Cues at these ticks were already heard on the live run.
 	driver.audio.suppressCues = true
 
 	viewportByTick := make(map[uint64]math2d.Rect)
@@ -152,6 +171,11 @@ func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewp
 		}
 		driver.Step()
 	}
+
+	// Reconstruction is over: a driver handed to a caller (or adopted by an
+	// interactive host) must be able to emit cues again, otherwise it stays
+	// mute for the rest of its life.
+	driver.audio.suppressCues = false
 
 	return driver
 }

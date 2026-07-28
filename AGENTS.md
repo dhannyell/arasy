@@ -35,6 +35,11 @@ go run ./examples/rhythm/raster
 go run ./cmd/Arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
 go run ./cmd/Arasy build ./examples/breakout/wasm -o dist/breakout
 
+# Watch a recorded fuzz case (corpus + paired .arrp, e.g. internal/simfuzz/testdata/{fuzz,replays}):
+# offline GIF by default; --live opens a native window (Windows/amd64 only);
+# --browser serves internal/simfuzz/wasm with the dev panel (Backquote/~).
+go run ./cmd/Arasy watch <corpus> <replay>.arrp [--live | --browser]
+
 # Golden files (regenerate after intentional visual changes)
 go test ./platform/raster -run TestGolden -update
 npm run update:wasm-golden
@@ -181,6 +186,28 @@ of every frame like `DrawImage`/`DrawText` streaming.
 - Retained sprites are for stable or rarely-changing content (crowd,
   scenery, HUD/tables), not a replacement for fully dynamic ECS sprites,
   which stay on the streaming path.
+
+## Replay Watch Mode
+
+`ControlReplayPlay`/`ControlReplayPause`/`ControlReplayStep` advance the
+driver by consuming the recorded journal (`playbackSteps`) instead of
+stepping live, so watching a recording never forks the timeline -- contrast
+with `ControlPlay`/`ControlStep`, which are the explicit "take control"
+gesture and fork as usual from a rewound tick. `ControlScrubToTick`/
+`ControlBack*` reposition without leaving watch mode. Playback auto-pauses
+at `MaxRecordedTick` and stays in the mode; speed and the catch-up clamp
+come from the same clock plan as live play. Cues are audible during
+playback and muted during scrub (already heard on the live run); see
+`docs/audio.md`. `DriveState.ReplayMode` exposes the mode to hosts.
+
+`runtime.ReplayForViewing` reconstructs a recording like `Replay`, but keeps
+the keyframe recorder populated during reconstruction and returns the driver
+paused, in watch mode, at the final tick -- the function to use when handing
+a loaded recording to an interactive host. `runtime.Replay` stays
+recorder-free for verification/tests. Both leave the driver able to emit
+cues afterward; only the ticks reconstructed during loading stay silent.
+
+Full guide: `docs/scrubbing.md` ("Modo assistir" section, Portuguese).
 
 ## Design Constraints
 - Engine packages stay independent of app-specific rules.

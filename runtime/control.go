@@ -24,6 +24,16 @@ const (
 	ControlSetSpeed
 	ControlSetDebugLayers
 	ControlScrubToTick
+	// ControlReplayPlay enters watch mode (if not already in it) and plays
+	// forward from the current tick by consuming the recorded journal —
+	// it never forks the timeline.
+	ControlReplayPlay
+	// ControlReplayPause pauses playback and stays in watch mode.
+	ControlReplayPause
+	// ControlReplayStep enters watch mode (if not already in it) and
+	// advances exactly one recorded tick, pausing immediately after like
+	// ControlStep.
+	ControlReplayStep
 )
 
 type ControlCommand struct {
@@ -55,6 +65,10 @@ type devControls struct {
 	debugLayers scene.DebugLayers
 	stepPending int
 	seeks       []seekRequest
+	// replayMode is true while the driver advances by consuming the
+	// recorded journal instead of stepping live. It persists across ticks
+	// like paused, and only an explicit command changes it.
+	replayMode bool
 }
 
 type devFrame struct {
@@ -63,17 +77,20 @@ type devFrame struct {
 	debugLayers scene.DebugLayers
 	steps       int
 	seeks       []seekRequest
+	replayMode  bool
 }
 
 func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 	switch cmd.Kind {
 	case ControlPlay:
 		c.paused = false
+		c.replayMode = false
 	case ControlPause:
 		c.paused = true
 	case ControlStep:
 		c.paused = true
 		c.stepPending++
+		c.replayMode = false
 	case ControlBack:
 		c.paused = true
 		c.seeks = append(c.seeks, seekRequest{kind: seekBack})
@@ -89,6 +106,7 @@ func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 	case ControlReset:
 		c.stepPending = 0
 		c.seeks = c.seeks[:0]
+		c.replayMode = false
 		return true
 	case ControlSetSpeed:
 		if math.IsNaN(cmd.Speed) || cmd.Speed < minSpeed {
@@ -100,6 +118,15 @@ func (c *devControls) apply(cmd ControlCommand) (isReset bool) {
 		c.speed = cmd.Speed
 	case ControlSetDebugLayers:
 		c.debugLayers = cmd.DebugLayers
+	case ControlReplayPlay:
+		c.replayMode = true
+		c.paused = false
+	case ControlReplayPause:
+		c.paused = true
+	case ControlReplayStep:
+		c.replayMode = true
+		c.paused = true
+		c.stepPending++
 	}
 	return false
 }
@@ -121,5 +148,6 @@ func (c *devControls) consume() devFrame {
 		debugLayers: c.debugLayers,
 		steps:       steps,
 		seeks:       seeks,
+		replayMode:  c.replayMode,
 	}
 }
