@@ -50,6 +50,10 @@ type World struct {
 	// is NOT included in Checksum.
 	renderTransforms store[Transform]
 
+	// spriteTransforms is a presentation cache only and
+	// is NOT included in Checksum.
+	spriteTransforms store[SpriteTransform]
+
 	// renderHeights stores the previous-tick Height for each entity,
 	// used by RenderCommandsInterpolated for smooth Height interpolation.
 	// Like renderTransforms, it is a presentation cache only and is NOT
@@ -92,6 +96,7 @@ func (w *World) Clone() *World {
 		stepTick:         w.stepTick,
 		transforms:       w.transforms.clone(),
 		transformTweens:  w.transformTweens.clone(),
+		spriteTransforms: w.spriteTransforms.clone(),
 		circleSprites:    w.circleSprites.clone(),
 		circleTweens:     w.circleTweens.clone(),
 		rectSprites:      w.rectSprites.clone(),
@@ -133,6 +138,7 @@ func (w *World) Despawn(id EntityID) {
 	w.markEntityCountDirty()
 	w.transforms.remove(id)
 	w.transformTweens.remove(id)
+	w.spriteTransforms.remove(id)
 	w.circleSprites.remove(id)
 	w.circleTweens.remove(id)
 	w.rectSprites.remove(id)
@@ -169,6 +175,7 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.markEntityCountDirty()
 	w.transforms.removeMarked(w.despawnMarked)
 	w.transformTweens.removeMarked(w.despawnMarked)
+	w.spriteTransforms.removeMarked(w.despawnMarked)
 	w.circleSprites.removeMarked(w.despawnMarked)
 	w.circleTweens.removeMarked(w.despawnMarked)
 	w.rectSprites.removeMarked(w.despawnMarked)
@@ -508,6 +515,23 @@ func (w *World) SetMoveIntent(id EntityID, m MoveIntent) {
 func (w *World) RemoveMoveIntent(id EntityID) {
 	w.markEntityCountDirty()
 	w.moveIntents.remove(id)
+}
+
+// SpriteTransform
+
+func (w *World) SpriteTransform(id EntityID) (SpriteTransform, bool) {
+	s, ok := w.spriteTransforms.get(id)
+	return s, ok
+}
+
+func (w *World) SetSpriteTransform(id EntityID, s SpriteTransform) {
+	w.markEntityCountDirty()
+	w.spriteTransforms.set(id, s)
+}
+
+func (w *World) RemoveSpriteTransform(id EntityID) {
+	w.markEntityCountDirty()
+	w.spriteTransforms.remove(id)
 }
 
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {

@@ -261,3 +261,87 @@ func floatNear(a, b, epsilon float64) bool {
 	}
 	return diff < epsilon
 }
+
+func TestProjectionShadowSkewZeroIsIdentity(t *testing.T) {
+	p := Projection{
+		LiftPerZ:    1,
+		ShadowScale: math2d.Vec2{X: 1, Y: 1},
+		ShadowAlpha: 0.5,
+	}
+	ground := math2d.Vec2{X: 10, Y: 20}
+	fp := math2d.Vec2{X: 3, Y: 4}
+
+	for _, z := range []float64{0.5, 2, 10} {
+		if r := p.Project(ground, fp, z); !r.ShadowTransform.IsIdentity() {
+			t.Errorf("z=%v: ShadowTransform not identity with ShadowSkewPerZ=0", z)
+		}
+	}
+}
+
+func TestProjectionShadowSkewKeepsContactPointFixed(t *testing.T) {
+	p := Projection{
+		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
+		ShadowOffset:   math2d.Vec2{X: 0.5, Y: 0.25},
+		ShadowAlpha:    0.5,
+		ShadowSkewPerZ: 0.3,
+	}
+	ground := math2d.Vec2{X: 10, Y: 20}
+	fp := math2d.Vec2{X: 3, Y: 4}
+
+	r := p.Project(ground, fp, 5)
+	// The shadow's ground contact point (ground + footprint*ShadowOffset) is
+	// the pivot of the skew: the foot stays planted while the top leans.
+	contact := math2d.Vec2{X: 10 + 3*0.5, Y: 20 + 4*0.25}
+	if got := r.ShadowTransform.Apply(contact); got != contact {
+		t.Errorf("Apply(contact) = %v, want fixed point %v", got, contact)
+	}
+}
+
+func TestProjectionShadowSkewGrowsWithZ(t *testing.T) {
+	p := Projection{
+		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
+		ShadowAlpha:    0.5,
+		ShadowSkewPerZ: 0.3,
+	}
+	ground := math2d.Vec2{X: 10, Y: 20}
+	fp := math2d.Vec2{X: 3, Y: 4}
+	above := math2d.Vec2{X: 10, Y: 19} // 1 unit above the contact point
+
+	r2 := p.Project(ground, fp, 2)
+	r4 := p.Project(ground, fp, 4)
+	if r2.ShadowTransform.IsIdentity() {
+		t.Fatal("ShadowTransform is identity with ShadowSkewPerZ != 0")
+	}
+	d2 := r2.ShadowTransform.Apply(above).X - above.X
+	d4 := r4.ShadowTransform.Apply(above).X - above.X
+	if !floatNear(d4, 2*d2, 1e-12) {
+		t.Errorf("lean at z=4 (%v) != 2x lean at z=2 (%v): skew must grow linearly with z", d4, d2)
+	}
+	// dy = -1 (1 unit above the pivot), so the lean is shx*z*dy = -0.3*z.
+	if !floatNear(d2, -0.3*2, 1e-12) {
+		t.Errorf("lean at z=2 = %v, want shx*z*dy = -0.6", d2)
+	}
+}
+
+func TestProjectionShadowSkewZeroHeightIsIdentity(t *testing.T) {
+	p := Projection{
+		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
+		ShadowAlpha:    0.5,
+		ShadowSkewPerZ: 0.3,
+	}
+	ground := math2d.Vec2{X: 10, Y: 20}
+	fp := math2d.Vec2{X: 3, Y: 4}
+
+	for _, z := range []float64{0, -1} {
+		if r := p.Project(ground, fp, z); !r.ShadowTransform.IsIdentity() {
+			t.Errorf("z=%v: ShadowTransform not identity at ground/below", z)
+		}
+	}
+}
+
+func TestProjectionIsZeroShadowSkew(t *testing.T) {
+	p := Projection{ShadowSkewPerZ: 1}
+	if p.IsZero() {
+		t.Error("Projection with ShadowSkewPerZ=1 should not be IsZero")
+	}
+}
