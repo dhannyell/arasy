@@ -39,7 +39,7 @@ func textPixelSize(c ctx, size float64) int {
 	if size <= 0 {
 		size = glyphHeight
 	}
-	return int(math.Round(c.cam.WorldScalarToScreen(size)))
+	return min(int(math.Round(c.cam.WorldScalarToScreen(size))), maxAtlasPixelSize)
 }
 
 // TextBatchCoverage aggregates, for every label, the (FontID, pixel size)
@@ -165,8 +165,8 @@ func expandTextBatchBounds(bounds *math2d.Rect, has *bool, g textGlyphRecord, l 
 		{centerX - halfW, centerY + halfH},
 	}
 	for _, corner := range corners {
-		rx := corner[0]*l.cos - corner[1]*l.sin
-		ry := corner[0]*l.sin + corner[1]*l.cos
+		rx := corner[0]*l.transformA + corner[1]*l.transformC
+		ry := corner[0]*l.transformB + corner[1]*l.transformD
 		p := math2d.Vec2{X: float64(l.positionX + rx), Y: float64(l.positionY + ry)}
 		if !*has {
 			bounds.Min, bounds.Max = p, p

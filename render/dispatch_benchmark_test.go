@@ -17,6 +17,7 @@ func (discardSink) VisitLine(render.DrawLine)               {}
 func (discardSink) VisitText(render.DrawText)               {}
 func (discardSink) VisitArc(render.DrawArc)                 {}
 func (discardSink) VisitPolygon(render.DrawPolygon)         {}
+func (discardSink) VisitTriangles(render.DrawTriangles)     {}
 func (discardSink) VisitImage(render.DrawImage)             {}
 func (discardSink) VisitImageQuad(render.DrawImageQuad)     {}
 func (discardSink) VisitParticles(render.DrawParticles)     {}

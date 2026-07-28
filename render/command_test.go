@@ -25,6 +25,7 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 		render.DrawText{},
 		render.DrawArc{},
 		render.DrawPolygon{},
+		render.DrawTriangles{},
 		render.DrawImage{},
 		render.DrawImageQuad{},
 	}
@@ -111,6 +112,7 @@ func TestAllCommandsCanCarryTransform(t *testing.T) {
 		render.DrawText{BaseCommand: render.BaseCommand{Transform: transform}},
 		render.DrawArc{BaseCommand: render.BaseCommand{Transform: transform}},
 		render.DrawPolygon{BaseCommand: render.BaseCommand{Transform: transform}},
+		render.DrawTriangles{BaseCommand: render.BaseCommand{Transform: transform}},
 		render.DrawImage{BaseCommand: render.BaseCommand{Transform: transform}},
 		render.DrawImageQuad{BaseCommand: render.BaseCommand{Transform: transform}},
 		render.DrawParticles{BaseCommand: render.BaseCommand{Transform: transform}},

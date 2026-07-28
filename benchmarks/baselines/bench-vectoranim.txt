@@ -1,0 +1,176 @@
+goos: windows
+goarch: amd64
+pkg: github.com/dhannyell/arasy/examples/vectoranim
+cpu: AMD Ryzen 7 5800X3D 8-Core Processor
+BenchmarkVectorAnimationCompile-16           	     901	   4162604 ns/op	  397682 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1191	   2458060 ns/op	  397760 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1214	   1732600 ns/op	  397292 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1108	   2011690 ns/op	  397203 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1405	   1701373 ns/op	  397333 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1486	   1693144 ns/op	  397303 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1539	   2081495 ns/op	  397538 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1401	   2641135 ns/op	  397365 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	     870	   2616150 ns/op	  397578 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCompile-16           	    1100	   2078859 ns/op	  397493 B/op	    7382 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	   90342	     23938 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  128571	     20639 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  128823	     21406 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	   86730	     24136 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  117202	     27398 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	   90621	     22337 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  134521	     26754 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  120360	     22555 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  125366	     24624 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Opening-16  	  105424	     23855 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  148094	     20541 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  133797	     29395 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  128769	     23030 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  126840	     22834 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  103530	     24254 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  107060	     25004 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  113900	     24914 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  132482	     21130 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  176870	     21043 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Active-16   	  142688	     21871 ns/op	         8.000 commands/frame	   20504 B/op	      65 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	   96856	     26749 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  158745	     26684 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  101784	     20499 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  105272	     24889 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	   79911	     28761 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  100624	     21569 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  121551	     20745 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	  119469	     23289 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	   87669	     28170 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Settled-16  	   79954	     29891 ns/op	         8.000 commands/frame	   31000 B/op	      64 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	   89877	     25081 ns/op	         8.000 commands/frame	   24202 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  102543	     22965 ns/op	         8.000 commands/frame	   24201 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	   92090	     23615 ns/op	         8.000 commands/frame	   24200 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  127405	     17844 ns/op	         8.000 commands/frame	   24203 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  146343	     19014 ns/op	         8.000 commands/frame	   24205 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  179650	     18971 ns/op	         8.000 commands/frame	   24206 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  119452	     19510 ns/op	         8.000 commands/frame	   24201 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  143385	     17104 ns/op	         8.000 commands/frame	   24202 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  114394	     34688 ns/op	         8.000 commands/frame	   24201 B/op	      63 allocs/op
+BenchmarkVectorAnimationCommands/Timeline-16 	  107162	     23156 ns/op	         8.000 commands/frame	   24202 B/op	      63 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  440463	      5401 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  618310	      4254 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  608336	      4635 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  544916	      4375 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  586008	      5254 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  542396	      4320 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  544017	      4553 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  554424	      4110 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  611104	      4608 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Opening-16         	  606634	      4071 ns/op	         1.000 runs/frame	      1008 stream-B/frame	    1008 B/op	       4 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   68450	     47698 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   37855	     58559 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   66243	     48283 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   57279	     40576 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   45729	     50358 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   52875	     47667 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   64852	     44862 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   61906	     43630 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   63270	     38980 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Active-16          	   58070	     45366 ns/op	         1.000 runs/frame	     25560 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   56647	     45038 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   36338	     63432 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   53191	     43926 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   58501	     42201 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   53002	     43356 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   47992	     48277 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   56618	     45730 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   36718	     62749 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   50974	     43014 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Settled-16         	   60100	     39844 ns/op	         1.000 runs/frame	     27864 stream-B/frame	     368 B/op	       2 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   85963	     31313 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   63886	     35079 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   79155	     30757 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   80439	     29924 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   80226	     29080 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   89331	     28342 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   70101	     32667 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   87483	     26925 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   83702	     27777 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUPreparation/Timeline-16        	   85753	     28360 ns/op	         1.000 runs/frame	     19538 stream-B/frame	     636 B/op	       3 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   92547	     24873 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	  117272	     28875 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   77820	     26148 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   94903	     23166 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	  115137	     25468 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   46207	     70096 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   82657	     28067 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   95823	     25342 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	   94938	     29053 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Opening-16            	  104700	     24409 ns/op	         1.000 runs/frame	      1008 stream-B/frame	   32008 B/op	      68 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   48313	     50037 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   49872	     49127 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   47079	     49339 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   48734	     50587 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   48351	     49378 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   50014	     48705 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   48526	     49977 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   47762	     50533 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   49318	     50354 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Active-16             	   51536	     48291 ns/op	         1.000 runs/frame	     25560 stream-B/frame	   20872 B/op	      67 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   32582	     65526 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   41206	     60141 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   40484	     58633 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   39376	     60254 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   41840	     58734 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   40297	     58433 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   44330	     57663 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   42394	     57038 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   42554	     57623 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Settled-16            	   42082	     58215 ns/op	         1.000 runs/frame	     27864 stream-B/frame	   31368 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   55909	     45171 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24833 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   54585	     45763 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24839 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   50107	     44732 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24834 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   55604	     43644 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24839 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   59571	     42545 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24840 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   58972	     43928 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24833 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   58224	     43999 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24834 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   58554	     42825 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24837 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   56908	     42971 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24843 B/op	      66 allocs/op
+BenchmarkVectorAnimationGPUEndToEnd/Timeline-16           	   57454	     44088 ns/op	         1.000 runs/frame	     19538 stream-B/frame	   24841 B/op	      66 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   71804	     33091 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   73948	     33027 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   72616	     33426 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   76633	     33238 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   75430	     32920 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   75656	     31762 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   70441	     34163 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   67702	     34193 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   73034	     31909 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Opening-16         	   74149	     32278 ns/op	         8.000 commands/frame	   32365 B/op	      73 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3493	    706636 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3388	    728172 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3237	    721861 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3384	    728792 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3354	    728130 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3374	    753174 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3200	    748275 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3325	    717943 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3390	    792812 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Active-16          	    3390	    720687 ns/op	         8.000 commands/frame	   20845 B/op	      72 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3410	    734832 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3301	    732681 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3292	    749787 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3297	    740540 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3261	    733837 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3175	    748781 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3315	    790176 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3338	    733681 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3356	    788278 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Settled-16         	    3254	    734459 ns/op	         8.000 commands/frame	   31341 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5388	    593764 ns/op	         8.000 commands/frame	   25068 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5406	    564908 ns/op	         8.000 commands/frame	   25090 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5479	    578227 ns/op	         8.000 commands/frame	   25008 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5126	    576724 ns/op	         8.000 commands/frame	   24997 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5434	    586284 ns/op	         8.000 commands/frame	   25084 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5460	    569584 ns/op	         8.000 commands/frame	   25032 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5262	    598334 ns/op	         8.000 commands/frame	   25065 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5270	    579815 ns/op	         8.000 commands/frame	   25048 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5350	    577859 ns/op	         8.000 commands/frame	   25023 B/op	      71 allocs/op
+BenchmarkVectorAnimationRasterEndToEnd/Timeline-16        	    5367	    567031 ns/op	         8.000 commands/frame	   25043 B/op	      71 allocs/op
+PASS
+ok  	github.com/dhannyell/arasy/examples/vectoranim	443.008s

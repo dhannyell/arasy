@@ -25,6 +25,11 @@ const (
 // Apply shapes a linear progress t∈[0,1] using curve k, returning t'∈[0,1].
 // Endpoints are exact: Apply(k, 0) == 0 and Apply(k, 1) == 1 for all k.
 func Apply(k Kind, t float64) float64 {
+	return k.Sample(t)
+}
+
+// Sample shapes a linear progress value using k.
+func (k Kind) Sample(t float64) float64 {
 	if t <= 0 {
 		return 0
 	}

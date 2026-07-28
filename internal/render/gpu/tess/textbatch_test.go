@@ -163,3 +163,18 @@ func TestTextBatchCoverageEmptyWhenTextless(t *testing.T) {
 		t.Fatalf("coverage = %v, want nil", coverage)
 	}
 }
+
+func TestTextPixelSizeCapsOversizedAtlases(t *testing.T) {
+	camera := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10_000, Y: 10_000}),
+		Aspect:   render.AspectFit,
+	}
+	coverage := TextBatchCoverage(camera, 10_000, 10_000, []render.TextLabel{
+		{Font: 1, Text: "large", Size: 10},
+	})
+	key := AtlasKey{Font: 1, PX: maxAtlasPixelSize}
+	if _, ok := coverage[key]; !ok {
+		t.Fatalf("coverage keys = %v, want capped key %+v", coverage, key)
+	}
+}

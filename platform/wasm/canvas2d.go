@@ -272,6 +272,18 @@ func (s canvasSink) VisitPolygon(command render.DrawPolygon) {
 	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawPolygon(command, s.camera) })
 }
 
+func (s canvasSink) VisitTriangles(command render.DrawTriangles) {
+	if err := render.ValidateTriangles(command); err != nil {
+		s.canvas.diagnostics.Log(s.canvas.log, slog.LevelWarn,
+			diagnostic.Key{Code: "canvas-invalid-triangles"},
+			"Canvas2D: invalid DrawTriangles command skipped", "error", err)
+		return
+	}
+	s.withClipAndTransform(command.Clip, command.Transform, func() {
+		s.canvas.drawTriangles(command, s.camera)
+	})
+}
+
 func (s canvasSink) VisitImage(command render.DrawImage) {
 	s.withClipAndTransform(command.Clip, command.Transform, func() { s.canvas.drawImage(command, s.camera) })
 }
@@ -675,6 +687,7 @@ func (c *Canvas2D) drawText(cmd render.DrawText, camera render.Camera) {
 	c.ctx.Set("font", fmt.Sprintf("%gpx %s", screenSize, family))
 	c.ctx.Set("textAlign", canvasTextAlign(cmd.Align))
 	c.ctx.Set("textBaseline", canvasTextBaseline(cmd.Baseline))
+	c.ctx.Set("letterSpacing", fmt.Sprintf("%gpx", camera.WorldScalarToScreen(cmd.LetterSpacing)))
 
 	if cmd.Rotation == 0 {
 		c.ctx.Call("fillText", cmd.Text, pos.X, pos.Y)
@@ -714,6 +727,24 @@ func (c *Canvas2D) drawPolygon(cmd render.DrawPolygon, camera render.Camera) {
 		c.ctx.Set("lineWidth", camera.WorldScalarToScreen(cmd.StrokeWidth))
 		c.ctx.Call("stroke")
 	}
+}
+
+func (c *Canvas2D) drawTriangles(cmd render.DrawTriangles, camera render.Camera) {
+	if cmd.Color.A <= 0 {
+		return
+	}
+	c.ctx.Set("fillStyle", cssColor(cmd.Color))
+	c.ctx.Call("beginPath")
+	for index := 0; index < len(cmd.Indices); index += 3 {
+		a := camera.WorldToScreen(cmd.Vertices[cmd.Indices[index]])
+		b := camera.WorldToScreen(cmd.Vertices[cmd.Indices[index+1]])
+		d := camera.WorldToScreen(cmd.Vertices[cmd.Indices[index+2]])
+		c.ctx.Call("moveTo", a.X, a.Y)
+		c.ctx.Call("lineTo", b.X, b.Y)
+		c.ctx.Call("lineTo", d.X, d.Y)
+		c.ctx.Call("closePath")
+	}
+	c.ctx.Call("fill")
 }
 
 func (c *Canvas2D) applyClip(clip math2d.Rect, camera render.Camera) {

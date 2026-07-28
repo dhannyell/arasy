@@ -12,7 +12,7 @@ const (
 	TexVertexStride   = 40
 	SpriteStride      = 64
 	TextGlyphStride   = 16
-	TextLabelStride   = 56
+	TextLabelStride   = 64
 	TextMetricStride  = 32
 )
 
@@ -37,10 +37,13 @@ type textGlyphRecord struct {
 
 // textLabelRecord carries state shared by all glyphs in one DrawText.
 type textLabelRecord struct {
-	positionX, positionY, cos, sin         float32
-	originX, baselineY, scale, layoutPad   float32
+	positionX, positionY                   float32
+	transformA, transformB                 float32
+	transformC, transformD                 float32
+	originX, baselineY                     float32
 	clipMinX, clipMinY, clipMaxX, clipMaxY float32
-	tint, pad                              uint32
+	scale                                  float32
+	tint, pad0, pad1                       uint32
 }
 
 // textGlyphMetric is immutable atlas metadata. Keeping it in a GPU buffer

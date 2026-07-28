@@ -94,10 +94,8 @@ func appendTransformedEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
 func appendEllipseFan(m *Mesh, c ctx, center math2d.Vec2, rx, ry float64, n int, col render.Color) {
 	clipCenter := screenToClip(c, center)
 	for i := range n {
-		a0 := 2 * math.Pi * float64(i) / float64(n)
-		a1 := 2 * math.Pi * float64(i+1) / float64(n)
-		cos0, sin0 := math.Cos(a0), math.Sin(a0)
-		cos1, sin1 := math.Cos(a1), math.Sin(a1)
+		cos0, sin0 := circleUnit(i, n)
+		cos1, sin1 := circleUnit(i+1, n)
 		p0 := screenToClip(c, math2d.Vec2{
 			X: center.X + cos0*rx,
 			Y: center.Y + sin0*ry,
@@ -111,10 +109,8 @@ func appendEllipseFan(m *Mesh, c ctx, center math2d.Vec2, rx, ry float64, n int,
 }
 func appendEllipseRing(m *Mesh, c ctx, center math2d.Vec2, innerRx, innerRy, outerRx, outerRy float64, n int, col render.Color) {
 	for i := range n {
-		a0 := 2 * math.Pi * float64(i) / float64(n)
-		a1 := 2 * math.Pi * float64(i+1) / float64(n)
-		cos0, sin0 := math.Cos(a0), math.Sin(a0)
-		cos1, sin1 := math.Cos(a1), math.Sin(a1)
+		cos0, sin0 := circleUnit(i, n)
+		cos1, sin1 := circleUnit(i+1, n)
 		outer0 := screenToClip(c, math2d.Vec2{X: center.X + cos0*outerRx, Y: center.Y + sin0*outerRy})
 		outer1 := screenToClip(c, math2d.Vec2{X: center.X + cos1*outerRx, Y: center.Y + sin1*outerRy})
 		inner1 := screenToClip(c, math2d.Vec2{X: center.X + cos1*innerRx, Y: center.Y + sin1*innerRy})

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">
+  <style>
+    .panel{transform-box:fill-box;transform-origin:center;animation:arrive 3s cubic-bezier(.2,.8,.2,1) both}
+    .trace{stroke-dasharray:100;stroke-dashoffset:100;animation:reveal 3s ease-in-out both}
+    .rider{offset-path:path('M56 124 C96 32 224 32 264 124');animation:travel 3s cubic-bezier(.35,0,.2,1) both}
+    @keyframes arrive{0%{opacity:0;transform:scale(.72)}35%,100%{opacity:1;transform:scale(1)}}
+    @keyframes reveal{0%,12%{stroke-dashoffset:100;opacity:0}25%{opacity:1}72%,100%{stroke-dashoffset:0;opacity:1}}
+    @keyframes travel{0%,12%{offset-distance:0%}72%,100%{offset-distance:100%}}
+  </style>
+  <rect width="320" height="180" fill="#101827"/>
+  <g class="panel">
+    <rect x="42" y="28" width="236" height="124" rx="14" fill="#23314D" stroke="#6683B8" stroke-width="2"/>
+    <circle cx="98" cy="90" r="28" fill="#68D7C1"/>
+    <ellipse cx="220" cy="90" rx="42" ry="24" fill="#F1A766"/>
+    <line x1="126" y1="90" x2="178" y2="90" stroke="#CAD5E8" stroke-width="4"/>
+    <polygon points="148,74 170,90 148,106" fill="#CAD5E8"/>
+  </g>
+  <path class="trace" d="M56 124 C96 32 224 32 264 124" pathLength="100" fill="none"
+    stroke="#A78BFA" stroke-width="5" stroke-linecap="round"/>
+  <g class="rider"><circle cx="0" cy="0" r="7" fill="#F9E2AF"/></g>
+</svg>

@@ -14,14 +14,14 @@ struct GlyphMetric {
 
 struct Label {
   position : vec2f,
-  rotation : vec2f,
+  transform_ab : vec2f,
+  transform_cd : vec2f,
   origin_baseline : vec2f,
-  scale : f32,
-  _layout_pad : f32,
   clip_min : vec2f,
   clip_max : vec2f,
+  scale : f32,
   tint : u32,
-  _pad : u32,
+  _pad : vec2u,
 }
 
 struct Camera {
@@ -64,11 +64,11 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
     label.origin_baseline.y + (metric.offset.y + metric.size.y * 0.5) * label.scale,
   );
   let local = center + corner * half_size;
-  let rotated = vec2f(
-    local.x * label.rotation.x - local.y * label.rotation.y,
-    local.x * label.rotation.y + local.y * label.rotation.x,
+  let transformed = vec2f(
+    local.x * label.transform_ab.x + local.y * label.transform_cd.x,
+    local.x * label.transform_ab.y + local.y * label.transform_cd.y,
   );
-  let screen_pos = label.position + rotated;
+  let screen_pos = label.position + transformed;
   let clip_pos = vec2f(
     screen_pos.x * camera.screen_to_clip_scale.x - 1.0,
     screen_pos.y * camera.screen_to_clip_scale.y + 1.0,

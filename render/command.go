@@ -111,8 +111,13 @@ type DrawText struct {
 	Color    Color
 	Size     float64
 	Font     FontID
-	Align    TextAlign
-	Baseline TextBaseline
+	// Metrics optionally carries a prepared canonical measurement for static
+	// text. Zero value asks the backend to measure Text normally.
+	Metrics TextMetrics
+	// LetterSpacing adds world-space distance between adjacent glyphs.
+	LetterSpacing float64
+	Align         TextAlign
+	Baseline      TextBaseline
 
 	// Rotation is applied around Position, in radians. Zero keeps text
 	// unrotated.
@@ -141,6 +146,15 @@ type DrawPolygon struct {
 	Fill        Color
 	Stroke      Color
 	StrokeWidth float64
+}
+
+// DrawTriangles draws indexed solid-color triangles. Indices are interpreted
+// in groups of three and must reference Vertices.
+type DrawTriangles struct {
+	BaseCommand
+	Vertices []math2d.Vec2
+	Indices  []uint32
+	Color    Color
 }
 
 // DrawImage draws a texture, or a sub-rectangle of it, into a destination
@@ -239,6 +253,7 @@ func (DrawLine) isRenderCommand()        {}
 func (DrawText) isRenderCommand()        {}
 func (DrawArc) isRenderCommand()         {}
 func (DrawPolygon) isRenderCommand()     {}
+func (DrawTriangles) isRenderCommand()   {}
 func (DrawImage) isRenderCommand()       {}
 func (DrawImageQuad) isRenderCommand()   {}
 func (DrawParticles) isRenderCommand()   {}

@@ -66,6 +66,21 @@ func TestNewAtlasForFaceRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestMaximumRasterizedAtlasFitsWebGPUMinimumLimit(t *testing.T) {
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atlas, err := NewAtlasForFace(1, maxAtlasPixelSize, face, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := atlas.Image.Bounds()
+	if bounds.Dx() > maxAtlasDimension || bounds.Dy() > maxAtlasDimension {
+		t.Fatalf("atlas dimensions=%dx%d exceed %d", bounds.Dx(), bounds.Dy(), maxAtlasDimension)
+	}
+}
+
 func TestIndexedASCIIGlyphsUsesQuestionMarkForUnsupportedGlyph(t *testing.T) {
 	fallback := Glyph{Advance: 7, Width: 5, Height: 9, index: 3}
 	letter := Glyph{Advance: 8, Width: 6, Height: 9, index: 4}
@@ -156,7 +171,10 @@ func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 		t.Fatalf("rotated clipped text produced %+v", runs)
 	}
 	label := decodeTextLabel(t, builder.TextLabelStream(), 0)
-	for _, pair := range [][2]float32{label.position, label.rotation, label.originBaseline, label.clipMin, label.clipMax} {
+	for _, pair := range [][2]float32{
+		label.position, label.transformAB, label.transformCD,
+		label.originBaseline, label.clipMin, label.clipMax,
+	} {
 		for _, value := range pair {
 			if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
 				t.Fatalf("non-finite label record %+v", label)

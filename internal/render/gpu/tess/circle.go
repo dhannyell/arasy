@@ -123,16 +123,16 @@ func appendCircleFan(m *Mesh, c ctx, center math2d.Vec2, radius float64, n int, 
 	clipCenter := screenToClip(c, center)
 
 	for i := 0; i < n; i++ {
-		a0 := 2 * math.Pi * float64(i) / float64(n)
-		a1 := 2 * math.Pi * float64(i+1) / float64(n)
+		cos0, sin0 := circleUnit(i, n)
+		cos1, sin1 := circleUnit(i+1, n)
 
 		p0 := screenToClip(c, math2d.Vec2{
-			X: center.X + math.Cos(a0)*radius,
-			Y: center.Y + math.Sin(a0)*radius,
+			X: center.X + cos0*radius,
+			Y: center.Y + sin0*radius,
 		})
 		p1 := screenToClip(c, math2d.Vec2{
-			X: center.X + math.Cos(a1)*radius,
-			Y: center.Y + math.Sin(a1)*radius,
+			X: center.X + cos1*radius,
+			Y: center.Y + sin1*radius,
 		})
 
 		pushTri(m, clipCenter, p0, p1, col)
@@ -145,14 +145,25 @@ func appendCircleFan(m *Mesh, c ctx, center math2d.Vec2, radius float64, n int, 
 // pushQuad expands that quad into two triangles for the solid-color mesh.
 func appendCircleRing(m *Mesh, c ctx, center math2d.Vec2, innerRadius, outerRadius float64, n int, col render.Color) {
 	for i := 0; i < n; i++ {
-		a0 := 2 * math.Pi * float64(i) / float64(n)
-		a1 := 2 * math.Pi * float64(i+1) / float64(n)
+		cos0, sin0 := circleUnit(i, n)
+		cos1, sin1 := circleUnit(i+1, n)
 
-		outer0 := screenToClip(c, math2d.Vec2{X: center.X + math.Cos(a0)*outerRadius, Y: center.Y + math.Sin(a0)*outerRadius})
-		outer1 := screenToClip(c, math2d.Vec2{X: center.X + math.Cos(a1)*outerRadius, Y: center.Y + math.Sin(a1)*outerRadius})
-		inner1 := screenToClip(c, math2d.Vec2{X: center.X + math.Cos(a1)*innerRadius, Y: center.Y + math.Sin(a1)*innerRadius})
-		inner0 := screenToClip(c, math2d.Vec2{X: center.X + math.Cos(a0)*innerRadius, Y: center.Y + math.Sin(a0)*innerRadius})
+		outer0 := screenToClip(c, math2d.Vec2{X: center.X + cos0*outerRadius, Y: center.Y + sin0*outerRadius})
+		outer1 := screenToClip(c, math2d.Vec2{X: center.X + cos1*outerRadius, Y: center.Y + sin1*outerRadius})
+		inner1 := screenToClip(c, math2d.Vec2{X: center.X + cos1*innerRadius, Y: center.Y + sin1*innerRadius})
+		inner0 := screenToClip(c, math2d.Vec2{X: center.X + cos0*innerRadius, Y: center.Y + sin0*innerRadius})
 
 		pushQuad(m, outer0, outer1, inner1, inner0, col)
 	}
+}
+
+// circleUnit returns an exact shared endpoint for the first and closing
+// segments. Evaluating sin(2*pi) leaves a tiny non-zero value which can make
+// multisample rasterizers expose one sample along the closing radial edge.
+func circleUnit(i, n int) (cosine, sine float64) {
+	if i == 0 || i == n {
+		return 1, 0
+	}
+	sine, cosine = math.Sincos(2 * math.Pi * float64(i) / float64(n))
+	return cosine, sine
 }
