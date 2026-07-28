@@ -97,8 +97,21 @@ func populateAll(t *testing.T, w *World, id EntityID, seed float64) map[string]a
 // component stores, ChecksumComponentStores and the Set convention: a store
 // added without a Set/getter pair in the convention, or a setter that
 // doesn't follow it, changes this count without anyone noticing otherwise.
+// renderOnlySetters follow the Set convention but write to presentation
+// caches excluded from Checksum — mirroring the store exclusion in
+// TestChecksumCoversAllComponentStores — so they must not count against
+// ChecksumComponentStores.
+var renderOnlySetters = map[string]bool{"SetSpriteTransform": true}
+
 func TestComponentSetterConventionCoversAllStores(t *testing.T) {
-	if got := len(componentSetters(t)); got != ChecksumComponentStores {
+	got := 0
+	for _, setter := range componentSetters(t) {
+		if renderOnlySetters[setter.Name] {
+			continue
+		}
+		got++
+	}
+	if got != ChecksumComponentStores {
 		t.Fatalf("component setters discovered by convention = %d, want %d (ChecksumComponentStores)",
 			got, ChecksumComponentStores)
 	}

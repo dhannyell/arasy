@@ -64,7 +64,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		commands = make([]render.Command, 0, totalSprites)
 	}
 	useAlpha := alpha
-	if useAlpha <= 0 || useAlpha != useAlpha {
+	if useAlpha <= 0 || math.IsNaN(useAlpha) {
 		useAlpha = 0
 	} else if useAlpha >= 1 {
 		useAlpha = math.Nextafter(1, 0)
@@ -113,6 +113,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 							Fill:    render.RGBA(0, 0, 0, proj.ShadowAlpha),
 							BaseCommand: render.BaseCommand{
 								LayerValue: w.spriteLayer(id),
+								Transform:  proj.ShadowTransform,
 							},
 						})
 					}
@@ -122,6 +123,13 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 					}
 				}
 			}
+		}
+
+		// Per-entity decorative affine (squash & stretch, lean), deforming
+		// about the final — possibly lifted — body center. Render-only.
+		bodyTransform := math2d.Affine{}
+		if st, ok := w.spriteTransforms.get(id); ok && !st.M.IsIdentity() {
+			bodyTransform = st.M.About(pos)
 		}
 
 		if circle, hasCircle := w.circleSprites.get(id); hasCircle {
@@ -135,6 +143,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 				Fill:   circle.Color,
 				BaseCommand: render.BaseCommand{
 					LayerValue: circle.Layer,
+					Transform:  bodyTransform,
 				},
 			})
 			continue
@@ -148,6 +157,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 				StrokeWidth: rect.StrokeWidth,
 				BaseCommand: render.BaseCommand{
 					LayerValue: rect.Layer,
+					Transform:  bodyTransform,
 				},
 			})
 		}
@@ -169,6 +179,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 				Rotation: interpolated.Rotation,
 				BaseCommand: render.BaseCommand{
 					LayerValue: img.Layer,
+					Transform:  bodyTransform,
 				},
 			})
 		}

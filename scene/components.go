@@ -44,6 +44,16 @@ type ImageSprite struct {
 	Tint    render.Color
 }
 
+// SpriteTransform is a render-only per-entity affine applied to the
+// entity's body draw commands (squash & stretch, lean). It is decorative:
+// excluded from Checksum, cloned for presentation continuity only, and
+// authored by the consumer each frame. The matrix is applied About the
+// body's (possibly lifted) center, so non-uniform scale deforms from the
+// center; compose Translate for a different pivot.
+type SpriteTransform struct {
+	M math2d.Affine
+}
+
 type Velocity struct {
 	Linear math2d.Vec2
 }
