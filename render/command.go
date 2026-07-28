@@ -111,6 +111,9 @@ type DrawText struct {
 	Color    Color
 	Size     float64
 	Font     FontID
+	// Metrics optionally carries a prepared canonical measurement for static
+	// text. Zero value asks the backend to measure Text normally.
+	Metrics TextMetrics
 	// LetterSpacing adds world-space distance between adjacent glyphs.
 	LetterSpacing float64
 	Align         TextAlign

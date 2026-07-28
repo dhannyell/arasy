@@ -1,6 +1,7 @@
 package tess
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"testing"
@@ -9,6 +10,29 @@ import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
+
+func TestPreparedTextMetricsPreserveGPUStreams(t *testing.T) {
+	atlas := NewAtlas()
+	command := render.DrawText{
+		Position:      math2d.Vec2{X: 20, Y: 30},
+		Text:          "ABC",
+		Color:         render.RGBA8(255, 255, 255, 255),
+		Size:          18,
+		LetterSpacing: 2,
+	}
+	var plain Builder
+	plain.Build(Frame{Camera: testCamera(), Commands: []render.Command{command}}, 100, 100, atlas, nil)
+	command.Metrics = render.MeasureTextMetrics(command.Text, command.Size, command.LetterSpacing)
+	var prepared Builder
+	prepared.Build(Frame{Camera: testCamera(), Commands: []render.Command{command}}, 100, 100, atlas, nil)
+
+	if !bytes.Equal(prepared.TextGlyphStream(), plain.TextGlyphStream()) {
+		t.Fatal("prepared text metrics changed glyph stream")
+	}
+	if !bytes.Equal(prepared.TextLabelStream(), plain.TextLabelStream()) {
+		t.Fatal("prepared text metrics changed label stream")
+	}
+}
 
 type decodedTextGlyph struct {
 	penX          float32

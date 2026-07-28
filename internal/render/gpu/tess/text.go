@@ -28,12 +28,14 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 	scale := 1.0
 	builtin := atlas.Key.Font == 0
 	var measured math2d.Vec2
+	var metrics render.TextMetrics
 	if builtin {
 		size := cmd.Size
 		if size <= 0 {
 			size = nativeHeight
 		}
-		measured = render.MeasureTextSpaced(cmd.Text, size, cmd.LetterSpacing)
+		metrics = preparedTextMetrics(cmd, size)
+		measured = metrics.Size
 		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
 	} else if atlas.Key.PX > 0 {
 		scale = requestedTextPixelSize(c, cmd.Size) / float64(atlas.Key.PX)
@@ -52,6 +54,9 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		destWidth += glyph.Advance * scale
 	}
 	glyphCount := utf8.RuneCountInString(cmd.Text)
+	if builtin {
+		glyphCount = metrics.RuneCount
+	}
 	spacing := c.cam.WorldScalarToScreen(cmd.LetterSpacing)
 	if !builtin && glyphCount > 1 {
 		destWidth += float64(glyphCount-1) * spacing
@@ -148,8 +153,9 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 		if size <= 0 {
 			size = nativeHeight
 		}
-		measured := render.MeasureTextSpaced(cmd.Text, size, cmd.LetterSpacing)
-		glyphCount := utf8.RuneCountInString(cmd.Text)
+		metrics := preparedTextMetrics(cmd, size)
+		measured := metrics.Size
+		glyphCount := metrics.RuneCount
 		if glyphCount == 0 {
 			return 0
 		}
@@ -231,6 +237,13 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 		topY+nativeAscent*scale, scale, clipMin, clipMax, cmd.Color,
 	)
 	return len(*dst) - start
+}
+
+func preparedTextMetrics(cmd render.DrawText, size float64) render.TextMetrics {
+	if cmd.Metrics.RuneCount > 0 && cmd.Metrics.Size.X > 0 && cmd.Metrics.Size.Y > 0 && size == cmd.Size {
+		return cmd.Metrics
+	}
+	return render.MeasureTextMetrics(cmd.Text, size, cmd.LetterSpacing)
 }
 
 func requestedTextPixelSize(c ctx, size float64) float64 {

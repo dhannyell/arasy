@@ -93,7 +93,7 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 		adv := font.MeasureString(face, command.Text)
 		met := face.Metrics()
 		glyphWidth := adv.Ceil()
-		runeCount := len([]rune(command.Text))
+		runeCount := preparedTextMetrics(command, command.Size).RuneCount
 		if runeCount > 1 {
 			glyphWidth += int(math.Ceil(float64(runeCount-1) * screenSpacing))
 		}
@@ -141,7 +141,8 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 			// the built-in font's native pixel height.
 			size = float64(basicfont.Face7x13.Metrics().Height.Ceil())
 		}
-		measured := render.MeasureTextSpaced(command.Text, size, command.LetterSpacing)
+		prepared := preparedTextMetrics(command, size)
+		measured := prepared.Size
 		ttlDestWidth := r.Camera.WorldScalarToScreen(measured.X)
 		ttlDestHeight := r.Camera.WorldScalarToScreen(measured.Y)
 
@@ -162,11 +163,11 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 
 				naturalWidth := font.MeasureString(textFace, command.Text).Ceil()
 				glyphWidth := naturalWidth
-				naturalDestWidth := r.Camera.WorldScalarToScreen(render.MeasureText(command.Text, size).X)
+				naturalDestWidth := r.Camera.WorldScalarToScreen(prepared.NaturalWidth)
 				if naturalDestWidth != 0 {
 					sourceSpacing = screenSpacing * float64(naturalWidth) / naturalDestWidth
 				}
-				glyphWidth += int(math.Ceil(float64(max(0, len([]rune(command.Text))-1)) * sourceSpacing))
+				glyphWidth += int(math.Ceil(float64(max(0, prepared.RuneCount-1)) * sourceSpacing))
 				glyphHeight = (metrics.Ascent + metrics.Descent).Ceil()
 				if glyphWidth > 0 && glyphHeight > 0 {
 					glyphs = image.NewRGBA(image.Rect(0, 0, glyphWidth, glyphHeight))
@@ -186,11 +187,11 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 			if ttlDestWidth <= 0 || ttlDestHeight <= 0 {
 				return
 			}
-			naturalDestWidth := r.Camera.WorldScalarToScreen(render.MeasureText(command.Text, size).X)
+			naturalDestWidth := r.Camera.WorldScalarToScreen(prepared.NaturalWidth)
 			if naturalDestWidth != 0 {
 				sourceSpacing = screenSpacing * nativeWidth / naturalDestWidth
 			}
-			bufferWidth := nativeWidth + float64(max(0, len([]rune(command.Text))-1))*sourceSpacing
+			bufferWidth := nativeWidth + float64(max(0, prepared.RuneCount-1))*sourceSpacing
 			if bufferWidth <= 0 {
 				return
 			}
@@ -257,6 +258,16 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 		return
 	}
 	blitScaledRotated(img, glyphs, glyphs.Bounds(), screenPos, offsetX, offsetY, destWidth, destHeight, command.Rotation, bounds, noTint)
+}
+
+func preparedTextMetrics(command render.DrawText, size float64) render.TextMetrics {
+	if command.Metrics.RuneCount > 0 &&
+		command.Metrics.Size.X > 0 &&
+		command.Metrics.Size.Y > 0 &&
+		size == command.Size {
+		return command.Metrics
+	}
+	return render.MeasureTextMetrics(command.Text, size, command.LetterSpacing)
 }
 
 func drawSpacedString(drawer *font.Drawer, text string, spacing float64) {

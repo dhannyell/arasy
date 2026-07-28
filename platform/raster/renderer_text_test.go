@@ -1,6 +1,7 @@
 package raster_test
 
 import (
+	"bytes"
 	"image/color"
 	"math"
 	"testing"
@@ -9,6 +10,27 @@ import (
 	"github.com/dhannyell/arasy/platform/raster"
 	"github.com/dhannyell/arasy/render"
 )
+
+func TestPreparedTextMetricsPreserveRasterOutput(t *testing.T) {
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 120, Y: 60})
+	renderer := raster.Renderer{
+		Width: 120, Height: 60,
+		Camera: render.Camera{World: viewport, Viewport: viewport},
+	}
+	command := render.DrawText{
+		Position:      math2d.Vec2{X: 10, Y: 30},
+		Text:          "áBC",
+		Color:         render.RGBA8(255, 255, 255, 255),
+		Size:          18,
+		LetterSpacing: 2,
+	}
+	plain := renderer.Render([]render.Command{command})
+	command.Metrics = render.MeasureTextMetrics(command.Text, command.Size, command.LetterSpacing)
+	prepared := renderer.Render([]render.Command{command})
+	if !bytes.Equal(prepared.Pix, plain.Pix) {
+		t.Fatal("prepared text metrics changed raster output")
+	}
+}
 
 func TestDrawTextRendersPixels(t *testing.T) {
 	renderer := raster.Renderer{

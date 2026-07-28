@@ -2,6 +2,7 @@ package vectoranim
 
 import (
 	_ "embed"
+	"fmt"
 	"testing"
 
 	"github.com/dhannyell/arasy/anim"
@@ -248,6 +249,125 @@ func BenchmarkVectorAnimationRasterEndToEndReuse(b *testing.B) {
 			benchmarkVectorPixelSink = target.Pix[len(target.Pix)/2]
 		})
 	}
+}
+
+func BenchmarkVectorAnimationScaleLOD(b *testing.B) {
+	for _, test := range []struct {
+		name     string
+		viewport math2d.Rect
+	}{
+		{
+			name: "Coarse",
+			viewport: math2d.NewRect(
+				math2d.Vec2{},
+				math2d.Vec2{X: 160, Y: 90},
+			),
+		},
+		{name: "Standard", viewport: benchmarkVectorViewport},
+		{
+			name: "Fine",
+			viewport: math2d.NewRect(
+				math2d.Vec2{},
+				math2d.Vec2{X: 640, Y: 360},
+			),
+		},
+	} {
+		b.Run(test.name, func(b *testing.B) {
+			var workspace VectorSceneWorkspace
+			b.ReportAllocs()
+
+			var commands []render.Command
+			for b.Loop() {
+				commands = workspace.Append(anim.At(3), test.viewport, VectorSceneResources{})
+			}
+			metrics := workspace.FrameMetrics()
+			b.ReportMetric(float64(metrics.LOD), "lod")
+			b.ReportMetric(float64(vectorTriangleVertices(commands)), "triangle-vertices/frame")
+			benchmarkVectorCommandsSink = commands
+		})
+	}
+}
+
+func BenchmarkVectorAnimationCulling(b *testing.B) {
+	for _, nodeCount := range []int{100, 1000} {
+		b.Run(fmt.Sprintf("Offscreen%d", nodeCount), func(b *testing.B) {
+			nodes := offscreenVectorNodes(nodeCount)
+			viewBox := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 180})
+			var builder render.Builder
+			var metrics svgFrameMetrics
+			b.ReportAllocs()
+			b.ResetTimer()
+
+			for b.Loop() {
+				builder.Reset(nil)
+				metrics = svgFrameMetrics{}
+				appendSVGNode(
+					&builder,
+					nodes,
+					0,
+					anim.At(0),
+					func(uint16) render.FontID { return 0 },
+					nil,
+					nil,
+					0.25,
+					viewBox,
+					true,
+					math2d.Identity(),
+					&metrics,
+				)
+				if len(builder.Commands()) != 0 {
+					b.Fatal("offscreen nodes emitted commands")
+				}
+			}
+			b.ReportMetric(float64(metrics.CulledNodes), "culled/frame")
+			b.ReportMetric(float64(metrics.VisitedNodes), "nodes/frame")
+		})
+	}
+}
+
+func vectorTriangleVertices(commands []render.Command) int {
+	total := 0
+	for _, command := range commands {
+		if triangles, ok := command.(render.DrawTriangles); ok {
+			total += len(triangles.Vertices)
+		}
+	}
+	return total
+}
+
+func offscreenVectorNodes(count int) []svgNode {
+	nodes := make([]svgNode, count+1)
+	nodes[0] = svgNode{
+		children:   make([]uint16, count),
+		path:       -1,
+		motionPath: -1,
+		opacity:    1,
+		transform:  math2d.Identity(),
+	}
+	for index := range count {
+		child := index + 1
+		nodes[0].children[index] = uint16(child)
+		x := 1000 + float64(index%100)*20
+		y := 1000 + float64(index/100)*20
+		nodes[child] = svgNode{
+			kind:       1,
+			path:       -1,
+			motionPath: -1,
+			x:          x,
+			y:          y,
+			width:      10,
+			height:     10,
+			fill:       render.RGBA8(255, 255, 255, 255),
+			opacity:    1,
+			transform:  math2d.Identity(),
+			bounds: math2d.NewRect(
+				math2d.Vec2{X: x, Y: y},
+				math2d.Vec2{X: 10, Y: 10},
+			),
+			hasBounds: true,
+		}
+	}
+	return nodes
 }
 
 func vectorBenchmarkWorkloads() []vectorBenchmarkWorkload {

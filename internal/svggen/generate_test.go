@@ -27,16 +27,48 @@ func TestGenerateIsDeterministicAndFormatted(t *testing.T) {
 		t.Fatal("generation is not deterministic")
 	}
 	for _, expected := range []string{
+		"type SampleMetrics struct",
+		"SampleAssetMetrics = SampleMetrics",
+		"type SampleBudget struct",
 		"type SampleWorkspace struct",
 		"func (w *SampleWorkspace) Append(",
+		"func (w *SampleWorkspace) FrameMetrics()",
 		"func AppendSample(",
 		"AppendFillWithWorkspace",
 		"AppendStrokeWithWorkspace",
+		"svgLODWithHysteresis",
+		"svgTransformRect",
+		"hasBounds: true",
 		"anim.Timeline",
 		"render.Builder",
 		"ease.MustCubicBezier",
 	} {
 		if !strings.Contains(string(first), expected) {
+			t.Fatalf("generated source does not contain %q", expected)
+		}
+	}
+}
+
+func TestGeneratePreparesStaticTextMetrics(t *testing.T) {
+	source := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 50">
+<text x="50" y="25" text-anchor="middle" font-size="10" letter-spacing="2">áBC</text>
+</svg>`)
+	document, err := Parse(source, Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generated, err := Generate(document, GenerateOptions{Package: "sample", Name: "Sample"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(generated)
+	for _, expected := range []string{
+		"TextNodes: 1, TextRunes: 3",
+		"NaturalWidth: 18",
+		"RuneCount: 3",
+		"Metrics: node.textMetrics",
+	} {
+		if !strings.Contains(text, expected) {
 			t.Fatalf("generated source does not contain %q", expected)
 		}
 	}

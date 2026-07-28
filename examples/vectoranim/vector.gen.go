@@ -15,14 +15,47 @@ import (
 type VectorSceneResources struct {
 }
 
+// VectorSceneMetrics describes the generated asset's structural cost.
+type VectorSceneMetrics struct {
+	Nodes, Paths, TextNodes, TextRunes, MaxDepth, CommandCapacity int
+}
+
+// VectorSceneBudget sets optional structural limits. Zero limits are disabled.
+type VectorSceneBudget struct {
+	MaxNodes, MaxPaths, MaxTextNodes, MaxTextRunes, MaxDepth, MaxCommands int
+}
+
+// WithinBudget reports whether the generated asset fits every enabled limit.
+func (m VectorSceneMetrics) WithinBudget(b VectorSceneBudget) bool {
+	return (b.MaxNodes <= 0 || m.Nodes <= b.MaxNodes) &&
+		(b.MaxPaths <= 0 || m.Paths <= b.MaxPaths) &&
+		(b.MaxTextNodes <= 0 || m.TextNodes <= b.MaxTextNodes) &&
+		(b.MaxTextRunes <= 0 || m.TextRunes <= b.MaxTextRunes) &&
+		(b.MaxDepth <= 0 || m.MaxDepth <= b.MaxDepth) &&
+		(b.MaxCommands <= 0 || m.CommandCapacity <= b.MaxCommands)
+}
+
+// VectorSceneAssetMetrics is the compile-time structural cost of this SVG.
+var VectorSceneAssetMetrics = VectorSceneMetrics{
+	Nodes: 11, Paths: 3, TextNodes: 0, TextRunes: 0,
+	MaxDepth: 3, CommandCapacity: 8,
+}
+
+// VectorSceneFrameMetrics describes the most recent workspace-backed traversal.
+type VectorSceneFrameMetrics = svgFrameMetrics
+
 // VectorSceneWorkspace retains generated command and vector mesh buffers between
 // sequential frames. The returned commands remain valid only until the next
 // call to Append on the same workspace. A workspace must not be used
 // concurrently.
 type VectorSceneWorkspace struct {
-	commands []render.Command
-	fills    [11]vector.FillWorkspace
-	strokes  [11]vector.StrokeWorkspace
+	commands     []render.Command
+	builder      render.Builder
+	fills        [11]vector.FillWorkspace
+	strokes      [11]vector.StrokeWorkspace
+	lod          uint8
+	lodReady     bool
+	frameMetrics VectorSceneFrameMetrics
 }
 
 type svgScalarStop struct{ progress, value float64 }
@@ -48,9 +81,83 @@ type svgNode struct {
 	align                                               render.TextAlign
 	transform                                           math2d.Affine
 	origin                                              math2d.Vec2
+	bounds                                              math2d.Rect
+	textMetrics                                         render.TextMetrics
+	hasBounds                                           bool
 	lineCap                                             vector.LineCap
 	lineJoin                                            vector.LineJoin
 	animation                                           svgAnimation
+}
+
+type svgFrameMetrics struct {
+	VisitedNodes, CulledNodes, EmittedCommands int
+	LOD                                        uint8
+	Tolerance                                  float64
+}
+
+func svgLOD(scale float64) uint8 {
+	switch {
+	case scale < 0.75:
+		return 0
+	case scale > 1.5:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func svgLODWithHysteresis(current uint8, ready bool, scale float64) uint8 {
+	if !ready {
+		return svgLOD(scale)
+	}
+	switch current {
+	case 0:
+		if scale > 0.85 {
+			return 1
+		}
+	case 1:
+		if scale < 0.65 {
+			return 0
+		}
+		if scale > 1.65 {
+			return 2
+		}
+	case 2:
+		if scale < 1.35 {
+			return 1
+		}
+	default:
+		return svgLOD(scale)
+	}
+	return current
+}
+
+func svgLODTolerance(lod uint8) float64 {
+	switch lod {
+	case 0:
+		return 0.5
+	case 2:
+		return 0.0625
+	default:
+		return 0.25
+	}
+}
+
+func svgTransformRect(rect math2d.Rect, transform math2d.Affine) math2d.Rect {
+	a := transform.Apply(rect.Min)
+	b := transform.Apply(math2d.Vec2{X: rect.Max.X, Y: rect.Min.Y})
+	c := transform.Apply(rect.Max)
+	d := transform.Apply(math2d.Vec2{X: rect.Min.X, Y: rect.Max.Y})
+	return math2d.Rect{
+		Min: math2d.Vec2{
+			X: math.Min(math.Min(a.X, b.X), math.Min(c.X, d.X)),
+			Y: math.Min(math.Min(a.Y, b.Y), math.Min(c.Y, d.Y)),
+		},
+		Max: math2d.Vec2{
+			X: math.Max(math.Max(a.X, b.X), math.Max(c.X, d.X)),
+			Y: math.Max(math.Max(a.Y, b.Y), math.Max(c.Y, d.Y)),
+		},
+	}
 }
 
 func svgScalar(t anim.Timeline, animation svgAnimation, stops []svgScalarStop, fallback float64) float64 {
@@ -105,7 +212,15 @@ func appendSVGNode(
 	font func(uint16) render.FontID,
 	fillWorkspaces []vector.FillWorkspace,
 	strokeWorkspaces []vector.StrokeWorkspace,
+	tolerance float64,
+	viewBox math2d.Rect,
+	cull bool,
+	parentTransform math2d.Affine,
+	frameMetrics *svgFrameMetrics,
 ) {
+	if frameMetrics != nil {
+		frameMetrics.VisitedNodes++
+	}
 	node := nodes[index]
 	opacity := node.opacity
 	if len(node.animation.opacity) != 0 {
@@ -122,37 +237,63 @@ func appendSVGNode(
 	}
 	if node.motionPath >= 0 {
 		progress := svgScalar(timeline, node.animation, node.animation.distance, 0)
-		point, _, err := svgPaths[node.motionPath].PointAt(progress, 0.25)
+		point, _, err := svgPaths[node.motionPath].PointAt(progress, tolerance)
 		if err != nil {
 			panic(err)
 		}
 		transform = math2d.Translate(point).Mul(transform)
+	}
+	effectiveTransform := parentTransform
+	if cull {
+		effectiveTransform = parentTransform.Mul(transform)
+	}
+	if cull && len(node.children) == 0 && node.hasBounds &&
+		!svgTransformRect(node.bounds, effectiveTransform).TouchesOrOverlaps(viewBox) {
+		if frameMetrics != nil {
+			frameMetrics.CulledNodes++
+		}
+		return
 	}
 	builder.Push(render.Group{Transform: transform, Opacity: opacity})
 	base := render.BaseCommand{}
 	switch node.kind {
 	case 1:
 		builder.Add(render.DrawRect{BaseCommand: base, Rect: math2d.NewRect(math2d.Vec2{X: node.x, Y: node.y}, math2d.Vec2{X: node.width, Y: node.height}), Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth, CornerRadius: node.rx})
+		if frameMetrics != nil {
+			frameMetrics.EmittedCommands++
+		}
 	case 2:
 		builder.Add(render.DrawCircle{BaseCommand: base, Center: math2d.Vec2{X: node.x, Y: node.y}, Radius: node.rx, Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth})
+		if frameMetrics != nil {
+			frameMetrics.EmittedCommands++
+		}
 	case 3:
 		builder.Add(render.DrawEllipse{BaseCommand: base, Center: math2d.Vec2{X: node.x, Y: node.y}, RadiusX: node.rx, RadiusY: node.ry, Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth})
+		if frameMetrics != nil {
+			frameMetrics.EmittedCommands++
+		}
 	case 4:
 		builder.Add(render.DrawLine{BaseCommand: base, From: math2d.Vec2{X: node.x, Y: node.y}, To: math2d.Vec2{X: node.x2, Y: node.y2}, Width: node.strokeWidth, Color: node.stroke})
+		if frameMetrics != nil {
+			frameMetrics.EmittedCommands++
+		}
 	case 5:
 		if node.fill.A != 0 {
 			var commands []render.Command
 			var err error
 			if fillWorkspaces == nil {
-				commands, err = svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25})
+				commands, err = svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: tolerance})
 			} else {
-				commands, err = svgPaths[node.path].AppendFillWithWorkspace(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25}, &fillWorkspaces[index])
+				commands, err = svgPaths[node.path].AppendFillWithWorkspace(nil, base, vector.FillStyle{Color: node.fill, Tolerance: tolerance}, &fillWorkspaces[index])
 			}
 			if err != nil {
 				panic(err)
 			}
 			for _, command := range commands {
 				builder.Add(command)
+				if frameMetrics != nil {
+					frameMetrics.EmittedCommands++
+				}
 			}
 		}
 		if node.stroke.A != 0 && node.strokeWidth > 0 {
@@ -163,22 +304,32 @@ func appendSVGNode(
 			var commands []render.Command
 			var err error
 			if strokeWorkspaces == nil {
-				commands, err = svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25})
+				commands, err = svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: tolerance})
 			} else {
-				commands, err = svgPaths[node.path].AppendStrokeWithWorkspace(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25}, &strokeWorkspaces[index])
+				commands, err = svgPaths[node.path].AppendStrokeWithWorkspace(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: tolerance}, &strokeWorkspaces[index])
 			}
 			if err != nil {
 				panic(err)
 			}
 			for _, command := range commands {
 				builder.Add(command)
+				if frameMetrics != nil {
+					frameMetrics.EmittedCommands++
+				}
 			}
 		}
 	case 6:
-		builder.Add(render.DrawText{BaseCommand: base, Position: math2d.Vec2{X: node.x, Y: node.y}, Text: node.text, Color: node.fill, Size: node.fontSize, Font: font(node.font), LetterSpacing: node.spacing, Align: node.align})
+		builder.Add(render.DrawText{BaseCommand: base, Position: math2d.Vec2{X: node.x, Y: node.y}, Text: node.text, Color: node.fill, Size: node.fontSize, Font: font(node.font), Metrics: node.textMetrics, LetterSpacing: node.spacing, Align: node.align})
+		if frameMetrics != nil {
+			frameMetrics.EmittedCommands++
+		}
 	}
 	for _, child := range node.children {
-		appendSVGNode(builder, nodes, int(child), timeline, font, fillWorkspaces, strokeWorkspaces)
+		appendSVGNode(
+			builder, nodes, int(child), timeline, font,
+			fillWorkspaces, strokeWorkspaces, tolerance,
+			viewBox, cull, effectiveTransform, frameMetrics,
+		)
 	}
 	builder.Pop()
 }
@@ -225,17 +376,17 @@ var svgPath2 = func() vector.Path {
 }()
 
 var vectorSceneNodes = []svgNode{
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{1, 2, 8, 9}},
-	{kind: 1, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 320, height: 180, text: "", fill: render.RGBA(0.06274509803921569, 0.09411764705882353, 0.15294117647058825, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{3, 4, 5, 6, 7}, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.2, 0.8, 0.2, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.35, value: 1}, {progress: 1, value: 1}}, transform: []svgAffineStop{{progress: 0, value: math2d.Affine{A: 0.72, B: 0, C: 0, D: 0.72, E: 0, F: 0}}, {progress: 0.35, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 1, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}}}},
-	{kind: 1, path: -1, motionPath: -1, x: 42, y: 28, x2: 0, y2: 0, rx: 14, ry: 0, width: 236, height: 124, text: "", fill: render.RGBA(0.13725490196078433, 0.19215686274509805, 0.30196078431372547, 1), stroke: render.RGBA(0.4, 0.5137254901960784, 0.7215686274509804, 1), strokeWidth: 2, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 2, path: -1, motionPath: -1, x: 98, y: 90, x2: 0, y2: 0, rx: 28, ry: 28, width: 0, height: 0, text: "", fill: render.RGBA(0.40784313725490196, 0.8431372549019608, 0.7568627450980392, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 3, path: -1, motionPath: -1, x: 220, y: 90, x2: 0, y2: 0, rx: 42, ry: 24, width: 0, height: 0, text: "", fill: render.RGBA(0.9450980392156862, 0.6549019607843137, 0.4, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 4, path: -1, motionPath: -1, x: 126, y: 90, x2: 178, y2: 90, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.792156862745098, 0.8352941176470589, 0.9098039215686274, 1), strokeWidth: 4, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 0, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.792156862745098, 0.8352941176470589, 0.9098039215686274, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.6549019607843137, 0.5450980392156862, 0.9803921568627451, 1), strokeWidth: 5, fontSize: 0, spacing: 0, opacity: 1, pathLength: 100, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapRound, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.42, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.12, value: 0}, {progress: 0.25, value: 1}, {progress: 0.72, value: 1}, {progress: 1, value: 1}}, dashOffset: []svgScalarStop{{progress: 0, value: 100}, {progress: 0.12, value: 100}, {progress: 0.72, value: 0}, {progress: 1, value: 0}}}},
-	{kind: 0, path: -1, motionPath: 2, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{10}, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.12, value: 0}, {progress: 0.72, value: 1}, {progress: 1, value: 1}}}},
-	{kind: 2, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 7, ry: 7, width: 0, height: 0, text: "", fill: render.RGBA(0.9764705882352941, 0.8862745098039215, 0.6862745098039216, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{1, 2, 8, 9}},
+	{kind: 1, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 320, height: 180, text: "", fill: render.RGBA(0.06274509803921569, 0.09411764705882353, 0.15294117647058825, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 320, Y: 180}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{3, 4, 5, 6, 7}, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.2, 0.8, 0.2, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.35, value: 1}, {progress: 1, value: 1}}, transform: []svgAffineStop{{progress: 0, value: math2d.Affine{A: 0.72, B: 0, C: 0, D: 0.72, E: 0, F: 0}}, {progress: 0.35, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 1, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}}}},
+	{kind: 1, path: -1, motionPath: -1, x: 42, y: 28, x2: 0, y2: 0, rx: 14, ry: 0, width: 236, height: 124, text: "", fill: render.RGBA(0.13725490196078433, 0.19215686274509805, 0.30196078431372547, 1), stroke: render.RGBA(0.4, 0.5137254901960784, 0.7215686274509804, 1), strokeWidth: 2, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 41, Y: 27}, Max: math2d.Vec2{X: 279, Y: 153}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 2, path: -1, motionPath: -1, x: 98, y: 90, x2: 0, y2: 0, rx: 28, ry: 28, width: 0, height: 0, text: "", fill: render.RGBA(0.40784313725490196, 0.8431372549019608, 0.7568627450980392, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 70, Y: 62}, Max: math2d.Vec2{X: 126, Y: 118}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 3, path: -1, motionPath: -1, x: 220, y: 90, x2: 0, y2: 0, rx: 42, ry: 24, width: 0, height: 0, text: "", fill: render.RGBA(0.9450980392156862, 0.6549019607843137, 0.4, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 178, Y: 66}, Max: math2d.Vec2{X: 262, Y: 114}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 4, path: -1, motionPath: -1, x: 126, y: 90, x2: 178, y2: 90, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.792156862745098, 0.8352941176470589, 0.9098039215686274, 1), strokeWidth: 4, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 124, Y: 88}, Max: math2d.Vec2{X: 180, Y: 92}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 0, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.792156862745098, 0.8352941176470589, 0.9098039215686274, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 148, Y: 74}, Max: math2d.Vec2{X: 170, Y: 106}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.6549019607843137, 0.5450980392156862, 0.9803921568627451, 1), strokeWidth: 5, fontSize: 0, spacing: 0, opacity: 1, pathLength: 100, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 53.5, Y: 29.5}, Max: math2d.Vec2{X: 266.5, Y: 126.5}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapRound, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.42, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.12, value: 0}, {progress: 0.25, value: 1}, {progress: 0.72, value: 1}, {progress: 1, value: 1}}, dashOffset: []svgScalarStop{{progress: 0, value: 100}, {progress: 0.12, value: 100}, {progress: 0.72, value: 0}, {progress: 1, value: 0}}}},
+	{kind: 0, path: -1, motionPath: 2, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{10}, animation: svgAnimation{delay: 0, duration: 3, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.12, value: 0}, {progress: 0.72, value: 1}, {progress: 1, value: 1}}}},
+	{kind: 2, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 7, ry: 7, width: 0, height: 0, text: "", fill: render.RGBA(0.9764705882352941, 0.8862745098039215, 0.6862745098039216, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: -7, Y: -7}, Max: math2d.Vec2{X: 7, Y: 7}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
 }
 
 // Append renders the SVG presentation while reusing buffers retained by w.
@@ -243,25 +394,69 @@ func (w *VectorSceneWorkspace) Append(timeline anim.Timeline, viewport math2d.Re
 	if w == nil {
 		return AppendVectorScene(nil, timeline, viewport, resources)
 	}
-	w.commands = appendVectorScene(w.commands[:0], timeline, viewport, resources, w.fills[:], w.strokes[:])
+	if cap(w.commands) < VectorSceneAssetMetrics.CommandCapacity {
+		w.commands = make([]render.Command, 0, VectorSceneAssetMetrics.CommandCapacity)
+	}
+	scale := vectorSceneScale(viewport)
+	w.lod = svgLODWithHysteresis(w.lod, w.lodReady, scale)
+	w.lodReady = true
+	w.frameMetrics = VectorSceneFrameMetrics{LOD: w.lod, Tolerance: svgLODTolerance(w.lod)}
+	w.commands = appendVectorScene(
+		w.commands[:0], timeline, viewport, resources, &w.builder,
+		w.fills[:], w.strokes[:], w.frameMetrics.Tolerance, &w.frameMetrics,
+	)
 	return w.commands
+}
+
+// FrameMetrics returns traversal and LOD data from the latest Append call.
+func (w *VectorSceneWorkspace) FrameMetrics() VectorSceneFrameMetrics {
+	if w == nil {
+		return VectorSceneFrameMetrics{}
+	}
+	return w.frameMetrics
 }
 
 // AppendVectorScene appends the SVG presentation at timeline time into dst.
 func AppendVectorScene(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources VectorSceneResources) []render.Command {
-	return appendVectorScene(dst, timeline, viewport, resources, nil, nil)
+	scale := vectorSceneScale(viewport)
+	return appendVectorScene(
+		dst, timeline, viewport, resources, nil, nil, nil,
+		svgLODTolerance(svgLOD(scale)), nil,
+	)
 }
 
-func appendVectorScene(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources VectorSceneResources, fillWorkspaces []vector.FillWorkspace, strokeWorkspaces []vector.StrokeWorkspace) []render.Command {
-	var builder render.Builder
+func vectorSceneScale(viewport math2d.Rect) float64 {
+	return math.Min(viewport.Width()/320, viewport.Height()/180)
+}
+
+func appendVectorScene(
+	dst []render.Command,
+	timeline anim.Timeline,
+	viewport math2d.Rect,
+	resources VectorSceneResources,
+	builder *render.Builder,
+	fillWorkspaces []vector.FillWorkspace,
+	strokeWorkspaces []vector.StrokeWorkspace,
+	tolerance float64,
+	frameMetrics *VectorSceneFrameMetrics,
+) []render.Command {
+	if builder == nil {
+		builder = &render.Builder{}
+	}
 	builder.Reset(dst)
-	scale := math.Min(viewport.Width()/320, viewport.Height()/180)
+	scale := vectorSceneScale(viewport)
 	offset := math2d.Vec2{
 		X: viewport.Min.X + (viewport.Width()-320*scale)*0.5 - 0*scale,
 		Y: viewport.Min.Y + (viewport.Height()-180*scale)*0.5 - 0*scale,
 	}
 	builder.Push(render.Group{Transform: math2d.Translate(offset).Mul(math2d.Scale(math2d.Vec2{X: scale, Y: scale})), Opacity: 1})
-	appendSVGNode(&builder, vectorSceneNodes, 0, timeline, resources.font, fillWorkspaces, strokeWorkspaces)
+	// Bounds checks pay for themselves on larger node sets. Small assets skip
+	// the per-node matrix/bounds work and retain the straight traversal.
+	appendSVGNode(
+		builder, vectorSceneNodes, 0, timeline, resources.font,
+		fillWorkspaces, strokeWorkspaces, tolerance,
+		math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 320, Y: 180}}, VectorSceneAssetMetrics.Nodes >= 32, math2d.Identity(), frameMetrics,
+	)
 	builder.Pop()
 	return builder.Commands()
 }

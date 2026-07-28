@@ -34,6 +34,7 @@ func Generate(document *Document, options GenerateOptions) ([]byte, error) {
 	if err := g.collect(); err != nil {
 		return nil, err
 	}
+	g.prepareNodeMetadata()
 	source, err := g.emit()
 	if err != nil {
 		return nil, err
@@ -84,6 +85,9 @@ type genNode struct {
 	pathLength float64
 	lineCap    string
 	lineJoin   string
+	bounds     math2d.Rect
+	hasBounds  bool
+	textMetric render.TextMetrics
 	animation  genAnimation
 }
 
@@ -400,17 +404,59 @@ func (g *generator) emit() ([]byte, error) {
 		fmt.Fprintf(&out, "\t%s render.FontID // manifest font %q\n", font.field, font.manifest)
 	}
 	out.WriteString("}\n\n")
+	commands, textNodes, textRunes, maxDepth := g.assetMetrics()
+	fmt.Fprintf(&out, `// %sMetrics describes the generated asset's structural cost.
+type %sMetrics struct {
+	Nodes, Paths, TextNodes, TextRunes, MaxDepth, CommandCapacity int
+}
+
+// %sBudget sets optional structural limits. Zero limits are disabled.
+type %sBudget struct {
+	MaxNodes, MaxPaths, MaxTextNodes, MaxTextRunes, MaxDepth, MaxCommands int
+}
+
+// WithinBudget reports whether the generated asset fits every enabled limit.
+func (m %sMetrics) WithinBudget(b %sBudget) bool {
+	return (b.MaxNodes <= 0 || m.Nodes <= b.MaxNodes) &&
+		(b.MaxPaths <= 0 || m.Paths <= b.MaxPaths) &&
+		(b.MaxTextNodes <= 0 || m.TextNodes <= b.MaxTextNodes) &&
+		(b.MaxTextRunes <= 0 || m.TextRunes <= b.MaxTextRunes) &&
+		(b.MaxDepth <= 0 || m.MaxDepth <= b.MaxDepth) &&
+		(b.MaxCommands <= 0 || m.CommandCapacity <= b.MaxCommands)
+}
+
+// %sAssetMetrics is the compile-time structural cost of this SVG.
+var %sAssetMetrics = %sMetrics{
+	Nodes: %d, Paths: %d, TextNodes: %d, TextRunes: %d,
+	MaxDepth: %d, CommandCapacity: %d,
+}
+
+// %sFrameMetrics describes the most recent workspace-backed traversal.
+type %sFrameMetrics = svgFrameMetrics
+
+`,
+		g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name, g.options.Name,
+		len(g.nodes), len(g.paths), textNodes, textRunes, maxDepth, commands,
+		g.options.Name, g.options.Name,
+	)
 	fmt.Fprintf(&out, `// %sWorkspace retains generated command and vector mesh buffers between
 // sequential frames. The returned commands remain valid only until the next
 // call to Append on the same workspace. A workspace must not be used
 // concurrently.
 type %sWorkspace struct {
 	commands []render.Command
+	builder render.Builder
 	fills [%d]vector.FillWorkspace
 	strokes [%d]vector.StrokeWorkspace
+	lod uint8
+	lodReady bool
+	frameMetrics %sFrameMetrics
 }
 
-`, g.options.Name, g.options.Name, len(g.nodes), len(g.nodes))
+`, g.options.Name, g.options.Name, len(g.nodes), len(g.nodes), g.options.Name)
 	g.emitRuntime(&out)
 	for index, path := range g.paths {
 		g.emitPath(&out, index, path)
@@ -425,35 +471,89 @@ func (w *%sWorkspace) Append(timeline anim.Timeline, viewport math2d.Rect, resou
 	if w == nil {
 		return Append%s(nil, timeline, viewport, resources)
 	}
-	w.commands = append%s(w.commands[:0], timeline, viewport, resources, w.fills[:], w.strokes[:])
+	if cap(w.commands) < %sAssetMetrics.CommandCapacity {
+		w.commands = make([]render.Command, 0, %sAssetMetrics.CommandCapacity)
+	}
+	scale := %sScale(viewport)
+	w.lod = svgLODWithHysteresis(w.lod, w.lodReady, scale)
+	w.lodReady = true
+	w.frameMetrics = %sFrameMetrics{LOD: w.lod, Tolerance: svgLODTolerance(w.lod)}
+	w.commands = append%s(
+		w.commands[:0], timeline, viewport, resources, &w.builder,
+		w.fills[:], w.strokes[:], w.frameMetrics.Tolerance, &w.frameMetrics,
+	)
 	return w.commands
 }
 
-// Append%s appends the SVG presentation at timeline time into dst.
-func Append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources %sResources) []render.Command {
-	return append%s(dst, timeline, viewport, resources, nil, nil)
+// FrameMetrics returns traversal and LOD data from the latest Append call.
+func (w *%sWorkspace) FrameMetrics() %sFrameMetrics {
+	if w == nil {
+		return %sFrameMetrics{}
+	}
+	return w.frameMetrics
 }
 
-func append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources %sResources, fillWorkspaces []vector.FillWorkspace, strokeWorkspaces []vector.StrokeWorkspace) []render.Command {
-	var builder render.Builder
+	`, g.options.Name, g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name, unexportedIdentifier(g.options.Name),
+		g.options.Name, g.options.Name, g.options.Name, g.options.Name, g.options.Name,
+	)
+	fmt.Fprintf(&out, `// Append%s appends the SVG presentation at timeline time into dst.
+func Append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources %sResources) []render.Command {
+	scale := %sScale(viewport)
+	return append%s(
+		dst, timeline, viewport, resources, nil, nil, nil,
+		svgLODTolerance(svgLOD(scale)), nil,
+	)
+}
+
+func %sScale(viewport math2d.Rect) float64 {
+	return math.Min(viewport.Width()/%s, viewport.Height()/%s)
+}
+
+`, g.options.Name, g.options.Name, g.options.Name,
+		unexportedIdentifier(g.options.Name), g.options.Name,
+		unexportedIdentifier(g.options.Name),
+		float(g.document.ViewBox.Width()), float(g.document.ViewBox.Height()),
+	)
+	fmt.Fprintf(&out, `func append%s(
+	dst []render.Command,
+	timeline anim.Timeline,
+	viewport math2d.Rect,
+	resources %sResources,
+	builder *render.Builder,
+	fillWorkspaces []vector.FillWorkspace,
+	strokeWorkspaces []vector.StrokeWorkspace,
+	tolerance float64,
+	frameMetrics *%sFrameMetrics,
+) []render.Command {
+	if builder == nil {
+		builder = &render.Builder{}
+	}
 	builder.Reset(dst)
-	scale := math.Min(viewport.Width()/%s, viewport.Height()/%s)
+	scale := %sScale(viewport)
 	offset := math2d.Vec2{
 		X: viewport.Min.X + (viewport.Width()-%s*scale)*0.5 - %s*scale,
 		Y: viewport.Min.Y + (viewport.Height()-%s*scale)*0.5 - %s*scale,
 	}
 	builder.Push(render.Group{Transform: math2d.Translate(offset).Mul(math2d.Scale(math2d.Vec2{X: scale, Y: scale})), Opacity: 1})
-	appendSVGNode(&builder, %sNodes, 0, timeline, resources.font, fillWorkspaces, strokeWorkspaces)
+	// Bounds checks pay for themselves on larger node sets. Small assets skip
+	// the per-node matrix/bounds work and retain the straight traversal.
+	appendSVGNode(
+		builder, %sNodes, 0, timeline, resources.font,
+		fillWorkspaces, strokeWorkspaces, tolerance,
+		%s, %sAssetMetrics.Nodes >= 32, math2d.Identity(), frameMetrics,
+	)
 	builder.Pop()
 	return builder.Commands()
 }
-`, g.options.Name, g.options.Name, g.options.Name, g.options.Name,
-		g.options.Name, g.options.Name, g.options.Name, g.options.Name,
-		g.options.Name, g.options.Name,
-		float(g.document.ViewBox.Width()), float(g.document.ViewBox.Height()),
+`, g.options.Name, g.options.Name, g.options.Name,
+		unexportedIdentifier(g.options.Name),
 		float(g.document.ViewBox.Width()), float(g.document.ViewBox.Min.X),
 		float(g.document.ViewBox.Height()), float(g.document.ViewBox.Min.Y),
-		unexportedIdentifier(g.options.Name))
+		unexportedIdentifier(g.options.Name),
+		rectExpression(g.document.ViewBox),
+		g.options.Name,
+	)
 	// Resources may have multiple fonts; emit a resolver method on the generated type.
 	fmt.Fprintf(&out, "\nfunc (r %sResources) font(field uint16) render.FontID {\n\tswitch field {\n", g.options.Name)
 	for index, font := range g.fonts {
@@ -488,9 +588,75 @@ type svgNode struct {
 	align render.TextAlign
 	transform math2d.Affine
 	origin math2d.Vec2
+	bounds math2d.Rect
+	textMetrics render.TextMetrics
+	hasBounds bool
 	lineCap vector.LineCap
 	lineJoin vector.LineJoin
 	animation svgAnimation
+}
+
+type svgFrameMetrics struct {
+	VisitedNodes, CulledNodes, EmittedCommands int
+	LOD uint8
+	Tolerance float64
+}
+
+func svgLOD(scale float64) uint8 {
+	switch {
+	case scale < 0.75:
+		return 0
+	case scale > 1.5:
+		return 2
+	default:
+		return 1
+	}
+}
+
+func svgLODWithHysteresis(current uint8, ready bool, scale float64) uint8 {
+	if !ready {
+		return svgLOD(scale)
+	}
+	switch current {
+	case 0:
+		if scale > 0.85 { return 1 }
+	case 1:
+		if scale < 0.65 { return 0 }
+		if scale > 1.65 { return 2 }
+	case 2:
+		if scale < 1.35 { return 1 }
+	default:
+		return svgLOD(scale)
+	}
+	return current
+}
+
+func svgLODTolerance(lod uint8) float64 {
+	switch lod {
+	case 0:
+		return 0.5
+	case 2:
+		return 0.0625
+	default:
+		return 0.25
+	}
+}
+
+func svgTransformRect(rect math2d.Rect, transform math2d.Affine) math2d.Rect {
+	a := transform.Apply(rect.Min)
+	b := transform.Apply(math2d.Vec2{X: rect.Max.X, Y: rect.Min.Y})
+	c := transform.Apply(rect.Max)
+	d := transform.Apply(math2d.Vec2{X: rect.Min.X, Y: rect.Max.Y})
+	return math2d.Rect{
+		Min: math2d.Vec2{
+			X: math.Min(math.Min(a.X, b.X), math.Min(c.X, d.X)),
+			Y: math.Min(math.Min(a.Y, b.Y), math.Min(c.Y, d.Y)),
+		},
+		Max: math2d.Vec2{
+			X: math.Max(math.Max(a.X, b.X), math.Max(c.X, d.X)),
+			Y: math.Max(math.Max(a.Y, b.Y), math.Max(c.Y, d.Y)),
+		},
+	}
 }
 
 func svgScalar(t anim.Timeline, animation svgAnimation, stops []svgScalarStop, fallback float64) float64 {
@@ -537,7 +703,15 @@ func appendSVGNode(
 	font func(uint16) render.FontID,
 	fillWorkspaces []vector.FillWorkspace,
 	strokeWorkspaces []vector.StrokeWorkspace,
+	tolerance float64,
+	viewBox math2d.Rect,
+	cull bool,
+	parentTransform math2d.Affine,
+	frameMetrics *svgFrameMetrics,
 ) {
+	if frameMetrics != nil {
+		frameMetrics.VisitedNodes++
+	}
 	node := nodes[index]
 	opacity := node.opacity
 	if len(node.animation.opacity) != 0 {
@@ -554,32 +728,50 @@ func appendSVGNode(
 	}
 	if node.motionPath >= 0 {
 		progress := svgScalar(timeline, node.animation, node.animation.distance, 0)
-		point, _, err := svgPaths[node.motionPath].PointAt(progress, 0.25)
+		point, _, err := svgPaths[node.motionPath].PointAt(progress, tolerance)
 		if err != nil { panic(err) }
 		transform = math2d.Translate(point).Mul(transform)
+	}
+	effectiveTransform := parentTransform
+	if cull {
+		effectiveTransform = parentTransform.Mul(transform)
+	}
+	if cull && len(node.children) == 0 && node.hasBounds &&
+		!svgTransformRect(node.bounds, effectiveTransform).TouchesOrOverlaps(viewBox) {
+		if frameMetrics != nil {
+			frameMetrics.CulledNodes++
+		}
+		return
 	}
 	builder.Push(render.Group{Transform: transform, Opacity: opacity})
 	base := render.BaseCommand{}
 	switch node.kind {
 	case 1:
 		builder.Add(render.DrawRect{BaseCommand: base, Rect: math2d.NewRect(math2d.Vec2{X: node.x, Y: node.y}, math2d.Vec2{X: node.width, Y: node.height}), Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth, CornerRadius: node.rx})
+		if frameMetrics != nil { frameMetrics.EmittedCommands++ }
 	case 2:
 		builder.Add(render.DrawCircle{BaseCommand: base, Center: math2d.Vec2{X: node.x, Y: node.y}, Radius: node.rx, Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth})
+		if frameMetrics != nil { frameMetrics.EmittedCommands++ }
 	case 3:
 		builder.Add(render.DrawEllipse{BaseCommand: base, Center: math2d.Vec2{X: node.x, Y: node.y}, RadiusX: node.rx, RadiusY: node.ry, Fill: node.fill, Stroke: node.stroke, StrokeWidth: node.strokeWidth})
+		if frameMetrics != nil { frameMetrics.EmittedCommands++ }
 	case 4:
 		builder.Add(render.DrawLine{BaseCommand: base, From: math2d.Vec2{X: node.x, Y: node.y}, To: math2d.Vec2{X: node.x2, Y: node.y2}, Width: node.strokeWidth, Color: node.stroke})
+		if frameMetrics != nil { frameMetrics.EmittedCommands++ }
 	case 5:
 		if node.fill.A != 0 {
 			var commands []render.Command
 			var err error
 			if fillWorkspaces == nil {
-				commands, err = svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25})
+				commands, err = svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: tolerance})
 			} else {
-				commands, err = svgPaths[node.path].AppendFillWithWorkspace(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25}, &fillWorkspaces[index])
+				commands, err = svgPaths[node.path].AppendFillWithWorkspace(nil, base, vector.FillStyle{Color: node.fill, Tolerance: tolerance}, &fillWorkspaces[index])
 			}
 			if err != nil { panic(err) }
-			for _, command := range commands { builder.Add(command) }
+			for _, command := range commands {
+				builder.Add(command)
+				if frameMetrics != nil { frameMetrics.EmittedCommands++ }
+			}
 		}
 		if node.stroke.A != 0 && node.strokeWidth > 0 {
 			trimEnd := 1.0
@@ -589,17 +781,27 @@ func appendSVGNode(
 			var commands []render.Command
 			var err error
 			if strokeWorkspaces == nil {
-				commands, err = svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25})
+				commands, err = svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: tolerance})
 			} else {
-				commands, err = svgPaths[node.path].AppendStrokeWithWorkspace(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25}, &strokeWorkspaces[index])
+				commands, err = svgPaths[node.path].AppendStrokeWithWorkspace(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: tolerance}, &strokeWorkspaces[index])
 			}
 			if err != nil { panic(err) }
-			for _, command := range commands { builder.Add(command) }
+			for _, command := range commands {
+				builder.Add(command)
+				if frameMetrics != nil { frameMetrics.EmittedCommands++ }
+			}
 		}
 	case 6:
-		builder.Add(render.DrawText{BaseCommand: base, Position: math2d.Vec2{X: node.x, Y: node.y}, Text: node.text, Color: node.fill, Size: node.fontSize, Font: font(node.font), LetterSpacing: node.spacing, Align: node.align})
+		builder.Add(render.DrawText{BaseCommand: base, Position: math2d.Vec2{X: node.x, Y: node.y}, Text: node.text, Color: node.fill, Size: node.fontSize, Font: font(node.font), Metrics: node.textMetrics, LetterSpacing: node.spacing, Align: node.align})
+		if frameMetrics != nil { frameMetrics.EmittedCommands++ }
 	}
-	for _, child := range node.children { appendSVGNode(builder, nodes, int(child), timeline, font, fillWorkspaces, strokeWorkspaces) }
+	for _, child := range node.children {
+		appendSVGNode(
+			builder, nodes, int(child), timeline, font,
+			fillWorkspaces, strokeWorkspaces, tolerance,
+			viewBox, cull, effectiveTransform, frameMetrics,
+		)
+	}
 	builder.Pop()
 }
 
@@ -633,14 +835,48 @@ func (g *generator) emitPath(out *bytes.Buffer, index int, commands []PathComman
 	out.WriteString("\tpath, err := builder.Build()\n\tif err != nil { panic(err) }\n\treturn path\n}()\n\n")
 }
 
+func (g *generator) assetMetrics() (commands, textNodes, textRunes, maxDepth int) {
+	for _, node := range g.nodes {
+		switch node.kind {
+		case "rect", "circle", "ellipse", "line", "text", "tspan":
+			commands++
+		case "polyline", "polygon", "path":
+			if node.fill.A > 0 {
+				commands++
+			}
+			if node.stroke.A > 0 && node.strokeW > 0 {
+				commands++
+			}
+		}
+		if node.kind == "text" || node.kind == "tspan" {
+			textNodes++
+			textRunes += node.textMetric.RuneCount
+		}
+	}
+	var visit func(int, int)
+	visit = func(index, depth int) {
+		if depth > maxDepth {
+			maxDepth = depth
+		}
+		for _, child := range g.nodes[index].children {
+			visit(child, depth+1)
+		}
+	}
+	if len(g.nodes) != 0 {
+		visit(0, 1)
+	}
+	return commands, textNodes, textRunes, maxDepth
+}
+
 func (g *generator) emitNode(out *bytes.Buffer, node genNode) {
 	kind := map[string]int{"rect": 1, "circle": 2, "ellipse": 3, "line": 4, "polyline": 5, "polygon": 5, "path": 5, "text": 6, "tspan": 6}[node.kind]
-	fmt.Fprintf(out, "\t{kind:%d, path:%d, motionPath:%d, x:%s, y:%s, x2:%s, y2:%s, rx:%s, ry:%s, width:%s, height:%s, text:%q, fill:%s, stroke:%s, strokeWidth:%s, fontSize:%s, spacing:%s, opacity:%s, pathLength:%s, font:%d, align:%s, transform:%s, origin:math2d.Vec2{X:%s,Y:%s}, lineCap:%s, lineJoin:%s",
+	fmt.Fprintf(out, "\t{kind:%d, path:%d, motionPath:%d, x:%s, y:%s, x2:%s, y2:%s, rx:%s, ry:%s, width:%s, height:%s, text:%q, fill:%s, stroke:%s, strokeWidth:%s, fontSize:%s, spacing:%s, opacity:%s, pathLength:%s, font:%d, align:%s, transform:%s, origin:math2d.Vec2{X:%s,Y:%s}, bounds:%s, textMetrics:%s, hasBounds:%t, lineCap:%s, lineJoin:%s",
 		kind, node.path, node.motionPath, float(node.x), float(node.y), float(node.x2), float(node.y2),
 		float(node.rx), float(node.ry), float(node.width), float(node.height), node.text,
 		colorExpression(node.fill), colorExpression(node.stroke), float(node.strokeW), float(node.fontSize),
 		float(node.spacing), float(node.opacity), float(node.pathLength), g.fontIndex(node.fontField),
 		alignExpression(node.align), affineExpression(node.transform), float(node.origin.X), float(node.origin.Y),
+		rectExpression(node.bounds), textMetricsExpression(node.textMetric), node.hasBounds,
 		node.lineCap, node.lineJoin)
 	if len(node.children) != 0 {
 		out.WriteString(", children: []uint16{")
@@ -703,6 +939,21 @@ func affineExpression(value math2d.Affine) string {
 		float(value.A), float(value.B), float(value.C), float(value.D), float(value.E), float(value.F))
 }
 
+func rectExpression(value math2d.Rect) string {
+	return fmt.Sprintf("math2d.Rect{Min:math2d.Vec2{X:%s,Y:%s},Max:math2d.Vec2{X:%s,Y:%s}}",
+		float(value.Min.X), float(value.Min.Y), float(value.Max.X), float(value.Max.Y))
+}
+
+func textMetricsExpression(value render.TextMetrics) string {
+	return fmt.Sprintf(
+		"render.TextMetrics{Size:math2d.Vec2{X:%s,Y:%s},NaturalWidth:%s,RuneCount:%d}",
+		float(value.Size.X),
+		float(value.Size.Y),
+		float(value.NaturalWidth),
+		value.RuneCount,
+	)
+}
+
 func alignExpression(value string) string {
 	switch value {
 	case "middle":
@@ -733,6 +984,107 @@ func lineJoinName(value string) string {
 		return "vector.JoinBevel"
 	default:
 		return "vector.JoinMiter"
+	}
+}
+
+func (g *generator) prepareNodeMetadata() {
+	for index := range g.nodes {
+		node := &g.nodes[index]
+		if node.kind == "text" || node.kind == "tspan" {
+			node.textMetric = render.MeasureTextMetrics(node.text, node.fontSize, node.spacing)
+		}
+		node.bounds, node.hasBounds = g.localNodeBounds(*node)
+	}
+}
+
+func (g *generator) localNodeBounds(node genNode) (math2d.Rect, bool) {
+	var bounds math2d.Rect
+	var ok bool
+	switch node.kind {
+	case "rect":
+		bounds = math2d.NewRect(
+			math2d.Vec2{X: node.x, Y: node.y},
+			math2d.Vec2{X: node.width, Y: node.height},
+		)
+		ok = node.width > 0 && node.height > 0
+	case "circle", "ellipse":
+		bounds = math2d.NewRect(
+			math2d.Vec2{X: node.x - node.rx, Y: node.y - node.ry},
+			math2d.Vec2{X: node.rx * 2, Y: node.ry * 2},
+		)
+		ok = node.rx > 0 && node.ry > 0
+	case "line":
+		bounds = rectAroundPoints(math2d.Vec2{X: node.x, Y: node.y}, math2d.Vec2{X: node.x2, Y: node.y2})
+		ok = node.x != node.x2 || node.y != node.y2
+	case "polyline", "polygon", "path":
+		if node.path >= 0 {
+			bounds, ok = pathControlBounds(g.paths[node.path])
+		}
+	case "text", "tspan":
+		metrics := node.textMetric
+		if metrics.RuneCount > 0 && metrics.Size.X > 0 && metrics.Size.Y > 0 {
+			left := node.x
+			switch node.align {
+			case "middle":
+				left -= metrics.Size.X * 0.5
+			case "end":
+				left -= metrics.Size.X
+			}
+			// SVG text uses an alphabetic baseline. One full canonical line
+			// above and a quarter-line below is conservative for culling.
+			bounds = math2d.Rect{
+				Min: math2d.Vec2{X: left, Y: node.y - metrics.Size.Y},
+				Max: math2d.Vec2{X: left + metrics.Size.X, Y: node.y + metrics.Size.Y*0.25},
+			}
+			ok = true
+		}
+	}
+	if ok && node.stroke.A > 0 && node.strokeW > 0 {
+		bounds = inflateRect(bounds, node.strokeW*0.5)
+	}
+	return bounds, ok
+}
+
+func pathControlBounds(commands []PathCommand) (math2d.Rect, bool) {
+	var min, max math2d.Vec2
+	found := false
+	include := func(point math2d.Vec2) {
+		if !found {
+			min, max, found = point, point, true
+			return
+		}
+		min.X = math.Min(min.X, point.X)
+		min.Y = math.Min(min.Y, point.Y)
+		max.X = math.Max(max.X, point.X)
+		max.Y = math.Max(max.Y, point.Y)
+	}
+	for _, command := range commands {
+		switch command.Verb {
+		case PathMove, PathLine:
+			include(command.P0)
+		case PathQuad:
+			include(command.P0)
+			include(command.P1)
+		case PathCubic:
+			include(command.P0)
+			include(command.P1)
+			include(command.P2)
+		}
+	}
+	return math2d.Rect{Min: min, Max: max}, found
+}
+
+func rectAroundPoints(a, b math2d.Vec2) math2d.Rect {
+	return math2d.Rect{
+		Min: math2d.Vec2{X: math.Min(a.X, b.X), Y: math.Min(a.Y, b.Y)},
+		Max: math2d.Vec2{X: math.Max(a.X, b.X), Y: math.Max(a.Y, b.Y)},
+	}
+}
+
+func inflateRect(rect math2d.Rect, amount float64) math2d.Rect {
+	return math2d.Rect{
+		Min: math2d.Vec2{X: rect.Min.X - amount, Y: rect.Min.Y - amount},
+		Max: math2d.Vec2{X: rect.Max.X + amount, Y: rect.Max.Y + amount},
 	}
 }
 
