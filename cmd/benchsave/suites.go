@@ -24,6 +24,12 @@ var benchSuites = []benchSuite{
 	{Name: "raster", Pkg: "./platform/raster", Bench: "."},
 	{Name: "tess", Pkg: "./internal/render/gpu/tess", Bench: "BenchmarkTess.*"},
 	{
+		Name:      "vectoranim",
+		Pkg:       "./examples/vectoranim",
+		Bench:     "BenchmarkVectorAnimation.*",
+		Benchtime: "500ms",
+	},
+	{
 		Name:      "particle",
 		Pkg:       "./particle",
 		Bench:     "BenchmarkEmitter(Step|Alive)$",
