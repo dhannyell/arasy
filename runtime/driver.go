@@ -5,8 +5,10 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/dhannyell/arasy/anim"
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
@@ -152,8 +154,40 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d.audioPort = AudioPort{audio: &d.audio}
 	d.texture = driverTexture{}
 	d.batchPort = BatchPort{batches: &d.batches}
+	d.splash = &splashPlayer{segments: buildSplashPlaylist(cfg)}
 	d.doReset()
 	return d
+}
+
+// buildSplashPlaylist assembles the boot splash playlist: the built-in
+// engine brand segment (unless disabled), followed by the manifest-declared
+// segments in order.
+func buildSplashPlaylist(cfg Config) []SplashSegment {
+	var segments []SplashSegment
+	if !cfg.DisableEngineSplash {
+		segments = append(segments, SplashSegment{
+			Content: func(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect) []render.Command {
+				return enginesplash.AppendArasySplash(dst, timeline, viewport, enginesplash.ArasySplashResources{})
+			},
+			MinTime:   enginesplash.EngineSplashMinTime,
+			Fade:      enginesplash.EngineSplashFade,
+			Skippable: true,
+		})
+	}
+	for _, decl := range cfg.Assets.Splash() {
+		segments = append(segments, SplashSegment{
+			Texture:   cfg.Assets.Texture(decl.Texture),
+			CellW:     decl.CellW,
+			CellH:     decl.CellH,
+			Columns:   decl.Columns,
+			Frames:    decl.Frames,
+			Rate:      decl.Rate,
+			MinTime:   decl.MinTime,
+			Fade:      decl.Fade,
+			Skippable: decl.Skippable,
+		})
+	}
+	return segments
 }
 
 // ApplyInput applies platform events before AdvanceTime or Step.

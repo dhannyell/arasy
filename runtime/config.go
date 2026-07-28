@@ -64,4 +64,10 @@ type Config struct {
 	// default, keeps particles in the main pass; software renderers ignore
 	// this field.
 	ParticleOffscreenScale float64
+
+	// DisableEngineSplash removes the built-in engine brand segment from the
+	// boot splash playlist. Zero value (false) shows the engine logo, as any
+	// commercial engine does by default; set true to skip straight to the
+	// manifest-declared segments (or straight to tick 0 if there are none).
+	DisableEngineSplash bool
 }
