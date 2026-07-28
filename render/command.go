@@ -111,8 +111,10 @@ type DrawText struct {
 	Color    Color
 	Size     float64
 	Font     FontID
-	Align    TextAlign
-	Baseline TextBaseline
+	// LetterSpacing adds world-space distance between adjacent glyphs.
+	LetterSpacing float64
+	Align         TextAlign
+	Baseline      TextBaseline
 
 	// Rotation is applied around Position, in radians. Zero keeps text
 	// unrotated.

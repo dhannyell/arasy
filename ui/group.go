@@ -43,9 +43,14 @@ func (u *UI) EndGroup() {
 	if offset == (math2d.Vec2{}) && alpha == 1 {
 		return
 	}
-	for i := frame.start; i < len(u.commands); i++ {
-		u.commands[i] = transformCommand(u.commands[i], offset, alpha)
+	var builder render.Builder
+	builder.Reset(u.commands[:frame.start])
+	builder.Push(render.Group{Transform: math2d.Translate(offset), Opacity: alpha})
+	for _, command := range u.commands[frame.start:] {
+		builder.Add(command)
 	}
+	builder.Pop()
+	u.commands = builder.Commands()
 }
 
 // offsetToWorld converts a displacement vector from the given
@@ -54,40 +59,4 @@ func (u *UI) offsetToWorld(offset math2d.Vec2, space Space) math2d.Vec2 {
 	origin := u.toWorld(math2d.Vec2{}, space)
 	moved := u.toWorld(offset, space)
 	return moved.Sub(origin)
-}
-
-// transformCommand returns cmd displaced by offset with its colors' alpha
-// multiplied. Unknown command types pass through untouched.
-func transformCommand(cmd render.Command, offset math2d.Vec2, alpha float64) render.Command {
-	switch c := cmd.(type) {
-	case render.DrawRect:
-		c.Rect = math2d.NewRect(c.Rect.Min.Add(offset), c.Rect.Size())
-		c.Fill = multiplyAlpha(c.Fill, alpha)
-		c.Stroke = multiplyAlpha(c.Stroke, alpha)
-		return c
-	case render.DrawCircle:
-		c.Center = c.Center.Add(offset)
-		c.Fill = multiplyAlpha(c.Fill, alpha)
-		c.Stroke = multiplyAlpha(c.Stroke, alpha)
-		return c
-	case render.DrawPoint:
-		c.Center = c.Center.Add(offset)
-		c.Color = multiplyAlpha(c.Color, alpha)
-		return c
-	case render.DrawLine:
-		c.From = c.From.Add(offset)
-		c.To = c.To.Add(offset)
-		c.Color = multiplyAlpha(c.Color, alpha)
-		return c
-	case render.DrawText:
-		c.Position = c.Position.Add(offset)
-		c.Color = multiplyAlpha(c.Color, alpha)
-		return c
-	case render.DrawArc:
-		c.Center = c.Center.Add(offset)
-		c.Color = multiplyAlpha(c.Color, alpha)
-		return c
-	default:
-		return cmd
-	}
 }

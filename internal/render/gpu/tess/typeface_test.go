@@ -156,7 +156,10 @@ func TestBuildTextRotationAndClipRemainFinite(t *testing.T) {
 		t.Fatalf("rotated clipped text produced %+v", runs)
 	}
 	label := decodeTextLabel(t, builder.TextLabelStream(), 0)
-	for _, pair := range [][2]float32{label.position, label.rotation, label.originBaseline, label.clipMin, label.clipMax} {
+	for _, pair := range [][2]float32{
+		label.position, label.transformAB, label.transformCD,
+		label.originBaseline, label.clipMin, label.clipMax,
+	} {
 		for _, value := range pair {
 			if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
 				t.Fatalf("non-finite label record %+v", label)

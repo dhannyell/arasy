@@ -16,11 +16,13 @@ type decodedTextGlyph struct {
 }
 
 type decodedTextLabel struct {
-	position, rotation [2]float32
-	originBaseline     [2]float32
-	scale              float32
-	clipMin, clipMax   [2]float32
-	tint               uint32
+	position         [2]float32
+	transformAB      [2]float32
+	transformCD      [2]float32
+	originBaseline   [2]float32
+	scale            float32
+	clipMin, clipMax [2]float32
+	tint             uint32
 }
 
 func decodeTextGlyph(t *testing.T, stream []byte, index int) decodedTextGlyph {
@@ -49,10 +51,11 @@ func decodeTextLabel(t *testing.T, stream []byte, index int) decodedTextLabel {
 		}
 	}
 	return decodedTextLabel{
-		position: vec(0), rotation: vec(8), originBaseline: vec(16),
-		scale:   math.Float32frombits(binary.LittleEndian.Uint32(stream[offset+24:])),
-		clipMin: vec(32), clipMax: vec(40),
-		tint: binary.LittleEndian.Uint32(stream[offset+48:]),
+		position: vec(0), transformAB: vec(8), transformCD: vec(16),
+		originBaseline: vec(24),
+		scale:          math.Float32frombits(binary.LittleEndian.Uint32(stream[offset+48:])),
+		clipMin:        vec(32), clipMax: vec(40),
+		tint: binary.LittleEndian.Uint32(stream[offset+52:]),
 	}
 }
 
@@ -112,8 +115,8 @@ func TestBuilderTextGlyphRecordsMatchLegacyTextQuads(t *testing.T) {
 			localX := label.originBaseline[0] + glyph.penX + (gpuMetric.offsetX+gpuMetric.width*0.5)*label.scale + corner[0]*halfX
 			localY := label.originBaseline[1] + (gpuMetric.offsetY+gpuMetric.height*0.5)*label.scale + corner[1]*halfY
 			screen := math2d.Vec2{
-				X: float64(label.position[0] + localX*label.rotation[0] - localY*label.rotation[1]),
-				Y: float64(label.position[1] + localX*label.rotation[1] + localY*label.rotation[0]),
+				X: float64(label.position[0] + localX*label.transformAB[0] + localY*label.transformCD[0]),
+				Y: float64(label.position[1] + localX*label.transformAB[1] + localY*label.transformCD[1]),
 			}
 			want := screenToClip(ctx, screen)
 			got := legacy.Vertices[glyphIndex*6+cornerIndex]
@@ -136,6 +139,21 @@ func TestBuilderTextGlyphRecordsMatchLegacyTextQuads(t *testing.T) {
 			assertFloat32(t, got.B, 0.75)
 			assertFloat32(t, got.A, 0.8)
 		}
+	}
+}
+
+func TestBuilderTextLabelCarriesFullAffine(t *testing.T) {
+	atlas := NewAtlas()
+	cmd := render.DrawText{
+		BaseCommand: render.BaseCommand{Transform: math2d.Shear(0.5, 0.25)},
+		Position:    math2d.Vec2{X: 20, Y: 20}, Text: "A",
+		Color: render.RGBA(1, 1, 1, 1), Size: 12,
+	}
+	var builder Builder
+	builder.Build(Frame{Camera: testCamera(), Commands: []render.Command{cmd}}, 100, 100, atlas, nil)
+	label := decodeTextLabel(t, builder.TextLabelStream(), 0)
+	if label.transformAB == [2]float32{1, 0} && label.transformCD == [2]float32{0, 1} {
+		t.Fatalf("affine transform was lost: %+v", label)
 	}
 }
 

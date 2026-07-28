@@ -33,7 +33,7 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		if size <= 0 {
 			size = nativeHeight
 		}
-		measured = render.MeasureText(cmd.Text, size)
+		measured = render.MeasureTextSpaced(cmd.Text, size, cmd.LetterSpacing)
 		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
 	}
 
@@ -49,6 +49,11 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		glyphs = append(glyphs, glyph)
 		destWidth += glyph.Advance * scale
 	}
+	glyphCount := utf8.RuneCountInString(cmd.Text)
+	spacing := c.cam.WorldScalarToScreen(cmd.LetterSpacing)
+	if !builtin && glyphCount > 1 {
+		destWidth += float64(glyphCount-1) * spacing
+	}
 	m.glyphScratch = glyphs
 	destHeight := nativeHeight * scale
 	if builtin {
@@ -60,19 +65,23 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 	}
 
 	clipMin, clipMax := textClip(c, cmd)
-	sin, cos := textRotation(cmd.Rotation)
+	transform := textScreenTransform(c.cam, cmd)
 	topY := textTopY(cmd.Baseline, destHeight, nativeAscent, nativeHeight)
 	layout := textLabelLayout{
-		position: c.cam.WorldToScreen(cmd.Position),
+		position: transform.position,
 		originX:  textOriginX(cmd.Align, destWidth),
 		topY:     topY, baselineY: topY + nativeAscent*scale,
-		scale: scale, clipMin: clipMin, clipMax: clipMax, cos: cos, sin: sin,
+		scale: scale, clipMin: clipMin, clipMax: clipMax,
+		a: transform.a, b: transform.b, cc: transform.c, d: transform.d,
 	}
 	baseline := layout.position.Y + layout.baselineY
 	penX := layout.position.X + layout.originX
-	for _, glyph := range glyphs {
+	for index, glyph := range glyphs {
 		if glyph.Width <= 0 || glyph.Height <= 0 {
 			penX += glyph.Advance * scale
+			if index+1 < len(glyphs) {
+				penX += spacing
+			}
 			continue
 		}
 
@@ -101,6 +110,9 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 
 		pushTextQuad(m, c, a, b, cc, d, glyph.UV, cmd.Color)
 		penX += advance
+		if index+1 < len(glyphs) {
+			penX += spacing
+		}
 	}
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
@@ -134,7 +146,7 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 		if size <= 0 {
 			size = nativeHeight
 		}
-		measured := render.MeasureText(cmd.Text, size)
+		measured := render.MeasureTextSpaced(cmd.Text, size, cmd.LetterSpacing)
 		glyphCount := utf8.RuneCountInString(cmd.Text)
 		if glyphCount == 0 {
 			return 0
@@ -143,7 +155,10 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 		destHeight = c.cam.WorldScalarToScreen(measured.Y)
 		scale = destHeight / nativeHeight
 		advance := destWidth / float64(glyphCount)
+		spacing := c.cam.WorldScalarToScreen(cmd.LetterSpacing)
+		advance -= spacing * float64(glyphCount-1) / float64(glyphCount)
 		penX := 0.0
+		index := 0
 		for _, r := range cmd.Text {
 			glyph := atlas.glyph(r)
 			if glyph.Width <= 0 || glyph.Height <= 0 {
@@ -154,8 +169,13 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 				penX: float32(penX), metric: glyph.index, label: labelIndex,
 			})
 			penX += advance
+			if index+1 < glyphCount {
+				penX += spacing
+			}
+			index++
 		}
 	} else {
+		spacing := c.cam.WorldScalarToScreen(cmd.LetterSpacing)
 		ascii := true
 		for i := 0; i < len(cmd.Text); i++ {
 			if cmd.Text[i] < atlasFirstRune || cmd.Text[i] > atlasLastRune {
@@ -169,10 +189,15 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 				})
 			}
 			destWidth += glyph.Advance
+			if i+1 < len(cmd.Text) {
+				destWidth += spacing
+			}
 		}
 		if !ascii {
 			*dst = (*dst)[:start]
 			destWidth = 0
+			runeCount := utf8.RuneCountInString(cmd.Text)
+			index := 0
 			for _, r := range cmd.Text {
 				glyph := atlas.glyph(r)
 				if glyph.Width > 0 && glyph.Height > 0 {
@@ -181,6 +206,10 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 					})
 				}
 				destWidth += glyph.Advance
+				if index+1 < runeCount {
+					destWidth += spacing
+				}
+				index++
 			}
 		}
 	}
@@ -190,11 +219,11 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 	}
 
 	clipMin, clipMax := textClip(c, cmd)
-	sin, cos := textRotation(cmd.Rotation)
+	transform := textScreenTransform(c.cam, cmd)
 	topY := textTopY(cmd.Baseline, destHeight, nativeAscent, nativeHeight)
 	appendTextLabel(
-		labels, c.cam.WorldToScreen(cmd.Position), textOriginX(cmd.Align, destWidth),
-		topY+nativeAscent*scale, scale, clipMin, clipMax, cos, sin, cmd.Color,
+		labels, transform, textOriginX(cmd.Align, destWidth),
+		topY+nativeAscent*scale, scale, clipMin, clipMax, cmd.Color,
 	)
 	return len(*dst) - start
 }
@@ -205,7 +234,7 @@ type textLabelLayout struct {
 	topY, baselineY  float64
 	scale            float64
 	clipMin, clipMax math2d.Vec2
-	cos, sin         float64
+	a, b, cc, d      float64
 }
 
 func textOriginX(align render.TextAlign, width float64) float64 {
@@ -244,16 +273,38 @@ func (l textLabelLayout) rotate(point math2d.Vec2) math2d.Vec2 {
 	dx := point.X - l.position.X
 	dy := point.Y - l.position.Y
 	return math2d.Vec2{
-		X: l.position.X + dx*l.cos - dy*l.sin,
-		Y: l.position.Y + dx*l.sin + dy*l.cos,
+		X: l.position.X + dx*l.a + dy*l.cc,
+		Y: l.position.Y + dx*l.b + dy*l.d,
 	}
 }
 
-func appendTextLabel(labels *[]textLabelRecord, position math2d.Vec2, originX, baselineY, scale float64, clipMin, clipMax math2d.Vec2, cos, sin float64, color render.Color) uint32 {
+type textTransform struct {
+	position   math2d.Vec2
+	a, b, c, d float64
+}
+
+func textScreenTransform(camera render.Camera, cmd render.DrawText) textTransform {
+	sin, cos := textRotation(cmd.Rotation)
+	mapPoint := func(offset math2d.Vec2) math2d.Vec2 {
+		rotated := math2d.Vec2{
+			X: offset.X*cos - offset.Y*sin,
+			Y: offset.X*sin + offset.Y*cos,
+		}
+		world := camera.ScreenToWorld(camera.WorldToScreen(cmd.Position).Add(rotated))
+		return camera.WorldToScreen(cmd.Transform.Apply(world))
+	}
+	origin := mapPoint(math2d.Vec2{})
+	x := mapPoint(math2d.Vec2{X: 1}).Sub(origin)
+	y := mapPoint(math2d.Vec2{Y: 1}).Sub(origin)
+	return textTransform{position: origin, a: x.X, b: x.Y, c: y.X, d: y.Y}
+}
+
+func appendTextLabel(labels *[]textLabelRecord, transform textTransform, originX, baselineY, scale float64, clipMin, clipMax math2d.Vec2, color render.Color) uint32 {
 	index := uint32(len(*labels))
 	*labels = append(*labels, textLabelRecord{
-		positionX: float32(position.X), positionY: float32(position.Y),
-		cos: float32(cos), sin: float32(sin),
+		positionX: float32(transform.position.X), positionY: float32(transform.position.Y),
+		transformA: float32(transform.a), transformB: float32(transform.b),
+		transformC: float32(transform.c), transformD: float32(transform.d),
 		originX: float32(originX), baselineY: float32(baselineY), scale: float32(scale),
 		clipMinX: float32(clipMin.X), clipMinY: float32(clipMin.Y),
 		clipMaxX: float32(clipMax.X), clipMaxY: float32(clipMax.Y),

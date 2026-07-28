@@ -15,23 +15,29 @@ func TestEndGroupAppliesOffsetToAllCommandTypes(t *testing.T) {
 	u.commands = append(u.commands, sampleCommands()...)
 	u.EndGroup()
 
-	if got := u.commands[0].(render.DrawRect).Rect.Min; got != (math2d.Vec2{X: 11, Y: 22}) {
+	rect := u.commands[0].(render.DrawRect)
+	if got := rect.Transform.Apply(rect.Rect.Min); got != (math2d.Vec2{X: 11, Y: 22}) {
 		t.Fatalf("DrawRect min = %+v, want (11,22)", got)
 	}
-	if got := u.commands[1].(render.DrawCircle).Center; got != (math2d.Vec2{X: 13, Y: 24}) {
+	circle := u.commands[1].(render.DrawCircle)
+	if got := circle.Transform.Apply(circle.Center); got != (math2d.Vec2{X: 13, Y: 24}) {
 		t.Fatalf("DrawCircle center = %+v, want (13,24)", got)
 	}
-	if got := u.commands[2].(render.DrawPoint).Center; got != (math2d.Vec2{X: 15, Y: 26}) {
+	point := u.commands[2].(render.DrawPoint)
+	if got := point.Transform.Apply(point.Center); got != (math2d.Vec2{X: 15, Y: 26}) {
 		t.Fatalf("DrawPoint center = %+v, want (15,26)", got)
 	}
 	line := u.commands[3].(render.DrawLine)
-	if line.From != (math2d.Vec2{X: 17, Y: 28}) || line.To != (math2d.Vec2{X: 19, Y: 30}) {
+	if line.Transform.Apply(line.From) != (math2d.Vec2{X: 17, Y: 28}) ||
+		line.Transform.Apply(line.To) != (math2d.Vec2{X: 19, Y: 30}) {
 		t.Fatalf("DrawLine = %+v, want from (17,28) to (19,30)", line)
 	}
-	if got := u.commands[4].(render.DrawText).Position; got != (math2d.Vec2{X: 21, Y: 32}) {
+	text := u.commands[4].(render.DrawText)
+	if got := text.Transform.Apply(text.Position); got != (math2d.Vec2{X: 21, Y: 32}) {
 		t.Fatalf("DrawText position = %+v, want (21,32)", got)
 	}
-	if got := u.commands[5].(render.DrawArc).Center; got != (math2d.Vec2{X: 23, Y: 34}) {
+	arc := u.commands[5].(render.DrawArc)
+	if got := arc.Transform.Apply(arc.Center); got != (math2d.Vec2{X: 23, Y: 34}) {
 		t.Fatalf("DrawArc center = %+v, want (23,34)", got)
 	}
 }
@@ -92,11 +98,11 @@ func TestNestedGroupsCompose(t *testing.T) {
 	u.EndGroup()
 
 	outerOnly := u.commands[0].(render.DrawPoint)
-	if outerOnly.Center != (math2d.Vec2{X: 11, Y: 2}) || !closeEnough(outerOnly.Color.A, 0.6) {
+	if outerOnly.Transform.Apply(outerOnly.Center) != (math2d.Vec2{X: 11, Y: 2}) || !closeEnough(outerOnly.Color.A, 0.6) {
 		t.Fatalf("outer-only command = %+v, want center (11,2) alpha 0.6", outerOnly)
 	}
 	nested := u.commands[1].(render.DrawPoint)
-	if nested.Center != (math2d.Vec2{X: 13, Y: 9}) || !closeEnough(nested.Color.A, 0.3) {
+	if nested.Transform.Apply(nested.Center) != (math2d.Vec2{X: 13, Y: 9}) || !closeEnough(nested.Color.A, 0.3) {
 		t.Fatalf("nested command = %+v, want center (13,9) alpha 0.3", nested)
 	}
 }
@@ -132,10 +138,12 @@ func TestGroupOffsetRespectsSpace(t *testing.T) {
 	screenUI.commands = append(screenUI.commands, rect)
 	screenUI.EndGroup()
 
-	if got := refUI.commands[0].(render.DrawPoint).Center.X; got != 11 {
+	refPoint := refUI.commands[0].(render.DrawPoint)
+	if got := refPoint.Transform.Apply(refPoint.Center).X; got != 11 {
 		t.Fatalf("SpaceRef offset X = %v, want 11", got)
 	}
-	if got := screenUI.commands[0].(render.DrawPoint).Center.X; got != 21 {
+	screenPoint := screenUI.commands[0].(render.DrawPoint)
+	if got := screenPoint.Transform.Apply(screenPoint.Center).X; got != 21 {
 		t.Fatalf("SpaceScreen offset X = %v, want 21", got)
 	}
 }

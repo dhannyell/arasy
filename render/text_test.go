@@ -32,3 +32,14 @@ func TestMeasureTextWithNonPositiveSizeIsZero(t *testing.T) {
 		t.Fatalf("MeasureText = %v, want zero vector", got)
 	}
 }
+
+func TestMeasureTextSpacedAddsInterRuneTracking(t *testing.T) {
+	got := render.MeasureTextSpaced("ABC", 10, 2)
+	if got.X != 22 {
+		t.Fatalf("width = %v, want 22", got.X)
+	}
+	got = render.MeasureTextSpaced("ABC", 10, -2)
+	if got.X != 14 {
+		t.Fatalf("negative tracking width = %v, want 14", got.X)
+	}
+}

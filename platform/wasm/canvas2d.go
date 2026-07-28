@@ -675,6 +675,7 @@ func (c *Canvas2D) drawText(cmd render.DrawText, camera render.Camera) {
 	c.ctx.Set("font", fmt.Sprintf("%gpx %s", screenSize, family))
 	c.ctx.Set("textAlign", canvasTextAlign(cmd.Align))
 	c.ctx.Set("textBaseline", canvasTextBaseline(cmd.Baseline))
+	c.ctx.Set("letterSpacing", fmt.Sprintf("%gpx", camera.WorldScalarToScreen(cmd.LetterSpacing)))
 
 	if cmd.Rotation == 0 {
 		c.ctx.Call("fillText", cmd.Text, pos.X, pos.Y)
