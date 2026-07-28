@@ -34,3 +34,51 @@ func BenchmarkVectorSplashLikePath(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkVectorCompoundFill(b *testing.B) {
+	var builder vector.Builder
+	builder.MoveTo(math2d.Vec2{})
+	builder.LineTo(math2d.Vec2{X: 100})
+	builder.LineTo(math2d.Vec2{X: 100, Y: 100})
+	builder.LineTo(math2d.Vec2{Y: 100})
+	builder.Close()
+	builder.MoveTo(math2d.Vec2{X: 30, Y: 30})
+	builder.LineTo(math2d.Vec2{X: 30, Y: 70})
+	builder.LineTo(math2d.Vec2{X: 70, Y: 70})
+	builder.LineTo(math2d.Vec2{X: 70, Y: 30})
+	builder.Close()
+	builder.MoveTo(math2d.Vec2{X: 120})
+	builder.LineTo(math2d.Vec2{X: 140})
+	builder.LineTo(math2d.Vec2{X: 140, Y: 20})
+	builder.LineTo(math2d.Vec2{X: 120, Y: 20})
+	builder.Close()
+	path, err := builder.Build()
+	if err != nil {
+		b.Fatal(err)
+	}
+	style := vector.FillStyle{Color: render.RGBA(1, 1, 1, 1), Tolerance: 0.25}
+
+	b.Run("Stateless", func(b *testing.B) {
+		commands := make([]render.Command, 0, 1)
+		b.ReportAllocs()
+		for range b.N {
+			if _, err := path.AppendFill(commands[:0], render.BaseCommand{}, style); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("Workspace", func(b *testing.B) {
+		commands := make([]render.Command, 0, 1)
+		var workspace vector.FillWorkspace
+		if _, err := path.AppendFillWithWorkspace(commands, render.BaseCommand{}, style, &workspace); err != nil {
+			b.Fatal(err)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N {
+			if _, err := path.AppendFillWithWorkspace(commands[:0], render.BaseCommand{}, style, &workspace); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+}
