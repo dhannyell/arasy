@@ -64,6 +64,25 @@ func TestAppendCircleIsDeterministicAndWithinRadius(t *testing.T) {
 	}
 }
 
+func TestAppendCircleFanClosesWithBitIdenticalEndpoint(t *testing.T) {
+	var mesh Mesh
+	AppendCircle(&mesh, testCtx(), render.DrawCircle{
+		Center: math2d.Vec2{X: 50, Y: 50},
+		Radius: 10,
+		Fill:   render.RGBA(1, 1, 1, 1),
+	})
+
+	if len(mesh.Vertices) < 6 {
+		t.Fatalf("len(vertices) = %d, want at least 6", len(mesh.Vertices))
+	}
+	first := mesh.Vertices[1]
+	closing := mesh.Vertices[len(mesh.Vertices)-1]
+	if first.X != closing.X || first.Y != closing.Y {
+		t.Fatalf("closing endpoint = (%v, %v), want exact first endpoint (%v, %v)",
+			closing.X, closing.Y, first.X, first.Y)
+	}
+}
+
 func TestAppendLineUsesScreenSpaceWidth(t *testing.T) {
 	var mesh Mesh
 	AppendLine(&mesh, testCtx(), render.DrawLine{

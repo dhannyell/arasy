@@ -145,6 +145,20 @@ func (g *game) Render(ctx *runtime.RenderContext) []render.Command {
 			Indices: []uint32{0, 1, 2, 0, 2, 3},
 			Color:   render.RGBA(0.95, 0.48, 0.18, 0.82),
 		},
+		// The inner circle sits exactly on the clip-space horizontal axis.
+		// A non-identical 0/2pi fan closure shows as a radial MSAA seam.
+		render.DrawCircle{
+			BaseCommand: render.BaseCommand{LayerValue: 8},
+			Center:      math2d.Vec2{X: 44, Y: 37.5},
+			Radius:      8,
+			Fill:        render.RGBA8(243, 235, 221, 255),
+		},
+		render.DrawCircle{
+			BaseCommand: render.BaseCommand{LayerValue: 9},
+			Center:      math2d.Vec2{X: 44, Y: 37.5},
+			Radius:      6,
+			Fill:        render.RGBA8(2, 11, 20, 255),
+		},
 		curvedStrokeCommand,
 		render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: 1, Clip: clip},
