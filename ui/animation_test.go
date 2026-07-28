@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/dhannyell/arasy/anim"
 	"github.com/dhannyell/arasy/ease"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -84,7 +85,7 @@ func TestApproachFrameRateIndependent(t *testing.T) {
 
 func TestSequenceTrackWindows(t *testing.T) {
 	newSeq := func(elapsed float64) Sequence {
-		return Sequence{elapsed: elapsed, active: true}
+		return anim.At(elapsed)
 	}
 
 	// before the window: clamped at 0
@@ -150,26 +151,26 @@ func TestSequenceKeyedRetriggers(t *testing.T) {
 	if seq.Done(1.0) {
 		t.Fatal("key=1 just started: should not be Done")
 	}
-	if seq.elapsed != 0 {
-		t.Fatalf("just-started elapsed = %v, want 0", seq.elapsed)
+	if seq.Elapsed() != 0 {
+		t.Fatalf("just-started elapsed = %v, want 0", seq.Elapsed())
 	}
 
 	// same key=1 at time=10.5: elapsed=0.5, not done
 	seq = seqAt(&store, 10.5, 1)
-	if math.Abs(seq.elapsed-0.5) > 1e-9 {
-		t.Fatalf("elapsed = %v, want 0.5", seq.elapsed)
+	if math.Abs(seq.Elapsed()-0.5) > 1e-9 {
+		t.Fatalf("elapsed = %v, want 0.5", seq.Elapsed())
 	}
 
 	// same key=1 at time=11.5: elapsed=1.5, Done(1.0)
 	seq = seqAt(&store, 11.5, 1)
 	if !seq.Done(1.0) {
-		t.Fatalf("elapsed=%v should be Done(1.0)", seq.elapsed)
+		t.Fatalf("elapsed=%v should be Done(1.0)", seq.Elapsed())
 	}
 
 	// key changes to 2 at time=20: sequence restarts
 	seq = seqAt(&store, 20, 2)
-	if seq.elapsed != 0 {
-		t.Fatalf("new key: elapsed = %v, want 0", seq.elapsed)
+	if seq.Elapsed() != 0 {
+		t.Fatalf("new key: elapsed = %v, want 0", seq.Elapsed())
 	}
 	if seq.Done(1.0) {
 		t.Fatal("new key: sequence just restarted, should not be Done")
@@ -177,8 +178,8 @@ func TestSequenceKeyedRetriggers(t *testing.T) {
 
 	// same key=2 at time=20.3: elapsed=0.3
 	seq = seqAt(&store, 20.3, 2)
-	if math.Abs(seq.elapsed-0.3) > 1e-9 {
-		t.Fatalf("elapsed = %v, want 0.3", seq.elapsed)
+	if math.Abs(seq.Elapsed()-0.3) > 1e-9 {
+		t.Fatalf("elapsed = %v, want 0.3", seq.Elapsed())
 	}
 
 	// key=0 clears the retained key, so the same non-zero key can re-trigger
@@ -188,8 +189,8 @@ func TestSequenceKeyedRetriggers(t *testing.T) {
 		t.Fatal("key=0 after a trigger should report Done")
 	}
 	seq = seqAt(&store, 22, 2)
-	if seq.elapsed != 0 {
-		t.Fatalf("same key after key=0: elapsed = %v, want 0", seq.elapsed)
+	if seq.Elapsed() != 0 {
+		t.Fatalf("same key after key=0: elapsed = %v, want 0", seq.Elapsed())
 	}
 }
 

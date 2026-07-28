@@ -3,6 +3,7 @@ package ui
 import (
 	"math"
 
+	"github.com/dhannyell/arasy/anim"
 	"github.com/dhannyell/arasy/ease"
 	"github.com/dhannyell/arasy/math2d"
 )
@@ -158,48 +159,11 @@ func (u *UI) Reset(id string) {
 	u.store.set(id, animEntry{startTime: u.time})
 }
 
-// Sequence is an animation clock returned by SequenceKeyed.
-// A zero Sequence (key=0, never triggered) always reports Done.
-type Sequence struct {
-	elapsed float64
-	active  bool
-}
+// Sequence is a presentation animation timeline returned by SequenceKeyed.
+type Sequence = anim.Timeline
 
-// Done reports whether the sequence has reached or passed dur seconds.
-// A never-triggered sequence (key=0) always returns true so callers can
-// skip rendering with a simple early-out guard.
-func (s Sequence) Done(dur float64) bool {
-	return !s.active || s.elapsed >= dur
-}
-
-// Track returns a Track for the window [start, end] seconds in the sequence
-// with easing k applied. Values outside the window are clamped at 0 or 1.
-func (s Sequence) Track(start, end float64, k ease.Kind) Track {
-	if !s.active {
-		return Track{}
-	}
-	dur := end - start
-	if dur <= 0 {
-		return Track{value: 1, isDone: true}
-	}
-	t := ease.Progress(s.elapsed-start, dur)
-	return Track{value: ease.Apply(k, t), isDone: s.elapsed >= end}
-}
-
-// Track is a single eased window within a Sequence.
-type Track struct {
-	value  float64
-	isDone bool
-}
-
-// Value returns the eased progress t∈[0,1] for this track's window.
-func (tr Track) Value() float64 { return tr.value }
-
-// Lerp interpolates linearly from a to b using Value().
-func (tr Track) Lerp(a, b float64) float64 { return a + (b-a)*tr.value }
-
-// Done reports whether the sequence clock has passed this track's end time.
-func (tr Track) Done() bool { return tr.isDone }
+// Track is one eased window within a Sequence.
+type Track = anim.Track
 
 // SequenceKeyed returns a Sequence that (re)starts whenever key changes.
 // key=0 means "never triggered": Done() always returns true, Track returns
@@ -207,12 +171,12 @@ func (tr Track) Done() bool { return tr.isDone }
 // when the event recurs — intentional for cosmetic animations.
 func (u *UI) SequenceKeyed(id string, key uint64) Sequence {
 	if u.store == nil {
-		return Sequence{}
+		return anim.Inactive()
 	}
 	e, _ := u.store.get(id)
 	if key == 0 {
 		u.store.set(id, animEntry{})
-		return Sequence{}
+		return anim.Inactive()
 	}
 	if key != e.key {
 		e.key = key
@@ -223,5 +187,5 @@ func (u *UI) SequenceKeyed(id string, key uint64) Sequence {
 	if elapsed < 0 {
 		elapsed = 0
 	}
-	return Sequence{elapsed: elapsed, active: true}
+	return anim.At(elapsed)
 }
