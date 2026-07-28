@@ -52,6 +52,7 @@ type Manifest struct {
 	fontByName   map[string]render.FontID
 	effects      []particle.EffectDecl
 	effectByName map[string]render.ParticleEffectID
+	splash       []SplashDecl
 
 	// fsLayers are the FS layers Load was called with, retained so hosts can
 	// read audio bytes (and any other path-addressed asset) from the same
@@ -137,6 +138,27 @@ func (m Manifest) EffectDecl(id render.ParticleEffectID) (particle.EffectDecl, b
 // slice is shared - callers must not mutate it.
 func (m Manifest) AudioClips() []audio.Clip {
 	return m.audio
+}
+
+// SplashDecl is one manifest-declared boot splash segment: a texture
+// flip-book, resolved by name against the manifest's declared textures. It
+// carries the same fields as runtime.SplashSegment's flip-book form; runtime
+// resolves Texture to a render.TextureID when building the boot playlist.
+type SplashDecl struct {
+	Texture      string
+	CellW, CellH float64
+	Columns      int
+	Frames       uint16
+	Rate         float32
+	MinTime      float64
+	Fade         float64
+	Skippable    bool
+}
+
+// Splash returns the manifest-declared boot splash segments, in manifest
+// order. The returned slice is shared - callers must not mutate it.
+func (m Manifest) Splash() []SplashDecl {
+	return m.splash
 }
 
 // FS returns a merged, read-only view of the FS layers this Manifest was
