@@ -2,6 +2,7 @@ package vector
 
 import (
 	"math"
+	"slices"
 
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -33,6 +34,8 @@ type StrokeStyle struct {
 	TrimEnd    float64
 	Tolerance  float64
 }
+
+const discSteps = 12
 
 func (p Path) AppendStroke(dst []render.Command, base render.BaseCommand, style StrokeStyle) ([]render.Command, error) {
 	if math.IsNaN(style.Width) || math.IsInf(style.Width, 0) || style.Width <= 0 ||
@@ -68,7 +71,7 @@ func (p Path) AppendStroke(dst []render.Command, base render.BaseCommand, style 
 
 func trimContour(points []math2d.Vec2, closed bool, start, end float64) ([]math2d.Vec2, bool) {
 	if start == 0 && end == 1 {
-		return append([]math2d.Vec2(nil), points...), closed
+		return points, closed
 	}
 	total := 0.0
 	for index := 1; index < len(points); index++ {
@@ -79,7 +82,7 @@ func trimContour(points []math2d.Vec2, closed bool, start, end float64) ([]math2
 	}
 	fromDistance, toDistance := start*total, end*total
 	walked := 0.0
-	var out []math2d.Vec2
+	out := make([]math2d.Vec2, 0, len(points))
 	for index := 1; index < len(points); index++ {
 		from, to := points[index-1], points[index]
 		length := distance(from, to)
@@ -113,6 +116,10 @@ func appendStrokeContour(vertices *[]math2d.Vec2, indices *[]uint32, points []ma
 	if closed && len(points) > 1 && points[0] == points[len(points)-1] {
 		points = points[:len(points)-1]
 	}
+	vertexGrowth, indexGrowth := strokeBufferGrowth(len(points), closed, style)
+	*vertices = slices.Grow(*vertices, vertexGrowth)
+	*indices = slices.Grow(*indices, indexGrowth)
+
 	half := style.Width * 0.5
 	segmentCount := len(points) - 1
 	if closed {
@@ -179,16 +186,51 @@ func appendQuad(vertices *[]math2d.Vec2, indices *[]uint32, a, b, c, d math2d.Ve
 }
 
 func appendDisc(vertices *[]math2d.Vec2, indices *[]uint32, center math2d.Vec2, radius float64) {
-	const steps = 12
 	base := uint32(len(*vertices))
 	*vertices = append(*vertices, center)
-	for index := range steps {
-		angle := float64(index) * 2 * math.Pi / steps
+	for index := range discSteps {
+		angle := float64(index) * 2 * math.Pi / discSteps
 		*vertices = append(*vertices, math2d.Vec2{X: center.X + math.Cos(angle)*radius, Y: center.Y + math.Sin(angle)*radius})
 	}
-	for index := range steps {
-		*indices = append(*indices, base, base+1+uint32(index), base+1+uint32((index+1)%steps))
+	for index := range discSteps {
+		*indices = append(*indices, base, base+1+uint32(index), base+1+uint32((index+1)%discSteps))
 	}
+}
+
+func strokeBufferGrowth(pointCount int, closed bool, style StrokeStyle) (vertices, indices int) {
+	if pointCount < 2 {
+		return 0, 0
+	}
+	segments := pointCount - 1
+	joins := pointCount - 2
+	if closed {
+		segments = pointCount
+		joins = pointCount
+	}
+	vertices, indices = segments*4, segments*6
+	switch style.LineJoin {
+	case JoinRound:
+		roundJoins := joins
+		if !closed {
+			// appendStrokeContour includes the final point in its open round
+			// join loop before adding the two endpoint caps.
+			roundJoins = pointCount - 1
+		}
+		vertices += roundJoins * (discSteps + 1)
+		indices += roundJoins * discSteps * 3
+	case JoinMiter:
+		// A successful miter emits a quad; a bevel fallback is smaller.
+		vertices += joins * 4
+		indices += joins * 6
+	case JoinBevel:
+		vertices += joins * 3
+		indices += joins * 3
+	}
+	if !closed && style.LineCap == CapRound {
+		vertices += 2 * (discSteps + 1)
+		indices += 2 * discSteps * 3
+	}
+	return vertices, indices
 }
 
 func appendBevelJoin(vertices *[]math2d.Vec2, indices *[]uint32, prev, center, next math2d.Vec2, half float64) {
