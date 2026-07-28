@@ -1,6 +1,7 @@
 package scene_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -60,6 +61,30 @@ func TestRenderCommandsInterpolatedZeroAlphaUsesCurrentPose(t *testing.T) {
 	}
 	if circle.Center != pos {
 		t.Fatalf("got center %+v, want %+v", circle.Center, pos)
+	}
+}
+
+func TestRenderCommandsInterpolatedNaNAlphaUsesCurrentPose(t *testing.T) {
+	// NaN alpha is clamped to 0 (no interpolation) instead of poisoning
+	// every interpolated position with NaN.
+	world := scene.NewWorld()
+	entity := world.Spawn()
+	world.SetTransform(entity, scene.Transform{Position: math2d.Vec2{X: 0, Y: 0}, Scale: math2d.Vec2{X: 1, Y: 1}})
+	world.SetCircleSprite(entity, scene.CircleSprite{Radius: 1, BaseSprite: scene.BaseSprite{Layer: 1}})
+	world.SyncRenderState()
+	current := math2d.Vec2{X: 10, Y: 10}
+	world.SetTransform(entity, scene.Transform{Position: current, Scale: math2d.Vec2{X: 1, Y: 1}})
+
+	commands := world.RenderCommandsInterpolated(math.NaN())
+	if len(commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(commands))
+	}
+	circle, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	if circle.Center != current {
+		t.Fatalf("got center %+v, want current pose %+v (NaN alpha must not interpolate)", circle.Center, current)
 	}
 }
 
