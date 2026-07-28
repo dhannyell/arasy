@@ -145,6 +145,32 @@ func TestAppendTransformedRoundedRectPreservesCornerRadius(t *testing.T) {
 	}
 }
 
+func TestAppendClosedStrokeScreenSharesJoinVertices(t *testing.T) {
+	boundary := []math2d.Vec2{
+		{X: 20, Y: 10},
+		{X: 40, Y: 20},
+		{X: 35, Y: 40},
+		{X: 15, Y: 40},
+		{X: 10, Y: 20},
+	}
+	var mesh Mesh
+	appendClosedStrokeScreen(&mesh, testCtx(), boundary, 3.5, render.RGBA(1, 1, 1, 1))
+
+	if got, want := len(mesh.Vertices), len(boundary)*6; got != want {
+		t.Fatalf("len(vertices) = %d, want %d", got, want)
+	}
+	for edge := range boundary {
+		current := edge * 6
+		next := ((edge + 1) % len(boundary)) * 6
+		if mesh.Vertices[current+1] != mesh.Vertices[next] {
+			t.Fatalf("outer join %d is not shared: %v != %v", edge, mesh.Vertices[current+1], mesh.Vertices[next])
+		}
+		if mesh.Vertices[current+2] != mesh.Vertices[next+5] {
+			t.Fatalf("inner join %d is not shared: %v != %v", edge, mesh.Vertices[current+2], mesh.Vertices[next+5])
+		}
+	}
+}
+
 // TestAppendCircleNonUniformScaleBecomesEllipse guards the circle bug: only the
 // center was transformed, leaving an isotropic radius. Under a non-uniform
 // scale the boundary must widen/narrow per axis.
