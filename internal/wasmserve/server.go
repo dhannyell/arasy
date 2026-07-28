@@ -212,9 +212,12 @@ const wasmShellHTML = `<!doctype html>
         }
 
         #ar-poster {
-            width: min(70vw, 60vh, 480px);
-            max-width: 90%%;
-            height: auto;
+            /* The poster is a full frame of the same 1920x1080 composition
+               the compiled splash renders — sized to fill the viewport with
+               the same letterboxed "contain" fit, not a small centered icon,
+               so it reads at the same scale the animation takes over at. */
+            width: 100%%;
+            height: 100%%;
             object-fit: contain;
         }
 
