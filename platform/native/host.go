@@ -166,6 +166,25 @@ func (h *host) run() error {
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
+
+		if h.driver.SplashActive() {
+			// RunTick threads the framebuffer viewport into the driver every
+			// tick (below); the splash path skips RunTick entirely, so it
+			// must set it itself or the driver's viewport stays its zero
+			// value and the splash renders at zero scale (invisible).
+			h.driver.SetViewport(h.viewport)
+			skip := len(h.pending) > 0
+			h.pending = h.pending[:0]
+			h.lastInputAt = time.Time{}
+			h.driver.AdvanceSplash(elapsed, skip)
+			h.driver.RenderSplashFrame(elapsed, h.renderer)
+			if err := h.renderer.Err(); err != nil {
+				return fmt.Errorf("native renderer failed: %w", err)
+			}
+			pacer.wait()
+			continue
+		}
+
 		inputAt := h.lastInputAt
 		h.lastInputAt = time.Time{}
 		var tickStart time.Time
