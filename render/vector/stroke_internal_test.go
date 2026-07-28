@@ -48,3 +48,32 @@ func TestOuterJoinPointsSkipsStraightSegments(t *testing.T) {
 		t.Fatal("straight segments unexpectedly produced a join")
 	}
 }
+
+func TestMiterJoinCoversCenterAndOutsideCorner(t *testing.T) {
+	var vertices []math2d.Vec2
+	var indices []uint32
+	center := math2d.Vec2{}
+	ok := appendMiterJoin(
+		&vertices, &indices,
+		math2d.Vec2{X: -1, Y: 1}, center, math2d.Vec2{X: 1, Y: 1},
+		1, 4,
+	)
+	if !ok {
+		t.Fatal("appendMiterJoin rejected a valid turn")
+	}
+	if len(vertices) != 4 || len(indices) != 6 {
+		t.Fatalf("miter geometry has %d vertices and %d indices, want 4 and 6", len(vertices), len(indices))
+	}
+	if vertices[0] != center {
+		t.Fatalf("first miter vertex = %v, want center %v", vertices[0], center)
+	}
+	used := make(map[uint32]bool)
+	for _, index := range indices {
+		used[index] = true
+	}
+	for index := range vertices {
+		if !used[uint32(index)] {
+			t.Fatalf("miter vertex %d is not referenced", index)
+		}
+	}
+}

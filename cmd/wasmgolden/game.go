@@ -12,12 +12,35 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/render/vector"
 	"github.com/dhannyell/arasy/runtime"
 )
 
 type game struct {
 	assets asset.Manifest
 }
+
+var curvedStrokeCommand = func() render.DrawTriangles {
+	var builder vector.Builder
+	builder.MoveTo(math2d.Vec2{X: 54, Y: 29})
+	builder.CubicTo(
+		math2d.Vec2{X: 63, Y: 13},
+		math2d.Vec2{X: 86, Y: 13},
+		math2d.Vec2{X: 96, Y: 29},
+	)
+	path, err := builder.Build()
+	if err != nil {
+		panic(err)
+	}
+	commands, err := path.AppendStroke(nil, render.BaseCommand{LayerValue: 4}, vector.StrokeStyle{
+		Color: render.RGBA8(159, 132, 246, 255), Width: 2.5,
+		LineCap: vector.CapRound, LineJoin: vector.JoinMiter, Tolerance: 0.1,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return commands[0].(render.DrawTriangles)
+}()
 
 // New builds the deterministic game fixture shared by both WASM renderers.
 func New() (runtime.Game, error) {
@@ -122,6 +145,7 @@ func (g *game) Render(ctx *runtime.RenderContext) []render.Command {
 			Indices: []uint32{0, 1, 2, 0, 2, 3},
 			Color:   render.RGBA(0.95, 0.48, 0.18, 0.82),
 		},
+		curvedStrokeCommand,
 		render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: 1, Clip: clip},
 			Texture:     texture,

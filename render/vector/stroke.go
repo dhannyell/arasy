@@ -212,9 +212,11 @@ func appendMiterJoin(vertices *[]math2d.Vec2, indices *[]uint32, prev, center, n
 	if !ok || distance(center, intersection) > half*limit {
 		return false
 	}
-	base := uint32(len(*vertices))
-	*vertices = append(*vertices, a, intersection, b)
-	*indices = append(*indices, base, base+1, base+2)
+	// The miter join is a four-point fan from the polyline vertex to the
+	// extended outside corner. Emitting only (a, intersection, b) leaves the
+	// inner triangle (center, a, b) uncovered, which appears as a crack at
+	// every flattened curve segment under MSAA.
+	appendQuad(vertices, indices, center, a, intersection, b)
 	return true
 }
 
