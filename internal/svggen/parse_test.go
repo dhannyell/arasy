@@ -59,6 +59,18 @@ func TestStyleElementMustBeDirectSVGChild(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsRestrictedDirectChildSelector(t *testing.T) {
+	source := []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.parent>circle{opacity:.5}</style><g class="parent"><circle r="1"/></g></svg>`)
+	document, err := Parse(source, Options{Strict: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	circle := document.Root.Children[1].Children[0]
+	if circle.Attributes["opacity"] != ".5" {
+		t.Fatalf("opacity = %q, want .5", circle.Attributes["opacity"])
+	}
+}
+
 func FuzzParseSVG(f *testing.F) {
 	f.Add([]byte(minimalSVG))
 	f.Add([]byte(`<svg viewBox="0 0 1 1"><path d="M0 0 L"/></svg>`))

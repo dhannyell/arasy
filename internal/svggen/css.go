@@ -141,7 +141,7 @@ func parseKeyframes(source string, strict bool, count *int) ([]Keyframe, error) 
 
 func parseDeclarations(source string, strict bool) (map[string]string, error) {
 	result := make(map[string]string)
-	for _, raw := range strings.Split(source, ";") {
+	for _, raw := range splitDeclarations(source) {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			continue
@@ -171,9 +171,48 @@ func parseDeclarations(source string, strict bool) (map[string]string, error) {
 	return result, nil
 }
 
+func splitDeclarations(source string) []string {
+	var result []string
+	start, depth := 0, 0
+	var quote rune
+	for index, char := range source {
+		switch {
+		case quote != 0:
+			if char == quote {
+				quote = 0
+			}
+		case char == '\'' || char == '"':
+			quote = char
+		case char == '(':
+			depth++
+		case char == ')' && depth > 0:
+			depth--
+		case char == ';' && depth == 0:
+			result = append(result, source[start:index])
+			start = index + 1
+		}
+	}
+	return append(result, source[start:])
+}
+
 func validSelector(selector string) bool {
 	selector = strings.TrimSpace(selector)
-	if selector == "" || strings.ContainsAny(selector, " >+~,:[]*") {
+	if selector == "" || strings.ContainsAny(selector, " +~,:[]*") {
+		return false
+	}
+	if strings.Count(selector, ">") == 1 {
+		parts := strings.Split(selector, ">")
+		return validSimpleSelector(parts[0]) && validSimpleSelector(parts[1])
+	}
+	if strings.Contains(selector, ">") {
+		return false
+	}
+	return validSimpleSelector(selector)
+}
+
+func validSimpleSelector(selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
 		return false
 	}
 	if selector[0] == '.' || selector[0] == '#' {
@@ -189,8 +228,8 @@ func validSelector(selector string) bool {
 }
 
 func applyStyles(root *Element, stylesheet Stylesheet) {
-	var walk func(*Element)
-	walk = func(element *Element) {
+	var walk func(*Element, *Element)
+	walk = func(element, parent *Element) {
 		type matched struct {
 			rule        Rule
 			specificity int
@@ -198,7 +237,7 @@ func applyStyles(root *Element, stylesheet Stylesheet) {
 		}
 		var matches []matched
 		for order, rule := range stylesheet.Rules {
-			specificity := selectorMatch(rule.Selector, element)
+			specificity := selectorMatch(rule.Selector, element, parent)
 			if specificity >= 0 {
 				matches = append(matches, matched{rule: rule, specificity: specificity, order: order})
 			}
@@ -224,13 +263,25 @@ func applyStyles(root *Element, stylesheet Stylesheet) {
 			}
 		}
 		for _, child := range element.Children {
-			walk(child)
+			walk(child, element)
 		}
 	}
-	walk(root)
+	walk(root, nil)
 }
 
-func selectorMatch(selector string, element *Element) int {
+func selectorMatch(selector string, element, parent *Element) int {
+	if strings.Contains(selector, ">") {
+		parts := strings.Split(selector, ">")
+		if parent == nil {
+			return -1
+		}
+		left := selectorMatch(strings.TrimSpace(parts[0]), parent, nil)
+		right := selectorMatch(strings.TrimSpace(parts[1]), element, nil)
+		if left < 0 || right < 0 {
+			return -1
+		}
+		return left + right
+	}
 	switch selector[0] {
 	case '#':
 		if element.Attributes["id"] == selector[1:] {
