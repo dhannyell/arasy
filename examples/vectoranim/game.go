@@ -35,12 +35,13 @@ func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	timeline := anim.At(math.Mod(ctx.Time, duration))
-	commands := AppendVectorScene(nil, timeline, ctx.Camera().World, VectorSceneResources{})
-	return AppendManualAccent(commands, timeline)
+	return AppendVectorScene(nil, timeline, ctx.Camera().World, VectorSceneResources{})
 }
 
 // AppendManualAccent proves the public animation and composition APIs can be
-// used independently of generated code.
+// used independently of generated code. It is deliberately kept separate
+// from Game.Render so replacing the generated SVG cannot inherit demo-only
+// decoration.
 func AppendManualAccent(dst []render.Command, timeline anim.Timeline) []render.Command {
 	pulse := timeline.Track(1.8, 2.6, ease.InOutQuad)
 	var builder render.Builder

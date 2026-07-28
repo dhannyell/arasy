@@ -22,7 +22,6 @@ func TestGeneratedAnimationRendersAtFixedTimes(t *testing.T) {
 	for _, elapsed := range times {
 		timeline := anim.At(elapsed)
 		commands := AppendVectorScene(nil, timeline, viewport, VectorSceneResources{})
-		commands = AppendManualAccent(commands, timeline)
 		if len(commands) == 0 {
 			t.Fatalf("elapsed %g produced no commands", elapsed)
 		}
@@ -31,5 +30,15 @@ func TestGeneratedAnimationRendersAtFixedTimes(t *testing.T) {
 	}
 	if len(seen) < 5 {
 		t.Fatalf("fixed-time raster samples produced only %d distinct frames", len(seen))
+	}
+}
+
+func TestManualAccentUsesOnlyPublicCompositionAPIs(t *testing.T) {
+	commands := AppendManualAccent(nil, anim.At(2.2))
+	if len(commands) != 1 {
+		t.Fatalf("manual accent emitted %d commands, want 1", len(commands))
+	}
+	if _, ok := commands[0].(render.DrawCircle); !ok {
+		t.Fatalf("manual accent emitted %T, want render.DrawCircle", commands[0])
 	}
 }
