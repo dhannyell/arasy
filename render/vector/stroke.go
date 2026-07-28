@@ -35,9 +35,44 @@ type StrokeStyle struct {
 	Tolerance  float64
 }
 
+// StrokeWorkspace retains temporary and output buffers between calls to
+// AppendStrokeWithWorkspace. It is intended for sequential frame rendering.
+//
+// A workspace must not be used concurrently. Commands returned by
+// AppendStrokeWithWorkspace remain valid only until the next call that uses
+// the same workspace.
+type StrokeWorkspace struct {
+	vertices []math2d.Vec2
+	indices  []uint32
+	trimmed  []math2d.Vec2
+}
+
 const discSteps = 12
 
 func (p Path) AppendStroke(dst []render.Command, base render.BaseCommand, style StrokeStyle) ([]render.Command, error) {
+	return p.appendStroke(dst, base, style, nil)
+}
+
+// AppendStrokeWithWorkspace appends a stroke while reusing buffers retained by
+// workspace. See StrokeWorkspace for ownership and lifetime requirements.
+func (p Path) AppendStrokeWithWorkspace(
+	dst []render.Command,
+	base render.BaseCommand,
+	style StrokeStyle,
+	workspace *StrokeWorkspace,
+) ([]render.Command, error) {
+	if workspace == nil {
+		return p.AppendStroke(dst, base, style)
+	}
+	return p.appendStroke(dst, base, style, workspace)
+}
+
+func (p Path) appendStroke(
+	dst []render.Command,
+	base render.BaseCommand,
+	style StrokeStyle,
+	workspace *StrokeWorkspace,
+) ([]render.Command, error) {
 	if math.IsNaN(style.Width) || math.IsInf(style.Width, 0) || style.Width <= 0 ||
 		style.LineCap > CapSquare || style.LineJoin > JoinBevel ||
 		style.TrimStart < 0 || style.TrimStart > 1 || style.TrimEnd < 0 || style.TrimEnd > 1 ||
@@ -54,12 +89,28 @@ func (p Path) AppendStroke(dst []render.Command, base render.BaseCommand, style 
 	}
 	var vertices []math2d.Vec2
 	var indices []uint32
+	if workspace != nil {
+		vertices = workspace.vertices[:0]
+		indices = workspace.indices[:0]
+		workspace.trimmed = workspace.trimmed[:0]
+	}
 	for _, item := range contours {
-		points, closed := trimContour(item.points, item.closed, style.TrimStart, trimEnd)
+		var trimBuffer []math2d.Vec2
+		if workspace != nil {
+			trimBuffer = workspace.trimmed[:0]
+		}
+		points, closed := trimContourInto(trimBuffer, item.points, item.closed, style.TrimStart, trimEnd)
+		if workspace != nil && (style.TrimStart != 0 || trimEnd != 1) {
+			workspace.trimmed = points
+		}
 		if len(points) < 2 {
 			continue
 		}
 		appendStrokeContour(&vertices, &indices, points, closed, style)
+	}
+	if workspace != nil {
+		workspace.vertices = vertices
+		workspace.indices = indices
 	}
 	if len(indices) == 0 {
 		return dst, nil
@@ -70,6 +121,10 @@ func (p Path) AppendStroke(dst []render.Command, base render.BaseCommand, style 
 }
 
 func trimContour(points []math2d.Vec2, closed bool, start, end float64) ([]math2d.Vec2, bool) {
+	return trimContourInto(nil, points, closed, start, end)
+}
+
+func trimContourInto(dst, points []math2d.Vec2, closed bool, start, end float64) ([]math2d.Vec2, bool) {
 	if start == 0 && end == 1 {
 		return points, closed
 	}
@@ -82,7 +137,7 @@ func trimContour(points []math2d.Vec2, closed bool, start, end float64) ([]math2
 	}
 	fromDistance, toDistance := start*total, end*total
 	walked := 0.0
-	out := make([]math2d.Vec2, 0, len(points))
+	out := slices.Grow(dst[:0], len(points))
 	for index := 1; index < len(points); index++ {
 		from, to := points[index-1], points[index]
 		length := distance(from, to)

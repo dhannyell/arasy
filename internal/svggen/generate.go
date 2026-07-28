@@ -400,6 +400,17 @@ func (g *generator) emit() ([]byte, error) {
 		fmt.Fprintf(&out, "\t%s render.FontID // manifest font %q\n", font.field, font.manifest)
 	}
 	out.WriteString("}\n\n")
+	fmt.Fprintf(&out, `// %sWorkspace retains generated command and vector mesh buffers between
+// sequential frames. The returned commands remain valid only until the next
+// call to Append on the same workspace. A workspace must not be used
+// concurrently.
+type %sWorkspace struct {
+	commands []render.Command
+	fills [%d]vector.FillWorkspace
+	strokes [%d]vector.StrokeWorkspace
+}
+
+`, g.options.Name, g.options.Name, len(g.nodes), len(g.nodes))
 	g.emitRuntime(&out)
 	for index, path := range g.paths {
 		g.emitPath(&out, index, path)
@@ -409,8 +420,21 @@ func (g *generator) emit() ([]byte, error) {
 		g.emitNode(&out, node)
 	}
 	out.WriteString("}\n\n")
-	fmt.Fprintf(&out, `// Append%s appends the SVG presentation at timeline time into dst.
+	fmt.Fprintf(&out, `// Append renders the SVG presentation while reusing buffers retained by w.
+func (w *%sWorkspace) Append(timeline anim.Timeline, viewport math2d.Rect, resources %sResources) []render.Command {
+	if w == nil {
+		return Append%s(nil, timeline, viewport, resources)
+	}
+	w.commands = append%s(w.commands[:0], timeline, viewport, resources, w.fills[:], w.strokes[:])
+	return w.commands
+}
+
+// Append%s appends the SVG presentation at timeline time into dst.
 func Append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources %sResources) []render.Command {
+	return append%s(dst, timeline, viewport, resources, nil, nil)
+}
+
+func append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect, resources %sResources, fillWorkspaces []vector.FillWorkspace, strokeWorkspaces []vector.StrokeWorkspace) []render.Command {
 	var builder render.Builder
 	builder.Reset(dst)
 	scale := math.Min(viewport.Width()/%s, viewport.Height()/%s)
@@ -419,11 +443,13 @@ func Append%s(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect
 		Y: viewport.Min.Y + (viewport.Height()-%s*scale)*0.5 - %s*scale,
 	}
 	builder.Push(render.Group{Transform: math2d.Translate(offset).Mul(math2d.Scale(math2d.Vec2{X: scale, Y: scale})), Opacity: 1})
-	appendSVGNode(&builder, %sNodes, 0, timeline, resources.font)
+	appendSVGNode(&builder, %sNodes, 0, timeline, resources.font, fillWorkspaces, strokeWorkspaces)
 	builder.Pop()
 	return builder.Commands()
 }
-`, g.options.Name, g.options.Name, g.options.Name,
+`, g.options.Name, g.options.Name, g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name, g.options.Name, g.options.Name,
+		g.options.Name, g.options.Name,
 		float(g.document.ViewBox.Width()), float(g.document.ViewBox.Height()),
 		float(g.document.ViewBox.Width()), float(g.document.ViewBox.Min.X),
 		float(g.document.ViewBox.Height()), float(g.document.ViewBox.Min.Y),
@@ -503,7 +529,15 @@ func svgAffine(t anim.Timeline, animation svgAnimation, fallback math2d.Affine) 
 	return stops[len(stops)-1].value
 }
 
-func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline anim.Timeline, font func(uint16) render.FontID) {
+func appendSVGNode(
+	builder *render.Builder,
+	nodes []svgNode,
+	index int,
+	timeline anim.Timeline,
+	font func(uint16) render.FontID,
+	fillWorkspaces []vector.FillWorkspace,
+	strokeWorkspaces []vector.StrokeWorkspace,
+) {
 	node := nodes[index]
 	opacity := node.opacity
 	if len(node.animation.opacity) != 0 {
@@ -537,7 +571,13 @@ func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline
 		builder.Add(render.DrawLine{BaseCommand: base, From: math2d.Vec2{X: node.x, Y: node.y}, To: math2d.Vec2{X: node.x2, Y: node.y2}, Width: node.strokeWidth, Color: node.stroke})
 	case 5:
 		if node.fill.A != 0 {
-			commands, err := svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25})
+			var commands []render.Command
+			var err error
+			if fillWorkspaces == nil {
+				commands, err = svgPaths[node.path].AppendFill(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25})
+			} else {
+				commands, err = svgPaths[node.path].AppendFillWithWorkspace(nil, base, vector.FillStyle{Color: node.fill, Tolerance: 0.25}, &fillWorkspaces[index])
+			}
 			if err != nil { panic(err) }
 			for _, command := range commands { builder.Add(command) }
 		}
@@ -546,14 +586,20 @@ func appendSVGNode(builder *render.Builder, nodes []svgNode, index int, timeline
 			if len(node.animation.dashOffset) != 0 && node.pathLength > 0 {
 				trimEnd = 1-svgScalar(timeline, node.animation, node.animation.dashOffset, node.pathLength)/node.pathLength
 			}
-			commands, err := svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25})
+			var commands []render.Command
+			var err error
+			if strokeWorkspaces == nil {
+				commands, err = svgPaths[node.path].AppendStroke(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25})
+			} else {
+				commands, err = svgPaths[node.path].AppendStrokeWithWorkspace(nil, base, vector.StrokeStyle{Color: node.stroke, Width: node.strokeWidth, LineCap: node.lineCap, LineJoin: node.lineJoin, TrimEnd: trimEnd, Tolerance: 0.25}, &strokeWorkspaces[index])
+			}
 			if err != nil { panic(err) }
 			for _, command := range commands { builder.Add(command) }
 		}
 	case 6:
 		builder.Add(render.DrawText{BaseCommand: base, Position: math2d.Vec2{X: node.x, Y: node.y}, Text: node.text, Color: node.fill, Size: node.fontSize, Font: font(node.font), LetterSpacing: node.spacing, Align: node.align})
 	}
-	for _, child := range node.children { appendSVGNode(builder, nodes, int(child), timeline, font) }
+	for _, child := range node.children { appendSVGNode(builder, nodes, int(child), timeline, font, fillWorkspaces, strokeWorkspaces) }
 	builder.Pop()
 }
 

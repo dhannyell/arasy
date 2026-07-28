@@ -81,6 +81,27 @@ func BenchmarkVectorAnimationCommands(b *testing.B) {
 	}
 }
 
+func BenchmarkVectorAnimationCommandsReuse(b *testing.B) {
+	for _, workload := range vectorBenchmarkWorkloads() {
+		b.Run(workload.name, func(b *testing.B) {
+			var workspace VectorSceneWorkspace
+			b.ReportAllocs()
+
+			var commands []render.Command
+			for i := 0; b.Loop(); i++ {
+				frame := i % len(workload.commands)
+				commands = workspace.Append(
+					anim.At(workload.elapsed(frame)),
+					benchmarkVectorViewport,
+					VectorSceneResources{},
+				)
+			}
+			b.ReportMetric(workload.averageCommandCount(), "commands/frame")
+			benchmarkVectorCommandsSink = commands
+		})
+	}
+}
+
 func BenchmarkVectorAnimationGPUPreparation(b *testing.B) {
 	for _, workload := range vectorBenchmarkWorkloads() {
 		b.Run(workload.name, func(b *testing.B) {
@@ -137,6 +158,38 @@ func BenchmarkVectorAnimationGPUEndToEnd(b *testing.B) {
 	}
 }
 
+func BenchmarkVectorAnimationGPUEndToEndReuse(b *testing.B) {
+	for _, workload := range vectorBenchmarkWorkloads() {
+		b.Run(workload.name, func(b *testing.B) {
+			var builder tess.Builder
+			var workspace VectorSceneWorkspace
+			metrics := measureVectorGPUWorkload(&builder, workload)
+			b.ReportAllocs()
+
+			var commands []render.Command
+			var runs []tess.StreamRun
+			for i := 0; b.Loop(); i++ {
+				frame := i % len(workload.commands)
+				commands = workspace.Append(
+					anim.At(workload.elapsed(frame)),
+					benchmarkVectorViewport,
+					VectorSceneResources{},
+				)
+				runs = builder.Build(
+					tess.Frame{Camera: benchmarkVectorCamera, Commands: commands},
+					320,
+					180,
+					nil,
+					nil,
+				)
+			}
+			metrics.report(b)
+			benchmarkVectorCommandsSink = commands
+			benchmarkVectorRunsSink = runs
+		})
+	}
+}
+
 func BenchmarkVectorAnimationRasterEndToEnd(b *testing.B) {
 	for _, workload := range vectorBenchmarkWorkloads() {
 		b.Run(workload.name, func(b *testing.B) {
@@ -154,6 +207,36 @@ func BenchmarkVectorAnimationRasterEndToEnd(b *testing.B) {
 				frame := i % len(workload.commands)
 				commands = AppendVectorScene(
 					nil,
+					anim.At(workload.elapsed(frame)),
+					benchmarkVectorViewport,
+					VectorSceneResources{},
+				)
+				renderer.RenderInto(target, commands)
+			}
+			b.ReportMetric(workload.averageCommandCount(), "commands/frame")
+			benchmarkVectorCommandsSink = commands
+			benchmarkVectorPixelSink = target.Pix[len(target.Pix)/2]
+		})
+	}
+}
+
+func BenchmarkVectorAnimationRasterEndToEndReuse(b *testing.B) {
+	for _, workload := range vectorBenchmarkWorkloads() {
+		b.Run(workload.name, func(b *testing.B) {
+			renderer := raster.Renderer{
+				Width:  320,
+				Height: 180,
+				Camera: benchmarkVectorCamera,
+				Clear:  render.RGBA8(16, 24, 39, 255),
+			}
+			target := renderer.NewTarget()
+			var workspace VectorSceneWorkspace
+			b.ReportAllocs()
+
+			var commands []render.Command
+			for i := 0; b.Loop(); i++ {
+				frame := i % len(workload.commands)
+				commands = workspace.Append(
 					anim.At(workload.elapsed(frame)),
 					benchmarkVectorViewport,
 					VectorSceneResources{},

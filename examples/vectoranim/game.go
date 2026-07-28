@@ -13,7 +13,9 @@ import (
 
 const duration = 3.0
 
-type Game struct{}
+type Game struct {
+	vectorWorkspace VectorSceneWorkspace
+}
 
 func (g *Game) Setup() runtime.Config {
 	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 180})
@@ -35,7 +37,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	timeline := anim.At(math.Mod(ctx.Time, duration))
-	return AppendVectorScene(nil, timeline, ctx.Camera().World, VectorSceneResources{})
+	return g.vectorWorkspace.Append(timeline, ctx.Camera().World, VectorSceneResources{})
 }
 
 // AppendManualAccent proves the public animation and composition APIs can be

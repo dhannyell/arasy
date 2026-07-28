@@ -2,6 +2,7 @@ package vector
 
 import (
 	"math"
+	"slices"
 
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -12,7 +13,42 @@ type FillStyle struct {
 	Tolerance float64
 }
 
+// FillWorkspace retains triangulation and output buffers between calls to
+// AppendFillWithWorkspace. It is intended for sequential frame rendering.
+//
+// A workspace must not be used concurrently. Commands returned by
+// AppendFillWithWorkspace remain valid only until the next call that uses the
+// same workspace.
+type FillWorkspace struct {
+	points  []math2d.Vec2
+	indices []uint32
+	order   []int
+}
+
 func (p Path) AppendFill(dst []render.Command, base render.BaseCommand, style FillStyle) ([]render.Command, error) {
+	return p.appendFill(dst, base, style, nil)
+}
+
+// AppendFillWithWorkspace appends a fill while reusing buffers retained by
+// workspace. See FillWorkspace for ownership and lifetime requirements.
+func (p Path) AppendFillWithWorkspace(
+	dst []render.Command,
+	base render.BaseCommand,
+	style FillStyle,
+	workspace *FillWorkspace,
+) ([]render.Command, error) {
+	if workspace == nil {
+		return p.AppendFill(dst, base, style)
+	}
+	return p.appendFill(dst, base, style, workspace)
+}
+
+func (p Path) appendFill(
+	dst []render.Command,
+	base render.BaseCommand,
+	style FillStyle,
+	workspace *FillWorkspace,
+) ([]render.Command, error) {
 	contours, err := p.flatten(style.Tolerance)
 	if err != nil {
 		return dst, err
@@ -20,9 +56,16 @@ func (p Path) AppendFill(dst []render.Command, base render.BaseCommand, style Fi
 	if len(contours) != 1 || !contours[0].closed {
 		return dst, ErrFillContour
 	}
-	points := append([]math2d.Vec2(nil), contours[0].points...)
+	var points []math2d.Vec2
+	if workspace != nil {
+		points = workspace.points[:0]
+	}
+	points = append(points, contours[0].points...)
 	if len(points) > 1 && points[0] == points[len(points)-1] {
 		points = points[:len(points)-1]
+	}
+	if workspace != nil {
+		workspace.points = points
 	}
 	if len(points) < 3 {
 		return dst, ErrDegenerateGeometry
@@ -30,7 +73,17 @@ func (p Path) AppendFill(dst []render.Command, base render.BaseCommand, style Fi
 	if selfIntersects(points, true) {
 		return dst, ErrSelfIntersection
 	}
-	indices, ok := earClip(points)
+	var indices []uint32
+	var order []int
+	if workspace != nil {
+		indices = workspace.indices[:0]
+		order = workspace.order[:0]
+	}
+	indices, order, ok := earClipInto(indices, order, points)
+	if workspace != nil {
+		workspace.indices = indices
+		workspace.order = order
+	}
 	if !ok {
 		return dst, ErrDegenerateGeometry
 	}
@@ -39,8 +92,11 @@ func (p Path) AppendFill(dst []render.Command, base render.BaseCommand, style Fi
 	}), nil
 }
 
-func earClip(points []math2d.Vec2) ([]uint32, bool) {
-	order := make([]int, len(points))
+func earClipInto(indices []uint32, order []int, points []math2d.Vec2) ([]uint32, []int, bool) {
+	order = slices.Grow(order[:0], len(points))
+	for range points {
+		order = append(order, 0)
+	}
 	for index := range order {
 		order[index] = index
 	}
@@ -49,7 +105,7 @@ func earClip(points []math2d.Vec2) ([]uint32, bool) {
 			order[left], order[right] = order[right], order[left]
 		}
 	}
-	indices := make([]uint32, 0, (len(points)-2)*3)
+	indices = slices.Grow(indices[:0], (len(points)-2)*3)
 	for len(order) > 3 {
 		found := false
 		for index := range order {
@@ -76,11 +132,11 @@ func earClip(points []math2d.Vec2) ([]uint32, bool) {
 			break
 		}
 		if !found {
-			return nil, false
+			return indices, order, false
 		}
 	}
 	indices = append(indices, uint32(order[0]), uint32(order[1]), uint32(order[2]))
-	return indices, true
+	return indices, order, true
 }
 
 func signedArea(points []math2d.Vec2) float64 {

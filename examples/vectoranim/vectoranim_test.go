@@ -33,6 +33,24 @@ func TestGeneratedAnimationRendersAtFixedTimes(t *testing.T) {
 	}
 }
 
+func TestGeneratedWorkspaceMatchesStatelessRenderingAcrossFrames(t *testing.T) {
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 180})
+	renderer := raster.Renderer{
+		Width: 320, Height: 180,
+		Camera: render.Camera{World: viewport, Viewport: viewport, Aspect: render.AspectFit},
+		Clear:  render.RGBA8(16, 24, 39, 255),
+	}
+	var workspace VectorSceneWorkspace
+	for _, elapsed := range []float64{0, 0.18, 0.75, 1.5, 2.16, 3, 0.36} {
+		timeline := anim.At(elapsed)
+		want := renderer.Render(AppendVectorScene(nil, timeline, viewport, VectorSceneResources{}))
+		got := renderer.Render(workspace.Append(timeline, viewport, VectorSceneResources{}))
+		if sha256.Sum256(got.Pix) != sha256.Sum256(want.Pix) {
+			t.Fatalf("elapsed %g: workspace rendering differs from stateless rendering", elapsed)
+		}
+	}
+}
+
 func TestManualAccentUsesOnlyPublicCompositionAPIs(t *testing.T) {
 	commands := AppendManualAccent(nil, anim.At(2.2))
 	if len(commands) != 1 {

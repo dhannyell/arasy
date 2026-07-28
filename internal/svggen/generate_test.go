@@ -26,7 +26,16 @@ func TestGenerateIsDeterministicAndFormatted(t *testing.T) {
 	if !bytes.Equal(first, second) {
 		t.Fatal("generation is not deterministic")
 	}
-	for _, expected := range []string{"func AppendSample(", "anim.Timeline", "render.Builder", "ease.MustCubicBezier"} {
+	for _, expected := range []string{
+		"type SampleWorkspace struct",
+		"func (w *SampleWorkspace) Append(",
+		"func AppendSample(",
+		"AppendFillWithWorkspace",
+		"AppendStrokeWithWorkspace",
+		"anim.Timeline",
+		"render.Builder",
+		"ease.MustCubicBezier",
+	} {
 		if !strings.Contains(string(first), expected) {
 			t.Fatalf("generated source does not contain %q", expected)
 		}
