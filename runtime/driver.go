@@ -171,7 +171,7 @@ func buildSplashPlaylist(cfg Config) []SplashSegment {
 			},
 			MinTime:   enginesplash.EngineSplashMinTime,
 			Fade:      enginesplash.EngineSplashFade,
-			Skippable: true,
+			Skippable: false,
 		})
 	}
 	for _, decl := range cfg.Assets.Splash() {
