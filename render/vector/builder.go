@@ -76,5 +76,5 @@ func (b *Builder) Build() (Path, error) {
 		return Path{}, ErrEmptyPath
 	}
 	segments := append([]segment(nil), b.segments...)
-	return Path{segments: segments}, nil
+	return Path{segments: segments, cache: &flattenCache{}}, nil
 }

@@ -17,6 +17,19 @@ func (p Path) flatten(tolerance float64) ([]contour, error) {
 	if math.IsNaN(tolerance) || math.IsInf(tolerance, 0) || tolerance <= 0 {
 		return nil, ErrInvalidTolerance
 	}
+	if p.cache != nil {
+		if cached := p.cache.latest.Load(); cached != nil && cached.tolerance == tolerance {
+			return cached.contours, nil
+		}
+	}
+	contours, err := p.flattenUncached(tolerance)
+	if err == nil && p.cache != nil {
+		p.cache.latest.Store(&flattenCacheEntry{tolerance: tolerance, contours: contours})
+	}
+	return contours, err
+}
+
+func (p Path) flattenUncached(tolerance float64) ([]contour, error) {
 	var contours []contour
 	var current, start math2d.Vec2
 	for _, command := range p.segments {
