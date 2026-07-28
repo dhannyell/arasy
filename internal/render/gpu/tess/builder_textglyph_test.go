@@ -193,3 +193,35 @@ func TestTextGlyphRecordsUseQuestionMarkForUnsupportedASCII(t *testing.T) {
 		t.Fatalf("fallback glyph records = %+v count=%d, want one question-mark metric", glyphs, count)
 	}
 }
+
+func TestTextGlyphRecordsScaleCappedExternalAtlas(t *testing.T) {
+	glyph := Glyph{Advance: 200, Width: 180, Height: 400, index: 0}
+	atlas := &Atlas{
+		Key:         AtlasKey{Font: 1, PX: maxAtlasPixelSize},
+		Glyphs:      map[rune]Glyph{'A': glyph, '?': glyph},
+		asciiGlyphs: indexedASCIIGlyphs(map[rune]Glyph{'A': glyph, '?': glyph}),
+		metrics:     []textGlyphMetric{metricForGlyph(glyph)},
+		Ascent:      400,
+		Height:      maxAtlasPixelSize,
+	}
+	camera := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1_000, Y: 1_000}),
+		Aspect:   render.AspectFit,
+	}
+	var glyphs []textGlyphRecord
+	var labels []textLabelRecord
+	count := appendTextGlyphRecords(&glyphs, &labels, ctx{cam: camera, w: 1_000, h: 1_000}, render.DrawText{
+		Text: "AA", Color: render.RGBA(1, 1, 1, 1), Size: 100, Font: 1,
+	}, atlas)
+	wantScale := float32(1_000.0 / maxAtlasPixelSize)
+	if count != 2 || len(labels) != 1 {
+		t.Fatalf("records count=%d labels=%d, want 2 and 1", count, len(labels))
+	}
+	if labels[0].scale != wantScale {
+		t.Fatalf("label scale=%v, want %v", labels[0].scale, wantScale)
+	}
+	if wantPen := float32(glyph.Advance) * wantScale; glyphs[1].penX != wantPen {
+		t.Fatalf("second glyph pen=%v, want %v", glyphs[1].penX, wantPen)
+	}
+}

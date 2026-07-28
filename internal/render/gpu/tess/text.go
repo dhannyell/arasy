@@ -35,6 +35,8 @@ func AppendText(m *TextMesh, c ctx, cmd render.DrawText, atlas *Atlas) {
 		}
 		measured = render.MeasureTextSpaced(cmd.Text, size, cmd.LetterSpacing)
 		scale = c.cam.WorldScalarToScreen(measured.Y) / nativeHeight
+	} else if atlas.Key.PX > 0 {
+		scale = requestedTextPixelSize(c, cmd.Size) / float64(atlas.Key.PX)
 	}
 
 	glyphs := m.glyphScratch[:0]
@@ -175,6 +177,9 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 			index++
 		}
 	} else {
+		if atlas.Key.PX > 0 {
+			scale = requestedTextPixelSize(c, cmd.Size) / float64(atlas.Key.PX)
+		}
 		spacing := c.cam.WorldScalarToScreen(cmd.LetterSpacing)
 		ascii := true
 		for i := 0; i < len(cmd.Text); i++ {
@@ -188,7 +193,7 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 					penX: float32(destWidth), metric: glyph.index, label: labelIndex,
 				})
 			}
-			destWidth += glyph.Advance
+			destWidth += glyph.Advance * scale
 			if i+1 < len(cmd.Text) {
 				destWidth += spacing
 			}
@@ -205,7 +210,7 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 						penX: float32(destWidth), metric: glyph.index, label: labelIndex,
 					})
 				}
-				destWidth += glyph.Advance
+				destWidth += glyph.Advance * scale
 				if index+1 < runeCount {
 					destWidth += spacing
 				}
@@ -226,6 +231,13 @@ func appendTextGlyphRecords(dst *[]textGlyphRecord, labels *[]textLabelRecord, c
 		topY+nativeAscent*scale, scale, clipMin, clipMax, cmd.Color,
 	)
 	return len(*dst) - start
+}
+
+func requestedTextPixelSize(c ctx, size float64) float64 {
+	if size <= 0 {
+		size = glyphHeight
+	}
+	return c.cam.WorldScalarToScreen(size)
 }
 
 type textLabelLayout struct {

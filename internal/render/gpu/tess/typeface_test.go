@@ -66,6 +66,21 @@ func TestNewAtlasForFaceRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestMaximumRasterizedAtlasFitsWebGPUMinimumLimit(t *testing.T) {
+	face, err := typeface.Parse(goregular.TTF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	atlas, err := NewAtlasForFace(1, maxAtlasPixelSize, face, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounds := atlas.Image.Bounds()
+	if bounds.Dx() > maxAtlasDimension || bounds.Dy() > maxAtlasDimension {
+		t.Fatalf("atlas dimensions=%dx%d exceed %d", bounds.Dx(), bounds.Dy(), maxAtlasDimension)
+	}
+}
+
 func TestIndexedASCIIGlyphsUsesQuestionMarkForUnsupportedGlyph(t *testing.T) {
 	fallback := Glyph{Advance: 7, Width: 5, Height: 9, index: 3}
 	letter := Glyph{Advance: 8, Width: 6, Height: 9, index: 4}

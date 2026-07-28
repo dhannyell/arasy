@@ -23,6 +23,11 @@ const (
 	glyphWidth     = 7
 	glyphHeight    = 13
 	atlasPadding   = 1
+	// WebGPU guarantees at least 8192 for a 2D texture dimension. Glyphs
+	// above this raster size are scaled by the text pipeline instead of
+	// creating device-dependent oversized atlases.
+	maxAtlasDimension = 8192
+	maxAtlasPixelSize = 512
 )
 
 // AtlasKey identifies one rasterized font atlas for a concrete screen
@@ -239,7 +244,11 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 
 	// A square-ish power-of-two shelf width keeps uploads compact while
 	// remaining deterministic for a given rune set.
+	if maxCellWidth > maxAtlasDimension {
+		return nil, fmt.Errorf("create font atlas: glyph cell width %d exceeds %d", maxCellWidth, maxAtlasDimension)
+	}
 	targetWidth := max(maxCellWidth, nextPowerOfTwo(int(math.Ceil(math.Sqrt(float64(totalArea))))))
+	targetWidth = min(targetWidth, maxAtlasDimension)
 	x, y, rowHeight := 0, 0, 0
 	for i := range items {
 		cellW := items[i].w + 2*atlasPadding
@@ -255,6 +264,9 @@ func NewAtlasForFace(fontID render.FontID, px int, parsed *typeface.Face, runes 
 		rowHeight = max(rowHeight, cellH)
 	}
 	atlasHeight := max(1, y+rowHeight)
+	if atlasHeight > maxAtlasDimension {
+		return nil, fmt.Errorf("create font atlas: packed height %d exceeds %d", atlasHeight, maxAtlasDimension)
+	}
 	img := image.NewAlpha(image.Rect(0, 0, targetWidth, atlasHeight))
 	drawer := &font.Drawer{Dst: img, Src: image.NewUniform(color.Alpha{A: 255}), Face: fontFace}
 	glyphs := make(map[rune]Glyph, len(items))

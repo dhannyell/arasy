@@ -39,7 +39,7 @@ func textPixelSize(c ctx, size float64) int {
 	if size <= 0 {
 		size = glyphHeight
 	}
-	return int(math.Round(c.cam.WorldScalarToScreen(size)))
+	return min(int(math.Round(c.cam.WorldScalarToScreen(size))), maxAtlasPixelSize)
 }
 
 // TextBatchCoverage aggregates, for every label, the (FontID, pixel size)

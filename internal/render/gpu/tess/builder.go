@@ -1,8 +1,6 @@
 package tess
 
 import (
-	"math"
-
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -194,7 +192,7 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 		if size <= 0 {
 			size = glyphHeight
 		}
-		px := int(math.Round(c.cam.WorldScalarToScreen(size)))
+		px := textPixelSize(c, size)
 		if px <= 0 {
 			continue
 		}
@@ -360,7 +358,7 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 	if size <= 0 {
 		size = glyphHeight
 	}
-	px := int(math.Round(s.ctx.cam.WorldScalarToScreen(size)))
+	px := textPixelSize(s.ctx, size)
 	if px <= 0 {
 		return
 	}
