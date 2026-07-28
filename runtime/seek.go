@@ -104,9 +104,9 @@ func (d *Driver) resetForResimulation() {
 
 func (d *Driver) resimulate(target uint64) {
 	// Reconstruction is silent regardless of direction: the cues at these ticks
-	// were already heard on the live run (D7 scrub policy). Suppressing here
-	// covers both seekTo paths (incremental fast-forward and keyframe restore),
-	// and drops any cue left pending from the pre-seek present.
+	// were already heard on the live run. Suppressing here covers both seekTo
+	// paths (incremental fast-forward and keyframe restore), and drops any cue
+	// left pending from the pre-seek present.
 	d.audio.suppressCues = true
 	d.audio.pending = nil
 	defer func() { d.audio.suppressCues = false }()
@@ -115,15 +115,22 @@ func (d *Driver) resimulate(target uint64) {
 	dt := d.clock.DT()
 
 	for d.tick < target {
-		for _, viewport := range cursor.viewportsAt(d.tick) {
-			d.viewport = viewport
-		}
-		d.input.Apply(cursor.eventsAt(d.tick), d.tick)
-		d.stepCore(dt)
-		d.verifyKeyframe(d.tick)
+		d.journalStep(&cursor, dt)
 	}
 	d.timeline.discardStaged()
 	d.recordingStaged = nil
+}
+
+// journalStep replays one recorded tick: viewport changes, then input, then
+// the canonical simulation step. It is the single place that knows this
+// order, shared by seek reconstruction and watch-mode playback.
+func (d *Driver) journalStep(cursor *resimulationCursor, dt float64) {
+	for _, viewport := range cursor.viewportsAt(d.tick) {
+		d.viewport = viewport
+	}
+	d.input.Apply(cursor.eventsAt(d.tick), d.tick)
+	d.stepCore(dt)
+	d.verifyKeyframe(d.tick)
 }
 
 func (d *Driver) applyLoggedInputsAtCurrentTick() {

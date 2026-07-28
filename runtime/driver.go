@@ -98,6 +98,10 @@ type DriveState struct {
 	// DeterminismViolated stays true after a seek reconstructs a keyframed
 	// tick with a checksum different from the recorded keyframe checksum.
 	DeterminismViolated bool
+
+	// ReplayMode is true while the driver advances by consuming the
+	// recorded journal instead of stepping live.
+	ReplayMode bool
 }
 
 type AdvanceStats struct {
@@ -208,7 +212,11 @@ func (d *Driver) AdvanceTime(elapsed time.Duration) AdvanceStats {
 		clamped = plan.Clamped
 	}
 
-	d.runSteps(stepsToRun)
+	if frame.replayMode {
+		d.playbackSteps(stepsToRun)
+	} else {
+		d.runSteps(stepsToRun)
+	}
 
 	return AdvanceStats{Steps: stepsToRun, Clamped: clamped, Alpha: d.clock.Alpha()}
 }
@@ -228,7 +236,11 @@ func (d *Driver) Step() AdvanceStats {
 		d.seekTo(target)
 	}
 
-	d.runSteps(1)
+	if frame.replayMode {
+		d.playbackSteps(1)
+	} else {
+		d.runSteps(1)
+	}
 
 	return AdvanceStats{Steps: 1, Alpha: d.clock.Alpha()}
 }
@@ -320,6 +332,7 @@ func (d *Driver) State() DriveState {
 		HistoryLen:          d.historyLen(),
 		MaxRecordedTick:     d.timeline.maxTick,
 		DeterminismViolated: d.determinismViolated,
+		ReplayMode:          d.controls.replayMode,
 	}
 	if d.recorder != nil {
 		start, end, ok := d.recorder.Range()

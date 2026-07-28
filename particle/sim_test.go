@@ -102,30 +102,32 @@ func TestStepIntensityScalesEmitRate(t *testing.T) {
 
 // --- Burst semantics ----------------------------------------------------
 
-func TestBurstFiresOnlyOnCumulativeIncreaseNeverRetroactively(t *testing.T) {
+func TestBurstFiresOnceOnFirstSightThenOnlyOnCumulativeIncrease(t *testing.T) {
 	decl := baseDecl()
 	decl.BurstSize = 3
 
 	e := NewEmitter(decl, 1)
 	pos := math2d.Vec2{}
 
-	// First Step ever: burst starts nonzero (5), but the emitter must not
-	// fire a retroactive burst on first sight.
+	// First Step ever: the counter already reads 5. That means "burst now",
+	// so exactly one burst fires -- not five retroactive ones, and not the
+	// silence that used to swallow the opening burst of any effect switched on
+	// mid-stream.
 	e.Step(pos, 0, 0, 5, 1.0, decl.Capacity)
-	if got := aliveCount(e); got != 0 {
-		t.Fatalf("aliveCount after first Step = %d, want 0 (no retroactive burst)", got)
+	if got := aliveCount(e); got != 3 {
+		t.Fatalf("aliveCount after first Step = %d, want 3 (one burst, not five)", got)
 	}
 
 	// Re-sending the same cumulative value fires nothing.
 	e.Step(pos, 0, 0, 5, 1.0, decl.Capacity)
-	if got := aliveCount(e); got != 0 {
-		t.Fatalf("aliveCount after resending same burst value = %d, want 0", got)
+	if got := aliveCount(e); got != 3 {
+		t.Fatalf("aliveCount after resending same burst value = %d, want 3", got)
 	}
 
 	// A cumulative increase of 2 fires 2*BurstSize particles.
 	e.Step(pos, 0, 0, 7, 1.0, decl.Capacity)
-	if got := aliveCount(e); got != 6 {
-		t.Fatalf("aliveCount after burst delta 2 = %d, want 6 (2*BurstSize)", got)
+	if got := aliveCount(e); got != 9 {
+		t.Fatalf("aliveCount after burst delta 2 = %d, want 9 (3 + 2*BurstSize)", got)
 	}
 }
 
@@ -136,23 +138,23 @@ func TestBurstAccumulatedDuringPauseFiresOnResume(t *testing.T) {
 	e := NewEmitter(decl, 1)
 	pos := math2d.Vec2{}
 
-	e.Step(pos, 0, 0, 1, 1.0, decl.Capacity) // seeds lastBurst=1, no fire
-	if got := aliveCount(e); got != 0 {
-		t.Fatalf("aliveCount after seeding Step = %d, want 0", got)
+	e.Step(pos, 0, 0, 1, 1.0, decl.Capacity) // first sight of a live counter: one burst
+	if got := aliveCount(e); got != 3 {
+		t.Fatalf("aliveCount after seeding Step = %d, want 3", got)
 	}
 
 	// Paused frame (dt<=0): the emitter must ignore this burst value
 	// entirely, not just defer it.
 	e.Step(pos, 0, 0, 3, 0.0, decl.Capacity)
-	if got := aliveCount(e); got != 0 {
-		t.Fatalf("aliveCount after paused Step = %d, want 0 (dt<=0 never emits)", got)
+	if got := aliveCount(e); got != 3 {
+		t.Fatalf("aliveCount after paused Step = %d, want 3 (dt<=0 never emits)", got)
 	}
 
 	// Resuming with the burst counter still at 3 must fire the delta
 	// against the last value seen while dt>0 (1), i.e. 2*BurstSize.
 	e.Step(pos, 0, 0, 3, 1.0, decl.Capacity)
-	if got := aliveCount(e); got != 6 {
-		t.Fatalf("aliveCount on resume = %d, want 6 (delta 2 * BurstSize accumulated across the pause)", got)
+	if got := aliveCount(e); got != 9 {
+		t.Fatalf("aliveCount on resume = %d, want 9 (3 + delta 2 * BurstSize across the pause)", got)
 	}
 }
 

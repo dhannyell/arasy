@@ -12,8 +12,10 @@ func TestEmissionStateFirstAdvanceSeedsBurstAndPosition(t *testing.T) {
 
 	frame := state.Advance(pos, 2, 1, 3, 5, 0.5)
 
-	if frame.Count != 1 {
-		t.Fatalf("Count = %d, want 1 continuous particle and no retroactive burst", frame.Count)
+	// 1 continuous particle plus ONE burst of 3: a counter of 5 on the first
+	// frame owes a single burst, not five retroactive ones.
+	if frame.Count != 4 {
+		t.Fatalf("Count = %d, want 1 continuous particle and one seeded burst of 3", frame.Count)
 	}
 	if frame.Base != 0 {
 		t.Fatalf("Base = %d, want 0", frame.Base)
@@ -23,6 +25,30 @@ func TestEmissionStateFirstAdvanceSeedsBurstAndPosition(t *testing.T) {
 	}
 	if state.LastBurst != 5 || state.LastPos != pos || !state.started {
 		t.Fatalf("state was not seeded: %+v", state)
+	}
+}
+
+func TestEmissionStateFirstAdvanceWithZeroBurstStaysQuiet(t *testing.T) {
+	var state EmissionState
+
+	frame := state.Advance(math2d.Vec2{}, 0, 1, 7, 0, 1)
+
+	if frame.Count != 0 || state.LastBurst != 0 {
+		t.Fatalf("frame = %+v, LastBurst = %d; an idle counter must not seed a burst", frame, state.LastBurst)
+	}
+}
+
+func TestEmissionStateSeededBurstSurvivesPausedFirstFrame(t *testing.T) {
+	var state EmissionState
+
+	paused := state.Advance(math2d.Vec2{}, 0, 1, 5, 1, 0)
+	resumed := state.Advance(math2d.Vec2{}, 0, 1, 5, 1, 1)
+
+	if paused.Count != 0 {
+		t.Fatalf("paused Count = %d, want 0", paused.Count)
+	}
+	if resumed.Count != 5 {
+		t.Fatalf("resumed Count = %d, want the burst deferred past dt <= 0", resumed.Count)
 	}
 }
 

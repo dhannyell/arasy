@@ -217,7 +217,10 @@ type DrawParticles struct {
 	// emission (live particles still age out).
 	Intensity float64
 	// Burst is a cumulative trigger counter: each increment emits the
-	// effect's BurstSize particles once. Keep it monotonic.
+	// effect's BurstSize particles once. Keep it monotonic. An emitter that
+	// is already non-zero the first frame it is submitted fires exactly one
+	// burst, however high the counter reads -- so an effect can appear
+	// mid-stream already bursting without owing its whole history.
 	Burst uint32
 	// Time is the render clock (RenderContext.Time).
 	Time float64
