@@ -63,36 +63,36 @@ func newDebugPanel(h *host, devMode bool, newGame func() runtime.Game) *debugPan
 	doc.Get("head").Call("appendChild", style)
 
 	root := doc.Call("createElement", "div")
-	root.Set("id", "ff-debug-panel")
+	root.Set("id", "ar-debug-panel")
 	root.Get("style").Set("display", "none")
 	root.Set("innerHTML", debugPanelHTML)
 	doc.Get("body").Call("appendChild", root)
 
 	p.root = root
-	p.statsLabel = doc.Call("getElementById", "ff-debug-stats")
-	p.speed = doc.Call("getElementById", "ff-debug-speed")
-	p.speedLabel = doc.Call("getElementById", "ff-debug-speed-label")
-	p.scrub = doc.Call("getElementById", "ff-debug-scrub")
-	p.scrubLabel = doc.Call("getElementById", "ff-debug-scrub-label")
-	p.tickInput = doc.Call("getElementById", "ff-debug-tick")
-	p.playPause = doc.Call("getElementById", "ff-debug-play-pause")
-	p.recordingLabel = doc.Call("getElementById", "ff-debug-recording")
-	p.recordingTools = doc.Call("getElementById", "ff-recording-tools")
+	p.statsLabel = doc.Call("getElementById", "ar-debug-stats")
+	p.speed = doc.Call("getElementById", "ar-debug-speed")
+	p.speedLabel = doc.Call("getElementById", "ar-debug-speed-label")
+	p.scrub = doc.Call("getElementById", "ar-debug-scrub")
+	p.scrubLabel = doc.Call("getElementById", "ar-debug-scrub-label")
+	p.tickInput = doc.Call("getElementById", "ar-debug-tick")
+	p.playPause = doc.Call("getElementById", "ar-debug-play-pause")
+	p.recordingLabel = doc.Call("getElementById", "ar-debug-recording")
+	p.recordingTools = doc.Call("getElementById", "ar-recording-tools")
 
 	p.retainClick(p.playPause, p.togglePlayPause)
-	p.retainClick(doc.Call("getElementById", "ff-debug-step"), func() {
+	p.retainClick(doc.Call("getElementById", "ar-debug-step"), func() {
 		p.control(runtime.ControlCommand{Kind: runtime.ControlStep})
 	})
-	p.retainClick(doc.Call("getElementById", "ff-debug-back"), func() {
+	p.retainClick(doc.Call("getElementById", "ar-debug-back"), func() {
 		p.control(runtime.ControlCommand{Kind: runtime.ControlBack})
 	})
-	p.retainClick(doc.Call("getElementById", "ff-debug-back-second"), func() {
+	p.retainClick(doc.Call("getElementById", "ar-debug-back-second"), func() {
 		p.control(runtime.ControlCommand{Kind: runtime.ControlBackSeconds, Seconds: 1})
 	})
-	p.retainClick(doc.Call("getElementById", "ff-debug-reset"), func() {
+	p.retainClick(doc.Call("getElementById", "ar-debug-reset"), func() {
 		p.control(runtime.ControlCommand{Kind: runtime.ControlReset})
 	})
-	p.retainClick(doc.Call("getElementById", "ff-debug-go-tick"), p.goToTick)
+	p.retainClick(doc.Call("getElementById", "ar-debug-go-tick"), p.goToTick)
 	p.retainEvent(p.speed, "pointerdown", func() { p.speedEditing = true })
 	p.retainEvent(p.speed, "pointerup", func() { p.speedEditing = false })
 	p.retainEvent(p.speed, "blur", func() { p.speedEditing = false })
@@ -107,7 +107,7 @@ func newDebugPanel(h *host, devMode bool, newGame func() runtime.Game) *debugPan
 	if devMode {
 		p.buildDebugLayerControls(doc)
 	} else {
-		doc.Call("getElementById", "ff-debug-controls").Get("style").Set("display", "none")
+		doc.Call("getElementById", "ar-debug-controls").Get("style").Set("display", "none")
 	}
 
 	if newGame != nil {
@@ -121,12 +121,12 @@ func newDebugPanel(h *host, devMode bool, newGame func() runtime.Game) *debugPan
 }
 
 func (p *debugPanel) buildDebugLayerControls(doc js.Value) {
-	layers := doc.Call("getElementById", "ff-debug-layers")
+	layers := doc.Call("getElementById", "ar-debug-layers")
 	for i, spec := range debugLayerSpec {
 		flag := spec.flag
-		id := "ff-debug-layer-" + strconv.Itoa(i)
+		id := "ar-debug-layer-" + strconv.Itoa(i)
 		label := doc.Call("createElement", "label")
-		label.Set("className", "ff-debug-check")
+		label.Set("className", "ar-debug-check")
 		input := doc.Call("createElement", "input")
 		input.Set("id", id)
 		input.Set("type", "checkbox")
@@ -317,49 +317,49 @@ func formatFloat(v float64) string {
 }
 
 const debugPanelHTML = `
-<div class="ff-debug-title">Arasy debug</div>
-<div id="ff-debug-stats" class="ff-debug-stats">tick=0</div>
-<div class="ff-debug-row ff-debug-status-row">
-  <span id="ff-debug-recording">recording=false</span>
+<div class="ar-debug-title">Arasy debug</div>
+<div id="ar-debug-stats" class="ar-debug-stats">tick=0</div>
+<div class="ar-debug-row ar-debug-status-row">
+  <span id="ar-debug-recording">recording=false</span>
 </div>
-<div id="ff-debug-controls">
-  <div class="ff-debug-row">
-    <button id="ff-debug-play-pause" type="button">Pause</button>
-    <button id="ff-debug-step" type="button">+1 tick</button>
-    <button id="ff-debug-back" type="button">Back</button>
-    <button id="ff-debug-back-second" type="button">Back 1s</button>
-    <button id="ff-debug-reset" type="button">Reset</button>
+<div id="ar-debug-controls">
+  <div class="ar-debug-row">
+    <button id="ar-debug-play-pause" type="button">Pause</button>
+    <button id="ar-debug-step" type="button">+1 tick</button>
+    <button id="ar-debug-back" type="button">Back</button>
+    <button id="ar-debug-back-second" type="button">Back 1s</button>
+    <button id="ar-debug-reset" type="button">Reset</button>
   </div>
-  <label class="ff-debug-field">speed
-    <input id="ff-debug-speed" type="range" min="0.25" max="8" step="0.25" value="1">
-    <span id="ff-debug-speed-label">1.00</span>
+  <label class="ar-debug-field">speed
+    <input id="ar-debug-speed" type="range" min="0.25" max="8" step="0.25" value="1">
+    <span id="ar-debug-speed-label">1.00</span>
   </label>
-  <label class="ff-debug-field">scrub
-    <input id="ff-debug-scrub" type="range" min="0" max="0" step="1" value="0">
-    <span id="ff-debug-scrub-label">0/0</span>
+  <label class="ar-debug-field">scrub
+    <input id="ar-debug-scrub" type="range" min="0" max="0" step="1" value="0">
+    <span id="ar-debug-scrub-label">0/0</span>
   </label>
-  <div class="ff-debug-row">
-    <input id="ff-debug-tick" type="number" min="0" step="1" value="0" aria-label="tick">
-    <button id="ff-debug-go-tick" type="button">Go tick</button>
+  <div class="ar-debug-row">
+    <input id="ar-debug-tick" type="number" min="0" step="1" value="0" aria-label="tick">
+    <button id="ar-debug-go-tick" type="button">Go tick</button>
   </div>
   <details open>
     <summary>layers</summary>
-    <div id="ff-debug-layers" class="ff-debug-layers"></div>
+    <div id="ar-debug-layers" class="ar-debug-layers"></div>
   </details>
 </div>
-<div id="ff-recording-tools" class="ff-debug-section">
-  <div class="ff-debug-row">
-    <button id="ff-rec-record" type="button">Record</button>
-    <button id="ff-rec-save" type="button">Save .arrp</button>
-    <button id="ff-rec-load" type="button">Load .arrp</button>
-    <input id="ff-rec-file" type="file" accept=".arrp" style="display:none">
+<div id="ar-recording-tools" class="ar-debug-section">
+  <div class="ar-debug-row">
+    <button id="ar-rec-record" type="button">Record</button>
+    <button id="ar-rec-save" type="button">Save .arrp</button>
+    <button id="ar-rec-load" type="button">Load .arrp</button>
+    <input id="ar-rec-file" type="file" accept=".arrp" style="display:none">
   </div>
-  <div id="ff-rec-status" class="ff-debug-message">recording idle</div>
+  <div id="ar-rec-status" class="ar-debug-message">recording idle</div>
 </div>
 `
 
 const debugPanelCSS = `
-#ff-debug-panel {
+#ar-debug-panel {
 	position: fixed;
 	top: 8px;
 	right: 8px;
@@ -375,18 +375,18 @@ const debugPanelCSS = `
 	box-shadow: 0 10px 30px rgba(0,0,0,0.32);
 	user-select: none;
 }
-#ff-debug-panel button,
-#ff-debug-panel input {
+#ar-debug-panel button,
+#ar-debug-panel input {
 	font: inherit;
 }
-#ff-debug-panel button {
+#ar-debug-panel button {
 	background: #202832;
 	color: #f4f7fa;
 	border: 1px solid rgba(255,255,255,0.18);
 	border-radius: 4px;
 	padding: 3px 7px;
 }
-#ff-debug-panel input[type="number"] {
+#ar-debug-panel input[type="number"] {
 	width: 104px;
 	box-sizing: border-box;
 	background: #10161d;
@@ -395,52 +395,52 @@ const debugPanelCSS = `
 	border-radius: 4px;
 	padding: 3px 6px;
 }
-.ff-debug-title {
+.ar-debug-title {
 	font-weight: 700;
 	margin-bottom: 4px;
 }
-.ff-debug-stats {
+.ar-debug-stats {
 	opacity: 0.82;
 	margin-bottom: 8px;
 	white-space: normal;
 	overflow-wrap: anywhere;
 }
-.ff-debug-row {
+.ar-debug-row {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px;
 	align-items: center;
 	margin-bottom: 8px;
 }
-.ff-debug-status-row {
+.ar-debug-status-row {
 	margin-bottom: 6px;
 	opacity: 0.82;
 }
-.ff-debug-field {
+.ar-debug-field {
 	display: grid;
 	grid-template-columns: 44px 1fr 44px;
 	gap: 8px;
 	align-items: center;
 	margin-bottom: 8px;
 }
-.ff-debug-layers {
+.ar-debug-layers {
 	display: grid;
 	grid-template-columns: 1fr 1fr;
 	gap: 4px 10px;
 	margin-top: 6px;
 }
-.ff-debug-check {
+.ar-debug-check {
 	display: flex;
 	gap: 5px;
 	align-items: center;
 	white-space: nowrap;
 }
-.ff-debug-section {
+.ar-debug-section {
 	border-top: 1px solid rgba(255,255,255,0.12);
 	margin-top: 10px;
 	padding-top: 8px;
 }
-.ff-debug-message {
+.ar-debug-message {
 	opacity: 0.78;
 	overflow-wrap: anywhere;
 }

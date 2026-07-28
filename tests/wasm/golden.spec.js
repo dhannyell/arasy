@@ -15,7 +15,7 @@ async function expectFixtureScreenshot(page, testInfo, fixture, screenshot) {
     { message: `expected ${expectedRenderer} renderer; browser log:\n${messages.join('\n')}` },
   ).toContain(`using ${expectedRenderer} renderer`);
 
-  const canvas = page.locator('#ff-canvas');
+  const canvas = page.locator('#ar-canvas');
   await expect(canvas).toHaveAttribute('data-Arasy-ready', expectedRenderer);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   try {

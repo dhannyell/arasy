@@ -16,7 +16,7 @@ import (
 
 // Options configures the browser WASM host.
 type Options struct {
-	// CanvasID is the DOM canvas element id. Default "ff-canvas".
+	// CanvasID is the DOM canvas element id. Default "ar-canvas".
 	CanvasID string
 	// Log receives host diagnostics. Default slog.Default().
 	Log *slog.Logger
@@ -81,7 +81,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 
 	canvasID := opts.CanvasID
 	if canvasID == "" {
-		canvasID = "ff-canvas"
+		canvasID = "ar-canvas"
 	}
 
 	cfg := driver.Config()

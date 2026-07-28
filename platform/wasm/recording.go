@@ -61,11 +61,11 @@ func newRecordingPanel(h *host, newGame func() runtime.Game, log *slog.Logger) *
 	p := &recordingPanel{driver: h.driver, newGame: newGame, log: log, host: h}
 	doc := js.Global().Get("document")
 
-	p.statusEl = doc.Call("getElementById", "ff-rec-status")
-	p.recordEl = doc.Call("getElementById", "ff-rec-record")
-	saveEl := doc.Call("getElementById", "ff-rec-save")
-	loadEl := doc.Call("getElementById", "ff-rec-load")
-	p.fileEl = doc.Call("getElementById", "ff-rec-file")
+	p.statusEl = doc.Call("getElementById", "ar-rec-status")
+	p.recordEl = doc.Call("getElementById", "ar-rec-record")
+	saveEl := doc.Call("getElementById", "ar-rec-save")
+	loadEl := doc.Call("getElementById", "ar-rec-load")
+	p.fileEl = doc.Call("getElementById", "ar-rec-file")
 
 	p.retainClick(p.recordEl, p.toggleRecording)
 	p.retainClick(saveEl, p.saveRecording)
