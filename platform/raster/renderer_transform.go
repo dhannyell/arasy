@@ -33,24 +33,61 @@ func (r *Renderer) transformedStrokeWidth(worldWidth float64, transform math2d.A
 	return r.Camera.WorldScalarToScreen(worldWidth) * transform.MeanScale()
 }
 
-// drawTransformedRect draws a rect with a non-identity transform. CornerRadius
-// is ignored under transform (a rounded rect degrades to a sharp one); pivoted
-// rounded panels are a follow-up when a consumer needs them.
+// drawTransformedRect draws a rect with a non-identity transform. Rounded
+// corners are built in local space before every boundary point is transformed,
+// preserving CornerRadius under scale, rotation, and shear.
 func (r *Renderer) drawTransformedRect(img *image.RGBA, command render.DrawRect) {
 	rect := command.Rect
-	corners := [4]math2d.Vec2{
-		command.Transform.Apply(math2d.Vec2{X: rect.Min.X, Y: rect.Min.Y}),
-		command.Transform.Apply(math2d.Vec2{X: rect.Max.X, Y: rect.Min.Y}),
-		command.Transform.Apply(math2d.Vec2{X: rect.Max.X, Y: rect.Max.Y}),
-		command.Transform.Apply(math2d.Vec2{X: rect.Min.X, Y: rect.Max.Y}),
+	points := []math2d.Vec2{
+		{X: rect.Min.X, Y: rect.Min.Y},
+		{X: rect.Max.X, Y: rect.Min.Y},
+		{X: rect.Max.X, Y: rect.Max.Y},
+		{X: rect.Min.X, Y: rect.Max.Y},
 	}
-	points := make([]math2d.Vec2, 4)
-	for i, c := range corners {
-		points[i] = r.Camera.WorldToScreen(c)
+	if command.CornerRadius > 0 {
+		screenRadius := r.Camera.WorldScalarToScreen(command.CornerRadius) * command.Transform.MeanScale()
+		points = transformedRoundedRectBoundary(rect, command.CornerRadius, circleSegmentCount(screenRadius)/4)
+	}
+	for i := range points {
+		points[i] = r.Camera.WorldToScreen(command.Transform.Apply(points[i]))
 	}
 
 	r.fillStrokeClosedPolygon(img, points, command.Fill, command.Stroke,
 		r.transformedStrokeWidth(command.StrokeWidth, command.Transform), command.Clip)
+}
+
+func transformedRoundedRectBoundary(rect math2d.Rect, radius float64, segments int) []math2d.Vec2 {
+	radius = math.Min(radius, math.Min(rect.Width(), rect.Height())/2)
+	if radius <= 0 {
+		return []math2d.Vec2{
+			{X: rect.Min.X, Y: rect.Min.Y},
+			{X: rect.Max.X, Y: rect.Min.Y},
+			{X: rect.Max.X, Y: rect.Max.Y},
+			{X: rect.Min.X, Y: rect.Max.Y},
+		}
+	}
+
+	centers := [4]math2d.Vec2{
+		{X: rect.Min.X + radius, Y: rect.Min.Y + radius},
+		{X: rect.Max.X - radius, Y: rect.Min.Y + radius},
+		{X: rect.Max.X - radius, Y: rect.Max.Y - radius},
+		{X: rect.Min.X + radius, Y: rect.Max.Y - radius},
+	}
+	startAngles := [4]float64{math.Pi, 1.5 * math.Pi, 0, 0.5 * math.Pi}
+	points := make([]math2d.Vec2, 0, 4*(segments+1)-1)
+	for corner, center := range centers {
+		for step := 0; step <= segments; step++ {
+			if corner == len(centers)-1 && step == segments {
+				break
+			}
+			angle := startAngles[corner] + 0.5*math.Pi*float64(step)/float64(segments)
+			points = append(points, math2d.Vec2{
+				X: center.X + math.Cos(angle)*radius,
+				Y: center.Y + math.Sin(angle)*radius,
+			})
+		}
+	}
+	return points
 }
 
 // drawTransformedCircle draws a circle with a non-identity transform (e.g. scale, skew).

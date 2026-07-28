@@ -123,6 +123,28 @@ func TestAppendRectRotationHonoredByAllCorners(t *testing.T) {
 	}
 }
 
+func TestAppendTransformedRoundedRectPreservesCornerRadius(t *testing.T) {
+	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 40, Y: 30})
+	transform := math2d.Scale(math2d.Vec2{X: 0.72, Y: 0.72}).About(rect.Center())
+
+	var mesh Mesh
+	AppendRect(&mesh, testCtx(), render.DrawRect{
+		BaseCommand:  render.BaseCommand{Transform: transform},
+		Rect:         rect,
+		Fill:         render.RGBA(1, 1, 1, 1),
+		CornerRadius: 8,
+	})
+
+	points := uniqueScreenPoints(mesh.Vertices)
+	if len(points) <= 4 {
+		t.Fatalf("unique boundary points = %d, want rounded tessellation", len(points))
+	}
+	sharpCorner := transform.Apply(rect.Min)
+	if containsPoint(points, sharpCorner) {
+		t.Fatalf("rounded fill contains transformed sharp corner %v", sharpCorner)
+	}
+}
+
 // TestAppendCircleNonUniformScaleBecomesEllipse guards the circle bug: only the
 // center was transformed, leaving an isotropic radius. Under a non-uniform
 // scale the boundary must widen/narrow per axis.

@@ -49,29 +49,34 @@ func AppendRect(m *Mesh, c ctx, cmd render.DrawRect) {
 	}
 }
 
-// appendTransformedRect draws a rect under a non-identity transform. All four
-// corners are transformed in world space and drawn as a filled/stroked
-// quadrilateral, so rotation and shear are honored (matching the raster
-// backend). CornerRadius is ignored under transform: a rounded rect degrades
-// to a sharp one, the same limitation the raster backend carries.
+// appendTransformedRect draws a rect under a non-identity transform. Rounded
+// corners are tessellated in local space before every boundary point is
+// transformed, so scale, rotation, and shear preserve CornerRadius.
 func appendTransformedRect(m *Mesh, c ctx, cmd render.DrawRect) {
 	start := len(m.Vertices)
 
 	r := cmd.Rect
-	corners := []math2d.Vec2{
-		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Min.X, Y: r.Min.Y})),
-		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Max.X, Y: r.Min.Y})),
-		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Max.X, Y: r.Max.Y})),
-		c.cam.WorldToScreen(cmd.Transform.Apply(math2d.Vec2{X: r.Min.X, Y: r.Max.Y})),
+	points := []math2d.Vec2{
+		{X: r.Min.X, Y: r.Min.Y},
+		{X: r.Max.X, Y: r.Min.Y},
+		{X: r.Max.X, Y: r.Max.Y},
+		{X: r.Min.X, Y: r.Max.Y},
+	}
+	if cmd.CornerRadius > 0 {
+		screenRadius := c.cam.WorldScalarToScreen(cmd.CornerRadius) * cmd.Transform.MeanScale()
+		points = roundedRectBoundary(r, cmd.CornerRadius, clampInt(int(math.Ceil(screenRadius)), 4, 24))
+	}
+	for i := range points {
+		points[i] = c.cam.WorldToScreen(cmd.Transform.Apply(points[i]))
 	}
 
 	if cmd.Fill.A > 0 {
-		appendPolygonFill(m, c, corners, cmd.Fill)
+		appendPolygonFill(m, c, points, cmd.Fill)
 	}
 
 	if cmd.Stroke.A > 0 {
 		if sw := transformedStrokeWidth(c, cmd.StrokeWidth, cmd.Transform); sw > 0 {
-			appendClosedStrokeScreen(m, c, corners, sw, cmd.Stroke)
+			appendClosedStrokeScreen(m, c, points, sw, cmd.Stroke)
 		}
 	}
 
@@ -80,6 +85,40 @@ func appendTransformedRect(m *Mesh, c ctx, cmd render.DrawRect) {
 		clipped := clipTriangles(m.Vertices[start:], clip)
 		m.Vertices = append(m.Vertices[:start], clipped...)
 	}
+}
+
+func roundedRectBoundary(rect math2d.Rect, radius float64, segments int) []math2d.Vec2 {
+	radius = math.Min(radius, math.Min(rect.Width(), rect.Height())/2)
+	if radius <= 0 {
+		return []math2d.Vec2{
+			{X: rect.Min.X, Y: rect.Min.Y},
+			{X: rect.Max.X, Y: rect.Min.Y},
+			{X: rect.Max.X, Y: rect.Max.Y},
+			{X: rect.Min.X, Y: rect.Max.Y},
+		}
+	}
+
+	centers := [4]math2d.Vec2{
+		{X: rect.Min.X + radius, Y: rect.Min.Y + radius},
+		{X: rect.Max.X - radius, Y: rect.Min.Y + radius},
+		{X: rect.Max.X - radius, Y: rect.Max.Y - radius},
+		{X: rect.Min.X + radius, Y: rect.Max.Y - radius},
+	}
+	startAngles := [4]float64{math.Pi, 1.5 * math.Pi, 0, 0.5 * math.Pi}
+	points := make([]math2d.Vec2, 0, 4*(segments+1)-1)
+	for corner, center := range centers {
+		for step := 0; step <= segments; step++ {
+			if corner == len(centers)-1 && step == segments {
+				break
+			}
+			angle := startAngles[corner] + 0.5*math.Pi*float64(step)/float64(segments)
+			points = append(points, math2d.Vec2{
+				X: center.X + math.Cos(angle)*radius,
+				Y: center.Y + math.Sin(angle)*radius,
+			})
+		}
+	}
+	return points
 }
 
 func appendSquareRect(m *Mesh, c ctx, x0, y0, x1, y1 float64, cmd render.DrawRect) {
