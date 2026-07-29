@@ -34,13 +34,13 @@ func NewGame() (*Game, error) {
 func (g *Game) Setup() runtime.Config {
 	return runtime.Config{
 		Camera: render.Camera{
-			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 75}),
-			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 960}),
+			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 192, Y: 108}),
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1920, Y: 1080}),
 			Aspect:   render.AspectFit,
 		},
 		Assets: g.assets,
 		Clear:  render.RGBA(0.02, 0.04, 0.08, 1),
-		// DisableEngineSplash is left at its zero value (false): the engine
+		// DisableDefaultSplash is left at its zero value (false): the engine
 		// segment plays, then the manifest's "studio-logo" segment, then
 		// tick 0. Set it to true to skip straight to the developer segment.
 	}
@@ -56,17 +56,19 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	return []render.Command{
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: 1},
-			Position:    math2d.Vec2{X: 10, Y: 35},
+			Position:    math2d.Vec2{X: 96, Y: 54},
 			Text:        "Boot splash finished -- this is tick 0",
 			Color:       render.RGBA(0.85, 0.9, 0.95, 1),
-			Size:        4,
+			Align:       render.AlignCenter,
+			Size:        8,
 		},
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: 1},
-			Position:    math2d.Vec2{X: 10, Y: 42},
-			Text:        "Playlist: engine default + manifest \"studio-logo\"",
+			Position:    math2d.Vec2{X: 96, Y: 67},
+			Text:        "Playlist: engine default + manifest splash list",
 			Color:       render.RGBA(0.6, 0.68, 0.78, 1),
-			Size:        3,
+			Align:       render.AlignCenter,
+			Size:        6,
 		},
 	}
 }
