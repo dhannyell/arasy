@@ -76,6 +76,14 @@ type splashEntry struct {
 	MinTime   float64 `json:"min_time"`
 	Fade      float64 `json:"fade"`
 	Skippable bool    `json:"skippable"`
+
+	Effect string `json:"effect"`
+	// EffectAnchorX/Y are a fraction of the viewport (0..1, default 0.5,0.5 =
+	// center) — not pixels, and not the effect's own world units (see
+	// effectEntry).
+	EffectAnchorX   float64 `json:"effect_anchor_x"`
+	EffectAnchorY   float64 `json:"effect_anchor_y"`
+	EffectIntensity float64 `json:"effect_intensity"`
 }
 
 // effectEntry is the JSON shape of one particle effect declaration: authors
@@ -83,6 +91,15 @@ type splashEntry struct {
 // [min, max]/[x, y]/[r, g, b, a] pairs. wobble_freq is a frequency in hertz,
 // not an angle, and stays as authored. parseEffectEntry converts this shape
 // into the resolved particle.EffectDecl (radians, math2d.Vec2, enums).
+//
+// speed/emit_radius/emit_extent/gravity/size_start/size_end/wobble_amp are
+// all "world units" (see particle.EffectDecl) — the same coordinate space
+// DrawParticles.Pos is emitted in, not necessarily screen pixels and not the
+// 0..1 fraction splashEntry.EffectAnchorX/Y uses. Under an identity/1:1
+// camera, world units equal screen pixels directly (so a size of 0.1 is
+// sub-pixel and invisible); under a zoomed game camera the same unit can
+// span many pixels. Author values against whichever camera actually draws
+// this effect.
 type effectEntry struct {
 	Name         string    `json:"name"`
 	Texture      string    `json:"texture"`
@@ -280,16 +297,25 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		if _, ok := manifest.textByName[entry.Texture]; !ok {
 			return Manifest{}, fmt.Errorf("asset: splash %q references unknown texture", entry.Texture)
 		}
+		if entry.Effect != "" {
+			if _, ok := manifest.effectByName[entry.Effect]; !ok {
+				return Manifest{}, fmt.Errorf("asset: splash %q references unknown effect %q", entry.Texture, entry.Effect)
+			}
+		}
 		splash = append(splash, SplashDecl{
-			Texture:   entry.Texture,
-			CellW:     entry.CellW,
-			CellH:     entry.CellH,
-			Columns:   entry.Columns,
-			Frames:    uint16(entry.Frames),
-			Rate:      float32(entry.Rate),
-			MinTime:   entry.MinTime,
-			Fade:      entry.Fade,
-			Skippable: entry.Skippable,
+			Texture:         entry.Texture,
+			CellW:           entry.CellW,
+			CellH:           entry.CellH,
+			Columns:         entry.Columns,
+			Frames:          uint16(entry.Frames),
+			Rate:            float32(entry.Rate),
+			MinTime:         entry.MinTime,
+			Fade:            entry.Fade,
+			Skippable:       entry.Skippable,
+			Effect:          entry.Effect,
+			EffectAnchorX:   entry.EffectAnchorX,
+			EffectAnchorY:   entry.EffectAnchorY,
+			EffectIntensity: entry.EffectIntensity,
 		})
 	}
 	manifest.splash = splash

@@ -26,6 +26,7 @@ const (
 type Input struct {
 	Pos       math2d.Vec2
 	Dir       float64
+	EmitScale math2d.Vec2
 	Intensity float64
 	Burst     uint32
 	Dt        float64
@@ -118,7 +119,11 @@ func (s *EmitterSet) Draw(key InstanceKey, decl EffectDecl, in Input) Result {
 			maxAlive = s.budget.Share(decl.Capacity, max(s.wantPrev, decl.Capacity))
 		}
 
-		entry.sim.Step(in.Pos, in.Dir, in.Intensity, in.Burst, in.Dt, maxAlive)
+		emitScale := in.EmitScale
+		if emitScale.X == 0 && emitScale.Y == 0 {
+			emitScale = math2d.Vec2{X: 1, Y: 1}
+		}
+		entry.sim.StepScaled(in.Pos, emitScale, in.Dir, in.Intensity, in.Burst, in.Dt, maxAlive)
 
 		return s.collect(entry, maxAlive < decl.Capacity)
 	}

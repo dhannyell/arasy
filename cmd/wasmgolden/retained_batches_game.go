@@ -29,7 +29,7 @@ const (
 )
 
 // retainedBatchesGame is the cross-backend fixture for retained sprite/text
-// batches (plan 047). It exercises, in one frame: static sprites split
+// batches. It exercises, in one frame: static sprites split
 // across two homogeneous textures, a clipped/rotated/tinted batch, a
 // flip-book+bounce+pulse batch evaluated at a fixed time, retained text with
 // both the built-in font and an external TTF, a batch published entirely
@@ -59,7 +59,7 @@ func (g *retainedBatchesGame) Setup() runtime.Config {
 			Aspect:   render.AspectStretch,
 		},
 		Assets:              g.assets,
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Clear:               render.RGBA8(12, 16, 24, 255),
 	}
 }

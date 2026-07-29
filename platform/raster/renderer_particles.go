@@ -34,7 +34,7 @@ func (r *Renderer) drawParticles(img *image.RGBA, cmd render.DrawParticles) {
 	res := r.particles.Draw(
 		particle.InstanceKey{Effect: uint32(cmd.Effect), Emitter: uint32(cmd.Emitter)},
 		decl,
-		particle.Input{Pos: cmd.Pos, Dir: cmd.Dir, Intensity: cmd.Intensity,
+		particle.Input{Pos: cmd.Pos, Dir: cmd.Dir, EmitScale: cmd.EmitScale, Intensity: cmd.Intensity,
 			Burst: cmd.Burst, Dt: cmd.Dt, Seed: cmd.Seed},
 	)
 	if res.Skipped {

@@ -16,11 +16,15 @@ type Config struct {
 	Bounce       scene.BounceConfig
 	Physics      scene.PhysicsConfig
 	SimulationHz int
-	// FPS caps the host frame rate. Zero (the zero value)
-	// uses the engine default; a positive value caps at that many frames per
-	// second; a negative value runs the host loop uncapped. The fixed simulation
-	// rate is SimulationHz and is independent of this cap.
-	FPS           int
+	// FPS caps the host frame rate. Only works in native hosts.
+	// In WASM host vsync is forced by the browser, the rate is limited by user monitor rate.
+	//
+	// Zero (the zero value) uses the engine default(60); a positive value caps
+	// at that many frames per second; a negative value runs the host loop uncapped.
+	// The fixed simulation rate is SimulationHz and is independent of this cap.
+	FPS int
+
+	// InputBindings maps input events to game actions.
 	InputBindings []input.Binding
 
 	// HistoryLen caps the dense keyframe window in ticks. Restoring a keyframe
@@ -44,6 +48,7 @@ type Config struct {
 	// The default value is 30
 	KeyframeInterval int
 
+	// UITheme is the theme shared by all UI elements. The default is ui.DefaultTheme.
 	UITheme ui.Theme
 
 	// RenderInterpolation enables smooth visual interpolation between fixed
@@ -65,9 +70,6 @@ type Config struct {
 	// this field.
 	ParticleOffscreenScale float64
 
-	// DisableEngineSplash removes the built-in engine brand segment from the
-	// boot splash playlist. Zero value (false) shows the engine logo, as any
-	// commercial engine does by default; set true to skip straight to the
-	// manifest-declared segments (or straight to tick 0 if there are none).
-	DisableEngineSplash bool
+	// DisableDefaultSplash zero value shows the engine logo; set to skip it.
+	DisableDefaultSplash bool
 }

@@ -161,25 +161,38 @@ func (h *host) run() error {
 		budget:     frameBudget(h.driver.Config().FPS),
 		spinMargin: h.spinMargin,
 	}
+	var windowShow = false
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
 		h.resizeIfNeeded()
+		// SetViewport is a no-op when unchanged, so this stays cheap; it must
+		// run every frame (not just once before the loop) so a resize during
+		// the splash phase reaches the driver too — the splash branch below
+		// never falls through to RunTick, which is the only other place that
+		// threads h.viewport into the driver (TickBatch.Viewport).
+		h.driver.SetViewport(h.viewport)
+
+		if !windowShow {
+			h.window.Show()
+			h.window.Focus()
+			windowShow = true
+		}
 
 		elapsed := frameTimer.Elapsed(time.Now())
 
 		if h.driver.SplashActive() {
-			// RunTick threads the framebuffer viewport into the driver every
-			// tick (below); the splash path skips RunTick entirely, so it
-			// must set it itself or the driver's viewport stays its zero
-			// value and the splash renders at zero scale (invisible).
-			h.driver.SetViewport(h.viewport)
-			skip := len(h.pending) > 0
-			h.pending = h.pending[:0]
-			h.lastInputAt = time.Time{}
+			skip := false
+			for _, e := range h.pending {
+				if e.Kind == input.EventButtonDown {
+					skip = true
+					break
+				}
+			}
 			h.driver.AdvanceSplash(elapsed, skip)
+			h.pending = h.pending[:0]
 			h.driver.RenderSplashFrame(elapsed, h.renderer)
 			if err := h.renderer.Err(); err != nil {
-				return fmt.Errorf("native renderer failed: %w", err)
+				return fmt.Errorf("splash renderer failed: %w", err)
 			}
 			pacer.wait()
 			continue

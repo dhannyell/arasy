@@ -18,6 +18,8 @@ func createWindow(opts Options) (*glfw.Window, error) {
 	glfw.DefaultWindowHints()
 	glfw.WindowHint(glfw.ClientAPI, glfw.NoAPI)
 	glfw.WindowHint(glfw.Resizable, glfw.True)
+	glfw.WindowHint(glfw.Visible, glfw.False)
+	glfw.WindowHint(glfw.Focused, glfw.False)
 
 	if opts.Fullscreen {
 		monitor, mode, err := primaryVideoMode()

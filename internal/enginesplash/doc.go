@@ -16,7 +16,7 @@ const EngineSplashMinTime = 2.0
 // EngineSplashFade cross-fades the engine segment in/out at its own edges
 // (splashFadeAlpha), so the handoff to tick 0 lands on the same background
 // (Config.Clear, painted unfaded behind every segment) instead of a hard cut.
-const EngineSplashFade = 0.4
+const EngineSplashFade = 0.15
 
 // EngineSplashBackground matches the flat backdrop rect the compiled
 // animation paints inside its own 1920x1080 viewBox (#020B14). The generated

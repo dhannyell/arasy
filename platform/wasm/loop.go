@@ -6,6 +6,7 @@ import (
 	"syscall/js"
 	"time"
 
+	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -22,7 +23,13 @@ func (h *host) startLoop() {
 		elapsed := frameTimer.ElapsedMillis(ts)
 
 		if h.driver.SplashActive() {
-			skip := len(h.pending) > 0
+			skip := false
+			for _, e := range h.pending {
+				if e.Kind == input.EventButtonDown {
+					skip = true
+					break
+				}
+			}
 			h.pending = h.pending[:0]
 			h.pendingInputAtMillis = -1
 			h.driver.AdvanceSplash(elapsed, skip)

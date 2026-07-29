@@ -55,6 +55,15 @@ type SplashSegment struct {
 	// to the same color, or the two backgrounds seam together whenever the
 	// viewport's aspect ratio isn't the content's own.
 	Background render.Color
+
+	// Particles, when non-nil, computes this segment's particle emissions
+	// (zero or more) for its own local elapsed time and per-frame delta.
+	// render.Builder rejects DrawParticles under any modified (non-identity)
+	// group, so this bypasses the Content fade group entirely — a segment
+	// that wants its particles to fade with the rest of its content must
+	// fold alpha into each returned command's Intensity itself. A nil or
+	// empty result draws nothing this frame.
+	Particles func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles
 }
 
 // splashPlayer drives the boot splash sequence. It never touches d.tick, the
@@ -92,13 +101,13 @@ func (d *Driver) AdvanceSplash(elapsed time.Duration, skip bool) {
 // RenderSplashFrame draws the current splash segment through r (the same
 // FrameRenderer used for game frames). It publishes no dynamic resources.
 func (d *Driver) RenderSplashFrame(elapsed time.Duration, r FrameRenderer) Frame {
-	frame := d.splashFrame()
+	frame := d.splashFrame(elapsed.Seconds())
 	r.UpdateResources(FrameUpdates{})
 	r.Render(frame)
 	return frame
 }
 
-func (d *Driver) splashFrame() Frame {
+func (d *Driver) splashFrame(dt float64) Frame {
 	cam := render.Camera{World: d.viewport, Viewport: d.viewport}
 	if !d.SplashActive() {
 		return Frame{Camera: cam}
@@ -112,9 +121,14 @@ func (d *Driver) splashFrame() Frame {
 		background = d.cfg.Clear
 	}
 
-	// The background is never faded — only the segment content is.
+	// The background is never faded — only the segment content is. It sits
+	// at engineSplashBackgroundLayer, below the sky particles' own
+	// engineSkyLayer (runtime/driver.go), so it never occludes them; both
+	// sit below Content's default (unset BaseCommand.LayerValue == 0), so
+	// the compiled splash's own opaque shapes occlude the sky the way they
+	// would a real one.
 	commands := []render.Command{
-		render.DrawRect{Rect: d.viewport, Fill: background},
+		render.DrawRect{BaseCommand: render.BaseCommand{LayerValue: engineSplashBackgroundLayer}, Rect: d.viewport, Fill: background},
 	}
 
 	var builder render.Builder
@@ -130,7 +144,14 @@ func (d *Driver) splashFrame() Frame {
 	}
 	builder.Pop()
 
-	return Frame{Camera: cam, Commands: builder.Commands()}
+	commands = builder.Commands()
+	if seg.Particles != nil {
+		for _, p := range seg.Particles(d.splash.elapsed, dt, d.viewport, alpha) {
+			commands = append(commands, p)
+		}
+	}
+
+	return Frame{Camera: cam, Commands: commands}
 }
 
 // splashFlipbookImage computes the current cell of a texture flip-book
@@ -163,6 +184,11 @@ func splashFlipbookImage(seg SplashSegment, elapsed float64, viewport math2d.Rec
 // splashFadeAlpha computes the cross-fade envelope for a segment: it rises
 // over Fade seconds at the start and falls over Fade seconds before MinTime
 // ends. Fade <= 0 is a hard cut (always opaque).
+//
+// A host with its own loading screen (e.g. internal/wasmserve's poster)
+// must hide it with a hard cut, not its own opacity transition — stacking
+// a second fade on top of this rise makes the reveal visibly dip instead of
+// resolving to one smooth fade-in.
 func splashFadeAlpha(elapsed, minTime, fade float64) float64 {
 	if fade <= 0 {
 		return 1
@@ -195,4 +221,15 @@ func fitCentered(cell, viewport math2d.Rect) math2d.Rect {
 		Y: viewport.Min.Y + (vh-fitH)/2,
 	}
 	return math2d.NewRect(offset, math2d.Vec2{X: fitW, Y: fitH})
+}
+
+// viewportSeed folds a viewport's size into a stable value that only
+// changes when the viewport's dimensions do, for XOR-ing into a particle
+// effect's Seed so a resize forces EmitterSet to rebuild that effect's live
+// particles (see engineSplashParticles). Rounded to the pixel so
+// floating-point jitter on an otherwise-unchanged size can't flip it.
+func viewportSeed(viewport math2d.Rect) uint64 {
+	w := uint64(math.Round(viewport.Width()))
+	h := uint64(math.Round(viewport.Height()))
+	return w<<32 | h
 }

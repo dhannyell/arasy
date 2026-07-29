@@ -52,7 +52,7 @@ func mustSplashManifest(t *testing.T, manifestJSON []byte) asset.Manifest {
 
 func TestSplashAdvancesThroughSegments(t *testing.T) {
 	d := newTestDriver(t, Config{
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
 			"version": 1,
 			"textures": [{"name": "a", "file": "a.png"}, {"name": "b", "file": "b.png"}],
@@ -85,7 +85,7 @@ func TestSplashAdvancesThroughSegments(t *testing.T) {
 
 func TestSkippableEndsSegmentOnInput(t *testing.T) {
 	skippable := Config{
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
 			"version": 1,
 			"textures": [{"name": "a", "file": "a.png"}],
@@ -99,7 +99,7 @@ func TestSkippableEndsSegmentOnInput(t *testing.T) {
 	}
 
 	notSkippable := Config{
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
 			"version": 1,
 			"textures": [{"name": "a", "file": "a.png"}],
@@ -114,7 +114,7 @@ func TestSkippableEndsSegmentOnInput(t *testing.T) {
 }
 
 func TestSplashNeverAdvancesTick(t *testing.T) {
-	d := newTestDriver(t, Config{DisableEngineSplash: false})
+	d := newTestDriver(t, Config{DisableDefaultSplash: false})
 
 	for range 5 {
 		d.AdvanceSplash(500*time.Millisecond, false)
@@ -133,15 +133,15 @@ func TestSplashNeverAdvancesTick(t *testing.T) {
 }
 
 func TestSplashDisabledSkipsEngineSegment(t *testing.T) {
-	d := newTestDriver(t, Config{DisableEngineSplash: true})
+	d := newTestDriver(t, Config{DisableDefaultSplash: true})
 	if d.SplashActive() {
-		t.Fatal("SplashActive() = true with DisableEngineSplash and no manifest segments, want false")
+		t.Fatal("SplashActive() = true with DisableDefaultSplash and no manifest segments, want false")
 	}
 }
 
 func TestSplashFrameEmitsDrawImage(t *testing.T) {
 	d := newTestDriver(t, Config{
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
 			"version": 1,
 			"textures": [{"name": "a", "file": "a.png"}],
@@ -179,7 +179,7 @@ func TestSplashFrameEmitsDrawImage(t *testing.T) {
 }
 
 func TestOfflinePathHasNoSplash(t *testing.T) {
-	d := newTestDriver(t, Config{DisableEngineSplash: false})
+	d := newTestDriver(t, Config{DisableDefaultSplash: false})
 	d.Step()
 	if d.State().Tick != 1 {
 		t.Fatalf("Tick = %d after one Step without draining the splash, want 1", d.State().Tick)

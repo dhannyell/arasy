@@ -40,7 +40,7 @@ func (g *particleGame) Setup() runtime.Config {
 			Aspect:   render.AspectStretch,
 		},
 		Assets:              g.assets,
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Clear:               render.RGBA8(14, 18, 27, 255),
 	}
 }

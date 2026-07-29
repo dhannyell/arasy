@@ -37,7 +37,7 @@ func (g *spriteArrayGame) Setup() runtime.Config {
 			Aspect:   render.AspectStretch,
 		},
 		Assets:              g.assets,
-		DisableEngineSplash: true,
+		DisableDefaultSplash: true,
 		Clear:               render.RGBA8(11, 16, 28, 255),
 	}
 }

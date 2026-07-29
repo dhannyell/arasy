@@ -37,8 +37,8 @@ func (m ArasySplashMetrics) WithinBudget(b ArasySplashBudget) bool {
 
 // ArasySplashAssetMetrics is the compile-time structural cost of this SVG.
 var ArasySplashAssetMetrics = ArasySplashMetrics{
-	Nodes: 31, Paths: 15, TextNodes: 0, TextRunes: 0,
-	MaxDepth: 4, CommandCapacity: 25,
+	Nodes: 30, Paths: 15, TextNodes: 0, TextRunes: 0,
+	MaxDepth: 4, CommandCapacity: 24,
 }
 
 // ArasySplashFrameMetrics describes the most recent workspace-backed traversal.
@@ -51,8 +51,8 @@ type ArasySplashFrameMetrics = svgFrameMetrics
 type ArasySplashWorkspace struct {
 	commands     []render.Command
 	builder      render.Builder
-	fills        [31]vector.FillWorkspace
-	strokes      [31]vector.StrokeWorkspace
+	fills        [30]vector.FillWorkspace
+	strokes      [30]vector.StrokeWorkspace
 	lod          uint8
 	lodReady     bool
 	frameMetrics ArasySplashFrameMetrics
@@ -479,34 +479,34 @@ var svgPath5 = func() vector.Path {
 
 var svgPath6 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1152.0639999999999, Y: 602.016})
-	builder.QuadTo(math2d.Vec2{X: 1166.0079999999998, Y: 602.016}, math2d.Vec2{X: 1175.9199999999998, Y: 592.944})
-	builder.LineTo(math2d.Vec2{X: 1175.9199999999998, Y: 600})
-	builder.LineTo(math2d.Vec2{X: 1194.7359999999999, Y: 600})
-	builder.LineTo(math2d.Vec2{X: 1194.7359999999999, Y: 562.704})
-	builder.LineTo(math2d.Vec2{X: 1187.848, Y: 556.32})
-	builder.LineTo(math2d.Vec2{X: 1194.7359999999999, Y: 549.936})
-	builder.LineTo(math2d.Vec2{X: 1194.7359999999999, Y: 512.64})
-	builder.LineTo(math2d.Vec2{X: 1175.9199999999998, Y: 512.64})
-	builder.LineTo(math2d.Vec2{X: 1175.9199999999998, Y: 519.024})
-	builder.QuadTo(math2d.Vec2{X: 1166.176, Y: 510.624}, math2d.Vec2{X: 1152.0639999999999, Y: 510.624})
-	builder.QuadTo(math2d.Vec2{X: 1138.9599999999998, Y: 510.624}, math2d.Vec2{X: 1129.5519999999997, Y: 516.336})
-	builder.QuadTo(math2d.Vec2{X: 1120.1439999999998, Y: 522.048}, math2d.Vec2{X: 1115.1039999999998, Y: 532.38})
-	builder.QuadTo(math2d.Vec2{X: 1110.0639999999999, Y: 542.712}, math2d.Vec2{X: 1110.0639999999999, Y: 556.656})
-	builder.QuadTo(math2d.Vec2{X: 1110.0639999999999, Y: 570.6}, math2d.Vec2{X: 1115.1039999999998, Y: 580.764})
-	builder.QuadTo(math2d.Vec2{X: 1120.1439999999998, Y: 590.928}, math2d.Vec2{X: 1129.5519999999997, Y: 596.472})
-	builder.QuadTo(math2d.Vec2{X: 1138.9599999999998, Y: 602.016}, math2d.Vec2{X: 1152.0639999999999, Y: 602.016})
+	builder.MoveTo(math2d.Vec2{X: 1146.6879999999999, Y: 602.016})
+	builder.QuadTo(math2d.Vec2{X: 1160.6319999999998, Y: 602.016}, math2d.Vec2{X: 1170.5439999999999, Y: 592.944})
+	builder.LineTo(math2d.Vec2{X: 1170.5439999999999, Y: 600})
+	builder.LineTo(math2d.Vec2{X: 1189.36, Y: 600})
+	builder.LineTo(math2d.Vec2{X: 1189.36, Y: 562.704})
+	builder.LineTo(math2d.Vec2{X: 1182.472, Y: 556.32})
+	builder.LineTo(math2d.Vec2{X: 1189.36, Y: 549.936})
+	builder.LineTo(math2d.Vec2{X: 1189.36, Y: 512.64})
+	builder.LineTo(math2d.Vec2{X: 1170.5439999999999, Y: 512.64})
+	builder.LineTo(math2d.Vec2{X: 1170.5439999999999, Y: 519.024})
+	builder.QuadTo(math2d.Vec2{X: 1160.8, Y: 510.624}, math2d.Vec2{X: 1146.6879999999999, Y: 510.624})
+	builder.QuadTo(math2d.Vec2{X: 1133.5839999999998, Y: 510.624}, math2d.Vec2{X: 1124.176, Y: 516.336})
+	builder.QuadTo(math2d.Vec2{X: 1114.7679999999998, Y: 522.048}, math2d.Vec2{X: 1109.7279999999998, Y: 532.38})
+	builder.QuadTo(math2d.Vec2{X: 1104.6879999999999, Y: 542.712}, math2d.Vec2{X: 1104.6879999999999, Y: 556.656})
+	builder.QuadTo(math2d.Vec2{X: 1104.6879999999999, Y: 570.6}, math2d.Vec2{X: 1109.7279999999998, Y: 580.764})
+	builder.QuadTo(math2d.Vec2{X: 1114.7679999999998, Y: 590.928}, math2d.Vec2{X: 1124.176, Y: 596.472})
+	builder.QuadTo(math2d.Vec2{X: 1133.5839999999998, Y: 602.016}, math2d.Vec2{X: 1146.6879999999999, Y: 602.016})
 	builder.Close()
-	builder.MoveTo(math2d.Vec2{X: 1152.7359999999999, Y: 581.184})
-	builder.QuadTo(math2d.Vec2{X: 1142.656, Y: 581.184}, math2d.Vec2{X: 1136.524, Y: 574.38})
-	builder.QuadTo(math2d.Vec2{X: 1130.3919999999998, Y: 567.576}, math2d.Vec2{X: 1130.3919999999998, Y: 556.488})
-	builder.QuadTo(math2d.Vec2{X: 1130.3919999999998, Y: 545.4}, math2d.Vec2{X: 1136.524, Y: 538.428})
-	builder.QuadTo(math2d.Vec2{X: 1142.656, Y: 531.456}, math2d.Vec2{X: 1152.7359999999999, Y: 531.456})
-	builder.QuadTo(math2d.Vec2{X: 1159.456, Y: 531.456}, math2d.Vec2{X: 1164.4959999999999, Y: 534.648})
-	builder.QuadTo(math2d.Vec2{X: 1169.5359999999998, Y: 537.84}, math2d.Vec2{X: 1172.3919999999998, Y: 543.4680000000001})
-	builder.QuadTo(math2d.Vec2{X: 1175.2479999999998, Y: 549.096}, math2d.Vec2{X: 1175.2479999999998, Y: 556.488})
-	builder.QuadTo(math2d.Vec2{X: 1175.2479999999998, Y: 567.576}, math2d.Vec2{X: 1168.9479999999999, Y: 574.38})
-	builder.QuadTo(math2d.Vec2{X: 1162.648, Y: 581.184}, math2d.Vec2{X: 1152.7359999999999, Y: 581.184})
+	builder.MoveTo(math2d.Vec2{X: 1147.36, Y: 581.184})
+	builder.QuadTo(math2d.Vec2{X: 1137.28, Y: 581.184}, math2d.Vec2{X: 1131.148, Y: 574.38})
+	builder.QuadTo(math2d.Vec2{X: 1125.0159999999998, Y: 567.576}, math2d.Vec2{X: 1125.0159999999998, Y: 556.488})
+	builder.QuadTo(math2d.Vec2{X: 1125.0159999999998, Y: 545.4}, math2d.Vec2{X: 1131.148, Y: 538.428})
+	builder.QuadTo(math2d.Vec2{X: 1137.28, Y: 531.456}, math2d.Vec2{X: 1147.36, Y: 531.456})
+	builder.QuadTo(math2d.Vec2{X: 1154.08, Y: 531.456}, math2d.Vec2{X: 1159.12, Y: 534.648})
+	builder.QuadTo(math2d.Vec2{X: 1164.1599999999999, Y: 537.84}, math2d.Vec2{X: 1167.0159999999998, Y: 543.4680000000001})
+	builder.QuadTo(math2d.Vec2{X: 1169.8719999999998, Y: 549.096}, math2d.Vec2{X: 1169.8719999999998, Y: 556.488})
+	builder.QuadTo(math2d.Vec2{X: 1169.8719999999998, Y: 567.576}, math2d.Vec2{X: 1163.572, Y: 574.38})
+	builder.QuadTo(math2d.Vec2{X: 1157.272, Y: 581.184}, math2d.Vec2{X: 1147.36, Y: 581.184})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -517,35 +517,35 @@ var svgPath6 = func() vector.Path {
 
 var svgPath7 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1291.6719999999998, Y: 529.44})
-	builder.LineTo(math2d.Vec2{X: 1283.7759999999998, Y: 533.304})
-	builder.LineTo(math2d.Vec2{X: 1283.1039999999998, Y: 542.208})
-	builder.QuadTo(math2d.Vec2{X: 1271.0079999999998, Y: 528.096}, math2d.Vec2{X: 1251.1839999999997, Y: 528.096})
-	builder.QuadTo(math2d.Vec2{X: 1243.2879999999998, Y: 528.096}, math2d.Vec2{X: 1238.8359999999998, Y: 530.784})
-	builder.QuadTo(math2d.Vec2{X: 1234.3839999999998, Y: 533.472}, math2d.Vec2{X: 1234.3839999999998, Y: 538.008})
-	builder.QuadTo(math2d.Vec2{X: 1234.3839999999998, Y: 542.376}, math2d.Vec2{X: 1239.8439999999998, Y: 545.232})
-	builder.QuadTo(math2d.Vec2{X: 1245.3039999999999, Y: 548.088}, math2d.Vec2{X: 1257.0639999999999, Y: 550.44})
-	builder.QuadTo(math2d.Vec2{X: 1268.4879999999998, Y: 552.624}, math2d.Vec2{X: 1276.7199999999998, Y: 556.236})
-	builder.QuadTo(math2d.Vec2{X: 1284.9519999999998, Y: 559.848}, math2d.Vec2{X: 1289.3199999999997, Y: 565.644})
-	builder.QuadTo(math2d.Vec2{X: 1293.6879999999999, Y: 571.44}, math2d.Vec2{X: 1293.6879999999999, Y: 580.176})
-	builder.QuadTo(math2d.Vec2{X: 1293.6879999999999, Y: 591.936}, math2d.Vec2{X: 1283.7759999999998, Y: 599.328})
-	builder.QuadTo(math2d.Vec2{X: 1273.8639999999998, Y: 606.72}, math2d.Vec2{X: 1255.3839999999998, Y: 606.72})
-	builder.QuadTo(math2d.Vec2{X: 1241.6079999999997, Y: 606.72}, math2d.Vec2{X: 1230.1, Y: 603.024})
-	builder.QuadTo(math2d.Vec2{X: 1218.5919999999999, Y: 599.328}, math2d.Vec2{X: 1209.8559999999998, Y: 591.936})
-	builder.LineTo(math2d.Vec2{X: 1218.7599999999998, Y: 587.064})
-	builder.LineTo(math2d.Vec2{X: 1219.2639999999997, Y: 576.984})
-	builder.QuadTo(math2d.Vec2{X: 1226.1519999999998, Y: 584.04}, math2d.Vec2{X: 1235.1399999999999, Y: 587.988})
-	builder.QuadTo(math2d.Vec2{X: 1244.1279999999997, Y: 591.936}, math2d.Vec2{X: 1254.5439999999999, Y: 591.936})
-	builder.QuadTo(math2d.Vec2{X: 1262.4399999999998, Y: 591.936}, math2d.Vec2{X: 1267.312, Y: 589.332})
-	builder.QuadTo(math2d.Vec2{X: 1272.1839999999997, Y: 586.728}, math2d.Vec2{X: 1272.1839999999997, Y: 582.192})
-	builder.QuadTo(math2d.Vec2{X: 1272.1839999999997, Y: 577.32}, math2d.Vec2{X: 1266.388, Y: 574.3800000000001})
-	builder.QuadTo(math2d.Vec2{X: 1260.5919999999999, Y: 571.44}, math2d.Vec2{X: 1247.6559999999997, Y: 568.92})
-	builder.QuadTo(math2d.Vec2{X: 1230.8559999999998, Y: 565.56}, math2d.Vec2{X: 1221.9519999999998, Y: 558.672})
-	builder.QuadTo(math2d.Vec2{X: 1213.0479999999998, Y: 551.784}, math2d.Vec2{X: 1213.0479999999998, Y: 539.856})
-	builder.QuadTo(math2d.Vec2{X: 1213.0479999999998, Y: 526.92}, math2d.Vec2{X: 1222.7079999999996, Y: 518.7719999999999})
-	builder.QuadTo(math2d.Vec2{X: 1232.3679999999997, Y: 510.624}, math2d.Vec2{X: 1250.5119999999997, Y: 510.624})
-	builder.QuadTo(math2d.Vec2{X: 1262.7759999999998, Y: 510.624}, math2d.Vec2{X: 1273.3599999999997, Y: 515.1600000000001})
-	builder.QuadTo(math2d.Vec2{X: 1283.9439999999997, Y: 519.696}, math2d.Vec2{X: 1291.6719999999998, Y: 529.44})
+	builder.MoveTo(math2d.Vec2{X: 1286.2959999999998, Y: 529.44})
+	builder.LineTo(math2d.Vec2{X: 1278.3999999999999, Y: 533.304})
+	builder.LineTo(math2d.Vec2{X: 1277.7279999999998, Y: 542.208})
+	builder.QuadTo(math2d.Vec2{X: 1265.6319999999998, Y: 528.096}, math2d.Vec2{X: 1245.8079999999998, Y: 528.096})
+	builder.QuadTo(math2d.Vec2{X: 1237.9119999999998, Y: 528.096}, math2d.Vec2{X: 1233.4599999999998, Y: 530.784})
+	builder.QuadTo(math2d.Vec2{X: 1229.0079999999998, Y: 533.472}, math2d.Vec2{X: 1229.0079999999998, Y: 538.008})
+	builder.QuadTo(math2d.Vec2{X: 1229.0079999999998, Y: 542.376}, math2d.Vec2{X: 1234.4679999999998, Y: 545.232})
+	builder.QuadTo(math2d.Vec2{X: 1239.9279999999999, Y: 548.088}, math2d.Vec2{X: 1251.6879999999999, Y: 550.44})
+	builder.QuadTo(math2d.Vec2{X: 1263.1119999999999, Y: 552.624}, math2d.Vec2{X: 1271.3439999999998, Y: 556.236})
+	builder.QuadTo(math2d.Vec2{X: 1279.5759999999998, Y: 559.848}, math2d.Vec2{X: 1283.944, Y: 565.644})
+	builder.QuadTo(math2d.Vec2{X: 1288.312, Y: 571.44}, math2d.Vec2{X: 1288.312, Y: 580.176})
+	builder.QuadTo(math2d.Vec2{X: 1288.312, Y: 591.936}, math2d.Vec2{X: 1278.3999999999999, Y: 599.328})
+	builder.QuadTo(math2d.Vec2{X: 1268.4879999999998, Y: 606.72}, math2d.Vec2{X: 1250.0079999999998, Y: 606.72})
+	builder.QuadTo(math2d.Vec2{X: 1236.2319999999997, Y: 606.72}, math2d.Vec2{X: 1224.7239999999997, Y: 603.024})
+	builder.QuadTo(math2d.Vec2{X: 1213.216, Y: 599.328}, math2d.Vec2{X: 1204.4799999999998, Y: 591.936})
+	builder.LineTo(math2d.Vec2{X: 1213.3839999999998, Y: 587.064})
+	builder.LineTo(math2d.Vec2{X: 1213.8879999999997, Y: 576.984})
+	builder.QuadTo(math2d.Vec2{X: 1220.7759999999998, Y: 584.04}, math2d.Vec2{X: 1229.7639999999997, Y: 587.988})
+	builder.QuadTo(math2d.Vec2{X: 1238.7519999999997, Y: 591.936}, math2d.Vec2{X: 1249.168, Y: 591.936})
+	builder.QuadTo(math2d.Vec2{X: 1257.0639999999999, Y: 591.936}, math2d.Vec2{X: 1261.9359999999997, Y: 589.332})
+	builder.QuadTo(math2d.Vec2{X: 1266.8079999999998, Y: 586.728}, math2d.Vec2{X: 1266.8079999999998, Y: 582.192})
+	builder.QuadTo(math2d.Vec2{X: 1266.8079999999998, Y: 577.32}, math2d.Vec2{X: 1261.0119999999997, Y: 574.3800000000001})
+	builder.QuadTo(math2d.Vec2{X: 1255.216, Y: 571.44}, math2d.Vec2{X: 1242.2799999999997, Y: 568.92})
+	builder.QuadTo(math2d.Vec2{X: 1225.4799999999998, Y: 565.56}, math2d.Vec2{X: 1216.5759999999998, Y: 558.672})
+	builder.QuadTo(math2d.Vec2{X: 1207.6719999999998, Y: 551.784}, math2d.Vec2{X: 1207.6719999999998, Y: 539.856})
+	builder.QuadTo(math2d.Vec2{X: 1207.6719999999998, Y: 526.92}, math2d.Vec2{X: 1217.3319999999999, Y: 518.7719999999999})
+	builder.QuadTo(math2d.Vec2{X: 1226.9919999999997, Y: 510.624}, math2d.Vec2{X: 1245.1359999999997, Y: 510.624})
+	builder.QuadTo(math2d.Vec2{X: 1257.3999999999999, Y: 510.624}, math2d.Vec2{X: 1267.984, Y: 515.1600000000001})
+	builder.QuadTo(math2d.Vec2{X: 1278.5679999999998, Y: 519.696}, math2d.Vec2{X: 1286.2959999999998, Y: 529.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -556,20 +556,20 @@ var svgPath7 = func() vector.Path {
 
 var svgPath8 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1302.9279999999999, Y: 512.64})
-	builder.LineTo(math2d.Vec2{X: 1338.5439999999999, Y: 569.592})
-	builder.LineTo(math2d.Vec2{X: 1338.5439999999999, Y: 604.032})
-	builder.QuadTo(math2d.Vec2{X: 1338.5439999999999, Y: 612.936}, math2d.Vec2{X: 1331.32, Y: 612.936})
-	builder.QuadTo(math2d.Vec2{X: 1325.4399999999998, Y: 612.936}, math2d.Vec2{X: 1317.04, Y: 607.896})
-	builder.LineTo(math2d.Vec2{X: 1324.7679999999998, Y: 625.032})
-	builder.QuadTo(math2d.Vec2{X: 1332.664, Y: 631.92}, math2d.Vec2{X: 1342.2399999999998, Y: 631.92})
-	builder.QuadTo(math2d.Vec2{X: 1349.464, Y: 631.92}, math2d.Vec2{X: 1353.4959999999999, Y: 627.3})
-	builder.QuadTo(math2d.Vec2{X: 1357.5279999999998, Y: 622.68}, math2d.Vec2{X: 1357.5279999999998, Y: 614.784})
-	builder.LineTo(math2d.Vec2{X: 1357.5279999999998, Y: 569.592})
-	builder.LineTo(math2d.Vec2{X: 1391.8, Y: 512.64})
-	builder.LineTo(math2d.Vec2{X: 1369.456, Y: 512.64})
-	builder.LineTo(math2d.Vec2{X: 1347.28, Y: 549.264})
-	builder.LineTo(math2d.Vec2{X: 1325.272, Y: 512.64})
+	builder.MoveTo(math2d.Vec2{X: 1297.5519999999997, Y: 512.64})
+	builder.LineTo(math2d.Vec2{X: 1333.1679999999997, Y: 569.592})
+	builder.LineTo(math2d.Vec2{X: 1333.1679999999997, Y: 604.032})
+	builder.QuadTo(math2d.Vec2{X: 1333.1679999999997, Y: 612.936}, math2d.Vec2{X: 1325.9439999999997, Y: 612.936})
+	builder.QuadTo(math2d.Vec2{X: 1320.0639999999996, Y: 612.936}, math2d.Vec2{X: 1311.6639999999998, Y: 607.896})
+	builder.LineTo(math2d.Vec2{X: 1319.3919999999996, Y: 625.032})
+	builder.QuadTo(math2d.Vec2{X: 1327.2879999999998, Y: 631.92}, math2d.Vec2{X: 1336.8639999999996, Y: 631.92})
+	builder.QuadTo(math2d.Vec2{X: 1344.0879999999997, Y: 631.92}, math2d.Vec2{X: 1348.1199999999997, Y: 627.3})
+	builder.QuadTo(math2d.Vec2{X: 1352.1519999999996, Y: 622.68}, math2d.Vec2{X: 1352.1519999999996, Y: 614.784})
+	builder.LineTo(math2d.Vec2{X: 1352.1519999999996, Y: 569.592})
+	builder.LineTo(math2d.Vec2{X: 1386.4239999999998, Y: 512.64})
+	builder.LineTo(math2d.Vec2{X: 1364.0799999999997, Y: 512.64})
+	builder.LineTo(math2d.Vec2{X: 1341.9039999999998, Y: 549.264})
+	builder.LineTo(math2d.Vec2{X: 1319.8959999999997, Y: 512.64})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -580,18 +580,18 @@ var svgPath8 = func() vector.Path {
 
 var svgPath9 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1095.6989999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1106.3249999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1106.3249999999998, Y: 659.286})
-	builder.LineTo(math2d.Vec2{X: 1098.5739999999998, Y: 659.286})
-	builder.LineTo(math2d.Vec2{X: 1098.5739999999998, Y: 654.87})
-	builder.LineTo(math2d.Vec2{X: 1105.0829999999999, Y: 654.87})
-	builder.LineTo(math2d.Vec2{X: 1105.0829999999999, Y: 652.225})
-	builder.LineTo(math2d.Vec2{X: 1098.5739999999998, Y: 652.225})
-	builder.LineTo(math2d.Vec2{X: 1098.5739999999998, Y: 648.154})
-	builder.LineTo(math2d.Vec2{X: 1106.0489999999998, Y: 648.154})
-	builder.LineTo(math2d.Vec2{X: 1106.0489999999998, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1095.6989999999998, Y: 645.44})
+	builder.MoveTo(math2d.Vec2{X: 1093.019, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1103.645, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1103.645, Y: 659.286})
+	builder.LineTo(math2d.Vec2{X: 1095.894, Y: 659.286})
+	builder.LineTo(math2d.Vec2{X: 1095.894, Y: 654.87})
+	builder.LineTo(math2d.Vec2{X: 1102.403, Y: 654.87})
+	builder.LineTo(math2d.Vec2{X: 1102.403, Y: 652.225})
+	builder.LineTo(math2d.Vec2{X: 1095.894, Y: 652.225})
+	builder.LineTo(math2d.Vec2{X: 1095.894, Y: 648.154})
+	builder.LineTo(math2d.Vec2{X: 1103.369, Y: 648.154})
+	builder.LineTo(math2d.Vec2{X: 1103.369, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1093.019, Y: 645.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -602,16 +602,16 @@ var svgPath9 = func() vector.Path {
 
 var svgPath10 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1120.119, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1123.0169999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1123.0169999999998, Y: 650.408})
-	builder.LineTo(math2d.Vec2{X: 1130.791, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1133.6889999999999, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1133.6889999999999, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1130.791, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1130.791, Y: 657.032})
-	builder.LineTo(math2d.Vec2{X: 1123.0169999999998, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1120.119, Y: 645.44})
+	builder.MoveTo(math2d.Vec2{X: 1117.439, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1120.337, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1120.337, Y: 650.408})
+	builder.LineTo(math2d.Vec2{X: 1128.111, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1131.009, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1131.009, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1128.111, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1128.111, Y: 657.032})
+	builder.LineTo(math2d.Vec2{X: 1120.337, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1117.439, Y: 645.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -622,39 +622,39 @@ var svgPath10 = func() vector.Path {
 
 var svgPath11 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1163.3759999999997, Y: 648.522})
-	builder.LineTo(math2d.Vec2{X: 1161.5129999999997, Y: 651.144})
-	builder.QuadTo(math2d.Vec2{X: 1160.8919999999998, Y: 649.948}, math2d.Vec2{X: 1159.8339999999998, Y: 649.2004999999999})
-	builder.QuadTo(math2d.Vec2{X: 1158.7759999999998, Y: 648.453}, math2d.Vec2{X: 1157.4995, Y: 648.223})
-	builder.QuadTo(math2d.Vec2{X: 1156.2229999999997, Y: 647.993}, math2d.Vec2{X: 1154.9349999999997, Y: 648.407})
-	builder.QuadTo(math2d.Vec2{X: 1153.6699999999998, Y: 648.798}, math2d.Vec2{X: 1152.7385, Y: 649.7065})
-	builder.QuadTo(math2d.Vec2{X: 1151.8069999999998, Y: 650.615}, math2d.Vec2{X: 1151.3584999999998, Y: 651.8340000000001})
-	builder.QuadTo(math2d.Vec2{X: 1150.9099999999999, Y: 653.053}, math2d.Vec2{X: 1151.071, Y: 654.387})
-	builder.QuadTo(math2d.Vec2{X: 1151.2319999999997, Y: 655.721}, math2d.Vec2{X: 1151.9564999999998, Y: 656.7905000000001})
-	builder.QuadTo(math2d.Vec2{X: 1152.6809999999998, Y: 657.86}, math2d.Vec2{X: 1153.7965, Y: 658.527})
-	builder.QuadTo(math2d.Vec2{X: 1154.9119999999998, Y: 659.194}, math2d.Vec2{X: 1156.2459999999999, Y: 659.286})
-	builder.QuadTo(math2d.Vec2{X: 1157.6029999999998, Y: 659.355}, math2d.Vec2{X: 1158.7875, Y: 658.8375000000001})
-	builder.QuadTo(math2d.Vec2{X: 1159.9719999999998, Y: 658.32}, math2d.Vec2{X: 1160.8229999999999, Y: 657.3425})
-	builder.QuadTo(math2d.Vec2{X: 1161.6739999999998, Y: 656.365}, math2d.Vec2{X: 1161.9959999999999, Y: 655.054})
-	builder.LineTo(math2d.Vec2{X: 1157.0509999999997, Y: 655.054})
-	builder.LineTo(math2d.Vec2{X: 1157.0509999999997, Y: 652.34})
-	builder.LineTo(math2d.Vec2{X: 1165.0319999999997, Y: 652.34})
-	builder.QuadTo(math2d.Vec2{X: 1165.2849999999999, Y: 653.927}, math2d.Vec2{X: 1164.9629999999997, Y: 655.4449999999999})
-	builder.QuadTo(math2d.Vec2{X: 1164.6409999999998, Y: 656.963}, math2d.Vec2{X: 1163.8244999999997, Y: 658.2625})
-	builder.QuadTo(math2d.Vec2{X: 1163.0079999999998, Y: 659.562}, math2d.Vec2{X: 1161.7889999999998, Y: 660.5165})
-	builder.QuadTo(math2d.Vec2{X: 1160.5699999999997, Y: 661.471}, math2d.Vec2{X: 1159.0059999999999, Y: 661.931})
-	builder.QuadTo(math2d.Vec2{X: 1157.4419999999998, Y: 662.391}, math2d.Vec2{X: 1155.8894999999998, Y: 662.2529999999999})
-	builder.QuadTo(math2d.Vec2{X: 1154.3369999999998, Y: 662.115}, math2d.Vec2{X: 1152.9454999999998, Y: 661.471})
-	builder.QuadTo(math2d.Vec2{X: 1151.5539999999999, Y: 660.827}, math2d.Vec2{X: 1150.473, Y: 659.7115})
-	builder.QuadTo(math2d.Vec2{X: 1149.3919999999998, Y: 658.596}, math2d.Vec2{X: 1148.7479999999998, Y: 657.124})
-	builder.QuadTo(math2d.Vec2{X: 1148.1039999999998, Y: 655.629}, math2d.Vec2{X: 1148.0465, Y: 654.0765})
-	builder.QuadTo(math2d.Vec2{X: 1147.9889999999998, Y: 652.524}, math2d.Vec2{X: 1148.4604999999997, Y: 651.0635})
-	builder.QuadTo(math2d.Vec2{X: 1148.9319999999998, Y: 649.603}, math2d.Vec2{X: 1149.8979999999997, Y: 648.384})
-	builder.QuadTo(math2d.Vec2{X: 1150.8639999999998, Y: 647.165}, math2d.Vec2{X: 1152.2669999999998, Y: 646.337})
-	builder.QuadTo(math2d.Vec2{X: 1153.6469999999997, Y: 645.509}, math2d.Vec2{X: 1155.1879999999996, Y: 645.2674999999999})
-	builder.QuadTo(math2d.Vec2{X: 1156.7289999999998, Y: 645.026}, math2d.Vec2{X: 1158.2354999999998, Y: 645.325})
-	builder.QuadTo(math2d.Vec2{X: 1159.7419999999997, Y: 645.624}, math2d.Vec2{X: 1161.0644999999997, Y: 646.4290000000001})
-	builder.QuadTo(math2d.Vec2{X: 1162.3869999999997, Y: 647.234}, math2d.Vec2{X: 1163.3759999999997, Y: 648.522})
+	builder.MoveTo(math2d.Vec2{X: 1160.696, Y: 648.522})
+	builder.LineTo(math2d.Vec2{X: 1158.8329999999999, Y: 651.144})
+	builder.QuadTo(math2d.Vec2{X: 1158.212, Y: 649.948}, math2d.Vec2{X: 1157.154, Y: 649.2004999999999})
+	builder.QuadTo(math2d.Vec2{X: 1156.096, Y: 648.453}, math2d.Vec2{X: 1154.8195, Y: 648.223})
+	builder.QuadTo(math2d.Vec2{X: 1153.543, Y: 647.993}, math2d.Vec2{X: 1152.2549999999999, Y: 648.407})
+	builder.QuadTo(math2d.Vec2{X: 1150.99, Y: 648.798}, math2d.Vec2{X: 1150.0585, Y: 649.7065})
+	builder.QuadTo(math2d.Vec2{X: 1149.127, Y: 650.615}, math2d.Vec2{X: 1148.6785, Y: 651.8340000000001})
+	builder.QuadTo(math2d.Vec2{X: 1148.23, Y: 653.053}, math2d.Vec2{X: 1148.391, Y: 654.387})
+	builder.QuadTo(math2d.Vec2{X: 1148.552, Y: 655.721}, math2d.Vec2{X: 1149.2765, Y: 656.7905000000001})
+	builder.QuadTo(math2d.Vec2{X: 1150.001, Y: 657.86}, math2d.Vec2{X: 1151.1165, Y: 658.527})
+	builder.QuadTo(math2d.Vec2{X: 1152.232, Y: 659.194}, math2d.Vec2{X: 1153.566, Y: 659.286})
+	builder.QuadTo(math2d.Vec2{X: 1154.923, Y: 659.355}, math2d.Vec2{X: 1156.1075, Y: 658.8375000000001})
+	builder.QuadTo(math2d.Vec2{X: 1157.292, Y: 658.32}, math2d.Vec2{X: 1158.143, Y: 657.3425})
+	builder.QuadTo(math2d.Vec2{X: 1158.994, Y: 656.365}, math2d.Vec2{X: 1159.316, Y: 655.054})
+	builder.LineTo(math2d.Vec2{X: 1154.3709999999999, Y: 655.054})
+	builder.LineTo(math2d.Vec2{X: 1154.3709999999999, Y: 652.34})
+	builder.LineTo(math2d.Vec2{X: 1162.3519999999999, Y: 652.34})
+	builder.QuadTo(math2d.Vec2{X: 1162.605, Y: 653.927}, math2d.Vec2{X: 1162.283, Y: 655.4449999999999})
+	builder.QuadTo(math2d.Vec2{X: 1161.961, Y: 656.963}, math2d.Vec2{X: 1161.1444999999999, Y: 658.2625})
+	builder.QuadTo(math2d.Vec2{X: 1160.328, Y: 659.562}, math2d.Vec2{X: 1159.109, Y: 660.5165})
+	builder.QuadTo(math2d.Vec2{X: 1157.8899999999999, Y: 661.471}, math2d.Vec2{X: 1156.326, Y: 661.931})
+	builder.QuadTo(math2d.Vec2{X: 1154.762, Y: 662.391}, math2d.Vec2{X: 1153.2095, Y: 662.2529999999999})
+	builder.QuadTo(math2d.Vec2{X: 1151.657, Y: 662.115}, math2d.Vec2{X: 1150.2655, Y: 661.471})
+	builder.QuadTo(math2d.Vec2{X: 1148.874, Y: 660.827}, math2d.Vec2{X: 1147.7930000000001, Y: 659.7115})
+	builder.QuadTo(math2d.Vec2{X: 1146.712, Y: 658.596}, math2d.Vec2{X: 1146.068, Y: 657.124})
+	builder.QuadTo(math2d.Vec2{X: 1145.424, Y: 655.629}, math2d.Vec2{X: 1145.3665, Y: 654.0765})
+	builder.QuadTo(math2d.Vec2{X: 1145.309, Y: 652.524}, math2d.Vec2{X: 1145.7804999999998, Y: 651.0635})
+	builder.QuadTo(math2d.Vec2{X: 1146.252, Y: 649.603}, math2d.Vec2{X: 1147.2179999999998, Y: 648.384})
+	builder.QuadTo(math2d.Vec2{X: 1148.184, Y: 647.165}, math2d.Vec2{X: 1149.587, Y: 646.337})
+	builder.QuadTo(math2d.Vec2{X: 1150.9669999999999, Y: 645.509}, math2d.Vec2{X: 1152.5079999999998, Y: 645.2674999999999})
+	builder.QuadTo(math2d.Vec2{X: 1154.049, Y: 645.026}, math2d.Vec2{X: 1155.5555, Y: 645.325})
+	builder.QuadTo(math2d.Vec2{X: 1157.062, Y: 645.624}, math2d.Vec2{X: 1158.3845, Y: 646.4290000000001})
+	builder.QuadTo(math2d.Vec2{X: 1159.7069999999999, Y: 647.234}, math2d.Vec2{X: 1160.696, Y: 648.522})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -665,10 +665,10 @@ var svgPath11 = func() vector.Path {
 
 var svgPath12 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1179.4009999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1182.253, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1182.253, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1179.4009999999998, Y: 645.44})
+	builder.MoveTo(math2d.Vec2{X: 1176.721, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1179.573, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1179.573, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1176.721, Y: 645.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -679,16 +679,16 @@ var svgPath12 = func() vector.Path {
 
 var svgPath13 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1196.6909999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1199.5889999999997, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1199.5889999999997, Y: 650.408})
-	builder.LineTo(math2d.Vec2{X: 1207.3629999999998, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1210.2609999999997, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1210.2609999999997, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1207.3629999999998, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1207.3629999999998, Y: 657.032})
-	builder.LineTo(math2d.Vec2{X: 1199.5889999999997, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1196.6909999999998, Y: 645.44})
+	builder.MoveTo(math2d.Vec2{X: 1194.011, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1196.9089999999999, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1196.9089999999999, Y: 650.408})
+	builder.LineTo(math2d.Vec2{X: 1204.683, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1207.581, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1207.581, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1204.683, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1204.683, Y: 657.032})
+	builder.LineTo(math2d.Vec2{X: 1196.9089999999999, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1194.011, Y: 645.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -699,18 +699,18 @@ var svgPath13 = func() vector.Path {
 
 var svgPath14 = func() vector.Path {
 	var builder vector.Builder
-	builder.MoveTo(math2d.Vec2{X: 1224.5609999999997, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1235.1869999999997, Y: 662})
-	builder.LineTo(math2d.Vec2{X: 1235.1869999999997, Y: 659.286})
-	builder.LineTo(math2d.Vec2{X: 1227.4359999999997, Y: 659.286})
-	builder.LineTo(math2d.Vec2{X: 1227.4359999999997, Y: 654.87})
-	builder.LineTo(math2d.Vec2{X: 1233.9449999999997, Y: 654.87})
-	builder.LineTo(math2d.Vec2{X: 1233.9449999999997, Y: 652.225})
-	builder.LineTo(math2d.Vec2{X: 1227.4359999999997, Y: 652.225})
-	builder.LineTo(math2d.Vec2{X: 1227.4359999999997, Y: 648.154})
-	builder.LineTo(math2d.Vec2{X: 1234.9109999999996, Y: 648.154})
-	builder.LineTo(math2d.Vec2{X: 1234.9109999999996, Y: 645.44})
-	builder.LineTo(math2d.Vec2{X: 1224.5609999999997, Y: 645.44})
+	builder.MoveTo(math2d.Vec2{X: 1221.8809999999999, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1232.5069999999998, Y: 662})
+	builder.LineTo(math2d.Vec2{X: 1232.5069999999998, Y: 659.286})
+	builder.LineTo(math2d.Vec2{X: 1224.7559999999999, Y: 659.286})
+	builder.LineTo(math2d.Vec2{X: 1224.7559999999999, Y: 654.87})
+	builder.LineTo(math2d.Vec2{X: 1231.2649999999999, Y: 654.87})
+	builder.LineTo(math2d.Vec2{X: 1231.2649999999999, Y: 652.225})
+	builder.LineTo(math2d.Vec2{X: 1224.7559999999999, Y: 652.225})
+	builder.LineTo(math2d.Vec2{X: 1224.7559999999999, Y: 648.154})
+	builder.LineTo(math2d.Vec2{X: 1232.2309999999998, Y: 648.154})
+	builder.LineTo(math2d.Vec2{X: 1232.2309999999998, Y: 645.44})
+	builder.LineTo(math2d.Vec2{X: 1221.8809999999999, Y: 645.44})
 	builder.Close()
 	path, err := builder.Build()
 	if err != nil {
@@ -720,9 +720,8 @@ var svgPath14 = func() vector.Path {
 }()
 
 var arasySplashNodes = []svgNode{
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{1, 2, 18, 24}},
-	{kind: 1, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 1920, height: 1080, text: "", fill: render.RGBA(0.00784313725490196, 0.043137254901960784, 0.0784313725490196, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 1920, Y: 1080}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: -270.69, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 17}},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{1, 17, 23}},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: -265.31, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 16}},
 	{kind: 2, path: -1, motionPath: -1, x: 960, y: 540, x2: 0, y2: 0, rx: 136, ry: 136, width: 0, height: 0, text: "", fill: render.RGBA(0.9490196078431372, 0.7254901960784313, 0.3607843137254902, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 0, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 824, Y: 404}, Max: math2d.Vec2{X: 1096, Y: 676}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.42, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.55, value: 0}, {progress: 0.72, value: 1}, {progress: 1, value: 1}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 960, y: 540, x2: 0, y2: 0, rx: 124, ry: 124, width: 0, height: 0, text: "", fill: render.RGBA(0.9490196078431372, 0.7254901960784313, 0.3607843137254902, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 0, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 836, Y: 416}, Max: math2d.Vec2{X: 1084, Y: 664}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.42, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.55, value: 0}, {progress: 0.635, value: 0.5}, {progress: 0.72, value: 0}, {progress: 1, value: 0}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 960, y: 540, x2: 0, y2: 0, rx: 118, ry: 118, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 842, Y: 422}, Max: math2d.Vec2{X: 1078, Y: 658}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
@@ -732,25 +731,25 @@ var arasySplashNodes = []svgNode{
 	{kind: 5, path: 0, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), strokeWidth: 3, fontSize: 0, spacing: 0, opacity: 1, pathLength: 100, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 780.9072305169439, Y: 366.41921099922695}, Max: math2d.Vec2{X: 1139.0927694830561, Y: 713.580789000773}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapRound, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.07, value: 1}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}, dashOffset: []svgScalarStop{{progress: 0, value: 100}, {progress: 0.04, value: 100}, {progress: 0.5, value: 0}, {progress: 1, value: 0}}}},
 	{kind: 5, path: 1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), strokeWidth: 3, fontSize: 0, spacing: 0, opacity: 1, pathLength: 100, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 780.9072305169439, Y: 366.41921099922695}, Max: math2d.Vec2{X: 1139.0927694830561, Y: 713.580789000773}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapRound, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.07, value: 1}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}, dashOffset: []svgScalarStop{{progress: 0, value: 100}, {progress: 0.04, value: 100}, {progress: 0.5, value: 0}, {progress: 1, value: 0}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 1099.278, y: 446.056, x2: 0, y2: 0, rx: 6, ry: 6, width: 0, height: 0, text: "", fill: render.RGBA(1, 0.9137254901960784, 0.6901960784313725, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 1099.278, Y: 446.056}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1093.278, Y: 440.056}, Max: math2d.Vec2{X: 1105.278, Y: 452.056}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.03, value: 1}, {progress: 0.07, value: 1}, {progress: 0.12, value: 0}, {progress: 1, value: 0}}, transform: []svgAffineStop{{progress: 0, value: math2d.Affine{A: 0.2, B: 0, C: 0, D: 0.2, E: 0, F: 0}}, {progress: 0.03, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 0.07, value: math2d.Affine{A: 0.75, B: 0, C: 0, D: 0.75, E: 0, F: 0}}, {progress: 0.12, value: math2d.Affine{A: 0.4, B: 0, C: 0, D: 0.4, E: 0, F: 0}}, {progress: 1, value: math2d.Affine{A: 0.4, B: 0, C: 0, D: 0.4, E: 0, F: 0}}}}},
-	{kind: 0, path: -1, motionPath: 2, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{13}, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}}},
+	{kind: 0, path: -1, motionPath: 2, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{12}, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 11, ry: 11, width: 0, height: 0, text: "", fill: render.RGBA(1, 0.9568627450980393, 0.8470588235294118, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: -11, Y: -11}, Max: math2d.Vec2{X: 11, Y: 11}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.08, value: 1}, {progress: 0.9, value: 0.9}, {progress: 1, value: 0.9}}}},
-	{kind: 0, path: -1, motionPath: 3, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{15}, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}}},
+	{kind: 0, path: -1, motionPath: 3, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0, 0, 0, 0), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{14}, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0.35, 0, 0.2, 1), distance: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.04, value: 0}, {progress: 0.5, value: 1}, {progress: 1, value: 1}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 14, ry: 14, width: 0, height: 0, text: "", fill: render.RGBA(0.9490196078431372, 0.7254901960784313, 0.3607843137254902, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: -14, Y: -14}, Max: math2d.Vec2{X: 14, Y: 14}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.03, value: 0}, {progress: 0.07, value: 1}, {progress: 0.9, value: 0.9}, {progress: 1, value: 0.9}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 960, y: 540, x2: 0, y2: 0, rx: 136, ry: 136, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 960, Y: 540}, bounds: math2d.Rect{Min: math2d.Vec2{X: 824, Y: 404}, Max: math2d.Vec2{X: 1096, Y: 676}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.9, value: 0}, {progress: 0.95, value: 0.3}, {progress: 1, value: 0}}, transform: []svgAffineStop{{progress: 0, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 0.9, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 0.95, value: math2d.Affine{A: 1.07, B: 0, C: 0, D: 1.07, E: 0, F: 0}}, {progress: 1, value: math2d.Affine{A: 1.11, B: 0, C: 0, D: 1.11, E: 0, F: 0}}}}},
 	{kind: 2, path: -1, motionPath: -1, x: 960, y: 540, x2: 0, y2: 0, rx: 136, ry: 136, width: 0, height: 0, text: "", fill: render.RGBA(1, 0.9568627450980393, 0.8470588235294118, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 960, Y: 540}, bounds: math2d.Rect{Min: math2d.Vec2{X: 824, Y: 404}, Max: math2d.Vec2{X: 1096, Y: 676}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, animation: svgAnimation{delay: 0, duration: 2, curve: ease.MustCubicBezier(0, 0, 0.58, 1), opacity: []svgScalarStop{{progress: 0, value: 0}, {progress: 0.9, value: 0}, {progress: 0.94, value: 0.5}, {progress: 1, value: 0}}, transform: []svgAffineStop{{progress: 0, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 0.9, value: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}}, {progress: 0.94, value: math2d.Affine{A: 1.028, B: 0, C: 0, D: 1.028, E: 0, F: 0}}, {progress: 1, value: math2d.Affine{A: 1.05, B: 0, C: 0, D: 1.05, E: 0, F: 0}}}}},
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{19, 20, 21, 22, 23}},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{18, 19, 20, 21, 22}},
 	{kind: 5, path: 4, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 934, Y: 510.624}, Max: math2d.Vec2{X: 1018.672, Y: 602.016}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
 	{kind: 5, path: 5, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1033.792, Y: 510.624}, Max: math2d.Vec2{X: 1097.6319999999998, Y: 600}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 6, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1110.0639999999999, Y: 510.624}, Max: math2d.Vec2{X: 1194.7359999999999, Y: 602.016}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 7, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1209.8559999999998, Y: 510.624}, Max: math2d.Vec2{X: 1293.6879999999999, Y: 606.72}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 8, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1302.9279999999999, Y: 512.64}, Max: math2d.Vec2{X: 1391.8, Y: 631.92}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 0.92, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{25, 26, 27, 28, 29, 30}},
-	{kind: 5, path: 9, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1095.6989999999998, Y: 645.44}, Max: math2d.Vec2{X: 1106.3249999999998, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 10, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1120.119, Y: 645.44}, Max: math2d.Vec2{X: 1133.6889999999999, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 11, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1147.9889999999998, Y: 645.026}, Max: math2d.Vec2{X: 1165.2849999999999, Y: 662.391}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 12, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1179.4009999999998, Y: 645.44}, Max: math2d.Vec2{X: 1182.253, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 13, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1196.6909999999998, Y: 645.44}, Max: math2d.Vec2{X: 1210.2609999999997, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
-	{kind: 5, path: 14, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1224.5609999999997, Y: 645.44}, Max: math2d.Vec2{X: 1235.1869999999997, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 6, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1104.6879999999999, Y: 510.624}, Max: math2d.Vec2{X: 1189.36, Y: 602.016}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 7, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1204.4799999999998, Y: 510.624}, Max: math2d.Vec2{X: 1288.312, Y: 606.72}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 8, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.9529411764705882, 0.9215686274509803, 0.8666666666666667, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1297.5519999999997, Y: 512.64}, Max: math2d.Vec2{X: 1386.4239999999998, Y: 631.92}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 0, path: -1, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 0.92, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 0, Y: 0}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: false, lineCap: vector.CapButt, lineJoin: vector.JoinMiter, children: []uint16{24, 25, 26, 27, 28, 29}},
+	{kind: 5, path: 9, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1093.019, Y: 645.44}, Max: math2d.Vec2{X: 1103.645, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 10, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1117.439, Y: 645.44}, Max: math2d.Vec2{X: 1131.009, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 11, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1145.309, Y: 645.026}, Max: math2d.Vec2{X: 1162.605, Y: 662.391}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 12, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1176.721, Y: 645.44}, Max: math2d.Vec2{X: 1179.573, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 13, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1194.011, Y: 645.44}, Max: math2d.Vec2{X: 1207.581, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
+	{kind: 5, path: 14, motionPath: -1, x: 0, y: 0, x2: 0, y2: 0, rx: 0, ry: 0, width: 0, height: 0, text: "", fill: render.RGBA(0.8470588235294118, 0.7176470588235294, 0.47843137254901963, 1), stroke: render.RGBA(0, 0, 0, 0), strokeWidth: 1, fontSize: 0, spacing: 0, opacity: 1, pathLength: 0, font: 0, align: render.AlignLeft, transform: math2d.Affine{A: 1, B: 0, C: 0, D: 1, E: 0, F: 0}, origin: math2d.Vec2{X: 0, Y: 0}, bounds: math2d.Rect{Min: math2d.Vec2{X: 1221.8809999999999, Y: 645.44}, Max: math2d.Vec2{X: 1232.5069999999998, Y: 662}}, textMetrics: render.TextMetrics{Size: math2d.Vec2{X: 0, Y: 0}, NaturalWidth: 0, RuneCount: 0}, hasBounds: true, lineCap: vector.CapButt, lineJoin: vector.JoinMiter},
 }
 
 // Append renders the SVG presentation while reusing buffers retained by w.
