@@ -45,6 +45,7 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 
 	d.adapter, err = d.instance.RequestAdapter(&wgpu.RequestAdapterOptions{
 		CompatibleSurface: d.surface,
+		PowerPreference:   wgpu.PowerPreferenceHighPerformance,
 	})
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU adapter: %w", err)

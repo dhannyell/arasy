@@ -52,6 +52,7 @@ type Manifest struct {
 	fontByName   map[string]render.FontID
 	effects      []particle.EffectDecl
 	effectByName map[string]render.ParticleEffectID
+	splash       []SplashDecl
 
 	// fsLayers are the FS layers Load was called with, retained so hosts can
 	// read audio bytes (and any other path-addressed asset) from the same
@@ -133,10 +134,96 @@ func (m Manifest) EffectDecl(id render.ParticleEffectID) (particle.EffectDecl, b
 	return m.effects[id-1], true
 }
 
+// WithEffect returns a copy of m with decl appended as a new particle effect
+// and its resolved ID. Unlike Load (which assigns every ID by sorting all
+// declared names together), WithEffect only ever appends at the end: it
+// never reassigns or reorders the IDs of effects already in m, so it is
+// safe to call after Load to register an effect the manifest file never
+// declared (e.g. the engine's own boot splash spark, which has no
+// manifest). name must not collide with an existing declared effect name.
+func (m Manifest) WithEffect(name string, decl particle.EffectDecl) (Manifest, render.ParticleEffectID) {
+	id := render.ParticleEffectID(len(m.effects) + 1)
+	decl.Name = name
+
+	effects := make([]particle.EffectDecl, len(m.effects), len(m.effects)+1)
+	copy(effects, m.effects)
+	effects = append(effects, decl)
+
+	effectByName := make(map[string]render.ParticleEffectID, len(m.effectByName)+1)
+	for k, v := range m.effectByName {
+		effectByName[k] = v
+	}
+	effectByName[name] = id
+
+	m.effects = effects
+	m.effectByName = effectByName
+	return m, id
+}
+
+// WithTexture returns a copy of m with a new static texture appended (its
+// data is PNG/JPEG bytes, exactly like a manifest-declared texture) and its
+// resolved ID. Like WithEffect, this only ever appends: it never reassigns
+// or reorders the IDs of textures already in m, so it is safe to call after
+// Load to register a texture the manifest file never declared (e.g. the
+// engine's own boot splash particle sprites, which have no manifest entry).
+// name must not collide with an existing declared texture name.
+func (m Manifest) WithTexture(name string, data []byte) (Manifest, render.TextureID) {
+	id := render.TextureID(len(m.textures) + 1)
+
+	textures := make([]TextureDecl, len(m.textures), len(m.textures)+1)
+	copy(textures, m.textures)
+	textures = append(textures, TextureDecl{ID: id, Name: name, Data: data})
+
+	textByName := make(map[string]render.TextureID, len(m.textByName)+1)
+	for k, v := range m.textByName {
+		textByName[k] = v
+	}
+	textByName[name] = id
+
+	m.textures = textures
+	m.textByName = textByName
+	return m, id
+}
+
 // AudioClips returns the declared audio clips ordered by ID. The returned
 // slice is shared - callers must not mutate it.
 func (m Manifest) AudioClips() []audio.Clip {
 	return m.audio
+}
+
+// SplashDecl is one manifest-declared boot splash segment: a texture
+// flip-book, resolved by name against the manifest's declared textures. It
+// carries the same fields as runtime.SplashSegment's flip-book form; runtime
+// resolves Texture to a render.TextureID when building the boot playlist.
+type SplashDecl struct {
+	Texture      string
+	CellW, CellH float64
+	Columns      int
+	Frames       uint16
+	Rate         float32
+	MinTime      float64
+	Fade         float64
+	Skippable    bool
+
+	// Effect, when non-empty, names a particle effect declared in the
+	// manifest's "effects" section to draw alongside this segment, emitted
+	// from a fixed point expressed as a fraction of the viewport
+	// (EffectAnchorX/Y, 0..1; default 0.5,0.5 — center). EffectIntensity
+	// scales the effect's declared emit rate (0 defaults to 1).
+	//
+	// EffectAnchorX/Y is the only fraction-of-viewport field here — the named
+	// effect's own Size/Speed/EmitExtent are "world units" (see
+	// particle.EffectDecl), which resolve to screen pixels directly under
+	// the splash's 1:1 camera. Don't confuse the two.
+	Effect                       string
+	EffectAnchorX, EffectAnchorY float64
+	EffectIntensity              float64
+}
+
+// Splash returns the manifest-declared boot splash segments, in manifest
+// order. The returned slice is shared - callers must not mutate it.
+func (m Manifest) Splash() []SplashDecl {
+	return m.splash
 }
 
 // FS returns a merged, read-only view of the FS layers this Manifest was

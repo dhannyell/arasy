@@ -27,6 +27,7 @@ type manifestFile struct {
 	Fonts    []fontEntry    `json:"fonts"`
 	Audio    []audioEntry   `json:"audio"`
 	Effects  []effectEntry  `json:"effects"`
+	Splash   []splashEntry  `json:"splash"`
 }
 
 type textureEntry struct {
@@ -61,11 +62,44 @@ type fontEntry struct {
 	File string `json:"file"`
 }
 
+// splashEntry is one boot splash segment declared in the manifest's "splash"
+// array (order is the playlist order). Unlike textures/sprites/fonts, a
+// layer's whole "splash" array replaces an earlier layer's (see Load): the
+// entries have no name to merge by.
+type splashEntry struct {
+	Texture   string  `json:"texture"`
+	CellW     float64 `json:"cell_w"`
+	CellH     float64 `json:"cell_h"`
+	Columns   int     `json:"columns"`
+	Frames    int     `json:"frames"`
+	Rate      float64 `json:"rate"`
+	MinTime   float64 `json:"min_time"`
+	Fade      float64 `json:"fade"`
+	Skippable bool    `json:"skippable"`
+
+	Effect string `json:"effect"`
+	// EffectAnchorX/Y are a fraction of the viewport (0..1, default 0.5,0.5 =
+	// center) — not pixels, and not the effect's own world units (see
+	// effectEntry).
+	EffectAnchorX   float64 `json:"effect_anchor_x"`
+	EffectAnchorY   float64 `json:"effect_anchor_y"`
+	EffectIntensity float64 `json:"effect_intensity"`
+}
+
 // effectEntry is the JSON shape of one particle effect declaration: authors
 // write angles (direction, spread, rotation, spin) in degrees and
 // [min, max]/[x, y]/[r, g, b, a] pairs. wobble_freq is a frequency in hertz,
 // not an angle, and stays as authored. parseEffectEntry converts this shape
 // into the resolved particle.EffectDecl (radians, math2d.Vec2, enums).
+//
+// speed/emit_radius/emit_extent/gravity/size_start/size_end/wobble_amp are
+// all "world units" (see particle.EffectDecl) — the same coordinate space
+// DrawParticles.Pos is emitted in, not necessarily screen pixels and not the
+// 0..1 fraction splashEntry.EffectAnchorX/Y uses. Under an identity/1:1
+// camera, world units equal screen pixels directly (so a size of 0.1 is
+// sub-pixel and invisible); under a zoomed game camera the same unit can
+// span many pixels. Author values against whichever camera actually draws
+// this effect.
 type effectEntry struct {
 	Name         string    `json:"name"`
 	Texture      string    `json:"texture"`
@@ -120,6 +154,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 	fntByName := map[string]fontEntry{}
 	audioByID := map[string]audioEntry{}
 	effectByName := map[string]effectEntry{}
+	var splashEntries []splashEntry
 	sawManifest := false
 
 	for _, layer := range layers {
@@ -155,6 +190,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		if err := validateEffectEntries(mf.Effects); err != nil {
 			return Manifest{}, err
 		}
+		if err := validateSplashEntries(mf.Splash); err != nil {
+			return Manifest{}, err
+		}
 		for _, entry := range mf.Textures {
 			texByName[entry.Name] = entry
 		}
@@ -172,6 +210,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 		for _, entry := range mf.Effects {
 			effectByName[entry.Name] = entry
+		}
+		if mf.Splash != nil {
+			splashEntries = mf.Splash
 		}
 		sawManifest = true
 	}
@@ -250,6 +291,35 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 	}
 	manifest.sprites = sprites
+
+	splash := make([]SplashDecl, 0, len(splashEntries))
+	for _, entry := range splashEntries {
+		if _, ok := manifest.textByName[entry.Texture]; !ok {
+			return Manifest{}, fmt.Errorf("asset: splash %q references unknown texture", entry.Texture)
+		}
+		if entry.Effect != "" {
+			if _, ok := manifest.effectByName[entry.Effect]; !ok {
+				return Manifest{}, fmt.Errorf("asset: splash %q references unknown effect %q", entry.Texture, entry.Effect)
+			}
+		}
+		splash = append(splash, SplashDecl{
+			Texture:         entry.Texture,
+			CellW:           entry.CellW,
+			CellH:           entry.CellH,
+			Columns:         entry.Columns,
+			Frames:          uint16(entry.Frames),
+			Rate:            float32(entry.Rate),
+			MinTime:         entry.MinTime,
+			Fade:            entry.Fade,
+			Skippable:       entry.Skippable,
+			Effect:          entry.Effect,
+			EffectAnchorX:   entry.EffectAnchorX,
+			EffectAnchorY:   entry.EffectAnchorY,
+			EffectIntensity: entry.EffectIntensity,
+		})
+	}
+	manifest.splash = splash
+
 	return manifest, nil
 }
 
@@ -330,6 +400,27 @@ func validateEffectEntries(entries []effectEntry) error {
 			return fmt.Errorf("asset: duplicate effect %q in manifest.json", entry.Name)
 		}
 		seen[entry.Name] = struct{}{}
+	}
+	return nil
+}
+
+func validateSplashEntries(entries []splashEntry) error {
+	for i, entry := range entries {
+		if entry.Texture == "" {
+			return fmt.Errorf("asset: splash entry %d has an empty texture name", i)
+		}
+		if entry.Columns < 1 {
+			return fmt.Errorf("asset: splash %q has columns %d, must be >= 1", entry.Texture, entry.Columns)
+		}
+		if entry.Frames < 1 {
+			return fmt.Errorf("asset: splash %q has frames %d, must be >= 1", entry.Texture, entry.Frames)
+		}
+		if entry.MinTime < 0 {
+			return fmt.Errorf("asset: splash %q has negative min_time %g", entry.Texture, entry.MinTime)
+		}
+		if entry.Fade < 0 {
+			return fmt.Errorf("asset: splash %q has negative fade %g", entry.Texture, entry.Fade)
+		}
 	}
 	return nil
 }

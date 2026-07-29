@@ -15,8 +15,14 @@ async function expectFixtureScreenshot(page, testInfo, fixture, screenshot) {
     { message: `expected ${expectedRenderer} renderer; browser log:\n${messages.join('\n')}` },
   ).toContain(`using ${expectedRenderer} renderer`);
 
-  const canvas = page.locator('#ff-canvas');
+  const canvas = page.locator('#ar-canvas');
   await expect(canvas).toHaveAttribute('data-Arasy-ready', expectedRenderer);
+  // The boot poster cross-fades out over the canvas (internal/wasmserve's
+  // #ar-boot-fade-out transition) instead of vanishing atomically; waiting
+  // for arasyBootFadeDone (set once that transition finishes and the
+  // overlay is removed) avoids screenshotting mid-fade, which would bake a
+  // blended poster+canvas frame into the golden image.
+  await page.waitForFunction(() => window.arasyBootFadeDone === true);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   try {
     await expect(canvas).toHaveScreenshot(screenshot);

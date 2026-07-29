@@ -1108,10 +1108,17 @@ func growBufferCap(current, required int) int {
 	if current <= 0 {
 		current = 64 * 1024
 	}
+	if required <= current {
+		return current
+	}
 
 	for current < required {
 		current *= 2
 	}
+	// Animated streams often reveal adjacent shapes on consecutive frames.
+	// Keep a full bucket of headroom so that transition does not replace the
+	// active GPU buffer again on the very next frame.
+	current *= 2
 
 	return current
 }

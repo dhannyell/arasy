@@ -96,7 +96,7 @@ func (g *Game) Setup() runtime.Config {
 		Camera: render.Camera{
 			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: worldW, Y: worldH}),
 			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 960}),
-			Aspect:   render.AspectFit,
+			Aspect:   render.AspectExpand,
 		},
 		Clear:               render.RGBA(0.025, 0.025, 0.03, 1),
 		SimulationHz:        simHz,

@@ -116,6 +116,26 @@ platform/* -> asset/pixel -> asset
 - **Do not reorder.** Determinism and rewind depend on this pipeline.
 - `StateSlot[T]` snapshots by value: T must be a pure value type (no slices/maps/pointers), or implement `Clone() T` (`runtime.Cloneable`) to deep-copy reference fields — the hook runs on capture and on restore.
 
+### Boot Splash
+
+- `Driver.SplashActive`/`AdvanceSplash`/`RenderSplashFrame` are a pre-tick-0
+  phase: real-time hosts (`platform/wasm`, `platform/native`) drain them
+  before their tick loop; offline (`platform/raster`) and replay paths never
+  call them, so they reach tick 0 immediately. The phase runs on wall clock,
+  never touches `d.tick`/`timeline`/`recorder`/`Checksum`, and is skippable
+  per segment (`SplashSegment.Skippable`).
+- The playlist is `[engine segment?] + [manifest "splash" segments]`. The
+  engine segment (`Config.DisableDefaultSplash` to opt out) renders the
+  compiled brand animation (`internal/enginesplash`, generated offline by
+  `arasy svg`) as texture-free vector commands — no manifest entry, no
+  upload. Game
+  segments declared in the manifest's `"splash"` array are texture
+  flip-books (`cell_w`/`cell_h`/`columns`/`frames`/`rate`/`min_time`/`fade`/
+  `skippable`), packed with `arasy atlas <frames-dir|gif> -o out.png`.
+- Loading-screen behavior (`HoldUntilReady`, tied to asset group readiness)
+  is deferred until asset groups land; every segment today is bounded by
+  `MinTime`.
+
 ### ECS Pattern -- Adding a Component
 
 1. Define struct in `scene/components.go`

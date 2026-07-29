@@ -5,8 +5,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/dhannyell/arasy/anim"
+	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
@@ -132,6 +135,30 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if log == nil {
 		log = slog.Default()
 	}
+	if !cfg.DisableDefaultSplash {
+		// Registered directly (no manifest entry): WithTexture/WithEffect
+		// only ever append, so this never reassigns or reorders the game's
+		// own declared texture/effect IDs. Must happen before Driver.Config()
+		// is read downstream (renderer construction), so the augmented
+		// manifest carries them from the start. These stay resident in the
+		// manifest for the game's whole lifetime rather than being
+		// registered into a temporary manifest and discarded after the
+		// splash: backends resolve texture/effect IDs against the single
+		// manifest a renderer is constructed with, so there is no point at
+		// which the splash's assets could be un-registered without
+		// reconstructing the renderer — and every one of them is small
+		// enough (two generated 32x32 sprites, a handful of EffectDecl
+		// values) that leaving them registered costs nothing.
+		cfg.Assets, _ = cfg.Assets.WithTexture(enginesplash.EngineMoteTextureName, enginesplash.EngineMoteTexture())
+		cfg.Assets, _ = cfg.Assets.WithTexture(enginesplash.EngineEmberTextureName, enginesplash.EngineEmberTexture())
+		cfg.Assets, _ = cfg.Assets.WithEffect(enginesplash.EngineSparkEffectName, enginesplash.EngineSparkEffect())
+		cfg.Assets, _ = cfg.Assets.WithEffect(enginesplash.EngineStarfieldEffectName, enginesplash.EngineStarfieldEffect())
+		cruxEffects := enginesplash.EngineCruxEffects()
+		for _, name := range enginesplash.EngineCruxNames() {
+			effectName := enginesplash.EngineCruxEffectName(name)
+			cfg.Assets, _ = cfg.Assets.WithEffect(effectName, cruxEffects[effectName])
+		}
+	}
 
 	d := &Driver{
 		game:     game,
@@ -153,8 +180,190 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d.audioPort = AudioPort{audio: &d.audio}
 	d.texture = driverTexture{}
 	d.batchPort = BatchPort{batches: &d.batches}
+	d.splash = &splashPlayer{segments: buildSplashPlaylist(cfg)}
 	d.doReset()
 	return d
+}
+
+// buildSplashPlaylist assembles the boot splash playlist: the built-in
+// engine brand segment (unless disabled), followed by the manifest-declared
+// segments in order.
+func buildSplashPlaylist(cfg Config) []SplashSegment {
+	var segments []SplashSegment
+	if !cfg.DisableDefaultSplash {
+		segments = append(segments, SplashSegment{
+			Content: func(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect) []render.Command {
+				return enginesplash.AppendArasySplash(dst, timeline, viewport, enginesplash.ArasySplashResources{})
+			},
+			MinTime:    enginesplash.EngineSplashMinTime,
+			Fade:       enginesplash.EngineSplashFade,
+			Skippable:  false,
+			Background: enginesplash.EngineSplashBackground,
+			Particles:  engineSplashParticles(cfg.Assets),
+		})
+	}
+	for _, decl := range cfg.Assets.Splash() {
+		segments = append(segments, SplashSegment{
+			Texture:   cfg.Assets.Texture(decl.Texture),
+			CellW:     decl.CellW,
+			CellH:     decl.CellH,
+			Columns:   decl.Columns,
+			Frames:    decl.Frames,
+			Rate:      decl.Rate,
+			MinTime:   decl.MinTime,
+			Fade:      decl.Fade,
+			Skippable: decl.Skippable,
+			Particles: manifestSplashParticles(cfg.Assets, decl),
+		})
+	}
+	return segments
+}
+
+// engineSkyLayer is the starfield's and Crux's LayerValue: below
+// engineSplashContentLayer (Content's default, unset BaseCommand.LayerValue
+// == 0), so the logo's own opaque shapes occlude the sky behind them the
+// way they would a real one, instead of the field needing a keep-clear zone
+// carved out around the ring/wordmark. This only works because the compiled
+// splash's content paints no full-canvas backdrop rect of its own at that
+// layer — engineSplashBackgroundLayer sits below engineSkyLayer so the sky
+// is never itself occluded by the segment's own backdrop rect (see
+// splashFrame in runtime/splash.go, which paints Background at this same
+// layer).
+const (
+	engineSplashBackgroundLayer = -2
+	engineSkyLayer              = -1
+)
+
+// engineSplashParticles combines every particle system the engine's default
+// splash draws: the ring spark (anchored to the compiled animation's own
+// ring, tracking its letterbox scale, drawn in FRONT of the content since it
+// reads as erupting off the ring), the uniform ambient starfield, and the
+// five Crux (Southern Cross) stars (both drawn BEHIND the content) — each
+// its own emitter, resolved once here against the effects newDriver
+// registered via WithEffect, so a missing effect (DisableDefaultSplash games
+// that still set Content some other way) simply draws nothing rather than
+// panicking.
+func engineSplashParticles(assets asset.Manifest) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+	sparkEffect := assets.Effect(enginesplash.EngineSparkEffectName)
+	starfieldEffect := assets.Effect(enginesplash.EngineStarfieldEffectName)
+
+	type namedEffect struct {
+		name   string
+		effect render.ParticleEffectID
+	}
+	cruxStars := make([]namedEffect, 0, len(enginesplash.EngineCruxNames()))
+	for _, name := range enginesplash.EngineCruxNames() {
+		cruxStars = append(cruxStars, namedEffect{name, assets.Effect(enginesplash.EngineCruxEffectName(name))})
+	}
+
+	return func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+		commands := make([]render.DrawParticles, 0, 2+len(cruxStars))
+
+		if sparkEffect != 0 {
+			if intensity := enginesplash.EngineSparkIntensity(elapsed) * alpha; intensity > 0 {
+				center, radius := enginesplash.EngineSplashRingAnchor(viewport)
+				scale := radius / enginesplash.RingRadius
+				commands = append(commands, render.DrawParticles{
+					BaseCommand: render.BaseCommand{LayerValue: 2},
+					Effect:      sparkEffect,
+					Emitter:     1,
+					Pos:         center,
+					EmitScale:   math2d.Vec2{X: scale, Y: scale},
+					Intensity:   intensity,
+					Time:        elapsed,
+					Dt:          dt,
+					Burst:       1,
+					Seed:        42,
+				})
+			}
+		}
+
+		if alpha > 0 {
+			contentScale := enginesplash.EngineSplashScale(viewport)
+			cruxScale := math2d.Vec2{X: contentScale, Y: contentScale}
+			skyScale := enginesplash.EngineStarfieldScale(viewport)
+			// EmitterSet only rebuilds an effect's live particles when its
+			// Seed changes (particle/emitterset.go); a constant Seed here
+			// would leave every already-spawned star exactly where it was
+			// emitted (starfield/Crux have no velocity) even after a resize
+			// moves their anchor and rescales their spread, so most of the
+			// sky would stay stuck at the previous viewport's layout for the
+			// rest of that star's multi-second lifetime. Folding the
+			// viewport's own size into the seed forces a full reseed — every
+			// star in the field respawns at the new layout — the one frame
+			// the viewport actually changes, and never lets a redraw at an
+			// unchanged size touch it.
+			viewportSeed := viewportSeed(viewport)
+			if starfieldEffect != 0 {
+				commands = append(commands, render.DrawParticles{
+					BaseCommand: render.BaseCommand{LayerValue: engineSkyLayer},
+					Effect:      starfieldEffect,
+					Emitter:     1,
+					Pos:         enginesplash.EngineStarfieldAnchor(viewport),
+					EmitScale:   skyScale,
+					Intensity:   alpha,
+					Time:        elapsed,
+					Dt:          dt,
+					Burst:       1,
+					Seed:        enginesplash.EngineStarfieldSeed(viewport),
+				})
+			}
+			for _, star := range cruxStars {
+				if star.effect == 0 {
+					continue
+				}
+				intensity := enginesplash.EngineCruxIntensity(star.name, elapsed) * alpha
+				if intensity <= 0 {
+					continue
+				}
+				commands = append(commands, render.DrawParticles{
+					BaseCommand: render.BaseCommand{LayerValue: engineSkyLayer},
+					Effect:      star.effect,
+					EmitScale:   cruxScale,
+					Emitter:     1,
+					Pos:         enginesplash.EngineCruxAnchor(viewport, star.name),
+					Intensity:   intensity,
+					Time:        elapsed,
+					Dt:          dt,
+					Seed:        uint64(star.effect) ^ viewportSeed,
+				})
+			}
+		}
+
+		return commands
+	}
+}
+
+// manifestSplashParticles resolves a game-declared segment's optional
+// "effect" reference into a fixed emitter at a fractional viewport anchor.
+func manifestSplashParticles(assets asset.Manifest, decl asset.SplashDecl) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+	if decl.Effect == "" {
+		return nil
+	}
+	effect := assets.Effect(decl.Effect)
+	intensity := decl.EffectIntensity
+	if intensity == 0 {
+		intensity = 1
+	}
+	return func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+		if effect == 0 || alpha <= 0 {
+			return nil
+		}
+		pos := math2d.Vec2{
+			X: viewport.Min.X + viewport.Width()*decl.EffectAnchorX,
+			Y: viewport.Min.Y + viewport.Height()*decl.EffectAnchorY,
+		}
+		return []render.DrawParticles{{
+			BaseCommand: render.BaseCommand{LayerValue: 2},
+			Effect:      effect,
+			Emitter:     1,
+			Pos:         pos,
+			Intensity:   intensity * alpha,
+			Time:        elapsed,
+			Dt:          dt,
+			Seed:        uint64(effect),
+		}}
+	}
 }
 
 // ApplyInput applies platform events before AdvanceTime or Step.

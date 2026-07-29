@@ -141,7 +141,7 @@ func wheelEvents(dx, dy, x, y float64) []input.Event {
 		events = append(events, input.Event{
 			Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY},
 			Kind:   input.EventAxisChanged,
-			Value:  dy,
+			Value:  -dy,
 			X:      x,
 			Y:      y,
 		})

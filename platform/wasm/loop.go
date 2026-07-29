@@ -16,6 +16,7 @@ func (h *host) startLoop() {
 	var fpsFrames int
 	var fpsElapsed time.Duration
 	var fps int
+	var firstFramePresented bool
 
 	var cb js.Func
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
@@ -24,6 +25,24 @@ func (h *host) startLoop() {
 		if events := h.pollGamepad(); len(events) > 0 {
 			h.pending = append(h.pending, events...)
 		}
+
+		if h.driver.SplashActive() {
+			skip := false
+			for _, e := range h.pending {
+				if e.Kind == input.EventButtonDown {
+					skip = true
+					break
+				}
+			}
+			h.pending = h.pending[:0]
+			h.pendingInputAtMillis = -1
+			h.driver.AdvanceSplash(elapsed, skip)
+			h.driver.RenderSplashFrame(elapsed, h.renderer)
+			signalFirstFramePresented(&firstFramePresented)
+			js.Global().Call("requestAnimationFrame", cb)
+			return nil
+		}
+
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
 
@@ -44,6 +63,7 @@ func (h *host) startLoop() {
 		}
 
 		frame := h.driver.RenderFrame(elapsed, h.renderer)
+		signalFirstFramePresented(&firstFramePresented)
 
 		if h.onFrameMetrics != nil {
 			renderEnd := performanceNowMillis()
@@ -111,4 +131,16 @@ func (h *host) pollGamepad() []input.Event {
 	h.gamepadPresent = true
 	h.gamepadState = current
 	return events
+}
+
+// signalFirstFramePresented sets the arasyFirstFrame <-> shell contract flag
+// once, the first time any frame (splash or game) has been presented. The
+// shell (internal/wasmserve.ShellHTML) polls this flag to reveal the canvas
+// and fade out its static poster/progress overlay.
+func signalFirstFramePresented(presented *bool) {
+	if *presented {
+		return
+	}
+	*presented = true
+	js.Global().Set("arasyFirstFrame", true)
 }

@@ -81,7 +81,7 @@ func TestWheelEvents(t *testing.T) {
 	got := wheelEvents(1.5, -2, 4, 5)
 	want := []input.Event{
 		{Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelX}, Kind: input.EventAxisChanged, Value: 1.5, X: 4, Y: 5},
-		{Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY}, Kind: input.EventAxisChanged, Value: -2, X: 4, Y: 5},
+		{Source: input.Source{Device: input.DeviceMouse, Code: input.MouseWheelY}, Kind: input.EventAxisChanged, Value: 2, X: 4, Y: 5},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wheelEvents() = %#v, want %#v", got, want)

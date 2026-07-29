@@ -13,16 +13,19 @@ import (
 // than only the center or two corners) is what makes rotation, shear and
 // non-uniform scale honored, matching the raster backend.
 
-// appendConvexFanScreen fills a convex screen-space polygon by fanning from an
-// interior screen-space center. Used for transformed circles and ellipses,
-// whose transformed boundary stays convex and star-shaped from the center.
+// appendConvexFanScreen fills a convex screen-space polygon from one boundary
+// vertex. Transformed circles and ellipses remain convex, and avoiding a
+// center fan prevents multisample hairlines at its high-valence junction.
 func appendConvexFanScreen(m *Mesh, c ctx, center math2d.Vec2, boundary []math2d.Vec2, col render.Color) {
-	clipCenter := screenToClip(c, center)
 	n := len(boundary)
-	for i := 0; i < n; i++ {
+	if n < 3 {
+		return
+	}
+	anchor := screenToClip(c, boundary[0])
+	for i := 1; i < n-1; i++ {
 		p0 := screenToClip(c, boundary[i])
-		p1 := screenToClip(c, boundary[(i+1)%n])
-		pushTri(m, clipCenter, p0, p1, col)
+		p1 := screenToClip(c, boundary[i+1])
+		pushTri(m, anchor, p0, p1, col)
 	}
 }
 

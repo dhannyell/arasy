@@ -36,8 +36,9 @@ func (g *spriteArrayGame) Setup() runtime.Config {
 			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 240}),
 			Aspect:   render.AspectStretch,
 		},
-		Assets: g.assets,
-		Clear:  render.RGBA8(11, 16, 28, 255),
+		Assets:              g.assets,
+		DisableDefaultSplash: true,
+		Clear:               render.RGBA8(11, 16, 28, 255),
 	}
 }
 

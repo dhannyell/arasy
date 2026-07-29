@@ -119,7 +119,7 @@ func (c *Canvas2D) loadTexture(decl asset.TextureDecl) {
 // loadFont registers a manifest font with the browser's FontFace API so
 // DrawText can paint with it. Loading is asynchronous; until the FontFace
 // resolves, DrawText falls back to monospace. The family is namespaced
-// ("ff-<name>") to avoid clashing with system-installed fonts. Metrics still
+// ("ar-<name>") to avoid clashing with system-installed fonts. Metrics still
 // come from asset/typeface on the deterministic side (the browser font is only
 // used to paint here, never to measure), matching the WebGPU backend.
 func (c *Canvas2D) loadFont(decl asset.FontDecl) {
@@ -129,7 +129,7 @@ func (c *Canvas2D) loadFont(decl asset.FontDecl) {
 		return
 	}
 
-	family := "ff-" + decl.Name
+	family := "ar-" + decl.Name
 	face := fontFaceCtor.New(family, bytesToJS(decl.Data))
 
 	var resolve, reject js.Func
