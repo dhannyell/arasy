@@ -824,9 +824,17 @@ func growBufferCap(current, required int) int {
 	if current <= 0 {
 		current = initialBufferCap
 	}
+	if required <= current {
+		return current
+	}
 	for current < required {
 		current *= 2
 	}
+	// Keep one doubling of headroom after a growth. Animated command streams
+	// commonly reveal adjacent shapes on consecutive frames; sizing to the
+	// first frame's exact power-of-two bucket made the next frame replace the
+	// GPU buffer again while the transition was already visible.
+	current *= 2
 	return current
 }
 func clearColor(color render.Color) wgpu.Color {
