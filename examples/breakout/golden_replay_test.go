@@ -40,24 +40,24 @@ func TestGoldenReplay(t *testing.T) {
 		paddleKeys := []input.SourceCode{input.KeyD, input.KeyA}
 
 		// JustPressed only fires on a fresh down edge (Mapper compares
-		// pressed-before vs pressed-after the tick's events), so Space must
+		// pressed-before vs pressed-after the tick's events), so the launch button must
 		// be released before the next life's StateReady can re-trigger it —
-		// otherwise the key latches "held" forever after the first launch
+		// otherwise the button latches "held" forever after the first launch
 		// and the game gets stuck in StateReady for the rest of the run.
-		releaseSpaceNextTick := false
+		releaseLaunchNextTick := false
 
 		for tick := uint64(0); tick < totalTicks; tick++ {
 			var events []input.Event
-			if releaseSpaceNextTick {
-				events = append(events, replayKeyUp(input.KeySpace))
-				releaseSpaceNextTick = false
+			if releaseLaunchNextTick {
+				events = append(events, replayGamepadUp(input.GamepadA))
+				releaseLaunchNextTick = false
 			}
 			switch last.State.state {
 			case StateMenu, StateGameOver, StateWon:
 				events = append(events, mouseMove(playX, playY), mouseDown(playX, playY), mouseUp(playX, playY))
 			case StateReady:
-				events = append(events, replayKeyDown(input.KeySpace))
-				releaseSpaceNextTick = true
+				events = append(events, replayGamepadDown(input.GamepadA))
+				releaseLaunchNextTick = true
 			case StatePlaying:
 				key := paddleKeys[(tick/paddleWindow)%2]
 				if tick%paddleWindow == 0 {
@@ -87,4 +87,12 @@ func replayKeyDown(code input.SourceCode) input.Event {
 
 func replayKeyUp(code input.SourceCode) input.Event {
 	return input.Event{Source: input.Source{Device: input.DeviceKeyboard, Code: code}, Kind: input.EventButtonUp}
+}
+
+func replayGamepadDown(code input.SourceCode) input.Event {
+	return input.Event{Source: input.Gamepad(code), Kind: input.EventButtonDown}
+}
+
+func replayGamepadUp(code input.SourceCode) input.Event {
+	return input.Event{Source: input.Gamepad(code), Kind: input.EventButtonUp}
 }
