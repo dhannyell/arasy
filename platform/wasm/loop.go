@@ -6,6 +6,8 @@ import (
 	"syscall/js"
 	"time"
 
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -19,6 +21,9 @@ func (h *host) startLoop() {
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
 		elapsed := frameTimer.ElapsedMillis(ts)
+		if events := h.pollGamepad(); len(events) > 0 {
+			h.pending = append(h.pending, events...)
+		}
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
 
@@ -83,4 +88,27 @@ func (h *host) startLoop() {
 	})
 	h.loopCb = cb
 	js.Global().Call("requestAnimationFrame", cb)
+}
+
+func (h *host) pollGamepad() []input.Event {
+	// Poll the first browser device and emit input.DeviceGamepad events.
+	current, present := browserGamepadSnapshot()
+	if !present {
+		if !h.gamepadPresent {
+			return nil
+		}
+		events := platforminput.GamepadEvents(h.gamepadState, gamepadSnapshot{})
+		h.gamepadPresent = false
+		h.gamepadState = gamepadSnapshot{}
+		return events
+	}
+
+	var previous gamepadSnapshot
+	if h.gamepadPresent {
+		previous = h.gamepadState
+	}
+	events := platforminput.GamepadEvents(previous, current)
+	h.gamepadPresent = true
+	h.gamepadState = current
+	return events
 }

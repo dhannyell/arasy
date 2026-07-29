@@ -4,6 +4,7 @@ package native
 
 import (
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 
@@ -153,6 +154,12 @@ func pointerLeaveEvent() input.Event {
 		Source: input.Source{Device: input.DeviceMouse, Code: input.MouseUnknown},
 		Kind:   input.EventPointerLeave,
 	}
+}
+
+type gamepadSnapshot = platforminput.GamepadSnapshot
+
+func gamepadEvents(previous, current gamepadSnapshot) []input.Event {
+	return platforminput.GamepadEvents(previous, current)
 }
 
 func scaleCursor(x, y float64, winW, winH, fbW, fbH int) (float64, float64) {

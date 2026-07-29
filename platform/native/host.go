@@ -39,6 +39,10 @@ type host struct {
 	viewport math2d.Rect
 	fbDirty  bool
 
+	gamepadJoystick glfw.Joystick
+	gamepadPresent  bool
+	gamepadState    gamepadSnapshot
+
 	savedWindowed windowRect
 	altEnter      bool
 
@@ -166,6 +170,10 @@ func (h *host) run() error {
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
+		if gamepadEvents := h.pollGamepad(); len(gamepadEvents) > 0 {
+			h.noteInput()
+			h.pending = append(h.pending, gamepadEvents...)
+		}
 		inputAt := h.lastInputAt
 		h.lastInputAt = time.Time{}
 		var tickStart time.Time
@@ -223,6 +231,45 @@ func (h *host) run() error {
 		pacer.wait()
 	}
 	return nil
+}
+
+func (h *host) pollGamepad() []input.Event {
+	// Poll the first mapped GLFW device and emit input.DeviceGamepad events.
+	if !h.gamepadPresent {
+		for joystick := glfw.Joystick1; joystick <= glfw.Joystick16; joystick++ {
+			if joystick.Present() && joystick.IsGamepad() {
+				h.gamepadJoystick = joystick
+				h.gamepadPresent = true
+				break
+			}
+		}
+	}
+
+	if !h.gamepadPresent {
+		return nil
+	}
+
+	state := h.gamepadJoystick.GetGamepadState()
+	if state == nil {
+		events := gamepadEvents(h.gamepadState, gamepadSnapshot{})
+		h.gamepadPresent = false
+		h.gamepadJoystick = 0
+		h.gamepadState = gamepadSnapshot{}
+		return events
+	}
+
+	current := gamepadSnapshot{}
+	// GLFW's button indices 6 and 7 are Back/Start, while trigger buttons
+	// are represented by the analog axes below. Do not alias those buttons.
+	for i := 0; i < 6; i++ {
+		current.Buttons[i] = state.Buttons[i] == glfw.Press
+	}
+	for i := range current.Axes {
+		current.Axes[i] = float64(state.Axes[i])
+	}
+	events := gamepadEvents(h.gamepadState, current)
+	h.gamepadState = current
+	return events
 }
 
 func (h *host) resizeIfNeeded() {

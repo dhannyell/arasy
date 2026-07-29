@@ -12,6 +12,7 @@ import (
 func (h *host) registerInputListeners() {
 	window := js.Global()
 	canvas := h.canvas
+	canvas.Get("style").Set("touchAction", "none")
 
 	addWindowListener := func(name string, fn js.Func) {
 		h.inputCbs = append(h.inputCbs, fn)
@@ -61,14 +62,26 @@ func (h *host) registerInputListeners() {
 		return nil
 	}))
 
-	addCanvasListener("mousemove", js.FuncOf(func(this js.Value, args []js.Value) any {
-		x, y := h.canvasXY(args[0])
-		h.queueInput(browserinput.MouseMoveEvent(x, y), args[0])
+	addCanvasListener("pointermove", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" && !h.touchActive {
+			return nil
+		}
+		x, y := h.canvasXY(event)
+		h.queueInput(browserinput.MouseMoveEvent(x, y), event)
 		return nil
 	}))
 
-	addCanvasListener("mousedown", js.FuncOf(func(this js.Value, args []js.Value) any {
+	addCanvasListener("pointerdown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		if event.Get("pointerType").String() == "touch" {
+			if h.touchActive {
+				return nil
+			}
+			h.touchActive = true
+			event.Call("preventDefault")
+			canvas.Call("setPointerCapture", event.Get("pointerId"))
+		}
 		x, y := h.canvasXY(event)
 
 		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
@@ -79,8 +92,17 @@ func (h *host) registerInputListeners() {
 		return nil
 	}))
 
-	addCanvasListener("mouseup", js.FuncOf(func(this js.Value, args []js.Value) any {
+	addCanvasListener("pointerup", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		isTouch := event.Get("pointerType").String() == "touch"
+		if isTouch {
+			if !h.touchActive {
+				return nil
+			}
+			h.touchActive = false
+			event.Call("preventDefault")
+			canvas.Call("releasePointerCapture", event.Get("pointerId"))
+		}
 		x, y := h.canvasXY(event)
 
 		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
@@ -88,11 +110,25 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 		h.queueInput(mouseEvent, event)
+		if isTouch {
+			// Touch has no hover state: end the pointer frame at the same
+			// boundary as the up event while preserving the click edge.
+			h.queueInput(browserinput.PointerLeaveEvent(), event)
+		}
 		return nil
 	}))
 
-	addCanvasListener("mouseleave", js.FuncOf(func(this js.Value, args []js.Value) any {
+	addCanvasListener("pointerleave", js.FuncOf(func(this js.Value, args []js.Value) any {
 		h.queueInput(browserinput.PointerLeaveEvent(), args[0])
+		return nil
+	}))
+
+	addCanvasListener("pointercancel", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" {
+			h.touchActive = false
+		}
+		h.queueInput(browserinput.PointerLeaveEvent(), event)
 		return nil
 	}))
 

@@ -62,6 +62,10 @@ type host struct {
 	loopCb   js.Func
 	resizeCb js.Func
 	inputCbs []js.Func
+
+	gamepadPresent bool
+	gamepadState   gamepadSnapshot
+	touchActive    bool
 }
 
 // Run starts the browser WASM host for game and blocks forever.
