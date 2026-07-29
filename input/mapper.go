@@ -1,8 +1,9 @@
 package input
 
 type Mapper struct {
-	bindings     []Binding
-	sourceValues map[Source]float64
+	bindings        []Binding
+	sourceValues    map[Source]float64
+	gamepadDeadzone float64
 	// latched holds button sources that reported a down event during the
 	// current tick's input batch, even if a later event in that same batch
 	// brought the raw value back to zero. Hosts collect OS/browser events
@@ -17,6 +18,12 @@ type Mapper struct {
 }
 
 func NewMapper(bindings []Binding) *Mapper {
+	return NewMapperWithDeadzone(bindings, 0)
+}
+
+// NewMapperWithDeadzone constructs a mapper that applies deadzone to
+// gamepad-axis events before binding scale is applied.
+func NewMapperWithDeadzone(bindings []Binding, deadzone float64) *Mapper {
 	validBindings := make([]Binding, 0, len(bindings))
 	for _, binding := range bindings {
 		if binding.Valid() {
@@ -25,11 +32,12 @@ func NewMapper(bindings []Binding) *Mapper {
 	}
 
 	return &Mapper{
-		bindings:     validBindings,
-		sourceValues: make(map[Source]float64),
-		latched:      make(map[Source]bool),
-		previous:     NewState(),
-		current:      NewState(),
+		bindings:        validBindings,
+		sourceValues:    make(map[Source]float64),
+		gamepadDeadzone: deadzone,
+		latched:         make(map[Source]bool),
+		previous:        NewState(),
+		current:         NewState(),
 	}
 }
 
@@ -69,6 +77,9 @@ func (m *Mapper) State() State {
 			raw = 1
 		}
 
+		if binding.Source.Device == DeviceGamepad {
+			raw = ApplyGamepadDeadzone(raw, m.gamepadDeadzone)
+		}
 		value := raw * binding.Scale
 		if value == 0 {
 			continue
@@ -120,11 +131,12 @@ func (m *Mapper) Reset() {
 
 func (m *Mapper) Clone() *Mapper {
 	clone := &Mapper{
-		bindings:     append([]Binding(nil), m.bindings...),
-		sourceValues: make(map[Source]float64, len(m.sourceValues)),
-		latched:      make(map[Source]bool, len(m.latched)),
-		previous:     m.previous.clone(),
-		current:      m.current.clone(),
+		bindings:        append([]Binding(nil), m.bindings...),
+		sourceValues:    make(map[Source]float64, len(m.sourceValues)),
+		gamepadDeadzone: m.gamepadDeadzone,
+		latched:         make(map[Source]bool, len(m.latched)),
+		previous:        m.previous.clone(),
+		current:         m.current.clone(),
 	}
 
 	for source, value := range m.sourceValues {
@@ -136,6 +148,16 @@ func (m *Mapper) Clone() *Mapper {
 	}
 
 	return clone
+}
+
+// SetGamepadDeadzone updates the deterministic gamepad-axis transform.
+func (m *Mapper) SetGamepadDeadzone(deadzone float64) {
+	m.gamepadDeadzone = deadzone
+}
+
+// GamepadDeadzone returns the deadzone currently applied by the mapper.
+func (m *Mapper) GamepadDeadzone() float64 {
+	return m.gamepadDeadzone
 }
 
 func (m *Mapper) Bindings() []Binding {

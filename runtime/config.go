@@ -16,6 +16,9 @@ type Config struct {
 	Bounce       scene.BounceConfig
 	Physics      scene.PhysicsConfig
 	SimulationHz int
+	// GamepadDeadzone is applied to gamepad axes in the deterministic input
+	// mapper. Zero selects input.DefaultGamepadDeadzone.
+	GamepadDeadzone float64
 	// FPS caps the host frame rate. Zero (the zero value)
 	// uses the engine default; a positive value caps at that many frames per
 	// second; a negative value runs the host loop uncapped. The fixed simulation

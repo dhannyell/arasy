@@ -52,6 +52,9 @@ func (r Recording) WriteTo(w io.Writer) (int64, error) {
 	if err := cw.write(r.Seed); err != nil {
 		return cw.n, err
 	}
+	if err := cw.write(r.GamepadDeadzone); err != nil {
+		return cw.n, err
+	}
 	// Viewport at tick 0 (4 float64 = 32 bytes). A zero rect signals "use the
 	// game's Config default" — recordings made before viewport capture.
 	if err := cw.write(r.Viewport.Min.X); err != nil {
@@ -159,6 +162,9 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.Seed); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.GamepadDeadzone); err != nil {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.Viewport.Min.X); err != nil {
@@ -291,6 +297,9 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 		log = slog.Default()
 	}
 	driver := newDriver(game, log, &rec.Seed)
+	if rec.GamepadDeadzone > 0 && rec.GamepadDeadzone < 1 {
+		driver.input.SetGamepadDeadzone(rec.GamepadDeadzone)
+	}
 	driver.recorder = nil
 
 	// Restore the surface size active at tick 0 so viewport-dependent logic

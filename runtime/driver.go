@@ -128,6 +128,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if cfg.KeyframeInterval <= 0 {
 		cfg.KeyframeInterval = defaultKeyframeInterval
 	}
+	cfg.GamepadDeadzone = input.EffectiveGamepadDeadzone(cfg.GamepadDeadzone)
 	if log == nil {
 		log = slog.Default()
 	}
@@ -135,7 +136,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d := &Driver{
 		game:     game,
 		cfg:      cfg,
-		input:    newDriverInput(cfg.InputBindings),
+		input:    newDriverInputWithDeadzone(cfg.InputBindings, cfg.GamepadDeadzone),
 		clock:    newClock(cfg.SimulationHz),
 		controls: devControls{speed: 1},
 		log:      log.With("scope", "engine"),

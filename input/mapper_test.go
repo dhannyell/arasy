@@ -1,6 +1,7 @@
 package input_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
@@ -171,6 +172,23 @@ func TestMapperMapsAxisChangedEvent(t *testing.T) {
 	state := mapper.State()
 	if got := state.Value(input.ActionMoveX); got != 0.5 {
 		t.Fatalf("move x = %v, want 0.5", got)
+	}
+}
+
+func TestMapperAppliesGamepadDeadzoneBeforeScale(t *testing.T) {
+	mapper := input.NewMapperWithDeadzone([]input.Binding{
+		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+	}, .2)
+
+	mapper.Apply(input.Event{Source: gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .2})
+	if state := mapper.State(); state.Pressed(input.ActionMoveX) {
+		t.Fatal("axis exactly at the deadzone should not press the action")
+	}
+
+	mapper.Apply(input.Event{Source: gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .6})
+	state := mapper.State()
+	if got := state.Value(input.ActionMoveX); math.Abs(got-.5) > 1e-12 {
+		t.Fatalf("axis above deadzone = %v, want .5", got)
 	}
 }
 

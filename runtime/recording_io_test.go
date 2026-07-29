@@ -16,9 +16,10 @@ import (
 
 func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
 	rec := Recording{
-		Ticks:    120,
-		Seed:     42,
-		Viewport: math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 1920, Y: 1080}),
+		Ticks:           120,
+		Seed:            42,
+		GamepadDeadzone: .25,
+		Viewport:        math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 1920, Y: 1080}),
 		Viewports: []ViewportChange{
 			{Tick: 30, Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})},
 		},
@@ -92,6 +93,7 @@ func TestReadRecordingDoesNotPreallocateFromHeaderCounts(t *testing.T) {
 	for _, field := range []any{
 		recordingVersion,
 		uint64(0), uint64(0), // ticks, seed
+		float64(0),                                     // gamepad deadzone
 		float64(0), float64(0), float64(0), float64(0), // viewport
 		uint32(maxRecordingAnchors),
 		uint32(maxRecordingEvents),

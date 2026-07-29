@@ -2,9 +2,11 @@ package runtime
 
 import (
 	"log/slog"
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/render"
 )
 
 func TestReplayReproducesChecksum(t *testing.T) {
@@ -41,6 +43,48 @@ func TestReplayReproducesChecksum(t *testing.T) {
 		t.Fatalf("replay checksum = %d, want %d", got, want)
 	}
 }
+
+func TestReplayUsesRecordedGamepadDeadzone(t *testing.T) {
+	live := &deadzoneReplayGame{deadzone: .2}
+	driver := NewDriver(live, slog.Default())
+	driver.StartRecording()
+	driver.ApplyInput([]input.Event{{Source: input.Gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .5}})
+	driver.Step()
+	recording := driver.StopRecording()
+
+	if recording.GamepadDeadzone != .2 {
+		t.Fatalf("recorded deadzone = %v, want .2", recording.GamepadDeadzone)
+	}
+
+	// The fresh game intentionally has a different local setting. Replay must
+	// use the value recorded with the input journal, not this machine's config.
+	replayed := &deadzoneReplayGame{deadzone: .8}
+	Replay(replayed, slog.Default(), recording)
+	if math.Abs(replayed.lastValue-.375) > 1e-12 {
+		t.Fatalf("replayed axis = %v, want .375 from recorded deadzone", replayed.lastValue)
+	}
+}
+
+type deadzoneReplayGame struct {
+	deadzone  float64
+	lastValue float64
+}
+
+func (g *deadzoneReplayGame) Setup() Config {
+	return Config{
+		SimulationHz:    60,
+		GamepadDeadzone: g.deadzone,
+		InputBindings:   []input.Binding{{Source: input.Gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1}},
+	}
+}
+
+func (g *deadzoneReplayGame) Init(*UpdateContext) {}
+
+func (g *deadzoneReplayGame) Update(ctx *UpdateContext, _ float64) {
+	g.lastValue = ctx.Input.Value(input.ActionMoveX)
+}
+
+func (g *deadzoneReplayGame) Render(*RenderContext) []render.Command { return nil }
 
 func TestReplayDivergesWhenInputDiffers(t *testing.T) {
 	game := &inputBackGame{}

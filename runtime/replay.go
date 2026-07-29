@@ -9,10 +9,13 @@ import (
 
 // Recording is the input log and tick count needed for Replay.
 type Recording struct {
-	Events  []input.Event
-	Ticks   uint64
-	Seed    uint64
-	Anchors []Anchor
+	Events []input.Event
+	Ticks  uint64
+	Seed   uint64
+	// GamepadDeadzone is the effective deterministic axis deadzone. Zero means
+	// use the fresh game's configured default.
+	GamepadDeadzone float64
+	Anchors         []Anchor
 
 	// Viewport is the surface size active at tick 0 of the recording. A zero
 	// value (Width/Height <= 0) means "use the game's Config default", which is
@@ -74,12 +77,13 @@ func (d *Driver) StopRecording() Recording {
 	d.recordingAnchors = nil
 	d.recordingInitialViewport = math2d.Rect{}
 	return Recording{
-		Events:    events,
-		Ticks:     d.tick,
-		Seed:      d.cfg.Seed,
-		Anchors:   anchors,
-		Viewport:  initial,
-		Viewports: viewports,
+		Events:          events,
+		Ticks:           d.tick,
+		Seed:            d.cfg.Seed,
+		GamepadDeadzone: d.cfg.GamepadDeadzone,
+		Anchors:         anchors,
+		Viewport:        initial,
+		Viewports:       viewports,
 	}
 }
 
@@ -135,6 +139,9 @@ func ReplayForViewing(game Game, log *slog.Logger, rec Recording) *Driver {
 // instead of being dropped, at the cost of a world clone per keyframe.
 func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry, keepRecorder bool) *Driver {
 	driver := newDriver(game, log, &rec.Seed)
+	if rec.GamepadDeadzone > 0 && rec.GamepadDeadzone < 1 {
+		driver.input.SetGamepadDeadzone(rec.GamepadDeadzone)
+	}
 
 	if !keepRecorder {
 		// The final state is all that's needed; snapshot capture would clone
