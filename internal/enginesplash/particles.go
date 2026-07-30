@@ -103,6 +103,11 @@ func viewportSeed(viewport math2d.Rect) uint64 {
 	return w<<32 | h
 }
 
+// engineSplashScale tracks the raw viewport without the narrowWidthFactor
+// floor engineSplashFit applies: Crux particle sizes shrink on very narrow
+// landscape viewports even though their anchors keep the wider fit. The two
+// scales intentionally diverge there; revisit both together if the fit
+// changes.
 func engineSplashScale(viewport math2d.Rect) float64 {
 	return math.Min(viewport.Width()/designWidth, viewport.Height()/designHeight)
 }
@@ -115,24 +120,29 @@ func stackedViewport(viewport math2d.Rect) math2d.Rect {
 	return math2d.NewRect(math2d.Vec2{X: minX, Y: viewport.Min.Y}, math2d.Vec2{X: boxWidth, Y: h})
 }
 
-func engineSplashViewport(viewport math2d.Rect) math2d.Rect {
+// engineSplashFit returns the centered landscape content box for a viewport
+// and the design-units-to-pixels scale that places design points inside it.
+// Viewports narrower than narrowWidthFactor of the design aspect keep a
+// minimum content width so the mark stays legible (and may overflow the
+// sides) instead of shrinking without bound.
+func engineSplashFit(viewport math2d.Rect) (box math2d.Rect, scale float64) {
 	w, h := viewport.Width(), viewport.Height()
-	widthForScale := w
-	if minWidth := h * narrowWidthFactor; widthForScale < minWidth {
-		widthForScale = minWidth
-	}
-	scale := math.Min(widthForScale/designWidth, h/designHeight)
+	widthForScale := max(w, h*narrowWidthFactor)
+	scale = math.Min(widthForScale/designWidth, h/designHeight)
 	boxWidth := scale * designWidth
 	minX := viewport.Min.X + (w-boxWidth)/2
-	return math2d.NewRect(math2d.Vec2{X: minX, Y: viewport.Min.Y}, math2d.Vec2{X: boxWidth, Y: h})
+	box = math2d.NewRect(math2d.Vec2{X: minX, Y: viewport.Min.Y}, math2d.Vec2{X: boxWidth, Y: h})
+	return box, scale
 }
 
+// designOffset maps design-space coordinates into viewport pixels: the top
+// left of the design composition, centered inside the fitted box, and the
+// shared scale from engineSplashFit.
 func designOffset(viewport math2d.Rect) (offset math2d.Vec2, scale float64) {
-	viewport = engineSplashViewport(viewport)
-	scale = math.Min(viewport.Width()/designWidth, viewport.Height()/designHeight)
+	box, scale := engineSplashFit(viewport)
 	offset = math2d.Vec2{
-		X: viewport.Min.X + (viewport.Width()-designWidth*scale)/2,
-		Y: viewport.Min.Y + (viewport.Height()-designHeight*scale)/2,
+		X: box.Min.X,
+		Y: box.Min.Y + (box.Height()-designHeight*scale)/2,
 	}
 	return offset, scale
 }

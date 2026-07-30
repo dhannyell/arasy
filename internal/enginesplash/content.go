@@ -23,9 +23,10 @@ func (c *Content) Append(timeline anim.Timeline, viewport math2d.Rect) []render.
 			stacked.ArasySplashStackedResources{},
 		)
 	}
+	box, _ := engineSplashFit(viewport)
 	return c.landscape.Append(
 		timeline,
-		engineSplashViewport(viewport),
+		box,
 		ArasySplashResources{},
 	)
 }
