@@ -136,6 +136,23 @@ func (d *Driver) SplashActive() bool {
 	return d.splash != nil && d.splash.index < len(d.splash.segments)
 }
 
+// SplashFrameReadyForHandoff reports whether the current splash frame can
+// replace a host-owned loading poster without revealing partially faded
+// content. Hosts call it after RenderSplashFrame and keep their poster visible
+// until it returns true. With no splash playlist, the first game frame is
+// ready immediately. An exhausted playlist remains unready until the host
+// presents that game frame.
+func (d *Driver) SplashFrameReadyForHandoff() bool {
+	if d.splash == nil || len(d.splash.segments) == 0 {
+		return true
+	}
+	if !d.SplashActive() {
+		return false
+	}
+	seg := d.splash.segments[d.splash.index]
+	return splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade) >= 1
+}
+
 // AdvanceSplash advances the current segment by wall-clock elapsed. skip is
 // true when any host input arrived this frame; it only ends the segment when
 // that segment is Skippable (per its MinTime/Skippable rule). It never

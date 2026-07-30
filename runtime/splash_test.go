@@ -453,6 +453,46 @@ func TestSplashFadeAlphaEnvelope(t *testing.T) {
 	}
 }
 
+func TestSplashFrameReadyForHandoffWaitsForFullOpacity(t *testing.T) {
+	d := newTestDriver(t, Config{
+		DisableDefaultSplash: true,
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "studio", "file": "a.png"}],
+			"splash": [{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"min_time": 1,
+				"fade": 0.25
+			}]
+		}`)),
+	})
+
+	if d.SplashFrameReadyForHandoff() {
+		t.Fatal("handoff ready at the transparent start of the splash")
+	}
+	d.AdvanceSplash(125*time.Millisecond, false)
+	if d.SplashFrameReadyForHandoff() {
+		t.Fatal("handoff ready during the splash fade-in")
+	}
+	d.AdvanceSplash(125*time.Millisecond, false)
+	if !d.SplashFrameReadyForHandoff() {
+		t.Fatal("handoff not ready when the splash reached full opacity")
+	}
+	d.AdvanceSplash(750*time.Millisecond, false)
+	if d.SplashFrameReadyForHandoff() {
+		t.Fatal("handoff ready after the splash ended but before a game frame")
+	}
+
+	withoutSplash := newTestDriver(t, Config{DisableDefaultSplash: true})
+	if !withoutSplash.SplashFrameReadyForHandoff() {
+		t.Fatal("handoff not ready when there is no runtime splash")
+	}
+}
+
 func TestFlipBookCellByRenderClock(t *testing.T) {
 	seg := SplashSegment{CellW: 10, CellH: 10, Columns: 2, Frames: 4, Rate: 2}
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
