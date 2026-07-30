@@ -177,7 +177,7 @@ func loadAtlasFrameDir(dir string) ([]image.Image, error) {
 			return nil, fmt.Errorf("atlas: decode %q: %w", name, err)
 		}
 		if closeErr != nil {
-			return nil, closeErr
+			return nil, fmt.Errorf("atlas: close %q: %w", name, closeErr)
 		}
 		frames = append(frames, img)
 	}
@@ -225,7 +225,11 @@ func loadAtlasFrameGIF(path string) ([]image.Image, float64, error) {
 		case gif.DisposalBackground:
 			draw.Draw(canvas, frame.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
 		case gif.DisposalPrevious:
-			canvas = previous
+			// previous is always non-nil here (snapshot taken above under
+			// the same condition); the guard keeps the invariant explicit.
+			if previous != nil {
+				canvas = previous
+			}
 		}
 	}
 	for _, delay := range g.Delay {
