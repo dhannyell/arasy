@@ -211,29 +211,25 @@ func (d *Driver) renderSplashFrame(elapsed time.Duration, r FrameRenderer) {
 func (d *Driver) splashFrame(dt float64) Frame {
 	cam := render.Camera{World: d.viewport, Viewport: d.viewport}
 	if !d.splashActive() {
-		return Frame{Camera: cam}
+		// The frame that drains the playlist is still presented by hosts (it
+		// consumes the final skip/timeout without leaking that input into
+		// tick 0). Paint the last segment's backdrop instead of returning an
+		// empty frame, so the transition to the first game frame never
+		// flashes a bare Config.Clear screen.
+		if d.splash == nil || len(d.splash.segments) == 0 {
+			return Frame{Camera: cam}
+		}
+		last := d.splash.segments[len(d.splash.segments)-1]
+		return Frame{
+			Camera:   cam,
+			Commands: []render.Command{d.splashBackgroundRect(last)},
+		}
 	}
 
 	seg := d.splash.segments[d.splash.index]
 	alpha := splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade)
 
-	background := seg.Background
-	if background == (render.Color{}) {
-		background = d.cfg.BootBackground
-		if background == (render.Color{}) {
-			background = d.cfg.Clear
-		}
-	}
-
-	commands := []render.Command{
-		render.DrawRect{
-			BaseCommand: render.BaseCommand{
-				LayerValue: enginesplash.BackgroundLayer,
-			},
-			Rect: d.viewport,
-			Fill: background,
-		},
-	}
+	commands := []render.Command{d.splashBackgroundRect(seg)}
 
 	var builder render.Builder
 	builder.Reset(commands)
@@ -256,6 +252,26 @@ func (d *Driver) splashFrame(dt float64) Frame {
 	}
 
 	return Frame{Camera: cam, Commands: commands}
+}
+
+// splashBackgroundRect paints the backdrop behind a segment across the full
+// viewport: the segment's own Background, then Config.BootBackground, then
+// Config.Clear.
+func (d *Driver) splashBackgroundRect(seg SplashSegment) render.DrawRect {
+	background := seg.Background
+	if background == (render.Color{}) {
+		background = d.cfg.BootBackground
+		if background == (render.Color{}) {
+			background = d.cfg.Clear
+		}
+	}
+	return render.DrawRect{
+		BaseCommand: render.BaseCommand{
+			LayerValue: enginesplash.BackgroundLayer,
+		},
+		Rect: d.viewport,
+		Fill: background,
+	}
 }
 
 // splashFlipbookImage computes the current cell of a texture flip-book

@@ -463,6 +463,45 @@ func TestSplashFadeAlphaEnvelope(t *testing.T) {
 	}
 }
 
+// TestSplashDrainFramePaintsBackground guards the frame that consumes the
+// final segment's timeout/skip: hosts still present it, so it must paint the
+// last segment's backdrop instead of flashing an empty Config.Clear screen
+// before the first game frame.
+func TestSplashDrainFramePaintsBackground(t *testing.T) {
+	clear := render.RGBA8(10, 20, 30, 255)
+	boot := render.RGBA8(40, 50, 60, 255)
+	d := newTestDriver(t, Config{
+		DisableDefaultSplash: true,
+		Clear:                clear,
+		BootBackground:       boot,
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "a", "file": "a.png"}],
+			"splash": [{"texture": "a", "cell_w": 4, "cell_h": 4, "columns": 1, "frames": 1, "min_time": 1}]
+		}`)),
+	})
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
+	r := &splashCaptureRenderer{}
+
+	result := d.RunSplashFrame(SplashFrameBatch{Viewport: &viewport}, 1500*time.Millisecond, r)
+	if !result.Rendered || result.ReadyForHandoff {
+		t.Fatalf("draining RunSplashFrame() = %+v, want rendered without handoff", result)
+	}
+	if d.splashActive() {
+		t.Fatal("splash still active after the last segment's MinTime elapsed")
+	}
+	if len(r.frames) != 1 || len(r.frames[0].Commands) != 1 {
+		t.Fatalf("drain frame = %+v, want exactly the backdrop rect", r.frames)
+	}
+	rect, ok := r.frames[0].Commands[0].(render.DrawRect)
+	if !ok {
+		t.Fatalf("drain frame command = %T, want the backdrop render.DrawRect", r.frames[0].Commands[0])
+	}
+	if rect.Fill != boot {
+		t.Fatalf("drain frame background = %+v, want BootBackground %+v", rect.Fill, boot)
+	}
+}
+
 func TestRunSplashFrameWaitsForFullOpacityBeforeHandoff(t *testing.T) {
 	d := newTestDriver(t, Config{
 		DisableDefaultSplash: true,
