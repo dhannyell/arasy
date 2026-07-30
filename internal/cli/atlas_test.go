@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -119,6 +121,44 @@ func TestAtlasRejectsMaxSizeOverflow(t *testing.T) {
 	}
 }
 
+func TestAtlasRejectsGridDimensionIntegerOverflow(t *testing.T) {
+	dir := t.TempDir()
+	writeAtlasFramePNG(t, dir, "frame.png", color.NRGBA{255, 0, 0, 255})
+
+	tests := []struct {
+		name    string
+		columns int
+		maxSize int
+	}{
+		{
+			name:    "dimension multiplication",
+			columns: math.MaxInt,
+			maxSize: defaultAtlasMaxSize,
+		},
+		{
+			name:    "pixel buffer multiplication",
+			columns: math.MaxInt / 2,
+			maxSize: math.MaxInt,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			cmd.SetOut(new(bytes.Buffer))
+			err := runAtlas(
+				cmd,
+				dir,
+				filepath.Join(t.TempDir(), "atlas.png"),
+				tt.columns,
+				tt.maxSize,
+			)
+			if err == nil {
+				t.Fatal("expected an error when grid dimensions overflow, got nil")
+			}
+		})
+	}
+}
+
 func TestAtlasDefaultColumnsIsCeilSqrt(t *testing.T) {
 	dir := t.TempDir()
 	for i := 0; i < 4; i++ {
@@ -135,4 +175,82 @@ func TestAtlasDefaultColumnsIsCeilSqrt(t *testing.T) {
 	if !bytes.Contains(stdout.Bytes(), []byte("columns: 2\n")) {
 		t.Fatalf("stdout = %q, want columns: 2 (ceil(sqrt(4)))", stdout.String())
 	}
+}
+
+func TestLoadAtlasFrameGIFCompositesLogicalCanvasAndDisposal(t *testing.T) {
+	palette := color.Palette{
+		color.NRGBA{0, 0, 0, 255},
+		color.NRGBA{255, 0, 0, 255},
+		color.NRGBA{0, 255, 0, 255},
+		color.NRGBA{0, 0, 255, 255},
+		color.NRGBA{255, 255, 0, 255},
+		color.NRGBA{0, 0, 0, 0},
+	}
+	frames := []*image.Paletted{
+		palettedFrame(image.Rect(0, 0, 1, 1), palette, []uint8{1}),
+		palettedFrame(image.Rect(1, 0, 2, 1), palette, []uint8{2}),
+		palettedFrame(image.Rect(2, 0, 3, 1), palette, []uint8{3}),
+		palettedFrame(image.Rect(0, 0, 1, 1), palette, []uint8{4}),
+		palettedFrame(image.Rect(0, 0, 2, 1), palette, []uint8{5, 2}),
+	}
+	input := filepath.Join(t.TempDir(), "partial.gif")
+	f, err := os.Create(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = gif.EncodeAll(f, &gif.GIF{
+		Image:           frames,
+		Delay:           []int{10, 10, 10, 10, 10},
+		Disposal:        []byte{gif.DisposalNone, gif.DisposalBackground, gif.DisposalPrevious, gif.DisposalNone, gif.DisposalNone},
+		Config:          image.Config{ColorModel: palette, Width: 3, Height: 1},
+		BackgroundIndex: 0,
+	})
+	closeErr := f.Close()
+	if err != nil {
+		t.Fatalf("encode GIF: %v", err)
+	}
+	if closeErr != nil {
+		t.Fatalf("close GIF: %v", closeErr)
+	}
+
+	gotFrames, gotRate, err := loadAtlasFrameGIF(input)
+	if err != nil {
+		t.Fatalf("loadAtlasFrameGIF: %v", err)
+	}
+	if gotRate != 10 {
+		t.Fatalf("rate = %g, want 10", gotRate)
+	}
+
+	black := color.NRGBA{0, 0, 0, 255}
+	red := color.NRGBA{255, 0, 0, 255}
+	green := color.NRGBA{0, 255, 0, 255}
+	blue := color.NRGBA{0, 0, 255, 255}
+	yellow := color.NRGBA{255, 255, 0, 255}
+	want := [][]color.NRGBA{
+		{red, black, black},
+		{red, green, black},
+		{red, black, blue},
+		{yellow, black, black},
+		{yellow, green, black},
+	}
+	if len(gotFrames) != len(want) {
+		t.Fatalf("frame count = %d, want %d", len(gotFrames), len(want))
+	}
+	for i, frame := range gotFrames {
+		if frame.Bounds() != image.Rect(0, 0, 3, 1) {
+			t.Fatalf("frame %d bounds = %v, want global 3x1 canvas", i, frame.Bounds())
+		}
+		for x, wantColor := range want[i] {
+			gotColor := color.NRGBAModel.Convert(frame.At(x, 0)).(color.NRGBA)
+			if gotColor != wantColor {
+				t.Fatalf("frame %d pixel %d = %#v, want %#v", i, x, gotColor, wantColor)
+			}
+		}
+	}
+}
+
+func palettedFrame(bounds image.Rectangle, palette color.Palette, pixels []uint8) *image.Paletted {
+	frame := image.NewPaletted(bounds, palette)
+	copy(frame.Pix, pixels)
+	return frame
 }

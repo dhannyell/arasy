@@ -5,19 +5,20 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/anim"
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/enginesplash"
+	"github.com/dhannyell/arasy/internal/enginesplash/stacked"
 	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
 
-// SplashContent renders a texture-free segment at timeline time into dst,
-// returning the extended slice. It mirrors the Append<Name> signature the
-// arasy svg compiler generates, so a compiled brand animation can be used
-// directly as a segment's Content with resources bound by closure. Content
-// must be a pure function of (timeline, viewport): it runs before tick 0 and
-// never observes world/game state.
+// SplashContent renders a texture-free segment at timeline time. The returned
+// commands are consumed synchronously and may be backed by a reusable
+// workspace. Content must be a pure function of (timeline, viewport): it runs
+// before tick 0 and never observes world/game state.
 type SplashContent func(
-	dst []render.Command,
 	timeline anim.Timeline,
 	viewport math2d.Rect,
 ) []render.Command
@@ -44,16 +45,19 @@ type SplashSegment struct {
 	// texture upload is needed for this content.
 	Content SplashContent
 
-	MinTime   float64 // minimum on-screen seconds
-	Fade      float64 // cross-fade seconds at each edge; 0 = hard cut
+	MinTime float64 // minimum on-screen seconds
+	Fade    float64 // cross-fade seconds at each edge; 0 = hard cut
+	// Skippable lets an activation event (input.EventButtonDown) end the
+	// segment before MinTime; passive input never skips it.
 	Skippable bool
 
 	// Background paints behind this segment's content, covering the full
-	// viewport (never faded). Zero value uses Config.Clear. Content whose
-	// own asset already paints a flat backdrop only covering its own
-	// letterboxed area (like the compiled engine animation) should set this
-	// to the same color, or the two backgrounds seam together whenever the
-	// viewport's aspect ratio isn't the content's own.
+	// viewport (never faded). Zero value uses Config.BootBackground, then
+	// Config.Clear. Content whose own asset already paints a flat backdrop
+	// only covering its own letterboxed area (like the compiled engine
+	// animation) should set this to the same color, or the two backgrounds
+	// seam together whenever the viewport's aspect ratio isn't the content's
+	// own.
 	Background render.Color
 
 	// Particles, when non-nil, computes this segment's particle emissions
@@ -64,7 +68,16 @@ type SplashSegment struct {
 	// fold alpha into each returned command's Intensity itself. A nil or
 	// empty result draws nothing this frame.
 	Particles func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles
+
+	source splashSource
 }
+
+type splashSource uint8
+
+const (
+	splashSourceGame splashSource = iota
+	splashSourceDefault
+)
 
 // splashPlayer drives the boot splash sequence. It never touches d.tick, the
 // timeline, the recorder, or the checksum. Zero segments = inert.
@@ -74,19 +87,111 @@ type splashPlayer struct {
 	elapsed  float64
 }
 
-// SplashActive reports whether the boot splash still has a segment to play.
-// Only real-time hosts drain it, before their tick loop; offline and replay
-// paths never call it, so they reach tick 0 immediately.
-func (d *Driver) SplashActive() bool {
+// SplashFrameBatch is the host state consumed by one real-time splash frame.
+// Events are discarded by the host when RunSplashFrame reports Rendered.
+// Only EventButtonDown is an activation request that can skip a skippable
+// segment; pointer motion, releases, wheel input and other passive events do
+// not skip it.
+type SplashFrameBatch struct {
+	Viewport *math2d.Rect
+	Events   []input.Event
+}
+
+// SplashFrameResult tells a host whether RunSplashFrame consumed and rendered
+// the current host frame, and whether that rendered frame can replace a
+// host-owned loading poster without exposing partially faded content.
+type SplashFrameResult struct {
+	Rendered        bool
+	ReadyForHandoff bool
+}
+
+// SkipSplash removes the remaining runtime boot splash playlist. Web hosts
+// use it before presenting the first frame when their command-line session
+// explicitly disables runtime splash screens; the independent HTML download
+// indicator and simulation tick state are untouched.
+func (d *Driver) SkipSplash() {
+	d.splash = nil
+}
+
+// SkipDefaultSplash removes only the built-in engine brand segment, preserving
+// every game-declared manifest segment. Browser hosts call it before their
+// first frame only for an explicit host-level engine-brand opt-out; otherwise
+// Config.DisableDefaultSplash remains authoritative on every host. Simulation
+// tick state is untouched.
+func (d *Driver) SkipDefaultSplash() {
+	if d.splash == nil {
+		return
+	}
+
+	currentWasDefault := d.splashActive() &&
+		d.splash.segments[d.splash.index].source == splashSourceDefault
+	removedBeforeCurrent := 0
+	segments := make([]SplashSegment, 0, len(d.splash.segments))
+	for i, segment := range d.splash.segments {
+		if segment.source == splashSourceDefault {
+			if i < d.splash.index {
+				removedBeforeCurrent++
+			}
+			continue
+		}
+		segments = append(segments, segment)
+	}
+
+	d.splash.segments = segments
+	d.splash.index -= removedBeforeCurrent
+	if currentWasDefault {
+		d.splash.elapsed = 0
+	}
+	if d.splash.index >= len(segments) {
+		d.splash = nil
+	}
+}
+
+func (d *Driver) splashActive() bool {
 	return d.splash != nil && d.splash.index < len(d.splash.segments)
 }
 
-// AdvanceSplash advances the current segment by wall-clock elapsed. skip is
-// true when any host input arrived this frame; it only ends the segment when
-// that segment is Skippable (per its MinTime/Skippable rule). It never
-// advances d.tick.
-func (d *Driver) AdvanceSplash(elapsed time.Duration, skip bool) {
-	if !d.SplashActive() {
+func (d *Driver) splashFrameReadyForHandoff() bool {
+	if !d.splashActive() {
+		return false
+	}
+	seg := d.splash.segments[d.splash.index]
+	return splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade) >= 1
+}
+
+// RunSplashFrame owns the canonical pre-tick-0 host sequence: apply the
+// viewport, interpret activation input, advance the current segment, render
+// it, and determine poster handoff readiness. A zero result means no splash
+// was active; the host must retain the input and continue with its game frame.
+// A rendered splash consumes all supplied events but never advances d.tick or
+// invokes game state. Viewport changes retain SetViewport's normal tick-0
+// timeline semantics.
+func (d *Driver) RunSplashFrame(batch SplashFrameBatch, elapsed time.Duration, r FrameRenderer) SplashFrameResult {
+	if !d.splashActive() {
+		return SplashFrameResult{}
+	}
+	if batch.Viewport != nil {
+		d.SetViewport(*batch.Viewport)
+	}
+
+	skip := false
+	for _, event := range batch.Events {
+		if event.Kind == input.EventButtonDown {
+			skip = true
+			break
+		}
+	}
+
+	d.advanceSplash(elapsed, skip)
+	d.renderSplashFrame(elapsed, r)
+	return SplashFrameResult{
+		Rendered:        true,
+		ReadyForHandoff: d.splashFrameReadyForHandoff(),
+	}
+}
+
+func (d *Driver) advanceSplash(elapsed time.Duration, skip bool) {
+	if !d.splashActive() {
 		return
 	}
 	seg := d.splash.segments[d.splash.index]
@@ -98,18 +203,15 @@ func (d *Driver) AdvanceSplash(elapsed time.Duration, skip bool) {
 	}
 }
 
-// RenderSplashFrame draws the current splash segment through r (the same
-// FrameRenderer used for game frames). It publishes no dynamic resources.
-func (d *Driver) RenderSplashFrame(elapsed time.Duration, r FrameRenderer) Frame {
+func (d *Driver) renderSplashFrame(elapsed time.Duration, r FrameRenderer) {
 	frame := d.splashFrame(elapsed.Seconds())
 	r.UpdateResources(FrameUpdates{})
 	r.Render(frame)
-	return frame
 }
 
 func (d *Driver) splashFrame(dt float64) Frame {
 	cam := render.Camera{World: d.viewport, Viewport: d.viewport}
-	if !d.SplashActive() {
+	if !d.splashActive() {
 		return Frame{Camera: cam}
 	}
 
@@ -118,24 +220,27 @@ func (d *Driver) splashFrame(dt float64) Frame {
 
 	background := seg.Background
 	if background == (render.Color{}) {
-		background = d.cfg.Clear
+		background = d.cfg.BootBackground
+		if background == (render.Color{}) {
+			background = d.cfg.Clear
+		}
 	}
 
-	// The background is never faded — only the segment content is. It sits
-	// at engineSplashBackgroundLayer, below the sky particles' own
-	// engineSkyLayer (runtime/driver.go), so it never occludes them; both
-	// sit below Content's default (unset BaseCommand.LayerValue == 0), so
-	// the compiled splash's own opaque shapes occlude the sky the way they
-	// would a real one.
 	commands := []render.Command{
-		render.DrawRect{BaseCommand: render.BaseCommand{LayerValue: engineSplashBackgroundLayer}, Rect: d.viewport, Fill: background},
+		render.DrawRect{
+			BaseCommand: render.BaseCommand{
+				LayerValue: enginesplash.EngineSplashBackgroundLayer,
+			},
+			Rect: d.viewport,
+			Fill: background,
+		},
 	}
 
 	var builder render.Builder
 	builder.Reset(commands)
 	builder.Push(render.Group{Opacity: alpha})
 	if seg.Content != nil {
-		content := seg.Content(nil, anim.At(d.splash.elapsed), d.viewport)
+		content := seg.Content(anim.At(d.splash.elapsed), d.viewport)
 		for _, cmd := range content {
 			builder.Add(cmd)
 		}
@@ -223,13 +328,84 @@ func fitCentered(cell, viewport math2d.Rect) math2d.Rect {
 	return math2d.NewRect(offset, math2d.Vec2{X: fitW, Y: fitH})
 }
 
-// viewportSeed folds a viewport's size into a stable value that only
-// changes when the viewport's dimensions do, for XOR-ing into a particle
-// effect's Seed so a resize forces EmitterSet to rebuild that effect's live
-// particles (see engineSplashParticles). Rounded to the pixel so
-// floating-point jitter on an otherwise-unchanged size can't flip it.
-func viewportSeed(viewport math2d.Rect) uint64 {
-	w := uint64(math.Round(viewport.Width()))
-	h := uint64(math.Round(viewport.Height()))
-	return w<<32 | h
+// buildSplashPlaylist assembles the boot splash playlist: the built-in
+// engine brand segment (unless disabled), followed by the manifest-declared
+// segments in order.
+func buildSplashPlaylist(cfg Config) []SplashSegment {
+	var segments []SplashSegment
+	if !cfg.DisableDefaultSplash {
+		var landscapeWorkspace enginesplash.ArasySplashWorkspace
+		var portraitWorkspace stacked.ArasySplashStackedWorkspace
+		segments = append(segments, SplashSegment{
+			Content: func(timeline anim.Timeline, viewport math2d.Rect) []render.Command {
+				if viewport.Width() < viewport.Height() {
+					viewport = enginesplash.StackedViewport(viewport)
+					return portraitWorkspace.Append(timeline, viewport, stacked.ArasySplashStackedResources{})
+				}
+				viewport = enginesplash.EngineSplashViewport(viewport)
+				return landscapeWorkspace.Append(timeline, viewport, enginesplash.ArasySplashResources{})
+			},
+			MinTime:    enginesplash.EngineSplashMinTime,
+			Fade:       enginesplash.EngineSplashFade,
+			Skippable:  enginesplash.IsEngineSplashSkippable,
+			Background: enginesplash.EngineSplashBackground,
+			Particles:  enginesplash.EngineSplashParticles(cfg.Assets),
+			source:     splashSourceDefault,
+		})
+	}
+	for index, decl := range cfg.Assets.Splash() {
+		segments = append(segments, SplashSegment{
+			Texture:   cfg.Assets.Texture(decl.Texture),
+			CellW:     decl.CellW,
+			CellH:     decl.CellH,
+			Columns:   decl.Columns,
+			Frames:    decl.Frames,
+			Rate:      decl.Rate,
+			MinTime:   decl.MinTime,
+			Fade:      decl.Fade,
+			Skippable: decl.Skippable,
+			Particles: manifestSplashParticles(cfg.Assets, index, decl),
+		})
+	}
+	return segments
+}
+
+// manifestSplashParticles resolves a game-declared segment's optional
+// "effect" reference into a segment-scoped emitter at a fractional viewport
+// anchor.
+func manifestSplashParticles(assets asset.Manifest, segmentIndex int, decl asset.SplashDecl) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+	if decl.Effect == "" {
+		return nil
+	}
+	effect := assets.Effect(decl.Effect)
+	// EmitterSet keys live state by (effect, emitter) and only rebuilds an
+	// existing key when its seed changes. Scoping both values to manifest
+	// order prevents consecutive segments that share an effect from
+	// inheriting each other's particles while keeping each segment stable
+	// across its own frames.
+	emitter := render.EmitterID(segmentIndex + 1)
+	seed := uint64(effect)<<32 | uint64(emitter)
+	intensity := decl.EffectIntensity
+	if intensity == 0 {
+		intensity = 1
+	}
+	return func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+		if effect == 0 || alpha <= 0 {
+			return nil
+		}
+		pos := math2d.Vec2{
+			X: viewport.Min.X + viewport.Width()*decl.EffectAnchorX,
+			Y: viewport.Min.Y + viewport.Height()*decl.EffectAnchorY,
+		}
+		return []render.DrawParticles{{
+			BaseCommand: render.BaseCommand{LayerValue: 2},
+			Effect:      effect,
+			Emitter:     emitter,
+			Pos:         pos,
+			Intensity:   intensity * alpha,
+			Time:        elapsed,
+			Dt:          dt,
+			Seed:        seed,
+		}}
+	}
 }

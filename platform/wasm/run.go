@@ -78,6 +78,7 @@ func Run(game runtime.Game, opts Options) error {
 // forever. It mirrors platform/web/canvas.RunDriver so an app that built its
 // own driver (e.g. to load a .arrp before serving) can still use the host.
 func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
+	applyBrowserSplashPolicy(driver)
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()
@@ -124,6 +125,28 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	}
 	h.startLoop()
 	select {}
+}
+
+func applyBrowserSplashPolicy(driver *runtime.Driver) {
+	policy := js.Global().Get("arasySplashPolicy")
+	if policy.Type() == js.TypeObject {
+		game := policy.Get("game")
+		if game.Type() == js.TypeBoolean && !game.Bool() {
+			driver.SkipSplash()
+			return
+		}
+		engine := policy.Get("engine")
+		if engine.Type() != js.TypeBoolean || !engine.Bool() {
+			driver.SkipDefaultSplash()
+		}
+		return
+	}
+
+	// Compatibility with shells generated before loading and runtime splash
+	// became independent policies.
+	if disabled := js.Global().Get("arasyDisableSplash"); disabled.Type() == js.TypeBoolean && disabled.Bool() {
+		driver.SkipSplash()
+	}
 }
 
 func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, log *slog.Logger) runtime.FrameRenderer {

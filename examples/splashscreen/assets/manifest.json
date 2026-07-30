@@ -46,8 +46,8 @@
     },
     {
       "texture": "studio-logo",
-      "cell_w": 1980,
-      "cell_h": 1080,
+      "cell_w": 64,
+      "cell_h": 64,
       "columns": 1,
       "frames": 1,
       "rate": 1,

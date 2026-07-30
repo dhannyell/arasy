@@ -23,6 +23,8 @@ func main() {
 		game, err = wasmgolden.NewSpriteArrayGolden()
 	case "retained-batches":
 		game, err = wasmgolden.NewRetainedBatchesGolden()
+	case "boot":
+		game, err = wasmgolden.NewBoot()
 	default:
 		game, err = wasmgolden.New()
 	}

@@ -2,8 +2,8 @@
   "name": "Arasy-browser-tests",
   "private": true,
   "scripts": {
-    "test:wasm-golden": "node tests/wasm/build.mjs && playwright test tests/wasm/golden.spec.js",
-    "update:wasm-golden": "node tests/wasm/build.mjs && playwright test tests/wasm/golden.spec.js --update-snapshots"
+    "test:wasm-golden": "node tests/wasm/build.mjs && playwright test tests/wasm/golden.spec.js tests/wasm/boot.spec.js",
+    "update:wasm-golden": "node tests/wasm/build.mjs && playwright test tests/wasm/golden.spec.js tests/wasm/boot.spec.js --update-snapshots"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1"

@@ -147,6 +147,25 @@ func makeCircleCommands(n int) []render.Command {
 	return commands
 }
 
+// splashCircleCommands mirrors the two dominant overlapping circles in the
+// compiled 1920x1080 engine splash. Their large screen-space radii are the
+// visual case that requires the tighter circle chord tolerance.
+func splashCircleCommands() []render.Command {
+	center := math2d.Vec2{X: 960, Y: 540}
+	return []render.Command{
+		render.DrawCircle{
+			Center: center,
+			Radius: 136,
+			Fill:   render.RGBA(0.95, 0.73, 0.36, 1),
+		},
+		render.DrawCircle{
+			Center: center,
+			Radius: 118,
+			Fill:   render.RGBA(0.95, 0.92, 0.87, 1),
+		},
+	}
+}
+
 // benchTextSizes cycles through a handful of world-space font sizes so
 // resolveFrameAtlases groups commands into several distinct AtlasKeys (one
 // per (Font, PX) pair produced by the camera's world-to-screen scale),
@@ -355,6 +374,33 @@ func BenchmarkTessBuild(b *testing.B) {
 			})
 		}
 	})
+}
+
+// BenchmarkTessSplashCircles measures the actual large-circle workload that
+// motivated maxError=0.125. The custom metrics make geometry growth visible
+// alongside CPU time when comparing tess benchmark reports.
+func BenchmarkTessSplashCircles(b *testing.B) {
+	const (
+		width  = 1920
+		height = 1080
+	)
+	camera := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: width, Y: height}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: width, Y: height}),
+		Aspect:   render.AspectExpand,
+	}
+	frame := Frame{Camera: camera, Commands: splashCircleCommands()}
+	segments := circleSegments(136) + circleSegments(118)
+	vertices := (circleSegments(136)-2)*3 + (circleSegments(118)-2)*3
+
+	var builder Builder
+	provider := NewAtlas()
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = builder.Build(frame, width, height, provider, nil)
+	}
+	b.ReportMetric(float64(segments), "segments/frame")
+	b.ReportMetric(float64(vertices), "vertices/frame")
 }
 
 // BenchmarkTessBuildText measures VisitText plus resolveFrameAtlases under a

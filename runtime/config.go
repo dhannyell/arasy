@@ -75,4 +75,9 @@ type Config struct {
 
 	// DisableDefaultSplash zero value shows the engine logo; set to skip it.
 	DisableDefaultSplash bool
+
+	// BootBackground paints behind manifest-declared splash segments before
+	// tick 0. The zero value uses Clear, so disabling the engine brand never
+	// introduces an implicit black frame.
+	BootBackground render.Color
 }

@@ -165,22 +165,18 @@ func (h *host) run() error {
 		budget:     frameBudget(h.driver.Config().FPS),
 		spinMargin: h.spinMargin,
 	}
-	var windowShow = false
+	windowShown := false
+	showWindowAfterPresent := func() {
+		if windowShown || !h.renderer.hasPresentedFrame() {
+			return
+		}
+		h.window.Show()
+		h.window.Focus()
+		windowShown = true
+	}
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
 		h.resizeIfNeeded()
-		// SetViewport is a no-op when unchanged, so this stays cheap; it must
-		// run every frame (not just once before the loop) so a resize during
-		// the splash phase reaches the driver too — the splash branch below
-		// never falls through to RunTick, which is the only other place that
-		// threads h.viewport into the driver (TickBatch.Viewport).
-		h.driver.SetViewport(h.viewport)
-
-		if !windowShow {
-			h.window.Show()
-			h.window.Focus()
-			windowShow = true
-		}
 
 		elapsed := frameTimer.Elapsed(time.Now())
 		if gamepadEvents := h.pollGamepad(); len(gamepadEvents) > 0 {
@@ -188,20 +184,17 @@ func (h *host) run() error {
 			h.pending = append(h.pending, gamepadEvents...)
 		}
 
-		if h.driver.SplashActive() {
-			skip := false
-			for _, e := range h.pending {
-				if e.Kind == input.EventButtonDown {
-					skip = true
-					break
-				}
-			}
-			h.driver.AdvanceSplash(elapsed, skip)
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Viewport: &h.viewport,
+			Events:   h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
 			h.pending = h.pending[:0]
-			h.driver.RenderSplashFrame(elapsed, h.renderer)
+			h.lastInputAt = time.Time{}
 			if err := h.renderer.Err(); err != nil {
 				return fmt.Errorf("splash renderer failed: %w", err)
 			}
+			showWindowAfterPresent()
 			pacer.wait()
 			continue
 		}
@@ -229,6 +222,10 @@ func (h *host) run() error {
 		}
 		h.driver.RenderFrame(elapsed, h.renderer)
 		renderEnd := time.Now()
+		if err := h.renderer.Err(); err != nil {
+			return fmt.Errorf("native renderer failed: %w", err)
+		}
+		showWindowAfterPresent()
 		if h.metrics != nil {
 			if stats, ok := h.metrics.Observe(elapsed); ok {
 				m := FrameMetrics{
@@ -255,9 +252,6 @@ func (h *host) run() error {
 					h.onMetrics(m)
 				}
 			}
-		}
-		if err := h.renderer.Err(); err != nil {
-			return fmt.Errorf("native renderer failed: %w", err)
 		}
 
 		pacer.wait()

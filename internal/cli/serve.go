@@ -13,6 +13,7 @@ var (
 	serveAddress string
 	serveTitle   string
 	serveWASM    string
+	serveBoot    webBootFlags
 )
 
 var serveCmd = &cobra.Command{
@@ -31,8 +32,13 @@ var serveCmd = &cobra.Command{
 		if _, err := os.Stat(filepath.Join(dir, serveWASM)); err != nil {
 			return fmt.Errorf("build directory %q does not contain %s", dir, serveWASM)
 		}
+		boot, err := serveBoot.options()
+		if err != nil {
+			return err
+		}
 		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: serveTitle, WASMFile: serveWASM, Addr: serveAddress,
+			Boot: boot,
 		})
 	},
 }
@@ -41,5 +47,6 @@ func init() {
 	serveCmd.Flags().StringVarP(&serveAddress, "address", "a", "127.0.0.1:8080", "server address")
 	serveCmd.Flags().StringVar(&serveTitle, "title", "", "HTML page title")
 	serveCmd.Flags().StringVar(&serveWASM, "wasm", "app.wasm", "WASM file name")
+	serveBoot.bind(serveCmd)
 	rootCmd.AddCommand(serveCmd)
 }

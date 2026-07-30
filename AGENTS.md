@@ -118,12 +118,14 @@ platform/* -> asset/pixel -> asset
 
 ### Boot Splash
 
-- `Driver.SplashActive`/`AdvanceSplash`/`RenderSplashFrame` are a pre-tick-0
-  phase: real-time hosts (`platform/wasm`, `platform/native`) drain them
-  before their tick loop; offline (`platform/raster`) and replay paths never
-  call them, so they reach tick 0 immediately. The phase runs on wall clock,
-  never touches `d.tick`/`timeline`/`recorder`/`Checksum`, and is skippable
-  per segment (`SplashSegment.Skippable`).
+- `Driver.RunSplashFrame` owns the pre-tick-0 phase: real-time hosts
+  (`platform/wasm`, `platform/native`) offer it viewport/input and let it
+  advance and render before their tick loop; offline (`platform/raster`) and
+  replay paths never call it, so they reach tick 0 immediately. The phase
+  runs on wall clock and never advances `d.tick`, simulation, recorder, or
+  checksum state; viewport synchronization retains `SetViewport`'s normal
+  tick-0 timeline anchor. A skippable segment advances only on activation
+  input (`input.EventButtonDown`).
 - The playlist is `[engine segment?] + [manifest "splash" segments]`. The
   engine segment (`Config.DisableDefaultSplash` to opt out) renders the
   compiled brand animation (`internal/enginesplash`, generated offline by
@@ -132,6 +134,13 @@ platform/* -> asset/pixel -> asset
   segments declared in the manifest's `"splash"` array are texture
   flip-books (`cell_w`/`cell_h`/`columns`/`frames`/`rate`/`min_time`/`fade`/
   `skippable`), packed with `arasy atlas <frames-dir|gif> -o out.png`.
+- Both native and web honor `Config.DisableDefaultSplash`; false shows the
+  engine segment. Web uses a delayed static download indicator, and
+  `--no-engine-splash` provides a host-only opt-out that preserves manifest
+  segments. `--no-loading` controls only the HTML download indicator;
+  `--no-splash` controls only runtime segments. `--boot-background`
+  configures the web phase-0 color, while `Config.BootBackground` configures
+  runtime splash segments and falls back to `Config.Clear`.
 - Loading-screen behavior (`HoldUntilReady`, tied to asset group readiness)
   is deferred until asset groups land; every segment today is bounded by
   `MinTime`.

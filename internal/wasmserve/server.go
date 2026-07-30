@@ -2,16 +2,19 @@
 package wasmserve
 
 import (
+	"compress/gzip"
 	_ "embed"
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // posterSVG is the engine brand's static boot poster — the same rest-pose
@@ -25,10 +28,52 @@ import (
 //go:embed assets/poster.svg
 var posterSVG []byte
 
+// posterStackedSVG is the same boot poster, laid out for portrait viewports
+// (mark centered above the wordmark instead of beside it) so the mark and
+// wordmark stay legible on a phone instead of being letterboxed down to fit
+// a canvas designed for landscape. Mirrors internal/enginesplash/stacked's
+// compiled animation, which the shell switches to at the same breakpoint
+// (see wasmShellHTML's max-aspect-ratio media query).
+//
+//go:embed assets/poster-stacked.svg
+var posterStackedSVG []byte
+
 // posterBackground matches the flat backdrop the poster and the compiled
 // engine splash both paint, so the page never shows a mismatched edge around
 // the inline image.
 const posterBackground = "#020B14"
+
+const (
+	PosterLandscapeFile      = "arasy-poster.svg"
+	PosterStackedFile        = "arasy-poster-stacked.svg"
+	uncompressedLengthHeader = "X-Arasy-Uncompressed-Length"
+)
+
+// BootOptions separates the web download phase from runtime splash policy.
+// Its zero value shows the loading indicator after a short delay and preserves
+// the runtime.Config splash policy. Native hosts do not use this policy.
+type BootOptions struct {
+	// DisableLoadingIndicator omits the poster/progress overlay. The page still
+	// uses Background until the first canvas frame is presented.
+	DisableLoadingIndicator bool
+	// DisableRuntimeSplash removes every pre-tick runtime splash segment while
+	// leaving the download indicator independent and available.
+	DisableRuntimeSplash bool
+	// DisableEngineSplash removes only the animated engine brand in the web
+	// host, preserving game-declared splash segments. Without this explicit
+	// host opt-out, Config.DisableDefaultSplash is authoritative.
+	DisableEngineSplash bool
+	// Background is the web download/boot color in #RGB, #RGBA, #RRGGBB, or
+	// #RRGGBBAA form. Empty uses the engine poster background.
+	Background string
+}
+
+// Validate checks the shell policy without generating HTML or starting a
+// server, so CLI adapters can reject invalid configuration before building.
+func (o BootOptions) Validate() error {
+	_, err := normalizeBootBackground(o.Background)
+	return err
+}
 
 type ServerOptions struct {
 	Dir          string
@@ -36,6 +81,7 @@ type ServerOptions struct {
 	WASMFile     string
 	WASMExecPath string
 	Addr         string
+	Boot         BootOptions
 	// Rebuild runs before serving WASMFile. Development hosts use it to build
 	// on browser reload; a failure is returned to the browser as plain text.
 	Rebuild func() error
@@ -54,6 +100,9 @@ func NewServerOptions(dir, title, file, execPath, addr string) *ServerOptions {
 func Start(opts *ServerOptions) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
+	if err := opts.Boot.Validate(); err != nil {
+		return err
+	}
 	if opts.WASMExecPath == "" {
 		var err error
 		opts.WASMExecPath, err = DefaultWASMExecPath()
@@ -68,23 +117,35 @@ func Start(opts *ServerOptions) error {
 		Title:        opts.Title,
 		WASMFile:     opts.WASMFile,
 		WASMExecPath: opts.WASMExecPath,
+		Boot:         opts.Boot,
 		Rebuild:      opts.Rebuild,
 	})
 
-	fs := http.FileServer(http.Dir(opts.Dir))
-
 	log.Info("listening", "addr", opts.Addr, "dir", opts.Dir, "wasm", opts.WASMFile, "wasm_exec", opts.WASMExecPath)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-
-		fs.ServeHTTP(w, r)
-	})
-	if err := http.ListenAndServe(opts.Addr, handler); err != nil {
+	server := &http.Server{
+		Addr:              opts.Addr,
+		Handler:           newServerHandler(handler),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Error("server failed", "err", err)
 		return err
 	}
 	return nil
+}
+
+func newServerHandler(handler http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", handler)
+	return crossOriginIsolationHandler(gzipHandler(mux))
+}
+
+func crossOriginIsolationHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newHandler(opts ServerOptions) http.Handler {
@@ -96,6 +157,10 @@ func newHandler(opts ServerOptions) http.Handler {
 			serveIndex(w, opts)
 		case "/wasm_exec.js":
 			http.ServeFile(w, r, opts.WASMExecPath)
+		case "/" + PosterLandscapeFile:
+			servePoster(w, posterSVG)
+		case "/" + PosterStackedFile:
+			servePoster(w, posterStackedSVG)
 		default:
 			if r.URL.Path == "/"+opts.WASMFile && opts.Rebuild != nil {
 				if err := opts.Rebuild(); err != nil {
@@ -108,10 +173,124 @@ func newHandler(opts ServerOptions) http.Handler {
 	})
 }
 
+func gzipHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Vary", "Accept-Encoding")
+		if r.Method == http.MethodHead || r.Header.Get("Range") != "" ||
+			!acceptsEncoding(r.Header.Get("Accept-Encoding"), "gzip") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		writer := &gzipResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(writer, r)
+		if writer.gzip != nil {
+			_ = writer.gzip.Close()
+		}
+	})
+}
+
+func acceptsEncoding(header, encoding string) bool {
+	for item := range strings.SplitSeq(header, ",") {
+		parts := strings.Split(item, ";")
+		name := strings.TrimSpace(parts[0])
+		if !strings.EqualFold(name, encoding) && name != "*" {
+			continue
+		}
+		enabled := true
+		for _, parameter := range parts[1:] {
+			if strings.EqualFold(strings.TrimSpace(parameter), "q=0") {
+				enabled = false
+			}
+		}
+		if enabled {
+			return true
+		}
+	}
+	return false
+}
+
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gzip    *gzip.Writer
+	started bool
+}
+
+func (w *gzipResponseWriter) WriteHeader(status int) {
+	if w.started {
+		return
+	}
+	w.started = true
+	if compressibleContentType(w.Header().Get("Content-Type")) {
+		if length := w.Header().Get("Content-Length"); length != "" {
+			// Fetch exposes the decoded response body to JavaScript. Preserve
+			// its original byte count before replacing Content-Length with the
+			// gzip transfer size so the loading bar can measure decoded bytes.
+			w.Header().Set(uncompressedLengthHeader, length)
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Del("Content-Length")
+		w.gzip = gzip.NewWriter(w.ResponseWriter)
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *gzipResponseWriter) Write(data []byte) (int, error) {
+	if !w.started {
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", http.DetectContentType(data))
+		}
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.gzip != nil {
+		return w.gzip.Write(data)
+	}
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *gzipResponseWriter) ReadFrom(reader io.Reader) (int64, error) {
+	if !w.started {
+		w.WriteHeader(http.StatusOK)
+	}
+	if w.gzip != nil {
+		return io.Copy(w.gzip, reader)
+	}
+	return io.Copy(w.ResponseWriter, reader)
+}
+
+func compressibleContentType(contentType string) bool {
+	contentType = strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
+	return strings.HasPrefix(contentType, "text/") ||
+		contentType == "application/javascript" ||
+		contentType == "application/json" ||
+		contentType == "application/wasm" ||
+		contentType == "image/svg+xml"
+}
+
+func servePoster(w http.ResponseWriter, poster []byte) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	_, _ = w.Write(poster)
+}
+
+// WritePosterAssets writes the two responsive boot-poster variants beside a
+// static build. The browser selects one through <picture>, so both ship in
+// the artifact but only the variant matching the viewport is downloaded.
+func WritePosterAssets(dir string) error {
+	for name, data := range map[string][]byte{
+		PosterLandscapeFile: posterSVG,
+		PosterStackedFile:   posterStackedSVG,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func serveIndex(w http.ResponseWriter, opts ServerOptions) {
-	body, err := ShellHTML(opts.Title, opts.WASMFile)
+	body, err := ShellHTML(opts.Title, opts.WASMFile, opts.Boot)
 	if err != nil {
-		http.Error(w, "invalid wasm file", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -121,22 +300,64 @@ func serveIndex(w http.ResponseWriter, opts ServerOptions) {
 }
 
 // ShellHTML returns the browser shell used by both the development server and
-// static builds. The canvas stays hidden behind an inline poster + download
-// progress bar until the WASM host signals its first presented frame
+// static builds. By default, the canvas stays hidden behind a delayed poster +
+// download progress bar until the WASM host signals its first presented frame
 // (window.arasyFirstFrame = true) — no black canvas flash between navigation
 // and the first frame, matching the Unity WebGL / Godot web pattern: static
 // content painted by the host page, replaced atomically once the engine can
 // draw. Hosts serving app.wasm outside `arasy serve`/`dev`/`build` must
-// reproduce the arasyFirstFrame contract themselves.
-func ShellHTML(title, wasmFile string) ([]byte, error) {
+// reproduce the arasyFirstFrame and arasySplashPolicy contracts themselves.
+func ShellHTML(title, wasmFile string, boot BootOptions) ([]byte, error) {
 	encodedWASMFile, err := json.Marshal(wasmFile)
 	if err != nil {
 		return nil, err
 	}
+	background, err := normalizeBootBackground(boot.Background)
+	if err != nil {
+		return nil, err
+	}
+	canvasVisibility := "hidden"
+	bootMarkup := `<div id="ar-boot">
+        <picture id="ar-poster-frame">
+            <source media="(max-aspect-ratio: 1/1)" srcset="arasy-poster-stacked.svg">
+            <img id="ar-poster" src="arasy-poster.svg" alt="Arasy Engine">
+        </picture>
+
+        <div id="ar-bar">
+			<div id="ar-bar-fill"></div>
+		</div>
+    </div>`
+	if boot.DisableLoadingIndicator {
+		canvasVisibility = "visible"
+		bootMarkup = ""
+	}
+	enableEngineSplash := !boot.DisableEngineSplash && !boot.DisableRuntimeSplash
+	enableGameSplash := !boot.DisableRuntimeSplash
 	return []byte(fmt.Sprintf(wasmShellHTML,
-		html.EscapeString(title), posterBackground, posterBackground,
-		string(posterSVG), encodedWASMFile,
+		html.EscapeString(title), background, canvasVisibility,
+		background, bootMarkup, enableEngineSplash, enableGameSplash,
+		encodedWASMFile,
 	)), nil
+}
+
+func normalizeBootBackground(background string) (string, error) {
+	if background == "" {
+		return posterBackground, nil
+	}
+	if background[0] != '#' {
+		return "", fmt.Errorf("boot background %q must be a hexadecimal CSS color", background)
+	}
+	switch len(background) {
+	case 4, 5, 7, 9:
+	default:
+		return "", fmt.Errorf("boot background %q must use #RGB, #RGBA, #RRGGBB, or #RRGGBBAA", background)
+	}
+	for _, r := range background[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return "", fmt.Errorf("boot background %q contains a non-hexadecimal digit", background)
+		}
+	}
+	return background, nil
 }
 
 // DefaultWASMExecPath finds the Go runtime support script for the Go tool on
@@ -193,9 +414,6 @@ const wasmShellHTML = `<!doctype html>
         #game {
             width: 100vw;
             height: 100vh;
-            /* 100dvh tracks the visual viewport (mobile browser chrome
-               showing/hiding); 100vh is the fallback for browsers that
-               predate the dvh unit. */
             height: 100dvh;
             position: relative;
         }
@@ -204,7 +422,7 @@ const wasmShellHTML = `<!doctype html>
             display: block;
             width: 100%%;
             height: 100%%;
-            visibility: hidden;
+            visibility: %s;
             touch-action: none;
             -webkit-tap-highlight-color: transparent;
         }
@@ -216,46 +434,50 @@ const wasmShellHTML = `<!doctype html>
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            /* Nudges the centered poster+bar group up: justify-content:
-               center balances around the padded content box, so a
-               bottom-only pad shifts the midpoint (and everything centered
-               on it) up by about half of itself, without needing an extra
-               wrapper element to transform. */
             background: %s;
+            visibility: hidden;
+            --ar-fit-w: min(max(100vw, 80dvh), 177.78dvh);
+            --ar-fit-h: calc(var(--ar-fit-w) * 0.5625);
         }
 
-        #ar-poster {
-            /* Kept inline so its root viewport is the real boot surface:
-               ambient particles retain a fixed CSS-pixel size while the
-               nested logo layer owns its independent contain projection. */
+        #ar-poster-frame {
 			position: absolute;
             inset: 0;
             width: 100%%;
             height: 100%%;
-            display: block;
             z-index: 1;
         }
 
-        /* The track itself paints 4 fixed bands at a constant position
-           regardless of how much has loaded, each one closer to the ring's
-           own gold (#D8B77A, see internal/enginesplash's spark) than the
-           last — the same cool starlight-to-gold progression the Crux
-           stars' spectral tints trace (internal/enginesplash/crux.go), as
-           if the phases warm into the mark's own color as they complete.
-           #ar-bar-fill is a dark mask covering whatever hasn't loaded yet;
-           as real download progress advances, the mask recedes from the
-           left and continuously reveals more of this fixed gradient, so
-           motion tracks real progress smoothly instead of only jumping at
-           each 25%% boundary. */
+        #ar-poster {
+            display: block;
+            width: 100%%;
+            height: 100%%;
+        }
+
         #ar-bar {
             position: relative;
             flex: none;
-            width: min(110vw, 25vw);
-            height: 0.9vw;
-            margin-top: 70vh;
+            width: clamp(200px, 60vw, 550px);
+            height: clamp(20px, 1.8vw, 40px);
+            margin-top: calc(60dvh + 0.155 * var(--ar-fit-h) + 24px);
             border-radius: 4px;
             overflow: hidden;
 			z-index: 2;
+        }
+
+        @media (max-aspect-ratio: 1/1) {
+            #ar-boot {
+                --ar-fit-w: min(100vw, 99.6dvh);
+                --ar-fit-h: calc(var(--ar-fit-w) * 1.004);
+            }
+
+            #ar-bar {
+                margin-top: calc(50dvh + 0.444 * var(--ar-fit-h) + 24px);
+            }
+
+        }
+
+        #ar-bar {
             background: linear-gradient(to right,
                 rgba(224, 234, 255, 0.45) 0%%, rgba(224, 234, 255, 0.45) 25%%,
                 rgba(214, 214, 235, 0.62) 25%%, rgba(214, 214, 235, 0.62) 50%%,
@@ -263,9 +485,6 @@ const wasmShellHTML = `<!doctype html>
                 #E3B156 75%%, #E3B156 100%%);
         }
 
-        /* Thin fixed dividers between the 4 phases, painted above the mask
-           so the reveal visibly crosses through each one rather than
-           jumping between hard-edged blocks. */
         #ar-bar::after {
             content: '';
             position: absolute;
@@ -284,9 +503,6 @@ const wasmShellHTML = `<!doctype html>
             transition: left 0.15s linear;
         }
 
-        /* A marker at the mask's own leading edge — it moves only as true
-           download progress advances (left tracks the real percentage), and
-           only its brightness pulses in place, not its position. */
         #ar-bar-fill::before {
             content: '';
             position: absolute;
@@ -304,9 +520,6 @@ const wasmShellHTML = `<!doctype html>
             50%%       { opacity: 1; }
         }
 
-        /* No known total (indeterminate): falls back to a plain sweeping
-           highlight instead of the phase reveal above, since there's no real
-           fraction to map onto the 4 bands. */
         #ar-bar-fill.ar-bar-indeterminate {
             left: 0%% !important;
             width: 40%%;
@@ -326,37 +539,31 @@ const wasmShellHTML = `<!doctype html>
 </head>
 <body>
 <div id="game">
-    <div id="ar-boot">
-        %s
-
-        <div id="ar-bar">
-			<div id="ar-bar-fill"></div>
-		</div>
-    </div>
+    %s
     <canvas id="ar-canvas"></canvas>
 </div>
 
 <script src="wasm_exec.js"></script>
 <script>
 (async () => {
+    window.arasySplashPolicy = Object.freeze({
+        engine: %t,
+        game: %t
+    });
     const boot = document.getElementById('ar-boot');
     const fill = document.getElementById('ar-bar-fill');
     const canvas = document.getElementById('ar-canvas');
     const go = new Go();
-    // reveal hides the poster with a hard cut the instant the live first
-    // frame is ready. The revealed segment fades ITSELF in
-    // (SplashSegment.Fade) -- the poster does not also cross-fade, so
-    // there is only ever one fade running, not two competing ones.
+    const loadingTimer = boot ? setTimeout(() => {
+        boot.style.visibility = 'visible';
+    }, 500) : 0;
     function reveal() {
+        if (loadingTimer) clearTimeout(loadingTimer);
         canvas.style.visibility = 'visible';
-        boot.remove();
+        if (boot) boot.remove();
         window.arasyBootFadeDone = true;
     }
 
-    // arasyFirstFrame is the shell <-> host contract: the WASM host sets it
-    // once it has presented a frame (splash or game), and only then is the
-    // canvas revealed. A host serving app.wasm outside arasy serve/dev/build
-    // must set this flag itself to avoid a permanently hidden canvas.
     function waitForFirstFrame() {
         if (window.arasyFirstFrame) {
             reveal();
@@ -367,7 +574,8 @@ const wasmShellHTML = `<!doctype html>
 
     try {
         const resp = await fetch(%s);
-        const total = Number(resp.headers.get('Content-Length')) || 0;
+        const total = Number(resp.headers.get('X-Arasy-Uncompressed-Length')) ||
+            Number(resp.headers.get('Content-Length')) || 0;
 
         let instantiated;
         if (resp.body && total > 0) {
@@ -379,7 +587,7 @@ const wasmShellHTML = `<!doctype html>
                 if (done) break;
                 chunks.push(value);
                 received += value.length;
-                fill.style.left = Math.min(100, (received / total) * 100) + '%%';
+                if (fill) fill.style.left = Math.min(100, (received / total) * 100) + '%%';
             }
             const bytes = new Uint8Array(received);
             let offset = 0;
@@ -387,22 +595,20 @@ const wasmShellHTML = `<!doctype html>
                 bytes.set(chunk, offset);
                 offset += chunk.length;
             }
-            // Buffered instantiation: the tradeoff for a determinate progress
-            // bar is losing streaming compilation during download.
             instantiated = await WebAssembly.instantiate(bytes.buffer, go.importObject);
         } else {
-            // No Content-Length (e.g. compressed/chunked transfer): an
-            // indeterminate sweep is honest about there being no known total,
-            // and streaming compilation is kept since nothing needs to be
-            // buffered for it.
-            fill.classList.add('ar-bar-indeterminate');
+            if (fill) fill.classList.add('ar-bar-indeterminate');
             instantiated = await WebAssembly.instantiateStreaming(resp, go.importObject);
         }
 
         waitForFirstFrame();
         go.run(instantiated.instance);
     } catch (e) {
-        boot.textContent = 'Failed to load: ' + e;
+        if (boot) {
+            boot.textContent = 'Failed to load: ' + e;
+        } else {
+            document.body.textContent = 'Failed to load: ' + e;
+        }
     }
 })();
 </script>

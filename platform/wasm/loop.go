@@ -26,19 +26,15 @@ func (h *host) startLoop() {
 			h.pending = append(h.pending, events...)
 		}
 
-		if h.driver.SplashActive() {
-			skip := false
-			for _, e := range h.pending {
-				if e.Kind == input.EventButtonDown {
-					skip = true
-					break
-				}
-			}
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Events: h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
 			h.pending = h.pending[:0]
 			h.pendingInputAtMillis = -1
-			h.driver.AdvanceSplash(elapsed, skip)
-			h.driver.RenderSplashFrame(elapsed, h.renderer)
-			signalFirstFramePresented(&firstFramePresented)
+			if splash.ReadyForHandoff {
+				signalFirstFramePresented(&firstFramePresented)
+			}
 			js.Global().Call("requestAnimationFrame", cb)
 			return nil
 		}
@@ -134,9 +130,10 @@ func (h *host) pollGamepad() []input.Event {
 }
 
 // signalFirstFramePresented sets the arasyFirstFrame <-> shell contract flag
-// once, the first time any frame (splash or game) has been presented. The
-// shell (internal/wasmserve.ShellHTML) polls this flag to reveal the canvas
-// and fade out its static poster/progress overlay.
+// once, after either a fully opaque splash frame or the first game frame has
+// been presented. The shell (internal/wasmserve.ShellHTML) polls this flag to
+// reveal the canvas and remove its static poster/progress overlay without
+// exposing the splash's transparent fade-in.
 func signalFirstFramePresented(presented *bool) {
 	if *presented {
 		return
