@@ -8,6 +8,11 @@ import (
 )
 
 const (
+	// maxError deliberately keeps chord deviation below one eighth of a
+	// screen pixel. A 0.5px tolerance left visible edge artifacts on the
+	// large overlapping circles in the native default splash, even with
+	// 4x MSAA. BenchmarkTessSplashCircles tracks the cost of this quality
+	// requirement separately from the boundary-anchored fan seam fix.
 	maxError          = 0.125
 	minCircleSegments = 12
 	maxCircleSegments = 192

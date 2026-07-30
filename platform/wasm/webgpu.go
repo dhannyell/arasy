@@ -12,6 +12,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
@@ -999,7 +1000,7 @@ func (r *webgpuRenderer) ensureSolidBuffer(size int) {
 		return
 	}
 
-	newCap := growBufferCap(r.solidCap, size)
+	newCap := gpubuffer.GrowCapacity(r.solidCap, size)
 	r.solidBuffer, r.solidCap = r.createVertexBuffer(newCap)
 }
 
@@ -1007,7 +1008,7 @@ func (r *webgpuRenderer) ensureTextGlyphBuffer(size int) {
 	if size <= r.textGlyphCap {
 		return
 	}
-	newCap := growBufferCap(r.textGlyphCap, size)
+	newCap := gpubuffer.GrowCapacity(r.textGlyphCap, size)
 	r.textGlyphBuffer, r.textGlyphCap = r.createSpriteBuffer(newCap)
 	r.rebuildTextGlyphBindGroups()
 }
@@ -1016,7 +1017,7 @@ func (r *webgpuRenderer) ensureTextLabelBuffer(size int) {
 	if size <= r.textLabelCap {
 		return
 	}
-	newCap := growBufferCap(r.textLabelCap, size)
+	newCap := gpubuffer.GrowCapacity(r.textLabelCap, size)
 	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(newCap)
 	r.rebuildTextGlyphBindGroups()
 }
@@ -1056,7 +1057,7 @@ func (r *webgpuRenderer) ensureTexBuffer(size int) {
 		return
 	}
 
-	newCap := growBufferCap(r.texCap, size)
+	newCap := gpubuffer.GrowCapacity(r.texCap, size)
 	r.texBuffer, r.texCap = r.createVertexBuffer(newCap)
 }
 
@@ -1065,7 +1066,7 @@ func (r *webgpuRenderer) ensureSpriteBuffer(size int) {
 		return
 	}
 
-	newCap := growBufferCap(r.spriteCap, size)
+	newCap := gpubuffer.GrowCapacity(r.spriteCap, size)
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(newCap)
 	r.rebuildSpriteBindGroups()
 }
@@ -1102,25 +1103,6 @@ func awaitPromise(promise js.Value) (js.Value, error) {
 	case err := <-rejectChan:
 		return js.Undefined(), fmt.Errorf("JS Error: %s", err.Call("toString").String())
 	}
-}
-
-func growBufferCap(current, required int) int {
-	if current <= 0 {
-		current = 64 * 1024
-	}
-	if required <= current {
-		return current
-	}
-
-	for current < required {
-		current *= 2
-	}
-	// Animated streams often reveal adjacent shapes on consecutive frames.
-	// Keep a full bucket of headroom so that transition does not replace the
-	// active GPU buffer again on the very next frame.
-	current *= 2
-
-	return current
 }
 
 func clearValue(clear render.Color) map[string]any {
