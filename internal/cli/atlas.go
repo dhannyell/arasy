@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/gif"
 	"image/png"
@@ -50,6 +51,9 @@ func runAtlas(cmd *cobra.Command, input, output string, columns, maxSize int) er
 	}
 
 	cellW, cellH := frames[0].Bounds().Dx(), frames[0].Bounds().Dy()
+	if cellW <= 0 || cellH <= 0 {
+		return fmt.Errorf("atlas: frame 0 has empty bounds %v", frames[0].Bounds())
+	}
 	for i, frame := range frames {
 		if w, h := frame.Bounds().Dx(), frame.Bounds().Dy(); w != cellW || h != cellH {
 			return fmt.Errorf("atlas: frame %d is %dx%d, want %dx%d (every frame must share one size)", i, w, h, cellW, cellH)
@@ -59,19 +63,27 @@ func runAtlas(cmd *cobra.Command, input, output string, columns, maxSize int) er
 	if columns <= 0 {
 		columns = int(math.Ceil(math.Sqrt(float64(len(frames)))))
 	}
-	rows := int(math.Ceil(float64(len(frames)) / float64(columns)))
+	rows := len(frames) / columns
+	if len(frames)%columns != 0 {
+		rows++
+	}
 
 	if maxSize <= 0 {
 		maxSize = defaultAtlasMaxSize
 	}
-	if w := columns * cellW; w > maxSize {
-		return fmt.Errorf("atlas: grid width %d (columns=%d * cell_w=%d) exceeds --max-size %d; use more columns or smaller frames", w, columns, cellW, maxSize)
+	width, err := checkedAtlasDimension("width", "columns", "cell_w", columns, cellW, maxSize)
+	if err != nil {
+		return err
 	}
-	if h := rows * cellH; h > maxSize {
-		return fmt.Errorf("atlas: grid height %d (rows=%d * cell_h=%d) exceeds --max-size %d; use more columns or smaller frames", h, rows, cellH, maxSize)
+	height, err := checkedAtlasDimension("height", "rows", "cell_h", rows, cellH, maxSize)
+	if err != nil {
+		return err
+	}
+	if width > math.MaxInt/4 || height > math.MaxInt/(width*4) {
+		return fmt.Errorf("atlas: grid %dx%d exceeds the addressable NRGBA image size", width, height)
 	}
 
-	sheet := image.NewNRGBA(image.Rect(0, 0, columns*cellW, rows*cellH))
+	sheet := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for i, frame := range frames {
 		col, row := i%columns, i/columns
 		dest := image.Rect(col*cellW, row*cellH, (col+1)*cellW, (row+1)*cellH)
@@ -101,6 +113,20 @@ func runAtlas(cmd *cobra.Command, input, output string, columns, maxSize int) er
 		_, err = fmt.Fprintf(stdout, "rate: %g\n", rate)
 	}
 	return err
+}
+
+func checkedAtlasDimension(axis, cellsName, cellSizeName string, cells, cellSize, maxSize int) (int, error) {
+	if cells > maxSize/cellSize {
+		hint := "use more columns or smaller frames"
+		if axis == "width" {
+			hint = "use fewer columns or smaller frames"
+		}
+		return 0, fmt.Errorf(
+			"atlas: grid %s (%s=%d * %s=%d) exceeds --max-size %d; %s",
+			axis, cellsName, cells, cellSizeName, cellSize, maxSize, hint,
+		)
+	}
+	return cells * cellSize, nil
 }
 
 // loadAtlasFrames reads a frame sequence from a directory of PNGs (lexical
@@ -169,16 +195,38 @@ func loadAtlasFrameGIF(path string) ([]image.Image, float64, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("atlas: decode %q: %w", path, err)
 	}
+	if len(g.Image) == 0 {
+		return nil, 0, fmt.Errorf("atlas: GIF %q has no frames", path)
+	}
 
 	frames := make([]image.Image, 0, len(g.Image))
-	bounds := g.Image[0].Bounds()
+	bounds := image.Rect(0, 0, g.Config.Width, g.Config.Height)
+	if bounds.Empty() {
+		return nil, 0, fmt.Errorf("atlas: GIF %q has an empty logical canvas %v", path, bounds)
+	}
 	canvas := image.NewNRGBA(bounds)
+	background := gifBackgroundColor(g)
+	draw.Draw(canvas, bounds, image.NewUniform(background), image.Point{}, draw.Src)
 	var totalDelay int
-	for _, frame := range g.Image {
+	for i, frame := range g.Image {
+		disposal := byte(0)
+		if i < len(g.Disposal) {
+			disposal = g.Disposal[i]
+		}
+		var previous *image.NRGBA
+		if disposal == gif.DisposalPrevious {
+			previous = cloneNRGBA(canvas)
+		}
+
 		draw.Draw(canvas, frame.Bounds(), frame, frame.Bounds().Min, draw.Over)
-		snapshot := image.NewNRGBA(bounds)
-		draw.Draw(snapshot, bounds, canvas, bounds.Min, draw.Src)
-		frames = append(frames, snapshot)
+		frames = append(frames, cloneNRGBA(canvas))
+
+		switch disposal {
+		case gif.DisposalBackground:
+			draw.Draw(canvas, frame.Bounds(), image.NewUniform(background), image.Point{}, draw.Src)
+		case gif.DisposalPrevious:
+			canvas = previous
+		}
 	}
 	for _, delay := range g.Delay {
 		totalDelay += delay
@@ -190,4 +238,18 @@ func loadAtlasFrameGIF(path string) ([]image.Image, float64, error) {
 		rate = 100 / avgDelay
 	}
 	return frames, rate, nil
+}
+
+func gifBackgroundColor(g *gif.GIF) color.Color {
+	palette, ok := g.Config.ColorModel.(color.Palette)
+	if !ok || int(g.BackgroundIndex) >= len(palette) {
+		return color.Transparent
+	}
+	return palette[g.BackgroundIndex]
+}
+
+func cloneNRGBA(src *image.NRGBA) *image.NRGBA {
+	clone := image.NewNRGBA(src.Bounds())
+	draw.Draw(clone, clone.Bounds(), src, src.Bounds().Min, draw.Src)
+	return clone
 }
