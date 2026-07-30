@@ -158,6 +158,12 @@ func (h *host) registerInputListeners() {
 
 		return nil
 	}))
+
+	addCanvasListener("contextmenu", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		event.Call("preventDefault")
+		return nil
+	}))
 }
 
 func (h *host) queueInput(inputEvent input.Event, browserEvent js.Value) {
