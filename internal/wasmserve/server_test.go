@@ -86,6 +86,28 @@ func TestHandlerServesResponsivePosterAssets(t *testing.T) {
 	}
 }
 
+func TestServerHandlerAddsCrossOriginIsolationHeaders(t *testing.T) {
+	for attempt := range 2 {
+		// Constructing the complete handler repeatedly must remain safe: each
+		// instance owns its mux instead of registering "/" globally.
+		handler := newServerHandler(newHandler(ServerOptions{}))
+		req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)
+		req.Header.Set("Accept-Encoding", "gzip")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if got := rec.Header().Get("Cross-Origin-Opener-Policy"); got != "same-origin" {
+			t.Fatalf("attempt %d Cross-Origin-Opener-Policy = %q, want same-origin", attempt, got)
+		}
+		if got := rec.Header().Get("Cross-Origin-Embedder-Policy"); got != "require-corp" {
+			t.Fatalf("attempt %d Cross-Origin-Embedder-Policy = %q, want require-corp", attempt, got)
+		}
+		if got := rec.Header().Get("Content-Encoding"); got != "gzip" {
+			t.Fatalf("attempt %d Content-Encoding = %q, want gzip from the composed handler", attempt, got)
+		}
+	}
+}
+
 func TestGzipHandlerCompressesSVGWhenAccepted(t *testing.T) {
 	handler := gzipHandler(newHandler(ServerOptions{}))
 	req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)

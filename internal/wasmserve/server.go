@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // posterSVG is the engine brand's static boot poster — the same rest-pose
@@ -120,20 +121,31 @@ func Start(opts *ServerOptions) error {
 		Rebuild:      opts.Rebuild,
 	})
 
-	fs := http.FileServer(http.Dir(opts.Dir))
-
 	log.Info("listening", "addr", opts.Addr, "dir", opts.Dir, "wasm", opts.WASMFile, "wasm_exec", opts.WASMExecPath)
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
-		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
-
-		fs.ServeHTTP(w, r)
-	})
-	if err := http.ListenAndServe(opts.Addr, gzipHandler(handler)); err != nil {
+	server := &http.Server{
+		Addr:              opts.Addr,
+		Handler:           newServerHandler(handler),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		log.Error("server failed", "err", err)
 		return err
 	}
 	return nil
+}
+
+func newServerHandler(handler http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", handler)
+	return crossOriginIsolationHandler(gzipHandler(mux))
+}
+
+func crossOriginIsolationHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newHandler(opts ServerOptions) http.Handler {
@@ -179,7 +191,7 @@ func gzipHandler(next http.Handler) http.Handler {
 }
 
 func acceptsEncoding(header, encoding string) bool {
-	for _, item := range strings.Split(header, ",") {
+	for item := range strings.SplitSeq(header, ",") {
 		parts := strings.Split(item, ";")
 		name := strings.TrimSpace(parts[0])
 		if !strings.EqualFold(name, encoding) && name != "*" {
