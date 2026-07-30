@@ -3,6 +3,8 @@ package breakout
 import (
 	"flag"
 	"fmt"
+	"math"
+	"os"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
@@ -37,7 +39,7 @@ func TestGoldenReplay(t *testing.T) {
 		const playX, playY = 640.0, 510.0
 		const totalTicks = 1800
 		const paddleWindow = 45
-		paddleKeys := []input.SourceCode{input.KeyD, input.KeyA}
+		paddleAxes := []float64{.6, -.6}
 
 		// JustPressed only fires on a fresh down edge (Mapper compares
 		// pressed-before vs pressed-after the tick's events), so the launch button must
@@ -59,12 +61,13 @@ func TestGoldenReplay(t *testing.T) {
 				events = append(events, replayGamepadDown(input.GamepadA))
 				releaseLaunchNextTick = true
 			case StatePlaying:
-				key := paddleKeys[(tick/paddleWindow)%2]
 				if tick%paddleWindow == 0 {
-					events = append(events, replayKeyDown(key))
-				}
-				if tick%paddleWindow == paddleWindow-1 {
-					events = append(events, replayKeyUp(key))
+					// A non-saturated analog value makes the recording exercise
+					// the deterministic deadzone and rescaling path.
+					events = append(events, replayGamepadAxis(
+						input.GamepadLeftStickX,
+						paddleAxes[(tick/paddleWindow)%2],
+					))
 				}
 			}
 			if len(events) > 0 {
@@ -78,15 +81,13 @@ func TestGoldenReplay(t *testing.T) {
 		}
 	}
 
+	if !*update {
+		assertGoldenHasAnalogGamepadAxis(t, "testdata/breakout.arrp")
+	}
 	replaytest.Golden(t, *update, "testdata", "breakout", newGame, fingerprint, script)
-}
-
-func replayKeyDown(code input.SourceCode) input.Event {
-	return input.Event{Source: input.Source{Device: input.DeviceKeyboard, Code: code}, Kind: input.EventButtonDown}
-}
-
-func replayKeyUp(code input.SourceCode) input.Event {
-	return input.Event{Source: input.Source{Device: input.DeviceKeyboard, Code: code}, Kind: input.EventButtonUp}
+	if *update {
+		assertGoldenHasAnalogGamepadAxis(t, "testdata/breakout.arrp")
+	}
 }
 
 func replayGamepadDown(code input.SourceCode) input.Event {
@@ -95,4 +96,30 @@ func replayGamepadDown(code input.SourceCode) input.Event {
 
 func replayGamepadUp(code input.SourceCode) input.Event {
 	return input.Event{Source: input.Gamepad(code), Kind: input.EventButtonUp}
+}
+
+func replayGamepadAxis(code input.SourceCode, value float64) input.Event {
+	return input.Event{Source: input.Gamepad(code), Kind: input.EventAxisChanged, Value: value}
+}
+
+func assertGoldenHasAnalogGamepadAxis(t *testing.T, path string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read analog golden guard %s: %v", path, err)
+	}
+	rec, err := runtime.ReadRecordingFromBytes(data)
+	if err != nil {
+		t.Fatalf("decode analog golden guard %s: %v", path, err)
+	}
+	for _, event := range rec.Events {
+		magnitude := math.Abs(event.Value)
+		if event.Source.Device == input.DeviceGamepad &&
+			event.Source.Code == input.GamepadLeftStickX &&
+			event.Kind == input.EventAxisChanged &&
+			magnitude > 0 && magnitude < 1 {
+			return
+		}
+	}
+	t.Fatalf("golden %s has no non-saturated gamepad axis event", path)
 }

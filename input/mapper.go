@@ -156,11 +156,6 @@ func (m *Mapper) SetGamepadDeadzone(deadzone float64) {
 	m.gamepadDeadzone = EffectiveGamepadDeadzone(deadzone)
 }
 
-// GamepadDeadzone returns the effective deadzone currently applied.
-func (m *Mapper) GamepadDeadzone() float64 {
-	return m.gamepadDeadzone
-}
-
 func (m *Mapper) Bindings() []Binding {
 	return append([]Binding(nil), m.bindings...)
 }

@@ -106,6 +106,8 @@ var gamepadAxisCodes = [...]input.SourceCode{
 // GamepadTracker owns the journal-facing state of one gamepad slot. Its
 // emitted snapshot advances only when Update returns the corresponding event,
 // so sub-epsilon motion accumulates instead of being forgotten between polls.
+// Hosts poll snapshots rather than receive button transitions, so a press and
+// release completed between consecutive updates is intentionally unobservable.
 type GamepadTracker struct {
 	present bool
 	emitted GamepadSnapshot
