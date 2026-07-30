@@ -33,28 +33,30 @@ func browserGamepadSnapshot() (gamepadSnapshot, bool) {
 }
 
 func browserGamepadState(gamepad js.Value) (gamepadSnapshot, bool) {
+	// Only the W3C standard mapping has portable button semantics. Treat an
+	// unmapped device as unavailable instead of emitting mislabeled input.
+	if gamepad.Get("mapping").String() != "standard" {
+		return gamepadSnapshot{}, false
+	}
 	buttons := gamepad.Get("buttons")
 	axes := gamepad.Get("axes")
 	if buttons.IsNull() || buttons.IsUndefined() || axes.IsNull() || axes.IsUndefined() {
 		return gamepadSnapshot{}, false
 	}
 
-	state := gamepadSnapshot{}
-	for i := range state.Buttons {
-		if i >= buttons.Length() {
-			break
-		}
+	var webButtons [17]platforminput.WebGamepadButton
+	buttonCount := min(buttons.Length(), len(webButtons))
+	for i := 0; i < buttonCount; i++ {
 		button := buttons.Index(i)
-		state.Buttons[i] = button.Get("pressed").Bool()
-		if i == 6 {
-			state.Axes[4] = button.Get("value").Float()
-		}
-		if i == 7 {
-			state.Axes[5] = button.Get("value").Float()
+		webButtons[i] = platforminput.WebGamepadButton{
+			Pressed: button.Get("pressed").Bool(),
+			Value:   button.Get("value").Float(),
 		}
 	}
-	for i := 0; i < 4 && i < axes.Length(); i++ {
-		state.Axes[i] = axes.Index(i).Float()
+	var webAxes [4]float64
+	axisCount := min(axes.Length(), len(webAxes))
+	for i := 0; i < axisCount; i++ {
+		webAxes[i] = axes.Index(i).Float()
 	}
-	return state, true
+	return platforminput.WebStandardGamepadSnapshot(webButtons[:buttonCount], webAxes[:axisCount]), true
 }

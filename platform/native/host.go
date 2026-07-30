@@ -10,6 +10,7 @@ import (
 	metrics "runtime/metrics"
 
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -277,23 +278,23 @@ func (h *host) pollGamepad() []input.Event {
 
 	state := h.gamepadJoystick.GetGamepadState()
 	if state == nil {
-		events := gamepadEvents(h.gamepadState, gamepadSnapshot{})
+		events := platforminput.GamepadEvents(h.gamepadState, gamepadSnapshot{})
 		h.gamepadPresent = false
 		h.gamepadJoystick = 0
 		h.gamepadState = gamepadSnapshot{}
 		return events
 	}
 
-	current := gamepadSnapshot{}
-	// GLFW's button indices 6 and 7 are Back/Start, while trigger buttons
-	// are represented by the analog axes below. Do not alias those buttons.
-	for i := 0; i < 6; i++ {
-		current.Buttons[i] = state.Buttons[i] == glfw.Press
+	var buttons [15]bool
+	for i := range buttons {
+		buttons[i] = state.Buttons[i] == glfw.Press
 	}
-	for i := range current.Axes {
-		current.Axes[i] = float64(state.Axes[i])
+	var axes [6]float64
+	for i := range axes {
+		axes[i] = float64(state.Axes[i])
 	}
-	events := gamepadEvents(h.gamepadState, current)
+	current := platforminput.GLFWGamepadSnapshot(buttons, axes)
+	events := platforminput.GamepadEvents(h.gamepadState, current)
 	h.gamepadState = current
 	return events
 }

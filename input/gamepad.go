@@ -21,8 +21,17 @@ const (
 	GamepadB
 	GamepadX
 	GamepadY
-	GamepadLeftShoulder
-	GamepadRightShoulder
+	GamepadLeftBumper
+	GamepadRightBumper
+	GamepadBack
+	GamepadStart
+	GamepadGuide
+	GamepadLeftThumb
+	GamepadRightThumb
+	GamepadDpadUp
+	GamepadDpadRight
+	GamepadDpadDown
+	GamepadDpadLeft
 	GamepadLeftTrigger
 	GamepadRightTrigger
 	GamepadLeftStickX

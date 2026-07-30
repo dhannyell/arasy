@@ -137,7 +137,7 @@ func TestGamepadEventsTranslateButtonAndAxisChanges(t *testing.T) {
 }
 
 func TestGamepadEventsSuppressJitterAndReleaseDisconnect(t *testing.T) {
-	previous := gamepadSnapshot{Buttons: [8]bool{true}, Axes: [6]float64{.5}}
+	previous := gamepadSnapshot{Buttons: [15]bool{true}, Axes: [6]float64{.5}}
 	current := gamepadSnapshot{Axes: [6]float64{.5005}}
 	if events := gamepadEvents(previous, current); len(events) != 1 || events[0].Kind != input.EventButtonUp {
 		t.Fatalf("jitter/disconnect events = %+v, want only button release", events)
