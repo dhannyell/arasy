@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/dhannyell/arasy/internal/wasmserve"
 	"github.com/spf13/cobra"
 )
 
@@ -63,7 +64,10 @@ func zipBuild(output, dir string) (err error) {
 	defer func() {
 		err = errors.Join(err, zw.Close(), f.Close())
 	}()
-	for _, name := range []string{"index.html", "app.wasm", "wasm_exec.js"} {
+	for _, name := range []string{
+		"index.html", "app.wasm", "wasm_exec.js",
+		wasmserve.PosterLandscapeFile, wasmserve.PosterStackedFile,
+	} {
 		in, openErr := os.Open(filepath.Join(dir, name))
 		if openErr != nil {
 			return openErr

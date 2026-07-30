@@ -12,6 +12,7 @@ var (
 	devPlatform string
 	devAddress  string
 	devTitle    string
+	devNoSplash bool
 )
 
 var devCmd = &cobra.Command{
@@ -48,7 +49,8 @@ var devCmd = &cobra.Command{
 		}
 		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
-			Rebuild: func() error { return rebuildWASM(pkg, dir, title) },
+			DisableSplash: devNoSplash,
+			Rebuild:       func() error { return rebuildWASM(pkg, dir, title) },
 		})
 	},
 }
@@ -57,6 +59,7 @@ func init() {
 	devCmd.Flags().StringVarP(&devPlatform, "platform", "p", "wasm", "target platform")
 	devCmd.Flags().StringVarP(&devAddress, "address", "a", "127.0.0.1:8080", "server address")
 	devCmd.Flags().StringVar(&devTitle, "title", "", "HTML page title")
+	devCmd.Flags().BoolVar(&devNoSplash, "no-splash", false, "skip loading and runtime splash screens")
 	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
 	}); err != nil {
