@@ -6,7 +6,6 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -22,19 +21,13 @@ func (h *host) startLoop() {
 		ts := args[0].Float()
 		elapsed := frameTimer.ElapsedMillis(ts)
 
-		if h.driver.SplashActive() {
-			skip := false
-			for _, e := range h.pending {
-				if e.Kind == input.EventButtonDown {
-					skip = true
-					break
-				}
-			}
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Events: h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
 			h.pending = h.pending[:0]
 			h.pendingInputAtMillis = -1
-			h.driver.AdvanceSplash(elapsed, skip)
-			h.driver.RenderSplashFrame(elapsed, h.renderer)
-			if h.driver.SplashFrameReadyForHandoff() {
+			if splash.ReadyForHandoff {
 				signalFirstFramePresented(&firstFramePresented)
 			}
 			js.Global().Call("requestAnimationFrame", cb)

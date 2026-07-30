@@ -6,6 +6,7 @@ import (
 
 	"github.com/dhannyell/arasy/anim"
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/internal/enginesplash/stacked"
 	"github.com/dhannyell/arasy/internal/renderbatch"
@@ -13,14 +14,11 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-// SplashContent renders a texture-free segment at timeline time into dst,
-// returning the extended slice. It mirrors the Append<Name> signature the
-// arasy svg compiler generates, so a compiled brand animation can be used
-// directly as a segment's Content with resources bound by closure. Content
-// must be a pure function of (timeline, viewport): it runs before tick 0 and
-// never observes world/game state.
+// SplashContent renders a texture-free segment at timeline time. The returned
+// commands are consumed synchronously and may be backed by a reusable
+// workspace. Content must be a pure function of (timeline, viewport): it runs
+// before tick 0 and never observes world/game state.
 type SplashContent func(
-	dst []render.Command,
 	timeline anim.Timeline,
 	viewport math2d.Rect,
 ) []render.Command
@@ -47,8 +45,10 @@ type SplashSegment struct {
 	// texture upload is needed for this content.
 	Content SplashContent
 
-	MinTime   float64 // minimum on-screen seconds
-	Fade      float64 // cross-fade seconds at each edge; 0 = hard cut
+	MinTime float64 // minimum on-screen seconds
+	Fade    float64 // cross-fade seconds at each edge; 0 = hard cut
+	// Skippable lets an activation event (input.EventButtonDown) end the
+	// segment before MinTime; passive input never skips it.
 	Skippable bool
 
 	// Background paints behind this segment's content, covering the full
@@ -87,6 +87,24 @@ type splashPlayer struct {
 	elapsed  float64
 }
 
+// SplashFrameBatch is the host state consumed by one real-time splash frame.
+// Events are discarded by the host when RunSplashFrame reports Rendered.
+// Only EventButtonDown is an activation request that can skip a skippable
+// segment; pointer motion, releases, wheel input and other passive events do
+// not skip it.
+type SplashFrameBatch struct {
+	Viewport *math2d.Rect
+	Events   []input.Event
+}
+
+// SplashFrameResult tells a host whether RunSplashFrame consumed and rendered
+// the current host frame, and whether that rendered frame can replace a
+// host-owned loading poster without exposing partially faded content.
+type SplashFrameResult struct {
+	Rendered        bool
+	ReadyForHandoff bool
+}
+
 // SkipSplash removes the remaining runtime boot splash playlist. Web hosts
 // use it before presenting the first frame when their command-line session
 // explicitly disables runtime splash screens; the independent HTML download
@@ -105,7 +123,7 @@ func (d *Driver) SkipDefaultSplash() {
 		return
 	}
 
-	currentWasDefault := d.SplashActive() &&
+	currentWasDefault := d.splashActive() &&
 		d.splash.segments[d.splash.index].source == splashSourceDefault
 	removedBeforeCurrent := 0
 	segments := make([]SplashSegment, 0, len(d.splash.segments))
@@ -129,36 +147,51 @@ func (d *Driver) SkipDefaultSplash() {
 	}
 }
 
-// SplashActive reports whether the boot splash still has a segment to play.
-// Only real-time hosts drain it, before their tick loop; offline and replay
-// paths never call it, so they reach tick 0 immediately.
-func (d *Driver) SplashActive() bool {
+func (d *Driver) splashActive() bool {
 	return d.splash != nil && d.splash.index < len(d.splash.segments)
 }
 
-// SplashFrameReadyForHandoff reports whether the current splash frame can
-// replace a host-owned loading poster without revealing partially faded
-// content. Hosts call it after RenderSplashFrame and keep their poster visible
-// until it returns true. With no splash playlist, the first game frame is
-// ready immediately. An exhausted playlist remains unready until the host
-// presents that game frame.
-func (d *Driver) SplashFrameReadyForHandoff() bool {
-	if d.splash == nil || len(d.splash.segments) == 0 {
-		return true
-	}
-	if !d.SplashActive() {
+func (d *Driver) splashFrameReadyForHandoff() bool {
+	if !d.splashActive() {
 		return false
 	}
 	seg := d.splash.segments[d.splash.index]
 	return splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade) >= 1
 }
 
-// AdvanceSplash advances the current segment by wall-clock elapsed. skip is
-// true when any host input arrived this frame; it only ends the segment when
-// that segment is Skippable (per its MinTime/Skippable rule). It never
-// advances d.tick.
-func (d *Driver) AdvanceSplash(elapsed time.Duration, skip bool) {
-	if !d.SplashActive() {
+// RunSplashFrame owns the canonical pre-tick-0 host sequence: apply the
+// viewport, interpret activation input, advance the current segment, render
+// it, and determine poster handoff readiness. A zero result means no splash
+// was active; the host must retain the input and continue with its game frame.
+// A rendered splash consumes all supplied events but never advances d.tick or
+// invokes game state. Viewport changes retain SetViewport's normal tick-0
+// timeline semantics.
+func (d *Driver) RunSplashFrame(batch SplashFrameBatch, elapsed time.Duration, r FrameRenderer) SplashFrameResult {
+	if !d.splashActive() {
+		return SplashFrameResult{}
+	}
+	if batch.Viewport != nil {
+		d.SetViewport(*batch.Viewport)
+	}
+
+	skip := false
+	for _, event := range batch.Events {
+		if event.Kind == input.EventButtonDown {
+			skip = true
+			break
+		}
+	}
+
+	d.advanceSplash(elapsed, skip)
+	d.renderSplashFrame(elapsed, r)
+	return SplashFrameResult{
+		Rendered:        true,
+		ReadyForHandoff: d.splashFrameReadyForHandoff(),
+	}
+}
+
+func (d *Driver) advanceSplash(elapsed time.Duration, skip bool) {
+	if !d.splashActive() {
 		return
 	}
 	seg := d.splash.segments[d.splash.index]
@@ -170,18 +203,15 @@ func (d *Driver) AdvanceSplash(elapsed time.Duration, skip bool) {
 	}
 }
 
-// RenderSplashFrame draws the current splash segment through r (the same
-// FrameRenderer used for game frames). It publishes no dynamic resources.
-func (d *Driver) RenderSplashFrame(elapsed time.Duration, r FrameRenderer) Frame {
+func (d *Driver) renderSplashFrame(elapsed time.Duration, r FrameRenderer) {
 	frame := d.splashFrame(elapsed.Seconds())
 	r.UpdateResources(FrameUpdates{})
 	r.Render(frame)
-	return frame
 }
 
 func (d *Driver) splashFrame(dt float64) Frame {
 	cam := render.Camera{World: d.viewport, Viewport: d.viewport}
-	if !d.SplashActive() {
+	if !d.splashActive() {
 		return Frame{Camera: cam}
 	}
 
@@ -210,7 +240,7 @@ func (d *Driver) splashFrame(dt float64) Frame {
 	builder.Reset(commands)
 	builder.Push(render.Group{Opacity: alpha})
 	if seg.Content != nil {
-		content := seg.Content(nil, anim.At(d.splash.elapsed), d.viewport)
+		content := seg.Content(anim.At(d.splash.elapsed), d.viewport)
 		for _, cmd := range content {
 			builder.Add(cmd)
 		}
@@ -304,14 +334,16 @@ func fitCentered(cell, viewport math2d.Rect) math2d.Rect {
 func buildSplashPlaylist(cfg Config) []SplashSegment {
 	var segments []SplashSegment
 	if !cfg.DisableDefaultSplash {
+		var landscapeWorkspace enginesplash.ArasySplashWorkspace
+		var portraitWorkspace stacked.ArasySplashStackedWorkspace
 		segments = append(segments, SplashSegment{
-			Content: func(dst []render.Command, timeline anim.Timeline, viewport math2d.Rect) []render.Command {
+			Content: func(timeline anim.Timeline, viewport math2d.Rect) []render.Command {
 				if viewport.Width() < viewport.Height() {
 					viewport = enginesplash.StackedViewport(viewport)
-					return stacked.AppendArasySplashStacked(dst, timeline, viewport, stacked.ArasySplashStackedResources{})
+					return portraitWorkspace.Append(timeline, viewport, stacked.ArasySplashStackedResources{})
 				}
 				viewport = enginesplash.EngineSplashViewport(viewport)
-				return enginesplash.AppendArasySplash(dst, timeline, viewport, enginesplash.ArasySplashResources{})
+				return landscapeWorkspace.Append(timeline, viewport, enginesplash.ArasySplashResources{})
 			},
 			MinTime:    enginesplash.EngineSplashMinTime,
 			Fade:       enginesplash.EngineSplashFade,

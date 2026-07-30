@@ -173,26 +173,16 @@ func (h *host) run() error {
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
 		h.resizeIfNeeded()
-		// SetViewport is a no-op when unchanged, so this stays cheap; it must
-		// run every frame (not just once before the loop) so a resize during
-		// the splash phase reaches the driver too — the splash branch below
-		// never falls through to RunTick, which is the only other place that
-		// threads h.viewport into the driver (TickBatch.Viewport).
-		h.driver.SetViewport(h.viewport)
 
 		elapsed := frameTimer.Elapsed(time.Now())
 
-		if h.driver.SplashActive() {
-			skip := false
-			for _, e := range h.pending {
-				if e.Kind == input.EventButtonDown {
-					skip = true
-					break
-				}
-			}
-			h.driver.AdvanceSplash(elapsed, skip)
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Viewport: &h.viewport,
+			Events:   h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
 			h.pending = h.pending[:0]
-			h.driver.RenderSplashFrame(elapsed, h.renderer)
+			h.lastInputAt = time.Time{}
 			if err := h.renderer.Err(); err != nil {
 				return fmt.Errorf("splash renderer failed: %w", err)
 			}

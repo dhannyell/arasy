@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -69,27 +70,27 @@ func TestSplashAdvancesThroughSegments(t *testing.T) {
 		}`)),
 	})
 
-	if !d.SplashActive() {
-		t.Fatal("SplashActive() = false, want true at boot")
+	if !d.splashActive() {
+		t.Fatal("splashActive() = false, want true at boot")
 	}
 
-	d.AdvanceSplash(500*time.Millisecond, false)
+	d.advanceSplash(500*time.Millisecond, false)
 	if d.splash.index != 0 {
 		t.Fatalf("index = %d after 0.5s, want still on segment 0", d.splash.index)
 	}
 
-	d.AdvanceSplash(600*time.Millisecond, false)
+	d.advanceSplash(600*time.Millisecond, false)
 	if d.splash.index != 1 {
 		t.Fatalf("index = %d after passing MinTime, want 1", d.splash.index)
 	}
 
-	d.AdvanceSplash(1100*time.Millisecond, false)
-	if d.SplashActive() {
-		t.Fatal("SplashActive() = true after the last segment's MinTime elapsed, want false")
+	d.advanceSplash(1100*time.Millisecond, false)
+	if d.splashActive() {
+		t.Fatal("splashActive() = true after the last segment's MinTime elapsed, want false")
 	}
 }
 
-func TestSkippableEndsSegmentOnInput(t *testing.T) {
+func TestSkippableEndsSegmentOnActivation(t *testing.T) {
 	skippable := Config{
 		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
@@ -99,8 +100,14 @@ func TestSkippableEndsSegmentOnInput(t *testing.T) {
 		}`)),
 	}
 	d := newTestDriver(t, skippable)
-	d.AdvanceSplash(10*time.Millisecond, true)
-	if d.SplashActive() {
+	renderer := &splashCaptureRenderer{}
+	result := d.RunSplashFrame(SplashFrameBatch{
+		Events: []input.Event{{Kind: input.EventButtonDown}},
+	}, 10*time.Millisecond, renderer)
+	if !result.Rendered || len(renderer.frames) != 1 {
+		t.Fatalf("RunSplashFrame() = %+v with %d frames, want one rendered splash frame", result, len(renderer.frames))
+	}
+	if d.splashActive() {
 		t.Fatal("Skippable segment did not end on input before MinTime")
 	}
 
@@ -113,20 +120,23 @@ func TestSkippableEndsSegmentOnInput(t *testing.T) {
 		}`)),
 	}
 	d2 := newTestDriver(t, notSkippable)
-	d2.AdvanceSplash(10*time.Millisecond, true)
-	if !d2.SplashActive() {
+	d2.RunSplashFrame(SplashFrameBatch{
+		Events: []input.Event{{Kind: input.EventButtonDown}},
+	}, 10*time.Millisecond, &splashCaptureRenderer{})
+	if !d2.splashActive() {
 		t.Fatal("non-Skippable segment ended on input before MinTime")
 	}
 }
 
 func TestSplashNeverAdvancesTick(t *testing.T) {
 	d := newTestDriver(t, Config{DisableDefaultSplash: false})
+	renderer := &splashCaptureRenderer{}
 
-	for range 5 {
-		d.AdvanceSplash(500*time.Millisecond, false)
-	}
-	for d.SplashActive() {
-		d.AdvanceSplash(500*time.Millisecond, false)
+	for {
+		result := d.RunSplashFrame(SplashFrameBatch{}, 500*time.Millisecond, renderer)
+		if !result.Rendered {
+			break
+		}
 	}
 
 	state := d.State()
@@ -140,8 +150,12 @@ func TestSplashNeverAdvancesTick(t *testing.T) {
 
 func TestSplashDisabledSkipsEngineSegment(t *testing.T) {
 	d := newTestDriver(t, Config{DisableDefaultSplash: true})
-	if d.SplashActive() {
-		t.Fatal("SplashActive() = true with DisableDefaultSplash and no manifest segments, want false")
+	renderer := &splashCaptureRenderer{}
+	if result := d.RunSplashFrame(SplashFrameBatch{}, 0, renderer); result != (SplashFrameResult{}) {
+		t.Fatalf("RunSplashFrame() = %+v with disabled splash, want zero result", result)
+	}
+	if len(renderer.frames) != 0 {
+		t.Fatalf("disabled splash rendered %d frames, want 0", len(renderer.frames))
 	}
 }
 
@@ -162,8 +176,8 @@ func TestSkipDefaultSplashPreservesManifestSegments(t *testing.T) {
 	})
 
 	d.SkipDefaultSplash()
-	if !d.SplashActive() {
-		t.Fatal("SplashActive() = false after skipping the default segment; manifest segment was removed")
+	if !d.splashActive() {
+		t.Fatal("splashActive() = false after skipping the default segment; manifest segment was removed")
 	}
 
 	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}))
@@ -196,11 +210,11 @@ func TestSkipDefaultSplashAfterItPlayedPreservesManifestElapsed(t *testing.T) {
 		}`)),
 	})
 
-	d.AdvanceSplash(time.Duration(enginesplash.EngineSplashMinTime*float64(time.Second)), false)
-	d.AdvanceSplash(500*time.Millisecond, false)
+	d.advanceSplash(time.Duration(enginesplash.EngineSplashMinTime*float64(time.Second)), false)
+	d.advanceSplash(500*time.Millisecond, false)
 	d.SkipDefaultSplash()
 
-	if !d.SplashActive() {
+	if !d.splashActive() {
 		t.Fatal("manifest segment was removed after the default segment had already played")
 	}
 	if got := d.splash.elapsed; got != 0.5 {
@@ -216,14 +230,14 @@ func TestSkipSplashRemovesDefaultAndManifestSegmentsWithoutAdvancingTick(t *test
 			"splash": [{"texture": "a", "cell_w": 4, "cell_h": 4, "columns": 1, "frames": 1, "min_time": 10}]
 		}`)),
 	})
-	if !d.SplashActive() {
+	if !d.splashActive() {
 		t.Fatal("test setup has no splash to skip")
 	}
 
 	d.SkipSplash()
 
-	if d.SplashActive() {
-		t.Fatal("SplashActive() = true after SkipSplash")
+	if d.splashActive() {
+		t.Fatal("splashActive() = true after SkipSplash")
 	}
 	if got := d.State().Tick; got != 0 {
 		t.Fatalf("Tick = %d after SkipSplash, want 0", got)
@@ -239,10 +253,9 @@ func TestSplashFrameEmitsDrawImage(t *testing.T) {
 			"splash": [{"texture": "a", "cell_w": 4, "cell_h": 4, "columns": 1, "frames": 1, "min_time": 1, "fade": 0.2}]
 		}`)),
 	})
-	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}))
-
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
 	r := &splashCaptureRenderer{}
-	d.RenderSplashFrame(0, r)
+	d.RunSplashFrame(SplashFrameBatch{Viewport: &viewport}, 0, r)
 	frame := r.frames[0]
 
 	var found *render.DrawImage
@@ -252,12 +265,11 @@ func TestSplashFrameEmitsDrawImage(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Fatal("RenderSplashFrame did not emit a DrawImage for a texture segment")
+		t.Fatal("renderSplashFrame did not emit a DrawImage for a texture segment")
 	}
 
-	d.AdvanceSplash(100*time.Millisecond, false) // inside the 0.2s fade-in
 	r2 := &splashCaptureRenderer{}
-	d.RenderSplashFrame(0, r2)
+	d.RunSplashFrame(SplashFrameBatch{}, 100*time.Millisecond, r2) // inside the 0.2s fade-in
 	var mid *render.DrawImage
 	for i := range r2.frames[0].Commands {
 		if img, ok := r2.frames[0].Commands[i].(render.DrawImage); ok {
@@ -279,13 +291,12 @@ func TestOfflinePathHasNoSplash(t *testing.T) {
 
 func TestEngineSplashRendersWithoutManifest(t *testing.T) {
 	d := newTestDriver(t, Config{})
-	if !d.SplashActive() {
-		t.Fatal("SplashActive() = false, want true (engine segment enabled by default)")
-	}
-	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1920, Y: 1080}))
-
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1920, Y: 1080})
 	r := &splashCaptureRenderer{}
-	d.RenderSplashFrame(0, r)
+	result := d.RunSplashFrame(SplashFrameBatch{Viewport: &viewport}, 0, r)
+	if !result.Rendered {
+		t.Fatal("RunSplashFrame() did not render the default engine segment")
+	}
 	if len(r.frames[0].Commands) == 0 {
 		t.Fatal("engine splash segment produced no commands")
 	}
@@ -298,10 +309,9 @@ func TestEngineSplashRendersWithoutManifest(t *testing.T) {
 // unrelated Config.Clear, or the two show up as a visible box.
 func TestEngineSplashBackgroundMatchesBrandOnTallViewport(t *testing.T) {
 	d := newTestDriver(t, Config{Clear: render.RGBA8(200, 30, 30, 255)})
-	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 390, Y: 844}))
-
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 390, Y: 844})
 	r := &splashCaptureRenderer{}
-	d.RenderSplashFrame(0, r)
+	d.RunSplashFrame(SplashFrameBatch{Viewport: &viewport}, 0, r)
 
 	rect, ok := r.frames[0].Commands[0].(render.DrawRect)
 	if !ok {
@@ -453,7 +463,7 @@ func TestSplashFadeAlphaEnvelope(t *testing.T) {
 	}
 }
 
-func TestSplashFrameReadyForHandoffWaitsForFullOpacity(t *testing.T) {
+func TestRunSplashFrameWaitsForFullOpacityBeforeHandoff(t *testing.T) {
 	d := newTestDriver(t, Config{
 		DisableDefaultSplash: true,
 		Assets: mustSplashManifest(t, []byte(`{
@@ -471,25 +481,67 @@ func TestSplashFrameReadyForHandoffWaitsForFullOpacity(t *testing.T) {
 		}`)),
 	})
 
-	if d.SplashFrameReadyForHandoff() {
-		t.Fatal("handoff ready at the transparent start of the splash")
+	renderer := &splashCaptureRenderer{}
+	result := d.RunSplashFrame(SplashFrameBatch{}, 0, renderer)
+	if !result.Rendered || result.ReadyForHandoff {
+		t.Fatalf("RunSplashFrame() at transparent start = %+v, want rendered without handoff", result)
 	}
-	d.AdvanceSplash(125*time.Millisecond, false)
-	if d.SplashFrameReadyForHandoff() {
-		t.Fatal("handoff ready during the splash fade-in")
+	result = d.RunSplashFrame(SplashFrameBatch{}, 125*time.Millisecond, renderer)
+	if !result.Rendered || result.ReadyForHandoff {
+		t.Fatalf("RunSplashFrame() during fade-in = %+v, want rendered without handoff", result)
 	}
-	d.AdvanceSplash(125*time.Millisecond, false)
-	if !d.SplashFrameReadyForHandoff() {
-		t.Fatal("handoff not ready when the splash reached full opacity")
+	result = d.RunSplashFrame(SplashFrameBatch{}, 125*time.Millisecond, renderer)
+	if !result.Rendered || !result.ReadyForHandoff {
+		t.Fatalf("RunSplashFrame() at full opacity = %+v, want handoff ready", result)
 	}
-	d.AdvanceSplash(750*time.Millisecond, false)
-	if d.SplashFrameReadyForHandoff() {
-		t.Fatal("handoff ready after the splash ended but before a game frame")
+	result = d.RunSplashFrame(SplashFrameBatch{}, 750*time.Millisecond, renderer)
+	if !result.Rendered || result.ReadyForHandoff {
+		t.Fatalf("RunSplashFrame() after playlist end = %+v, want final splash frame without handoff", result)
+	}
+	if result := d.RunSplashFrame(SplashFrameBatch{}, 0, renderer); result != (SplashFrameResult{}) {
+		t.Fatalf("RunSplashFrame() after splash drained = %+v, want zero result", result)
+	}
+}
+
+func TestRunSplashFrameAppliesViewportAndOnlyActivationSkips(t *testing.T) {
+	d := newTestDriver(t, Config{
+		DisableDefaultSplash: true,
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "studio", "file": "a.png"}],
+			"splash": [{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"min_time": 10,
+				"skippable": true
+			}]
+		}`)),
+	})
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 180})
+	renderer := &splashCaptureRenderer{}
+
+	result := d.RunSplashFrame(SplashFrameBatch{
+		Viewport: &viewport,
+		Events:   []input.Event{{Kind: input.EventPointerMove}},
+	}, 10*time.Millisecond, renderer)
+	if !result.Rendered {
+		t.Fatal("RunSplashFrame() did not render the active splash")
+	}
+	if !d.splashActive() {
+		t.Fatal("passive pointer motion skipped a skippable splash")
+	}
+	if got := renderer.frames[0].Camera.Viewport; got != viewport {
+		t.Fatalf("rendered viewport = %+v, want %+v", got, viewport)
 	}
 
-	withoutSplash := newTestDriver(t, Config{DisableDefaultSplash: true})
-	if !withoutSplash.SplashFrameReadyForHandoff() {
-		t.Fatal("handoff not ready when there is no runtime splash")
+	d.RunSplashFrame(SplashFrameBatch{
+		Events: []input.Event{{Kind: input.EventButtonDown}},
+	}, 10*time.Millisecond, renderer)
+	if d.splashActive() {
+		t.Fatal("activation input did not skip a skippable splash")
 	}
 }
 
