@@ -63,8 +63,11 @@ type Renderer struct {
 	msaaWidth   int
 	msaaHeight  int
 
-	diagnostics        diagnostic.Once
-	err                error
+	diagnostics diagnostic.Once
+	err         error
+	// presentedFrame stays false for skipped/reconfigured surfaces and flips
+	// only after the first successful surface.Present call.
+	presentedFrame     bool
 	timeCPU            bool
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
@@ -230,9 +233,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuPhasesSet = true
 	}
 	r.device.surface.Present()
+	r.presentedFrame = true
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
+}
+
+func (r *Renderer) hasPresentedFrame() bool {
+	return r != nil && r.presentedFrame
 }
 
 // SetCPUTiming enables CPU-side phase instrumentation.
