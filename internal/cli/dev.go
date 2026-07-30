@@ -48,7 +48,8 @@ var devCmd = &cobra.Command{
 		}()
 		stopInterruptCleanup := watchTempDirInterrupt(dir)
 		defer stopInterruptCleanup()
-		if err := rebuildWASM(pkg, dir, title, boot); err != nil {
+		rebuilder := &devRebuilder{pkg: pkg, dir: dir, title: title, boot: boot}
+		if err := rebuilder.rebuild(); err != nil {
 			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err); writeErr != nil {
 				return writeErr
 			}
@@ -59,7 +60,7 @@ var devCmd = &cobra.Command{
 		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
 			Boot:    boot,
-			Rebuild: func() error { return rebuildWASM(pkg, dir, title, boot) },
+			Rebuild: rebuilder.rebuild,
 		})
 	},
 }
@@ -71,6 +72,10 @@ func init() {
 	devBoot.bind(devCmd)
 	devCmd.Flags().Lookup("no-engine-splash").DefValue = "true"
 	devBoot.noEngineSplash = true
+	// Localhost downloads are fast and compile time dominates, so dev
+	// overlaps them by default.
+	devCmd.Flags().Lookup("streaming-compile").DefValue = "true"
+	devBoot.streamingCompile = true
 	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
 	}); err != nil {
