@@ -62,6 +62,12 @@ type BootOptions struct {
 	// host, preserving game-declared splash segments. Without this explicit
 	// host opt-out, Config.DisableDefaultSplash is authoritative.
 	DisableEngineSplash bool
+	// StreamingCompile instantiates the WASM module with
+	// WebAssembly.instantiateStreaming, overlapping compilation with the
+	// download instead of buffering the bytes to measure progress first. The
+	// progress bar falls back to indeterminate mode. Best for local
+	// development, where the download is fast and compile time dominates.
+	StreamingCompile bool
 	// Background is the web download/boot color in #RGB, #RGBA, #RRGGBB, or
 	// #RRGGBBAA form. Empty uses the engine poster background.
 	Background string
@@ -347,6 +353,7 @@ func ShellHTML(title, wasmFile string, boot BootOptions) ([]byte, error) {
 		enableEngineSplash,       // arasySplashPolicy.engine
 		enableGameSplash,         // arasySplashPolicy.game
 		encodedWASMFile,          // fetch() target, JSON-quoted
+		boot.StreamingCompile,    // overlap download and compilation (indeterminate bar)
 	)), nil
 }
 
@@ -587,9 +594,10 @@ const wasmShellHTML = `<!doctype html>
         const resp = await fetch(%s);
         const total = Number(resp.headers.get('X-Arasy-Uncompressed-Length')) ||
             Number(resp.headers.get('Content-Length')) || 0;
+        const streamingCompile = %t;
 
         let instantiated;
-        if (resp.body && total > 0) {
+        if (resp.body && total > 0 && !streamingCompile) {
             const reader = resp.body.getReader();
             const chunks = [];
             let received = 0;

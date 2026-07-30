@@ -354,3 +354,24 @@ func TestShellUsesDecodedLengthHeaderForGzipProgress(t *testing.T) {
 		t.Fatal("shell does not prefer decoded gzip length before Content-Length")
 	}
 }
+
+func TestShellStreamingCompileSkipsBufferedProgress(t *testing.T) {
+	streaming, err := ShellHTML("Arasy", "app.wasm", BootOptions{StreamingCompile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(streaming), "const streamingCompile = true;") {
+		t.Fatal("streaming shell does not enable the streamingCompile flag")
+	}
+
+	buffered, err := ShellHTML("Arasy", "app.wasm", BootOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(buffered), "const streamingCompile = false;") {
+		t.Fatal("default shell does not disable the streamingCompile flag")
+	}
+	if !strings.Contains(string(buffered), "resp.body && total > 0 && !streamingCompile") {
+		t.Fatal("buffered progress no longer guards on the streamingCompile flag")
+	}
+}
