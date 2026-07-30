@@ -32,7 +32,12 @@ var devCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		dir, err := os.MkdirTemp("", "Arasy-dev-*")
+		if boot.DisableEngineSplash && !cmd.Flags().Changed("no-engine-splash") {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "dev: engine splash is off by default in development; pass --no-engine-splash=false to show it\n"); err != nil {
+				return err
+			}
+		}
+		dir, err := os.MkdirTemp("", "arasy-dev-*")
 		if err != nil {
 			return err
 		}
@@ -64,6 +69,8 @@ func init() {
 	devCmd.Flags().StringVarP(&devAddress, "address", "a", "127.0.0.1:8080", "server address")
 	devCmd.Flags().StringVar(&devTitle, "title", "", "HTML page title")
 	devBoot.bind(devCmd)
+	devCmd.Flags().Lookup("no-engine-splash").DefValue = "true"
+	devBoot.noEngineSplash = true
 	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
 	}); err != nil {

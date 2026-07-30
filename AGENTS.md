@@ -137,7 +137,9 @@ platform/* -> asset/pixel -> asset
 - Both native and web honor `Config.DisableDefaultSplash`; false shows the
   engine segment. Web uses a delayed static download indicator, and
   `--no-engine-splash` provides a host-only opt-out that preserves manifest
-  segments. `--no-loading` controls only the HTML download indicator;
+  segments (`arasy dev` defaults it ON — developers boot the game dozens of
+  times a day; `--no-engine-splash=false` opts back in). `--no-loading`
+  controls only the HTML download indicator;
   `--no-splash` controls only runtime segments. `--boot-background`
   configures the web phase-0 color, while `Config.BootBackground` configures
   runtime splash segments and falls back to `Config.Clear`.
