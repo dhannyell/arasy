@@ -3,6 +3,7 @@ package enginesplash
 import (
 	"math"
 
+	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 )
@@ -48,7 +49,7 @@ func engineCruxBrightness(mag float64) float64 {
 
 // EngineCruxEffectName is the manifest effect name for one Crux star.
 func EngineCruxEffectName(name string) string {
-	return "__ar_engine_crux_" + name
+	return asset.ReservedNamePrefix + "engine_crux_" + name
 }
 
 // EngineCruxNames returns the star name keys (for use with

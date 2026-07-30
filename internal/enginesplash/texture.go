@@ -1,6 +1,10 @@
 package enginesplash
 
-import _ "embed"
+import (
+	_ "embed"
+
+	"github.com/dhannyell/arasy/asset"
+)
 
 // EngineMoteTextureName and EngineEmberTextureName are the manifest texture
 // names the boot splash's particles draw with: a soft round point of light
@@ -11,8 +15,8 @@ import _ "embed"
 // assets/mote.png and assets/ember.png (regenerate with
 // `go run ./internal/enginesplash/texturegen/gen`).
 const (
-	EngineMoteTextureName  = "__ar_engine_mote"
-	EngineEmberTextureName = "__ar_engine_ember"
+	EngineMoteTextureName  = asset.ReservedNamePrefix + "engine_mote"
+	EngineEmberTextureName = asset.ReservedNamePrefix + "engine_ember"
 )
 
 //go:embed assets/mote.png

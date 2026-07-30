@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"strings"
 
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/math2d"
@@ -147,7 +148,8 @@ type effectEntry struct {
 // Fonts are optional manifest entries with a non-empty name and file path;
 // their raw TTF/OTF bytes are loaded with the same last-layer-wins rule as
 // textures. A layer without manifest.json is valid (file-override-only layer),
-// but at least one layer must declare one.
+// but at least one layer must declare one. Asset identifiers beginning with
+// ReservedNamePrefix are reserved for engine-injected assets and rejected.
 func Load(layers ...fs.FS) (Manifest, error) {
 	if len(layers) == 0 {
 		return Manifest{}, errors.New("asset: Load needs at least one FS layer")
@@ -337,6 +339,9 @@ func splashEffectAnchor(value *float64) float64 {
 func validateManifestEntries(entries []textureEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if err := validatePublicAssetName("texture", entry.Name); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate texture %q in manifest.json", entry.Name)
 		}
@@ -353,6 +358,9 @@ func validateManifestEntries(entries []textureEntry) error {
 func validateSpriteEntries(entries []spriteEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if err := validatePublicAssetName("sprite", entry.Name); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate sprite %q in manifest.json", entry.Name)
 		}
@@ -366,6 +374,9 @@ func validateFontEntries(entries []fontEntry) error {
 	for _, entry := range entries {
 		if entry.Name == "" {
 			return errors.New("asset: font name must not be empty in manifest.json")
+		}
+		if err := validatePublicAssetName("font", entry.Name); err != nil {
+			return err
 		}
 		if entry.File == "" {
 			return fmt.Errorf("asset: font %q has an empty file path in manifest.json", entry.Name)
@@ -387,6 +398,9 @@ func validateAudioEntries(entries []audioEntry) error {
 		if entry.ID == "" {
 			return errors.New("asset: audio id must not be empty in manifest.json")
 		}
+		if err := validatePublicAssetName("audio", entry.ID); err != nil {
+			return err
+		}
 		if entry.File == "" {
 			return fmt.Errorf("asset: audio %q has an empty file path in manifest.json", entry.ID)
 		}
@@ -406,6 +420,9 @@ func validateEffectEntries(entries []effectEntry) error {
 	for _, entry := range entries {
 		if entry.Name == "" {
 			return errors.New("asset: effect name must not be empty in manifest.json")
+		}
+		if err := validatePublicAssetName("effect", entry.Name); err != nil {
+			return err
 		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate effect %q in manifest.json", entry.Name)
@@ -515,8 +532,18 @@ func validateAssetPath(kind, name, path string) error {
 	return nil
 }
 
+func validatePublicAssetName(kind, name string) error {
+	if strings.HasPrefix(name, ReservedNamePrefix) {
+		return fmt.Errorf("asset: %s %q uses reserved prefix %q in manifest.json", kind, name, ReservedNamePrefix)
+	}
+	return nil
+}
+
 func validateDynamicEntries(entries []dynamicEntry) error {
 	for _, entry := range entries {
+		if err := validatePublicAssetName("dynamic texture", entry.Name); err != nil {
+			return err
+		}
 		if entry.W <= 0 || entry.H <= 0 {
 			return fmt.Errorf("asset: dynamic texture %q has non-positive dimensions (%d x %d)", entry.Name, entry.W, entry.H)
 		}

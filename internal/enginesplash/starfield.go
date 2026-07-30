@@ -3,6 +3,7 @@ package enginesplash
 import (
 	"math"
 
+	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 )
@@ -40,7 +41,7 @@ func starCount() int {
 }
 
 // EngineStarfieldEffectName is the manifest effect name for the sky field.
-const EngineStarfieldEffectName = "__ar_engine_starfield"
+const EngineStarfieldEffectName = asset.ReservedNamePrefix + "engine_starfield"
 
 // EngineStarfieldEffect declares the sky: a uniform rectangular field of
 // untextured points (no manifest entry needed, like EngineSparkEffect) with

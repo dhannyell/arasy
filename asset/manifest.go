@@ -10,6 +10,11 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
+// ReservedNamePrefix identifies assets owned and injected by engine modules.
+// Load rejects this prefix on every manifest-declared asset identifier so
+// game content can never shadow an internal asset.
+const ReservedNamePrefix = "__ar_"
+
 // Sprite is a named sub-rectangle of a texture (atlas/sprite-sheet entry).
 type Sprite struct {
 	Texture render.TextureID
@@ -140,8 +145,13 @@ func (m Manifest) EffectDecl(id render.ParticleEffectID) (particle.EffectDecl, b
 // never reassigns or reorders the IDs of effects already in m, so it is
 // safe to call after Load to register an effect the manifest file never
 // declared (e.g. the engine's own boot splash spark, which has no
-// manifest). name must not collide with an existing declared effect name.
+// manifest). If name is already registered, WithEffect returns m unchanged
+// and the existing ID, making repeated internal asset injection idempotent.
 func (m Manifest) WithEffect(name string, decl particle.EffectDecl) (Manifest, render.ParticleEffectID) {
+	if id, ok := m.effectByName[name]; ok {
+		return m, id
+	}
+
 	id := render.ParticleEffectID(len(m.effects) + 1)
 	decl.Name = name
 
@@ -166,8 +176,13 @@ func (m Manifest) WithEffect(name string, decl particle.EffectDecl) (Manifest, r
 // or reorders the IDs of textures already in m, so it is safe to call after
 // Load to register a texture the manifest file never declared (e.g. the
 // engine's own boot splash particle sprites, which have no manifest entry).
-// name must not collide with an existing declared texture name.
+// If name is already registered, WithTexture returns m unchanged and the
+// existing ID, making repeated internal asset injection idempotent.
 func (m Manifest) WithTexture(name string, data []byte) (Manifest, render.TextureID) {
+	if id, ok := m.textByName[name]; ok {
+		return m, id
+	}
+
 	id := render.TextureID(len(m.textures) + 1)
 
 	textures := make([]TextureDecl, len(m.textures), len(m.textures)+1)
