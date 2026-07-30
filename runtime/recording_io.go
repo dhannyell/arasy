@@ -269,6 +269,13 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		rec.Viewports = append(rec.Viewports, change)
 	}
 
+	var trailing byte
+	if err := cr.read(&trailing); err == nil {
+		return Recording{}, fmt.Errorf("%w: trailing data after recording", ErrUnsupportedRecordingFormat)
+	} else if !errors.Is(err, io.EOF) {
+		return Recording{}, err
+	}
+
 	return rec, nil
 }
 

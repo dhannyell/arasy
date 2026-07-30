@@ -82,6 +82,39 @@ func TestReadRecordingRejectsUnsupportedVersion(t *testing.T) {
 	}
 }
 
+func TestReadRecordingRejectsTrailingData(t *testing.T) {
+	data, err := (Recording{Ticks: 1}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary returned error: %v", err)
+	}
+	data = append(data, 0)
+
+	_, err = ReadRecordingFromBytes(data)
+	if !errors.Is(err, ErrUnsupportedRecordingFormat) {
+		t.Fatalf("error = %v, want ErrUnsupportedRecordingFormat", err)
+	}
+}
+
+func TestReadRecordingRejectsLegacyV1Layout(t *testing.T) {
+	data, err := (Recording{
+		Ticks:   30,
+		Anchors: []Anchor{{Tick: 30, Checksum: 1}},
+	}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary returned error: %v", err)
+	}
+
+	// Before GamepadDeadzone was added, v1 placed Viewport immediately after
+	// Seed. Removing that field reconstructs the incompatible legacy layout.
+	const deadzoneOffset = len(recordingMagic) + 2 + 8 + 8
+	legacy := append([]byte(nil), data[:deadzoneOffset]...)
+	legacy = append(legacy, data[deadzoneOffset+8:]...)
+
+	if _, err := ReadRecordingFromBytes(legacy); err == nil {
+		t.Fatal("ReadRecordingFromBytes accepted the legacy v1 layout")
+	}
+}
+
 // TestReadRecordingDoesNotPreallocateFromHeaderCounts pins the fix for a
 // header whose element counts are not backed by any payload. The counts are
 // attacker-controlled on the untrusted-upload path, and sizing the slices from
