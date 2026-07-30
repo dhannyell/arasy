@@ -64,8 +64,10 @@ func (h *host) registerInputListeners() {
 
 	addCanvasListener("pointermove", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
-		if event.Get("pointerType").String() == "touch" && !h.touchActive {
-			return nil
+		if event.Get("pointerType").String() == "touch" {
+			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchMove) {
+				return nil
+			}
 		}
 		x, y := h.canvasXY(event)
 		h.queueInput(browserinput.MouseMoveEvent(x, y), event)
@@ -75,10 +77,9 @@ func (h *host) registerInputListeners() {
 	addCanvasListener("pointerdown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" {
-			if h.touchActive {
+			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchBegin) {
 				return nil
 			}
-			h.touchActive = true
 			event.Call("preventDefault")
 			canvas.Call("setPointerCapture", event.Get("pointerId"))
 		}
@@ -96,10 +97,9 @@ func (h *host) registerInputListeners() {
 		event := args[0]
 		isTouch := event.Get("pointerType").String() == "touch"
 		if isTouch {
-			if !h.touchActive {
+			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchEnd) {
 				return nil
 			}
-			h.touchActive = false
 			event.Call("preventDefault")
 			canvas.Call("releasePointerCapture", event.Get("pointerId"))
 		}
@@ -119,14 +119,21 @@ func (h *host) registerInputListeners() {
 	}))
 
 	addCanvasListener("pointerleave", js.FuncOf(func(this js.Value, args []js.Value) any {
-		h.queueInput(browserinput.PointerLeaveEvent(), args[0])
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" &&
+			!h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchMove) {
+			return nil
+		}
+		h.queueInput(browserinput.PointerLeaveEvent(), event)
 		return nil
 	}))
 
 	addCanvasListener("pointercancel", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" {
-			h.touchActive = false
+			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchEnd) {
+				return nil
+			}
 		}
 		h.queueInput(browserinput.PointerLeaveEvent(), event)
 		return nil

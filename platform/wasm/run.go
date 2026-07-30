@@ -10,6 +10,7 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/platform/web/browserinput"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -65,7 +66,7 @@ type host struct {
 
 	gamepadPresent bool
 	gamepadState   gamepadSnapshot
-	touchActive    bool
+	touch          browserinput.SingleTouch
 }
 
 // Run starts the browser WASM host for game and blocks forever.

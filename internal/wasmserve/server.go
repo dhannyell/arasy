@@ -426,6 +426,9 @@ const wasmShellHTML = `<!doctype html>
             overflow: hidden;
             overscroll-behavior: none;
             background: %s;
+            -webkit-touch-callout: none;
+            user-select: none;
+            touch-action: none;
         }
 
         #game {
@@ -440,7 +443,6 @@ const wasmShellHTML = `<!doctype html>
             width: 100%%;
             height: 100%%;
             visibility: %s;
-            touch-action: none;
             -webkit-tap-highlight-color: transparent;
         }
 
