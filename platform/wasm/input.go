@@ -167,17 +167,23 @@ func (h *host) registerInputListeners() {
 }
 
 func (h *host) queueInput(inputEvent input.Event, browserEvent js.Value) {
-	if h.onFrameMetrics != nil {
-		stamp := browserEvent.Get("timeStamp")
-		if !stamp.IsUndefined() && !stamp.IsNull() {
-			millis := stamp.Float()
-			now := performanceNowMillis()
-			if millis >= 0 && millis <= now && (h.pendingInputAtMillis < 0 || millis < h.pendingInputAtMillis) {
-				h.pendingInputAtMillis = millis
-			}
-		}
+	stamp := browserEvent.Get("timeStamp")
+	if !stamp.IsUndefined() && !stamp.IsNull() {
+		h.noteInputAt(stamp.Float(), 1)
 	}
 	h.pending = append(h.pending, inputEvent)
+}
+
+func (h *host) noteInputAt(millis float64, eventCount int) {
+	if h.onFrameMetrics == nil || eventCount == 0 {
+		return
+	}
+	h.pendingInputAtMillis = pendingInputMillis(
+		h.pendingInputAtMillis,
+		millis,
+		performanceNowMillis(),
+		eventCount,
+	)
 }
 
 func (h *host) handleOverlayToggleKey(event js.Value) bool {

@@ -117,29 +117,3 @@ func TestScaleCursor(t *testing.T) {
 		})
 	}
 }
-
-func TestGamepadEventsTranslateButtonAndAxisChanges(t *testing.T) {
-	previous := gamepadSnapshot{}
-	current := gamepadSnapshot{}
-	current.Buttons[0] = true
-	current.Axes[0] = .75
-
-	events := gamepadEvents(previous, current)
-	if len(events) != 2 {
-		t.Fatalf("gamepad events = %d, want 2", len(events))
-	}
-	if events[0].Source.Code != input.GamepadA || events[0].Kind != input.EventButtonDown {
-		t.Fatalf("button event = %+v, want A down", events[0])
-	}
-	if events[1].Source.Code != input.GamepadLeftStickX || events[1].Kind != input.EventAxisChanged || events[1].Value != .75 {
-		t.Fatalf("axis event = %+v, want left X .75", events[1])
-	}
-}
-
-func TestGamepadEventsSuppressJitterAndReleaseDisconnect(t *testing.T) {
-	previous := gamepadSnapshot{Buttons: [15]bool{true}, Axes: [6]float64{.5}}
-	current := gamepadSnapshot{Axes: [6]float64{.5005}}
-	if events := gamepadEvents(previous, current); len(events) != 1 || events[0].Kind != input.EventButtonUp {
-		t.Fatalf("jitter/disconnect events = %+v, want only button release", events)
-	}
-}

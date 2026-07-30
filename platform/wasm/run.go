@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/platform/web/browserinput"
 	"github.com/dhannyell/arasy/render"
@@ -64,9 +65,10 @@ type host struct {
 	resizeCb js.Func
 	inputCbs []js.Func
 
-	gamepadPresent bool
-	gamepadState   gamepadSnapshot
-	touch          browserinput.SingleTouch
+	gamepadTracker        platforminput.GamepadTracker
+	gamepadSelector       browserinput.StickyGamepadSelector
+	gamepadSupportScratch []bool
+	touch                 browserinput.SingleTouch
 }
 
 // Run starts the browser WASM host for game and blocks forever.

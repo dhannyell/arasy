@@ -7,13 +7,14 @@ import (
 	"github.com/dhannyell/arasy/internal/platforminput"
 )
 
-func TestGamepadEventsUseSharedButtonAxisMapping(t *testing.T) {
+func TestGamepadTrackerConnectsAndEmitsButtonAxisChanges(t *testing.T) {
+	var tracker platforminput.GamepadTracker
 	current := platforminput.GamepadSnapshot{}
 	current.Buttons[0] = true
 	current.Axes[0] = .75
 	current.Axes[4] = .5
 
-	events := platforminput.GamepadEvents(platforminput.GamepadSnapshot{}, current)
+	events := tracker.Update(true, current)
 	if len(events) != 3 {
 		t.Fatalf("events = %d, want 3", len(events))
 	}
@@ -28,14 +29,63 @@ func TestGamepadEventsUseSharedButtonAxisMapping(t *testing.T) {
 	}
 }
 
-func TestGamepadEventsReleaseOnDisconnect(t *testing.T) {
-	previous := platforminput.GamepadSnapshot{Buttons: [15]bool{true}, Axes: [6]float64{.5}}
-	events := platforminput.GamepadEvents(previous, platforminput.GamepadSnapshot{})
+func TestGamepadTrackerAccumulatesJitterAgainstLastEmittedValue(t *testing.T) {
+	var tracker platforminput.GamepadTracker
+
+	for _, value := range []float64{.0004, .0008} {
+		current := platforminput.GamepadSnapshot{Axes: [6]float64{value}}
+		if events := tracker.Update(true, current); len(events) != 0 {
+			t.Fatalf("events at %v = %+v, want suppressed jitter", value, events)
+		}
+	}
+
+	current := platforminput.GamepadSnapshot{Axes: [6]float64{.0012}}
+	events := tracker.Update(true, current)
+	if len(events) != 1 || events[0].Source.Code != input.GamepadLeftStickX || events[0].Value != .0012 {
+		t.Fatalf("accumulated events = %+v, want left X .0012", events)
+	}
+
+	current.Axes[0] = .0018
+	if events := tracker.Update(true, current); len(events) != 0 {
+		t.Fatalf("events after emitted value = %+v, want jitter suppressed", events)
+	}
+	current.Axes[0] = .0023
+	events = tracker.Update(true, current)
+	if len(events) != 1 || events[0].Value != .0023 {
+		t.Fatalf("events after second accumulation = %+v, want .0023", events)
+	}
+}
+
+func TestGamepadTrackerDisconnectReleasesAndReconnectsCleanly(t *testing.T) {
+	var tracker platforminput.GamepadTracker
+	current := platforminput.GamepadSnapshot{}
+	current.Buttons[0] = true
+	current.Axes[0] = .5
+	if events := tracker.Update(true, current); len(events) != 2 {
+		t.Fatalf("connect events = %+v, want button and axis", events)
+	}
+
+	current.Axes[0] = .0005
+	events := tracker.Update(true, current)
+	if len(events) != 1 || events[0].Value != .0005 {
+		t.Fatalf("residual axis events = %+v, want emitted .0005", events)
+	}
+
+	events = tracker.Update(false, platforminput.GamepadSnapshot{})
 	if len(events) != 2 {
 		t.Fatalf("disconnect events = %d, want button and axis release", len(events))
 	}
 	if events[0].Kind != input.EventButtonUp || events[1].Kind != input.EventAxisChanged || events[1].Value != 0 {
 		t.Fatalf("disconnect events = %+v", events)
+	}
+	if events := tracker.Update(false, platforminput.GamepadSnapshot{}); len(events) != 0 {
+		t.Fatalf("repeated disconnect events = %+v, want none", events)
+	}
+
+	current.Axes[0] = .5
+	events = tracker.Update(true, current)
+	if len(events) != 2 || events[0].Kind != input.EventButtonDown || events[1].Value != .5 {
+		t.Fatalf("reconnect events = %+v, want clean button and axis state", events)
 	}
 }
 

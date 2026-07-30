@@ -103,12 +103,27 @@ var gamepadAxisCodes = [...]input.SourceCode{
 	input.GamepadRightTrigger,
 }
 
-// GamepadEvents converts two normalized samples into deterministic input
-// events. A zero current sample therefore also cleanly releases a disconnect.
-func GamepadEvents(previous, current GamepadSnapshot) []input.Event {
-	events := make([]input.Event, 0, len(gamepadButtonCodes)+len(gamepadAxisCodes))
+// GamepadTracker owns the journal-facing state of one gamepad slot. Its
+// emitted snapshot advances only when Update returns the corresponding event,
+// so sub-epsilon motion accumulates instead of being forgotten between polls.
+type GamepadTracker struct {
+	present bool
+	emitted GamepadSnapshot
+}
+
+// Update observes one normalized poll. When present is false, it emits the
+// releases required for a disconnect and resets the slot for a clean reconnect.
+func (t *GamepadTracker) Update(present bool, current GamepadSnapshot) []input.Event {
+	if !present {
+		if !t.present {
+			return nil
+		}
+		current = GamepadSnapshot{}
+	}
+
+	var events []input.Event
 	for i, code := range gamepadButtonCodes {
-		if previous.Buttons[i] == current.Buttons[i] {
+		if t.emitted.Buttons[i] == current.Buttons[i] {
 			continue
 		}
 		kind := input.EventButtonUp
@@ -119,10 +134,15 @@ func GamepadEvents(previous, current GamepadSnapshot) []input.Event {
 			Source: input.Source{Device: input.DeviceGamepad, Code: code},
 			Kind:   kind,
 		})
+		t.emitted.Buttons[i] = current.Buttons[i]
 	}
 	for i, code := range gamepadAxisCodes {
 		value := input.NormalizeGamepadAxis(current.Axes[i])
-		if !input.GamepadAxisChanged(previous.Axes[i], value) {
+		changed := input.GamepadAxisChanged(t.emitted.Axes[i], value)
+		if !present {
+			changed = t.emitted.Axes[i] != 0
+		}
+		if !changed {
 			continue
 		}
 		events = append(events, input.Event{
@@ -130,6 +150,12 @@ func GamepadEvents(previous, current GamepadSnapshot) []input.Event {
 			Kind:   input.EventAxisChanged,
 			Value:  value,
 		})
+		t.emitted.Axes[i] = value
+	}
+
+	t.present = present
+	if !present {
+		t.emitted = GamepadSnapshot{}
 	}
 	return events
 }

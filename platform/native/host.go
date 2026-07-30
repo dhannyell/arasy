@@ -24,6 +24,8 @@ type gpuBufferReporter interface {
 	particleGPUBufferBytes() (bytes uint64, ok bool)
 }
 
+const noGamepadJoystick glfw.Joystick = -1
+
 type host struct {
 	driver      *runtime.Driver
 	renderer    *Renderer
@@ -41,8 +43,7 @@ type host struct {
 	fbDirty  bool
 
 	gamepadJoystick glfw.Joystick
-	gamepadPresent  bool
-	gamepadState    gamepadSnapshot
+	gamepadTracker  platforminput.GamepadTracker
 
 	savedWindowed windowRect
 	altEnter      bool
@@ -53,13 +54,14 @@ type host struct {
 func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, opts Options) *host {
 	fbW, fbH := window.GetFramebufferSize()
 	h := &host{
-		driver:     driver,
-		renderer:   renderer,
-		window:     window,
-		log:        opts.Log,
-		onMetrics:  opts.FrameMetrics,
-		logMetrics: opts.Metrics,
-		viewport:   viewportForFramebuffer(fbW, fbH),
+		driver:          driver,
+		renderer:        renderer,
+		window:          window,
+		log:             opts.Log,
+		onMetrics:       opts.FrameMetrics,
+		logMetrics:      opts.Metrics,
+		viewport:        viewportForFramebuffer(fbW, fbH),
+		gamepadJoystick: noGamepadJoystick,
 		savedWindowed: windowRect{
 			width:  opts.Width,
 			height: opts.Height,
@@ -262,26 +264,23 @@ func (h *host) run() error {
 
 func (h *host) pollGamepad() []input.Event {
 	// Poll the first mapped GLFW device and emit input.DeviceGamepad events.
-	if !h.gamepadPresent {
+	if h.gamepadJoystick == noGamepadJoystick {
 		for joystick := glfw.Joystick1; joystick <= glfw.Joystick16; joystick++ {
 			if joystick.Present() && joystick.IsGamepad() {
 				h.gamepadJoystick = joystick
-				h.gamepadPresent = true
 				break
 			}
 		}
 	}
 
-	if !h.gamepadPresent {
+	if h.gamepadJoystick == noGamepadJoystick {
 		return nil
 	}
 
 	state := h.gamepadJoystick.GetGamepadState()
 	if state == nil {
-		events := platforminput.GamepadEvents(h.gamepadState, gamepadSnapshot{})
-		h.gamepadPresent = false
-		h.gamepadJoystick = 0
-		h.gamepadState = gamepadSnapshot{}
+		events := h.gamepadTracker.Update(false, platforminput.GamepadSnapshot{})
+		h.gamepadJoystick = noGamepadJoystick
 		return events
 	}
 
@@ -294,9 +293,7 @@ func (h *host) pollGamepad() []input.Event {
 		axes[i] = float64(state.Axes[i])
 	}
 	current := platforminput.GLFWGamepadSnapshot(buttons, axes)
-	events := platforminput.GamepadEvents(h.gamepadState, current)
-	h.gamepadState = current
-	return events
+	return h.gamepadTracker.Update(true, current)
 }
 
 func (h *host) resizeIfNeeded() {
