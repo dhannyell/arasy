@@ -210,7 +210,7 @@ func TestSkipDefaultSplashAfterItPlayedPreservesManifestElapsed(t *testing.T) {
 		}`)),
 	})
 
-	d.advanceSplash(time.Duration(enginesplash.EngineSplashMinTime*float64(time.Second)), false)
+	d.advanceSplash(time.Duration(enginesplash.MinTime*float64(time.Second)), false)
 	d.advanceSplash(500*time.Millisecond, false)
 	d.SkipDefaultSplash()
 
@@ -317,8 +317,8 @@ func TestEngineSplashBackgroundMatchesBrandOnTallViewport(t *testing.T) {
 	if !ok {
 		t.Fatalf("Commands[0] = %T, want the background render.DrawRect", r.frames[0].Commands[0])
 	}
-	if rect.Fill != enginesplash.EngineSplashBackground {
-		t.Fatalf("background = %+v, want the brand backdrop %+v (not Config.Clear)", rect.Fill, enginesplash.EngineSplashBackground)
+	if rect.Fill != enginesplash.Background {
+		t.Fatalf("background = %+v, want the brand backdrop %+v (not Config.Clear)", rect.Fill, enginesplash.Background)
 	}
 }
 

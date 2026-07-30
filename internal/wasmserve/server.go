@@ -19,11 +19,9 @@ import (
 
 // posterSVG is the engine brand's static boot poster — the same rest-pose
 // composition internal/enginesplash's compiled animation opens on, with a
-// frozen frame of its own starfield/Crux particles baked in — embedded in
-// the CLI binary so the shell can paint it inline before any byte of
-// app.wasm has arrived. It is vector so it stays crisp at any viewport
-// size instead of being raster-scaled, and its wordmark is already plain
-// path data, so embedding it carries no font redistribution concern.
+// frozen frame of its starfield and Crux particles. It is embedded in the CLI
+// so development servers can serve it and static builds can write it beside
+// app.wasm.
 //
 //go:embed assets/poster.svg
 var posterSVG []byte
@@ -40,7 +38,7 @@ var posterStackedSVG []byte
 
 // posterBackground matches the flat backdrop the poster and the compiled
 // engine splash both paint, so the page never shows a mismatched edge around
-// the inline image.
+// the poster image.
 const posterBackground = "#020B14"
 
 const (

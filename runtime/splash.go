@@ -8,7 +8,6 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/enginesplash"
-	"github.com/dhannyell/arasy/internal/enginesplash/stacked"
 	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -229,7 +228,7 @@ func (d *Driver) splashFrame(dt float64) Frame {
 	commands := []render.Command{
 		render.DrawRect{
 			BaseCommand: render.BaseCommand{
-				LayerValue: enginesplash.EngineSplashBackgroundLayer,
+				LayerValue: enginesplash.BackgroundLayer,
 			},
 			Rect: d.viewport,
 			Fill: background,
@@ -334,22 +333,14 @@ func fitCentered(cell, viewport math2d.Rect) math2d.Rect {
 func buildSplashPlaylist(cfg Config) []SplashSegment {
 	var segments []SplashSegment
 	if !cfg.DisableDefaultSplash {
-		var landscapeWorkspace enginesplash.ArasySplashWorkspace
-		var portraitWorkspace stacked.ArasySplashStackedWorkspace
+		var content enginesplash.Content
 		segments = append(segments, SplashSegment{
-			Content: func(timeline anim.Timeline, viewport math2d.Rect) []render.Command {
-				if viewport.Width() < viewport.Height() {
-					viewport = enginesplash.StackedViewport(viewport)
-					return portraitWorkspace.Append(timeline, viewport, stacked.ArasySplashStackedResources{})
-				}
-				viewport = enginesplash.EngineSplashViewport(viewport)
-				return landscapeWorkspace.Append(timeline, viewport, enginesplash.ArasySplashResources{})
-			},
-			MinTime:    enginesplash.EngineSplashMinTime,
-			Fade:       enginesplash.EngineSplashFade,
-			Skippable:  enginesplash.IsEngineSplashSkippable,
-			Background: enginesplash.EngineSplashBackground,
-			Particles:  enginesplash.EngineSplashParticles(cfg.Assets),
+			Content:    content.Append,
+			MinTime:    enginesplash.MinTime,
+			Fade:       enginesplash.Fade,
+			Skippable:  enginesplash.Skippable,
+			Background: enginesplash.Background,
+			Particles:  enginesplash.NewParticles(cfg.Assets),
 			source:     splashSourceDefault,
 		})
 	}

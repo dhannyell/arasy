@@ -1,45 +1,24 @@
-// Package enginesplash holds the engine's built-in boot splash content,
-// compiled offline from a SVG into deterministic Go that emits
-// render.Command via anim.Timeline + render/vector (see arasy svg --help).
-// The generated file has no dependency on internal/svggen, XML, or CSS at
-// runtime.
+// Package enginesplash provides the engine's compiled boot animation and its
+// supporting particle assets.
 package enginesplash
 
 import "github.com/dhannyell/arasy/render"
 
-// engineSkyLayer is the starfield's and Crux's LayerValue: below
-// engineSplashContentLayer (Content's default, unset BaseCommand.LayerValue
-// == 0), so the logo's own opaque shapes occlude the sky behind them the
-// way they would a real one, instead of the field needing a keep-clear zone
-// carved out around the ring/wordmark. This only works because the compiled
-// splash's content paints no full-canvas backdrop rect of its own at that
-// layer — engineSplashBackgroundLayer sits below engineSkyLayer so the sky
-// is never itself occluded by the segment's own backdrop rect (see
-// splashFrame in runtime/splash.go, which paints Background at this same
-// layer).
 const (
-	EngineSplashBackgroundLayer = -2
-	EngineSkyLayer              = -1
+	// BackgroundLayer keeps the host-painted backdrop behind all
+	// compiled splash content.
+	BackgroundLayer = -2
+	engineSkyLayer  = -1
 )
 
-// EngineSplashMinTime is the engine brand segment's minimum on-screen time.
-// It matches the duration of the compiled brand animation (internal/
-// enginesplash) so the segment holds until the animation completes, unless
-// skipped.
-const EngineSplashMinTime = 2.0
+// MinTime matches the compiled animation duration.
+const MinTime = 2.0
 
-// EngineSplashFade cross-fades the engine segment in/out at its own edges
-// (splashFadeAlpha), so the handoff to tick 0 lands on the same background
-// (Config.Clear, painted unfaded behind every segment) instead of a hard cut.
-const EngineSplashFade = 0.15
+// Fade is the segment's edge fade duration.
+const Fade = 0.15
 
-const IsEngineSplashSkippable = true
+// Skippable allows activation input to end the brand segment.
+const Skippable = true
 
-// EngineSplashBackground matches the flat backdrop rect the compiled
-// animation paints inside its own 1920x1080 viewBox (#020B14). The generated
-// content only fills that letterboxed area; runtime.Driver paints this same
-// color behind it (instead of the game's own Config.Clear) so the boot
-// splash never shows two different backgrounds seamed together, especially
-// visible on aspect ratios far from 16:9 (tall phone screens letterbox a lot
-// more).
-var EngineSplashBackground = render.RGBA8(2, 11, 20, 255)
+// Background matches the compiled animation's #020B14 backdrop.
+var Background = render.RGBA8(2, 11, 20, 255)

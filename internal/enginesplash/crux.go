@@ -8,108 +8,101 @@ import (
 	"github.com/dhannyell/arasy/particle"
 )
 
-// Crux (the Southern Cross) is the constellation Arasy's Guarani name is
-// read against, placed in this package's 1920x1080 design canvas (see
-// starfield.go). Each star is its own continuously-respawning point
-// particle effect, tinted per its spectral class, whose per-frame Intensity
-// (EngineCruxIntensity) carries the twinkle and relative magnitude.
 type cruxStar struct {
-	Name    string
-	DX, DY  float64 // degrees, +x = screen right, +y = screen down
-	Mag     float64 // apparent visual magnitude
-	R, G, B float64 // spectral-class tint, 0..1
+	name    string
+	dx, dy  float64 // degrees in screen axes
+	mag     float64 // apparent magnitude
+	r, g, b float64 // spectral tint
 }
 
-var engineCruxStars = []cruxStar{
-	{Name: "acrux", DX: -0.25, DY: 3.10, Mag: 0.77, R: 0.70, G: 0.80, B: 1.00},
-	{Name: "mimosa", DX: -2.96, DY: -0.31, Mag: 1.25, R: 0.72, G: 0.82, B: 1.00},
-	{Name: "gacrux", DX: -0.89, DY: -2.89, Mag: 1.63, R: 1.00, G: 0.74, B: 0.56},
-	{Name: "imai", DX: 1.11, DY: -1.25, Mag: 2.79, R: 0.75, G: 0.84, B: 1.00},
-	{Name: "ginan", DX: 0.33, DY: 0.40, Mag: 3.59, R: 1.00, G: 0.85, B: 0.68},
+// engineCruxStars describes the Southern Cross in stable brightness order.
+var engineCruxStars = [...]cruxStar{
+	{name: "acrux", dx: -0.25, dy: 3.10, mag: 0.77, r: 0.70, g: 0.80, b: 1.00},
+	{name: "mimosa", dx: -2.96, dy: -0.31, mag: 1.25, r: 0.72, g: 0.82, b: 1.00},
+	{name: "gacrux", dx: -0.89, dy: -2.89, mag: 1.63, r: 1.00, g: 0.74, b: 0.56},
+	{name: "imai", dx: 1.11, dy: -1.25, mag: 2.79, r: 0.75, g: 0.84, b: 1.00},
+	{name: "ginan", dx: 0.33, dy: 0.40, mag: 3.59, r: 1.00, g: 0.85, b: 0.68},
 }
 
 const (
-	// Upper-right quadrant, clear of the mark's orbit and of the wordmark.
 	engineCruxCenterX = 1540.0
 	engineCruxCenterY = 300.0
-	engineCruxScale   = 26.0 // design units per degree
+	engineCruxScale   = 26.0
 	engineCruxSize    = engineStarSize * 1.35
-	// Peak brightness of the brightest member (Acrux); a constellation is
-	// found because its stars are the bright ones, so it sits above the
-	// surrounding field rather than dissolving into it.
-	engineCruxPeak = 1.0
+	engineCruxPeak    = 1.0
 )
 
-// engineCruxBrightness maps magnitude to relative brightness, damped (0.22
-// instead of the true 2.512^-dmag) so every member stays readable instead of
-// the dimmest (Ginan, mag 3.59) nearly vanishing next to Acrux.
 func engineCruxBrightness(mag float64) float64 {
-	return math.Pow(2.512, -0.22*(mag-engineCruxStars[0].Mag))
+	return math.Pow(2.512, -0.22*(mag-engineCruxStars[0].mag))
 }
 
-// EngineCruxEffectName is the manifest effect name for one Crux star.
-func EngineCruxEffectName(name string) string {
+// CruxEffectName returns the reserved effect name for a Crux star.
+func CruxEffectName(name string) string {
 	return asset.ReservedNamePrefix + "engine_crux_" + name
 }
 
-// EngineCruxNames returns the star name keys (for use with
-// EngineCruxEffectName/EngineCruxAnchor/EngineCruxIntensity) in a stable
-// order.
-func EngineCruxNames() []string {
+func cruxEffect(star cruxStar) particle.EffectDecl {
+	return particle.EffectDecl{
+		Texture:    engineMoteTextureName,
+		Blend:      particle.BlendAdditive,
+		Capacity:   6,
+		EmitRate:   8,
+		Lifetime:   particle.Range{Min: 0.6, Max: 1.0},
+		Shape:      particle.EmitPoint,
+		VelMode:    particle.VelCone,
+		SizeStart:  particle.Range{Min: engineCruxSize, Max: engineCruxSize},
+		SizeEnd:    particle.Range{Min: engineCruxSize, Max: engineCruxSize},
+		ColorStart: [4]float64{star.r, star.g, star.b, 1},
+		ColorEnd:   [4]float64{star.r, star.g, star.b, 0},
+		FadeIn:     0.2,
+	}
+}
+
+// CruxNames returns Crux star names in stable brightness order.
+func CruxNames() []string {
 	names := make([]string, len(engineCruxStars))
 	for i, star := range engineCruxStars {
-		names[i] = star.Name
+		names[i] = star.name
 	}
 	return names
 }
 
-// EngineCruxEffects declares one particle effect per Crux star: a small,
-// continuously-respawning point tinted per its spectral class. No manifest
-// entry or texture is needed.
-func EngineCruxEffects() map[string]particle.EffectDecl {
+// CruxEffects returns the declarations used to bake static brand assets.
+func CruxEffects() map[string]particle.EffectDecl {
 	effects := make(map[string]particle.EffectDecl, len(engineCruxStars))
 	for _, star := range engineCruxStars {
-		effects[EngineCruxEffectName(star.Name)] = particle.EffectDecl{
-			Texture:    EngineMoteTextureName,
-			Blend:      particle.BlendAdditive,
-			Capacity:   6,
-			EmitRate:   8,
-			Lifetime:   particle.Range{Min: 0.6, Max: 1.0},
-			Shape:      particle.EmitPoint,
-			VelMode:    particle.VelCone,
-			SizeStart:  particle.Range{Min: engineCruxSize, Max: engineCruxSize},
-			SizeEnd:    particle.Range{Min: engineCruxSize, Max: engineCruxSize},
-			ColorStart: [4]float64{star.R, star.G, star.B, 1},
-			ColorEnd:   [4]float64{star.R, star.G, star.B, 0},
-			FadeIn:     0.2,
-		}
+		effects[CruxEffectName(star.name)] = cruxEffect(star)
 	}
 	return effects
 }
 
-// EngineCruxAnchor returns a star's fixed position in viewport pixels.
-func EngineCruxAnchor(viewport math2d.Rect, name string) math2d.Vec2 {
+func cruxAnchor(viewport math2d.Rect, star cruxStar) math2d.Vec2 {
+	x := engineCruxCenterX + star.dx*engineCruxScale
+	y := engineCruxCenterY + star.dy*engineCruxScale
+	return engineDesignPoint(viewport, x, y)
+}
+
+// CruxAnchor returns a named star's fixed viewport position.
+func CruxAnchor(viewport math2d.Rect, name string) math2d.Vec2 {
 	for _, star := range engineCruxStars {
-		if star.Name == name {
-			x := engineCruxCenterX + star.DX*engineCruxScale
-			y := engineCruxCenterY + star.DY*engineCruxScale
-			return EngineDesignPoint(viewport, x, y)
+		if star.name == name {
+			return cruxAnchor(viewport, star)
 		}
 	}
 	return math2d.Vec2{}
 }
 
-// EngineCruxIntensity is a star's brightness at elapsed seconds into the
-// segment: its magnitude-derived brightness modulated by a slow per-star
-// twinkle, phase-shifted by index so the constellation never pulses in
-// unison.
-func EngineCruxIntensity(name string, elapsed float64) float64 {
+func cruxIntensity(star cruxStar, index int, elapsed float64) float64 {
+	twinkle := 1 + 0.12*math.Sin(2*math.Pi*(elapsed*0.55+float64(index)*0.37))
+	return engineCruxPeak * engineCruxBrightness(star.mag) * twinkle
+}
+
+// CruxIntensity returns a named star's animated brightness.
+func CruxIntensity(name string, elapsed float64) float64 {
 	for index, star := range engineCruxStars {
-		if star.Name != name {
-			continue
+		if star.name == name {
+			return cruxIntensity(star, index, elapsed)
 		}
-		twinkle := 1 + 0.12*math.Sin(2*math.Pi*(elapsed*0.55+float64(index)*0.37))
-		return engineCruxPeak * engineCruxBrightness(star.Mag) * twinkle
 	}
 	return 0
 }
