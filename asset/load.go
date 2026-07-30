@@ -17,6 +17,8 @@ const (
 	maxFontBytes           int64 = 16 << 20
 	maxAudioClipBytes      int64 = 16 << 20
 	maxTotalAudioBytes     int64 = 64 << 20
+
+	defaultSplashEffectAnchor = 0.5
 )
 
 type manifestFile struct {
@@ -80,10 +82,11 @@ type splashEntry struct {
 	Effect string `json:"effect"`
 	// EffectAnchorX/Y are a fraction of the viewport (0..1, default 0.5,0.5 =
 	// center) — not pixels, and not the effect's own world units (see
-	// effectEntry).
-	EffectAnchorX   float64 `json:"effect_anchor_x"`
-	EffectAnchorY   float64 `json:"effect_anchor_y"`
-	EffectIntensity float64 `json:"effect_intensity"`
+	// effectEntry). Pointers preserve the distinction between an omitted field
+	// and an explicit zero, which selects the viewport's left or top edge.
+	EffectAnchorX   *float64 `json:"effect_anchor_x"`
+	EffectAnchorY   *float64 `json:"effect_anchor_y"`
+	EffectIntensity float64  `json:"effect_intensity"`
 }
 
 // effectEntry is the JSON shape of one particle effect declaration: authors
@@ -313,14 +316,21 @@ func Load(layers ...fs.FS) (Manifest, error) {
 			Fade:            entry.Fade,
 			Skippable:       entry.Skippable,
 			Effect:          entry.Effect,
-			EffectAnchorX:   entry.EffectAnchorX,
-			EffectAnchorY:   entry.EffectAnchorY,
+			EffectAnchorX:   splashEffectAnchor(entry.EffectAnchorX),
+			EffectAnchorY:   splashEffectAnchor(entry.EffectAnchorY),
 			EffectIntensity: entry.EffectIntensity,
 		})
 	}
 	manifest.splash = splash
 
 	return manifest, nil
+}
+
+func splashEffectAnchor(value *float64) float64 {
+	if value == nil {
+		return defaultSplashEffectAnchor
+	}
+	return *value
 }
 
 func validateManifestEntries(entries []textureEntry) error {
