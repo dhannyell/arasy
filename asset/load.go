@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"math"
+	"strings"
 
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/math2d"
@@ -17,6 +18,9 @@ const (
 	maxFontBytes           int64 = 16 << 20
 	maxAudioClipBytes      int64 = 16 << 20
 	maxTotalAudioBytes     int64 = 64 << 20
+
+	defaultSplashEffectAnchor = 0.5
+	maxSplashFrames           = 1<<16 - 1
 )
 
 type manifestFile struct {
@@ -27,6 +31,7 @@ type manifestFile struct {
 	Fonts    []fontEntry    `json:"fonts"`
 	Audio    []audioEntry   `json:"audio"`
 	Effects  []effectEntry  `json:"effects"`
+	Splash   []splashEntry  `json:"splash"`
 }
 
 type textureEntry struct {
@@ -61,11 +66,45 @@ type fontEntry struct {
 	File string `json:"file"`
 }
 
+// splashEntry is one boot splash segment declared in the manifest's "splash"
+// array (order is the playlist order). Unlike textures/sprites/fonts, a
+// layer's whole "splash" array replaces an earlier layer's (see Load): the
+// entries have no name to merge by.
+type splashEntry struct {
+	Texture   string  `json:"texture"`
+	CellW     float64 `json:"cell_w"`
+	CellH     float64 `json:"cell_h"`
+	Columns   int     `json:"columns"`
+	Frames    int     `json:"frames"`
+	Rate      float64 `json:"rate"`
+	MinTime   float64 `json:"min_time"`
+	Fade      float64 `json:"fade"`
+	Skippable bool    `json:"skippable"`
+
+	Effect string `json:"effect"`
+	// EffectAnchorX/Y are a fraction of the viewport (0..1, default 0.5,0.5 =
+	// center) — not pixels, and not the effect's own world units (see
+	// effectEntry). Pointers preserve the distinction between an omitted field
+	// and an explicit zero, which selects the viewport's left or top edge.
+	EffectAnchorX   *float64 `json:"effect_anchor_x"`
+	EffectAnchorY   *float64 `json:"effect_anchor_y"`
+	EffectIntensity float64  `json:"effect_intensity"`
+}
+
 // effectEntry is the JSON shape of one particle effect declaration: authors
 // write angles (direction, spread, rotation, spin) in degrees and
 // [min, max]/[x, y]/[r, g, b, a] pairs. wobble_freq is a frequency in hertz,
 // not an angle, and stays as authored. parseEffectEntry converts this shape
 // into the resolved particle.EffectDecl (radians, math2d.Vec2, enums).
+//
+// speed/emit_radius/emit_extent/gravity/size_start/size_end/wobble_amp are
+// all "world units" (see particle.EffectDecl) — the same coordinate space
+// DrawParticles.Pos is emitted in, not necessarily screen pixels and not the
+// 0..1 fraction splashEntry.EffectAnchorX/Y uses. Under an identity/1:1
+// camera, world units equal screen pixels directly (so a size of 0.1 is
+// sub-pixel and invisible); under a zoomed game camera the same unit can
+// span many pixels. Author values against whichever camera actually draws
+// this effect.
 type effectEntry struct {
 	Name         string    `json:"name"`
 	Texture      string    `json:"texture"`
@@ -109,7 +148,8 @@ type effectEntry struct {
 // Fonts are optional manifest entries with a non-empty name and file path;
 // their raw TTF/OTF bytes are loaded with the same last-layer-wins rule as
 // textures. A layer without manifest.json is valid (file-override-only layer),
-// but at least one layer must declare one.
+// but at least one layer must declare one. Asset identifiers beginning with
+// ReservedNamePrefix are reserved for engine-injected assets and rejected.
 func Load(layers ...fs.FS) (Manifest, error) {
 	if len(layers) == 0 {
 		return Manifest{}, errors.New("asset: Load needs at least one FS layer")
@@ -120,6 +160,7 @@ func Load(layers ...fs.FS) (Manifest, error) {
 	fntByName := map[string]fontEntry{}
 	audioByID := map[string]audioEntry{}
 	effectByName := map[string]effectEntry{}
+	var splashEntries []splashEntry
 	sawManifest := false
 
 	for _, layer := range layers {
@@ -155,6 +196,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		if err := validateEffectEntries(mf.Effects); err != nil {
 			return Manifest{}, err
 		}
+		if err := validateSplashEntries(mf.Splash); err != nil {
+			return Manifest{}, err
+		}
 		for _, entry := range mf.Textures {
 			texByName[entry.Name] = entry
 		}
@@ -172,6 +216,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 		for _, entry := range mf.Effects {
 			effectByName[entry.Name] = entry
+		}
+		if mf.Splash != nil {
+			splashEntries = mf.Splash
 		}
 		sawManifest = true
 	}
@@ -197,6 +244,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 			return Manifest{}, fmt.Errorf("asset: texture %q: %w", name, err)
 		}
 		textures[name] = TextureDecl{Data: data}
+	}
+	if err := validateSplashAtlases(splashEntries, textures); err != nil {
+		return Manifest{}, err
 	}
 	for name, entry := range fntByName {
 		data, err := readLayered(layers, entry.File, maxFontBytes)
@@ -250,12 +300,48 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 	}
 	manifest.sprites = sprites
+
+	splash := make([]SplashDecl, 0, len(splashEntries))
+	for _, entry := range splashEntries {
+		if entry.Effect != "" {
+			if _, ok := manifest.effectByName[entry.Effect]; !ok {
+				return Manifest{}, fmt.Errorf("asset: splash %q references unknown effect %q", entry.Texture, entry.Effect)
+			}
+		}
+		splash = append(splash, SplashDecl{
+			Texture:         entry.Texture,
+			CellW:           entry.CellW,
+			CellH:           entry.CellH,
+			Columns:         entry.Columns,
+			Frames:          uint16(entry.Frames),
+			Rate:            float32(entry.Rate),
+			MinTime:         entry.MinTime,
+			Fade:            entry.Fade,
+			Skippable:       entry.Skippable,
+			Effect:          entry.Effect,
+			EffectAnchorX:   splashEffectAnchor(entry.EffectAnchorX),
+			EffectAnchorY:   splashEffectAnchor(entry.EffectAnchorY),
+			EffectIntensity: entry.EffectIntensity,
+		})
+	}
+	manifest.splash = splash
+
 	return manifest, nil
+}
+
+func splashEffectAnchor(value *float64) float64 {
+	if value == nil {
+		return defaultSplashEffectAnchor
+	}
+	return *value
 }
 
 func validateManifestEntries(entries []textureEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if err := validatePublicAssetName("texture", entry.Name); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate texture %q in manifest.json", entry.Name)
 		}
@@ -272,6 +358,9 @@ func validateManifestEntries(entries []textureEntry) error {
 func validateSpriteEntries(entries []spriteEntry) error {
 	seen := map[string]struct{}{}
 	for _, entry := range entries {
+		if err := validatePublicAssetName("sprite", entry.Name); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate sprite %q in manifest.json", entry.Name)
 		}
@@ -285,6 +374,9 @@ func validateFontEntries(entries []fontEntry) error {
 	for _, entry := range entries {
 		if entry.Name == "" {
 			return errors.New("asset: font name must not be empty in manifest.json")
+		}
+		if err := validatePublicAssetName("font", entry.Name); err != nil {
+			return err
 		}
 		if entry.File == "" {
 			return fmt.Errorf("asset: font %q has an empty file path in manifest.json", entry.Name)
@@ -306,6 +398,9 @@ func validateAudioEntries(entries []audioEntry) error {
 		if entry.ID == "" {
 			return errors.New("asset: audio id must not be empty in manifest.json")
 		}
+		if err := validatePublicAssetName("audio", entry.ID); err != nil {
+			return err
+		}
 		if entry.File == "" {
 			return fmt.Errorf("asset: audio %q has an empty file path in manifest.json", entry.ID)
 		}
@@ -326,12 +421,108 @@ func validateEffectEntries(entries []effectEntry) error {
 		if entry.Name == "" {
 			return errors.New("asset: effect name must not be empty in manifest.json")
 		}
+		if err := validatePublicAssetName("effect", entry.Name); err != nil {
+			return err
+		}
 		if _, ok := seen[entry.Name]; ok {
 			return fmt.Errorf("asset: duplicate effect %q in manifest.json", entry.Name)
 		}
 		seen[entry.Name] = struct{}{}
 	}
 	return nil
+}
+
+func validateSplashEntries(entries []splashEntry) error {
+	for i, entry := range entries {
+		if entry.Texture == "" {
+			return fmt.Errorf("asset: splash entry %d has an empty texture name", i)
+		}
+		if !finitePositive(entry.CellW) {
+			return fmt.Errorf("asset: splash %q has invalid cell_w %g, must be finite and > 0", entry.Texture, entry.CellW)
+		}
+		if !finitePositive(entry.CellH) {
+			return fmt.Errorf("asset: splash %q has invalid cell_h %g, must be finite and > 0", entry.Texture, entry.CellH)
+		}
+		if entry.Columns < 1 {
+			return fmt.Errorf("asset: splash %q has columns %d, must be >= 1", entry.Texture, entry.Columns)
+		}
+		if entry.Frames < 1 {
+			return fmt.Errorf("asset: splash %q has frames %d, must be >= 1", entry.Texture, entry.Frames)
+		}
+		if entry.Frames > maxSplashFrames {
+			return fmt.Errorf("asset: splash %q has frames %d, must be <= %d", entry.Texture, entry.Frames, maxSplashFrames)
+		}
+		if !finiteNonNegative(entry.Rate) || entry.Rate > math.MaxFloat32 {
+			return fmt.Errorf("asset: splash %q has invalid rate %g, must be finite, non-negative, and fit float32", entry.Texture, entry.Rate)
+		}
+		if !finiteNonNegative(entry.MinTime) {
+			return fmt.Errorf("asset: splash %q has invalid min_time %g, must be finite and non-negative", entry.Texture, entry.MinTime)
+		}
+		if !finiteNonNegative(entry.Fade) {
+			return fmt.Errorf("asset: splash %q has invalid fade %g, must be finite and non-negative", entry.Texture, entry.Fade)
+		}
+		anchorX := splashEffectAnchor(entry.EffectAnchorX)
+		if !finiteUnitInterval(anchorX) {
+			return fmt.Errorf("asset: splash %q has effect_anchor_x %g outside [0, 1]", entry.Texture, anchorX)
+		}
+		anchorY := splashEffectAnchor(entry.EffectAnchorY)
+		if !finiteUnitInterval(anchorY) {
+			return fmt.Errorf("asset: splash %q has effect_anchor_y %g outside [0, 1]", entry.Texture, anchorY)
+		}
+		if !finiteNonNegative(entry.EffectIntensity) {
+			return fmt.Errorf("asset: splash %q has invalid effect_intensity %g, must be finite and non-negative", entry.Texture, entry.EffectIntensity)
+		}
+	}
+	return nil
+}
+
+func validateSplashAtlases(entries []splashEntry, textures map[string]TextureDecl) error {
+	dimensions := make(map[string]textureDimensions, len(entries))
+	for _, entry := range entries {
+		texture, ok := textures[entry.Texture]
+		if !ok {
+			return fmt.Errorf("asset: splash %q references unknown texture", entry.Texture)
+		}
+
+		size, ok := dimensions[entry.Texture]
+		if !ok {
+			var err error
+			size, err = declaredTextureDimensions(texture)
+			if err != nil {
+				return fmt.Errorf("asset: splash %q cannot inspect texture dimensions: %w", entry.Texture, err)
+			}
+			dimensions[entry.Texture] = size
+		}
+
+		usedColumns := min(entry.Columns, entry.Frames)
+		rows := 1 + (entry.Frames-1)/entry.Columns
+		requiredW := float64(usedColumns) * entry.CellW
+		requiredH := float64(rows) * entry.CellH
+		if requiredW > float64(size.width) || requiredH > float64(size.height) {
+			return fmt.Errorf(
+				"asset: splash %q atlas requires %gx%g pixels for %d frames, texture is %dx%d",
+				entry.Texture,
+				requiredW,
+				requiredH,
+				entry.Frames,
+				size.width,
+				size.height,
+			)
+		}
+	}
+	return nil
+}
+
+func finitePositive(value float64) bool {
+	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
+}
+
+func finiteNonNegative(value float64) bool {
+	return value >= 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
+}
+
+func finiteUnitInterval(value float64) bool {
+	return value >= 0 && value <= 1 && !math.IsInf(value, 0) && !math.IsNaN(value)
 }
 
 func validateAssetPath(kind, name, path string) error {
@@ -341,8 +532,18 @@ func validateAssetPath(kind, name, path string) error {
 	return nil
 }
 
+func validatePublicAssetName(kind, name string) error {
+	if strings.HasPrefix(name, ReservedNamePrefix) {
+		return fmt.Errorf("asset: %s %q uses reserved prefix %q in manifest.json", kind, name, ReservedNamePrefix)
+	}
+	return nil
+}
+
 func validateDynamicEntries(entries []dynamicEntry) error {
 	for _, entry := range entries {
+		if err := validatePublicAssetName("dynamic texture", entry.Name); err != nil {
+			return err
+		}
 		if entry.W <= 0 || entry.H <= 0 {
 			return fmt.Errorf("asset: dynamic texture %q has non-positive dimensions (%d x %d)", entry.Name, entry.W, entry.H)
 		}

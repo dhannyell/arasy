@@ -63,3 +63,5 @@ internal/simfuzz/testdata/repro/
 benchmarks/runs/
 
 CLAUDE.md
+tools/brand/
+docs/assets/

@@ -10,6 +10,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
@@ -20,8 +21,7 @@ import (
 )
 
 const (
-	msaaSampleCount  = 4
-	initialBufferCap = 64 * 1024
+	msaaSampleCount = 4
 )
 
 // Renderer is the provisional streaming renderer for a native GLFW window.
@@ -63,8 +63,11 @@ type Renderer struct {
 	msaaWidth   int
 	msaaHeight  int
 
-	diagnostics        diagnostic.Once
-	err                error
+	diagnostics diagnostic.Once
+	err         error
+	// presentedFrame stays false for skipped/reconfigured surfaces and flips
+	// only after the first successful surface.Present call.
+	presentedFrame     bool
 	timeCPU            bool
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
@@ -230,9 +233,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuPhasesSet = true
 	}
 	r.device.surface.Present()
+	r.presentedFrame = true
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
+}
+
+func (r *Renderer) hasPresentedFrame() bool {
+	return r != nil && r.presentedFrame
 }
 
 // SetCPUTiming enables CPU-side phase instrumentation.
@@ -420,48 +428,48 @@ func (r *Renderer) createBuffers() error {
 	var err error
 	if r.solidBuffer, err = r.newBuffer(
 		"solid vertices",
-		initialBufferCap,
+		gpubuffer.InitialCapacity,
 		wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst,
 	); err != nil {
 		return err
 	}
-	r.solidCap = initialBufferCap
+	r.solidCap = gpubuffer.InitialCapacity
 
 	if r.texBuffer, err = r.newBuffer(
 		"textured vertices",
-		initialBufferCap,
+		gpubuffer.InitialCapacity,
 		wgpu.BufferUsageVertex|wgpu.BufferUsageCopyDst,
 	); err != nil {
 		return err
 	}
-	r.texCap = initialBufferCap
+	r.texCap = gpubuffer.InitialCapacity
 
 	if r.spriteBuffer, err = r.newBuffer(
 		"sprite records",
-		initialBufferCap,
+		gpubuffer.InitialCapacity,
 		wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
 	); err != nil {
 		return err
 	}
-	r.spriteCap = initialBufferCap
+	r.spriteCap = gpubuffer.InitialCapacity
 
 	if r.textGlyphBuffer, err = r.newBuffer(
 		"text glyph records",
-		initialBufferCap,
+		gpubuffer.InitialCapacity,
 		wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
 	); err != nil {
 		return err
 	}
-	r.textGlyphCap = initialBufferCap
+	r.textGlyphCap = gpubuffer.InitialCapacity
 
 	if r.textLabelBuffer, err = r.newBuffer(
 		"text label records",
-		initialBufferCap,
+		gpubuffer.InitialCapacity,
 		wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
 	); err != nil {
 		return err
 	}
-	r.textLabelCap = initialBufferCap
+	r.textLabelCap = gpubuffer.InitialCapacity
 	r.spriteUniform, err = r.newBuffer(
 		"sprite uniform",
 		tess.SpriteUniformSize,
@@ -591,7 +599,7 @@ func (r *Renderer) growBuffer(
 	if required <= current {
 		return buffer, current, nil
 	}
-	next := growBufferCap(current, required)
+	next := gpubuffer.GrowCapacity(current, required)
 	replacement, err := r.newBuffer(label, next, usage)
 	if err != nil {
 		return nil, 0, err
@@ -819,15 +827,6 @@ func textureFor(textures []gpuTexture, id render.TextureID) (gpuTexture, bool) {
 		return gpuTexture{}, false
 	}
 	return textures[id], true
-}
-func growBufferCap(current, required int) int {
-	if current <= 0 {
-		current = initialBufferCap
-	}
-	for current < required {
-		current *= 2
-	}
-	return current
 }
 func clearColor(color render.Color) wgpu.Color {
 	return wgpu.Color{R: color.R * color.A, G: color.G * color.A, B: color.B * color.A, A: 1}

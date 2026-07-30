@@ -7,6 +7,7 @@ import (
 
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
@@ -131,6 +132,10 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if log == nil {
 		log = slog.Default()
 	}
+	if !cfg.DisableDefaultSplash {
+		// Load default engine splash assets
+		cfg.Assets = enginesplash.LoadAssets(cfg.Assets)
+	}
 
 	d := &Driver{
 		game:     game,
@@ -152,6 +157,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d.audioPort = AudioPort{audio: &d.audio}
 	d.texture = driverTexture{}
 	d.batchPort = BatchPort{batches: &d.batches}
+	d.splash = &splashPlayer{segments: buildSplashPlaylist(cfg)}
 	d.doReset()
 	return d
 }

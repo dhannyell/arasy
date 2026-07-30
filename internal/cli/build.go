@@ -18,6 +18,7 @@ var (
 	buildOutput        string
 	buildTitle         string
 	buildNoDefaultFont bool
+	buildBoot          webBootFlags
 )
 
 var buildCmd = &cobra.Command{
@@ -33,7 +34,15 @@ var buildCmd = &cobra.Command{
 		if title == "" {
 			title = defaultTitle(pkg)
 		}
-		return buildWASM(pkg, buildOutput, title, true, buildNoDefaultFont, cmd.OutOrStdout(), cmd.ErrOrStderr())
+		boot, err := buildBoot.options()
+		if err != nil {
+			return err
+		}
+		return buildWASM(pkg, buildOutput, title, wasmBuildOptions{
+			Release:       true,
+			NoDefaultFont: buildNoDefaultFont,
+			Boot:          boot,
+		}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	},
 }
 
@@ -42,6 +51,7 @@ func init() {
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "dist/wasm", "output directory")
 	buildCmd.Flags().StringVar(&buildTitle, "title", "", "HTML page title")
 	buildCmd.Flags().BoolVar(&buildNoDefaultFont, "no-default-font", false, "exclude the embedded default font (~140 KB); FontID 0 falls back to the built-in 7x13 bitmap")
+	buildBoot.bind(buildCmd)
 	rootCmd.AddCommand(buildCmd)
 }
 
@@ -72,11 +82,17 @@ func defaultTitle(pkg string) string {
 	return filepath.Base(clean)
 }
 
-func buildWASM(pkg, outDir, title string, release, noDefaultFont bool, stdout, stderr io.Writer) error {
+type wasmBuildOptions struct {
+	Release       bool
+	NoDefaultFont bool
+	Boot          wasmserve.BootOptions
+}
+
+func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr io.Writer) error {
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	cmd := exec.Command("go", wasmBuildArgs(pkg, outDir, release, noDefaultFont)...)
+	cmd := exec.Command("go", wasmBuildArgs(pkg, outDir, opts.Release, opts.NoDefaultFont)...)
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -90,12 +106,15 @@ func buildWASM(pkg, outDir, title string, release, noDefaultFont bool, stdout, s
 	if err := copyFile(filepath.Join(outDir, "wasm_exec.js"), wasmExec); err != nil {
 		return err
 	}
-	shell, err := wasmserve.ShellHTML(title, "app.wasm")
+	shell, err := wasmserve.ShellHTML(title, "app.wasm", opts.Boot)
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(outDir, "index.html"), shell, 0o644); err != nil {
 		return fmt.Errorf("write index.html: %w", err)
+	}
+	if err := wasmserve.WritePosterAssets(outDir); err != nil {
+		return err
 	}
 	return nil
 }
@@ -112,9 +131,9 @@ func wasmBuildArgs(pkg, outDir string, release, noDefaultFont bool) []string {
 	return append(args, pkg)
 }
 
-func rebuildWASM(pkg, outDir, title string) error {
+func rebuildWASM(pkg, outDir, title string, boot wasmserve.BootOptions) error {
 	var output strings.Builder
-	if err := buildWASM(pkg, outDir, title, false, false, &output, &output); err != nil {
+	if err := buildWASM(pkg, outDir, title, wasmBuildOptions{Boot: boot}, &output, &output); err != nil {
 		if output.Len() > 0 {
 			return fmt.Errorf("%s", output.String())
 		}

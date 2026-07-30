@@ -14,11 +14,26 @@ func (h *host) startLoop() {
 	var fpsFrames int
 	var fpsElapsed time.Duration
 	var fps int
+	var firstFramePresented bool
 
 	var cb js.Func
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
 		elapsed := frameTimer.ElapsedMillis(ts)
+
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Events: h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
+			h.pending = h.pending[:0]
+			h.pendingInputAtMillis = -1
+			if splash.ReadyForHandoff {
+				signalFirstFramePresented(&firstFramePresented)
+			}
+			js.Global().Call("requestAnimationFrame", cb)
+			return nil
+		}
+
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
 
@@ -39,6 +54,7 @@ func (h *host) startLoop() {
 		}
 
 		frame := h.driver.RenderFrame(elapsed, h.renderer)
+		signalFirstFramePresented(&firstFramePresented)
 
 		if h.onFrameMetrics != nil {
 			renderEnd := performanceNowMillis()
@@ -83,4 +99,17 @@ func (h *host) startLoop() {
 	})
 	h.loopCb = cb
 	js.Global().Call("requestAnimationFrame", cb)
+}
+
+// signalFirstFramePresented sets the arasyFirstFrame <-> shell contract flag
+// once, after either a fully opaque splash frame or the first game frame has
+// been presented. The shell (internal/wasmserve.ShellHTML) polls this flag to
+// reveal the canvas and remove its static poster/progress overlay without
+// exposing the splash's transparent fade-in.
+func signalFirstFramePresented(presented *bool) {
+	if *presented {
+		return
+	}
+	*presented = true
+	js.Global().Set("arasyFirstFrame", true)
 }

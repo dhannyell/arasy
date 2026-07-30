@@ -17,7 +17,8 @@ import (
 )
 
 type game struct {
-	assets asset.Manifest
+	assets               asset.Manifest
+	disableDefaultSplash bool
 }
 
 var curvedStrokeCommand = func() render.DrawTriangles {
@@ -44,11 +45,25 @@ var curvedStrokeCommand = func() render.DrawTriangles {
 
 // New builds the deterministic game fixture shared by both WASM renderers.
 func New() (runtime.Game, error) {
+	return newGoldenGame(true)
+}
+
+// NewBoot builds the canonical fixture with the default engine splash enabled.
+// The browser boot test uses it to exercise the poster-to-canvas handoff while
+// the screenshot fixtures keep skipping boot for deterministic capture speed.
+func NewBoot() (runtime.Game, error) {
+	return newGoldenGame(false)
+}
+
+func newGoldenGame(disableDefaultSplash bool) (runtime.Game, error) {
 	manifest, err := goldenManifest()
 	if err != nil {
 		return nil, err
 	}
-	return &game{assets: manifest}, nil
+	return &game{
+		assets:               manifest,
+		disableDefaultSplash: disableDefaultSplash,
+	}, nil
 }
 
 func (g *game) Setup() runtime.Config {
@@ -59,8 +74,9 @@ func (g *game) Setup() runtime.Config {
 			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 320, Y: 240}),
 			Aspect:   render.AspectStretch,
 		},
-		Assets: g.assets,
-		Clear:  render.RGBA8(14, 18, 27, 255),
+		Assets:               g.assets,
+		DisableDefaultSplash: g.disableDefaultSplash,
+		Clear:                render.RGBA8(14, 18, 27, 255),
 	}
 }
 

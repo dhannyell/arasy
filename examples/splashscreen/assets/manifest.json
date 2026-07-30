@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "textures": [{ "name": "studio-logo", "file": "textures/studio-logo.png" }],
+  "effects": [
+    {
+      "name": "summer_golden_dust",
+      "blend": "additive",
+      "capacity": 4096,
+      "emit_rate": 120,
+      "burst_size": 0,
+      "lifetime": [10, 18],
+      "speed": [0.01, 0.15],
+      "direction": 0,
+      "spread": 180,
+      "shape": "rect",
+      "emit_extent": [50, 48],
+      "velocity_mode": "cone",
+      "gravity": [0.02, -0.01],
+      "drag": 0.78,
+      "size_start": [3, 8],
+      "size_end": [1.5, 5],
+      "color_start": [1, 0.72, 0.16, 0.55],
+      "color_end": [1, 0.92, 0.4, 0],
+      "spin": 0,
+      "rotation": [0, 360],
+      "wobble_amp": 0.35,
+      "wobble_freq": 0.08,
+      "fade_in": 0.18
+    }
+  ],
+  "splash": [
+    {
+      "texture": "studio-logo",
+      "cell_w": 64,
+      "cell_h": 64,
+      "columns": 3,
+      "frames": 6,
+      "rate": 6,
+      "min_time": 10.4,
+      "fade": 0.3,
+      "skippable": true,
+      "effect": "summer_golden_dust",
+      "effect_anchor_x": 0.5,
+      "effect_anchor_y": 0.5,
+      "effect_intensity": 100
+    },
+    {
+      "texture": "studio-logo",
+      "cell_w": 64,
+      "cell_h": 64,
+      "columns": 1,
+      "frames": 1,
+      "rate": 1,
+      "min_time": 10.4,
+      "fade": 0.3,
+      "skippable": true,
+      "effect": "summer_golden_dust",
+      "effect_anchor_x": 0.5,
+      "effect_anchor_y": 0.5,
+      "effect_intensity": 10
+    }
+  ]
+}

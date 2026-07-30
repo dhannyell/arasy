@@ -161,11 +161,36 @@ func (h *host) run() error {
 		budget:     frameBudget(h.driver.Config().FPS),
 		spinMargin: h.spinMargin,
 	}
+	windowShown := false
+	showWindowAfterPresent := func() {
+		if windowShown || !h.renderer.hasPresentedFrame() {
+			return
+		}
+		h.window.Show()
+		h.window.Focus()
+		windowShown = true
+	}
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
+
+		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
+			Viewport: &h.viewport,
+			Events:   h.pending,
+		}, elapsed, h.renderer)
+		if splash.Rendered {
+			h.pending = h.pending[:0]
+			h.lastInputAt = time.Time{}
+			if err := h.renderer.Err(); err != nil {
+				return fmt.Errorf("splash renderer failed: %w", err)
+			}
+			showWindowAfterPresent()
+			pacer.wait()
+			continue
+		}
+
 		inputAt := h.lastInputAt
 		h.lastInputAt = time.Time{}
 		var tickStart time.Time
@@ -189,6 +214,10 @@ func (h *host) run() error {
 		}
 		h.driver.RenderFrame(elapsed, h.renderer)
 		renderEnd := time.Now()
+		if err := h.renderer.Err(); err != nil {
+			return fmt.Errorf("native renderer failed: %w", err)
+		}
+		showWindowAfterPresent()
 		if h.metrics != nil {
 			if stats, ok := h.metrics.Observe(elapsed); ok {
 				m := FrameMetrics{
@@ -215,9 +244,6 @@ func (h *host) run() error {
 					h.onMetrics(m)
 				}
 			}
-		}
-		if err := h.renderer.Err(); err != nil {
-			return fmt.Errorf("native renderer failed: %w", err)
 		}
 
 		pacer.wait()

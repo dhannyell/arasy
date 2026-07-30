@@ -5,12 +5,14 @@ import (
 	"io"
 	"path/filepath"
 	"testing"
+
+	"github.com/dhannyell/arasy/internal/wasmserve"
 )
 
 func TestPackContainsStaticBuildAtArchiveRoot(t *testing.T) {
 	staging := t.TempDir()
 	pkg := filepath.Join(repoRoot(t), "examples", "breakout", "wasm")
-	if err := buildWASM(pkg, staging, "Breakout", true, false, io.Discard, io.Discard); err != nil {
+	if err := buildWASM(pkg, staging, "Breakout", wasmBuildOptions{Release: true}, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(t.TempDir(), "breakout.zip")
@@ -26,7 +28,10 @@ func TestPackContainsStaticBuildAtArchiveRoot(t *testing.T) {
 	for _, f := range zr.File {
 		found[f.Name] = true
 	}
-	for _, name := range []string{"index.html", "app.wasm", "wasm_exec.js"} {
+	for _, name := range []string{
+		"index.html", "app.wasm", "wasm_exec.js",
+		wasmserve.PosterLandscapeFile, wasmserve.PosterStackedFile,
+	} {
 		if !found[name] {
 			t.Fatalf("archive missing %s", name)
 		}

@@ -8,7 +8,12 @@ import (
 )
 
 const (
-	maxError          = 0.5
+	// maxError deliberately keeps chord deviation below one eighth of a
+	// screen pixel. A 0.5px tolerance left visible edge artifacts on the
+	// large overlapping circles in the native default splash, even with
+	// 4x MSAA. BenchmarkTessSplashCircles tracks the cost of this quality
+	// requirement separately from the boundary-anchored fan seam fix.
+	maxError          = 0.125
 	minCircleSegments = 12
 	maxCircleSegments = 192
 )
@@ -114,28 +119,25 @@ func circleSegments(screenRadius float64) int {
 	return clampInt(n, minCircleSegments, maxCircleSegments)
 }
 
-// appendCircleFan appends a filled circle as a fan of triangles.
+// appendCircleFan appends a filled circle as a convex polygon triangulated
+// from one boundary vertex.
 //
-// Each triangle starts at the center and spans one edge segment on the circle
-// boundary. Points are generated in screen space and converted to clip space
-// before being appended to the mesh.
+// A center fan gives every triangle a radial edge. Under multisampling, some
+// WebGPU implementations expose the closing radial edge as a hairline when
+// the circle overlays another translucent shape. Anchoring at the boundary
+// represents the exact same convex polygon without that center junction.
 func appendCircleFan(m *Mesh, c ctx, center math2d.Vec2, radius float64, n int, col render.Color) {
-	clipCenter := screenToClip(c, center)
-
-	for i := 0; i < n; i++ {
+	cosine, sine := circleUnit(0, n)
+	anchor := screenToClip(c, math2d.Vec2{
+		X: center.X + cosine*radius,
+		Y: center.Y + sine*radius,
+	})
+	for i := 1; i < n-1; i++ {
 		cos0, sin0 := circleUnit(i, n)
 		cos1, sin1 := circleUnit(i+1, n)
-
-		p0 := screenToClip(c, math2d.Vec2{
-			X: center.X + cos0*radius,
-			Y: center.Y + sin0*radius,
-		})
-		p1 := screenToClip(c, math2d.Vec2{
-			X: center.X + cos1*radius,
-			Y: center.Y + sin1*radius,
-		})
-
-		pushTri(m, clipCenter, p0, p1, col)
+		p0 := screenToClip(c, math2d.Vec2{X: center.X + cos0*radius, Y: center.Y + sin0*radius})
+		p1 := screenToClip(c, math2d.Vec2{X: center.X + cos1*radius, Y: center.Y + sin1*radius})
+		pushTri(m, anchor, p0, p1, col)
 	}
 }
 
@@ -144,7 +146,7 @@ func appendCircleFan(m *Mesh, c ctx, center math2d.Vec2, radius float64, n int, 
 // Each segment is represented by one quad between innerRadius and outerRadius;
 // pushQuad expands that quad into two triangles for the solid-color mesh.
 func appendCircleRing(m *Mesh, c ctx, center math2d.Vec2, innerRadius, outerRadius float64, n int, col render.Color) {
-	for i := 0; i < n; i++ {
+	for i := range n {
 		cos0, sin0 := circleUnit(i, n)
 		cos1, sin1 := circleUnit(i+1, n)
 

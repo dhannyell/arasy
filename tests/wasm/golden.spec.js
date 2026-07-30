@@ -15,8 +15,12 @@ async function expectFixtureScreenshot(page, testInfo, fixture, screenshot) {
     { message: `expected ${expectedRenderer} renderer; browser log:\n${messages.join('\n')}` },
   ).toContain(`using ${expectedRenderer} renderer`);
 
-  const canvas = page.locator('#ff-canvas');
+  const canvas = page.locator('#ar-canvas');
   await expect(canvas).toHaveAttribute('data-Arasy-ready', expectedRenderer);
+  // The shell removes its boot overlay only after the canvas has presented a
+  // handoff-ready frame. Waiting for the completion flag keeps the overlay out
+  // of the screenshot.
+  await page.waitForFunction(() => window.arasyBootFadeDone === true);
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
   try {
     await expect(canvas).toHaveScreenshot(screenshot);
