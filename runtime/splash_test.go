@@ -368,6 +368,72 @@ func TestManifestSplashUsesBootBackgroundThenClearFallback(t *testing.T) {
 	}
 }
 
+func TestManifestSplashParticlesUseSegmentScopedIdentity(t *testing.T) {
+	manifest := mustSplashManifest(t, []byte(`{
+		"version": 1,
+		"textures": [{"name": "studio", "file": "a.png"}],
+		"effects": [{
+			"name": "dust",
+			"capacity": 8,
+			"lifetime": [1, 1],
+			"size_start": [1, 1]
+		}],
+		"splash": [
+			{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"effect": "dust"
+			},
+			{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"effect": "dust"
+			}
+		]
+	}`))
+
+	segments := buildSplashPlaylist(Config{
+		Assets:               manifest,
+		DisableDefaultSplash: true,
+	})
+	if len(segments) != 2 {
+		t.Fatalf("buildSplashPlaylist() len = %d, want 2", len(segments))
+	}
+
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
+	first := segments[0].Particles(0, 1.0/60, viewport, 1)
+	second := segments[1].Particles(0, 1.0/60, viewport, 1)
+	firstAgain := segments[0].Particles(0.5, 1.0/60, viewport, 1)
+	if len(first) != 1 || len(second) != 1 || len(firstAgain) != 1 {
+		t.Fatalf("particle command counts = %d, %d, %d; want one each", len(first), len(second), len(firstAgain))
+	}
+
+	if first[0].Effect != second[0].Effect {
+		t.Fatalf("effects = %d and %d, want the shared manifest effect", first[0].Effect, second[0].Effect)
+	}
+	if first[0].Emitter == second[0].Emitter {
+		t.Fatalf("emitters = %d and %d, want segment-scoped identities", first[0].Emitter, second[0].Emitter)
+	}
+	if first[0].Seed == second[0].Seed {
+		t.Fatalf("seeds = %d and %d, want segment-scoped identities", first[0].Seed, second[0].Seed)
+	}
+	if first[0].Emitter != firstAgain[0].Emitter || first[0].Seed != firstAgain[0].Seed {
+		t.Fatalf(
+			"first segment identity changed across frames: (%d, %d) then (%d, %d)",
+			first[0].Emitter,
+			first[0].Seed,
+			firstAgain[0].Emitter,
+			firstAgain[0].Seed,
+		)
+	}
+}
+
 func TestSplashFadeAlphaEnvelope(t *testing.T) {
 	const minTime, fade = 1.0, 0.25
 	if a := splashFadeAlpha(0, minTime, fade); a != 0 {

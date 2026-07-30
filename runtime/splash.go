@@ -304,7 +304,7 @@ func buildSplashPlaylist(cfg Config) []SplashSegment {
 			source:     splashSourceDefault,
 		})
 	}
-	for _, decl := range cfg.Assets.Splash() {
+	for index, decl := range cfg.Assets.Splash() {
 		segments = append(segments, SplashSegment{
 			Texture:   cfg.Assets.Texture(decl.Texture),
 			CellW:     decl.CellW,
@@ -315,19 +315,27 @@ func buildSplashPlaylist(cfg Config) []SplashSegment {
 			MinTime:   decl.MinTime,
 			Fade:      decl.Fade,
 			Skippable: decl.Skippable,
-			Particles: manifestSplashParticles(cfg.Assets, decl),
+			Particles: manifestSplashParticles(cfg.Assets, index, decl),
 		})
 	}
 	return segments
 }
 
 // manifestSplashParticles resolves a game-declared segment's optional
-// "effect" reference into a fixed emitter at a fractional viewport anchor.
-func manifestSplashParticles(assets asset.Manifest, decl asset.SplashDecl) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
+// "effect" reference into a segment-scoped emitter at a fractional viewport
+// anchor.
+func manifestSplashParticles(assets asset.Manifest, segmentIndex int, decl asset.SplashDecl) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
 	if decl.Effect == "" {
 		return nil
 	}
 	effect := assets.Effect(decl.Effect)
+	// EmitterSet keys live state by (effect, emitter) and only rebuilds an
+	// existing key when its seed changes. Scoping both values to manifest
+	// order prevents consecutive segments that share an effect from
+	// inheriting each other's particles while keeping each segment stable
+	// across its own frames.
+	emitter := render.EmitterID(segmentIndex + 1)
+	seed := uint64(effect)<<32 | uint64(emitter)
 	intensity := decl.EffectIntensity
 	if intensity == 0 {
 		intensity = 1
@@ -343,12 +351,12 @@ func manifestSplashParticles(assets asset.Manifest, decl asset.SplashDecl) func(
 		return []render.DrawParticles{{
 			BaseCommand: render.BaseCommand{LayerValue: 2},
 			Effect:      effect,
-			Emitter:     1,
+			Emitter:     emitter,
 			Pos:         pos,
 			Intensity:   intensity * alpha,
 			Time:        elapsed,
 			Dt:          dt,
-			Seed:        uint64(effect),
+			Seed:        seed,
 		}}
 	}
 }
