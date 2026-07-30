@@ -13,17 +13,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // posterSVG is the engine brand's static boot poster — the same rest-pose
 // composition internal/enginesplash's compiled animation opens on, with a
-// frozen frame of its own starfield/Crux particles baked in — embedded in
-// the CLI binary so the shell can paint it inline before any byte of
-// app.wasm has arrived. It is vector so it stays crisp at any viewport
-// size instead of being raster-scaled, and its wordmark is already plain
-// path data, so embedding it carries no font redistribution concern.
+// frozen frame of its starfield and Crux particles. It is embedded in the CLI
+// so development servers can serve it and static builds can write it beside
+// app.wasm.
 //
 //go:embed assets/poster.svg
 var posterSVG []byte
@@ -40,7 +39,7 @@ var posterStackedSVG []byte
 
 // posterBackground matches the flat backdrop the poster and the compiled
 // engine splash both paint, so the page never shows a mismatched edge around
-// the inline image.
+// the poster image.
 const posterBackground = "#020B14"
 
 const (
@@ -63,6 +62,12 @@ type BootOptions struct {
 	// host, preserving game-declared splash segments. Without this explicit
 	// host opt-out, Config.DisableDefaultSplash is authoritative.
 	DisableEngineSplash bool
+	// StreamingCompile instantiates the WASM module with
+	// WebAssembly.instantiateStreaming, overlapping compilation with the
+	// download instead of buffering the bytes to measure progress first. The
+	// progress bar falls back to indeterminate mode. Best for local
+	// development, where the download is fast and compile time dominates.
+	StreamingCompile bool
 	// Background is the web download/boot color in #RGB, #RGBA, #RRGGBB, or
 	// #RRGGBBAA form. Empty uses the engine poster background.
 	Background string
@@ -199,7 +204,13 @@ func acceptsEncoding(header, encoding string) bool {
 		}
 		enabled := true
 		for _, parameter := range parts[1:] {
-			if strings.EqualFold(strings.TrimSpace(parameter), "q=0") {
+			value, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(parameter)), "q=")
+			if !ok {
+				continue
+			}
+			// RFC 9110 q-values: any zero form ("0", "0.0", "0.00") refuses
+			// the encoding; parse instead of string-matching one spelling.
+			if q, err := strconv.ParseFloat(value, 64); err == nil && q <= 0 {
 				enabled = false
 			}
 		}
@@ -334,9 +345,15 @@ func ShellHTML(title, wasmFile string, boot BootOptions) ([]byte, error) {
 	enableEngineSplash := !boot.DisableEngineSplash && !boot.DisableRuntimeSplash
 	enableGameSplash := !boot.DisableRuntimeSplash
 	return []byte(fmt.Sprintf(wasmShellHTML,
-		html.EscapeString(title), background, canvasVisibility,
-		background, bootMarkup, enableEngineSplash, enableGameSplash,
-		encodedWASMFile,
+		html.EscapeString(title), // <title>
+		background,               // html/body background
+		canvasVisibility,         // #ar-canvas visibility
+		background,               // #ar-boot background
+		bootMarkup,               // poster + progress bar markup (empty when --no-loading)
+		enableEngineSplash,       // arasySplashPolicy.engine
+		enableGameSplash,         // arasySplashPolicy.game
+		encodedWASMFile,          // fetch() target, JSON-quoted
+		boot.StreamingCompile,    // overlap download and compilation (indeterminate bar)
 	)), nil
 }
 
@@ -454,6 +471,11 @@ const wasmShellHTML = `<!doctype html>
             height: 100%%;
         }
 
+        /* margin-top anchors the bar just below the poster's wordmark:
+           poster baseline (dvh) + fraction of the fitted composition height
+           + gap. The fractions mirror the internal layout of the poster SVGs
+           served beside the shell (landscape and portrait variants); if the
+           poster layout changes, re-derive them from the SVG. */
         #ar-bar {
             position: relative;
             flex: none;
@@ -462,7 +484,12 @@ const wasmShellHTML = `<!doctype html>
             margin-top: calc(60dvh + 0.155 * var(--ar-fit-h) + 24px);
             border-radius: 4px;
             overflow: hidden;
-			z-index: 2;
+            z-index: 2;
+            background: linear-gradient(to right,
+                rgba(224, 234, 255, 0.45) 0%%, rgba(224, 234, 255, 0.45) 25%%,
+                rgba(214, 214, 235, 0.62) 25%%, rgba(214, 214, 235, 0.62) 50%%,
+                rgba(224, 195, 145, 0.82) 50%%, rgba(224, 195, 145, 0.82) 75%%,
+                #E3B156 75%%, #E3B156 100%%);
         }
 
         @media (max-aspect-ratio: 1/1) {
@@ -474,15 +501,6 @@ const wasmShellHTML = `<!doctype html>
             #ar-bar {
                 margin-top: calc(50dvh + 0.444 * var(--ar-fit-h) + 24px);
             }
-
-        }
-
-        #ar-bar {
-            background: linear-gradient(to right,
-                rgba(224, 234, 255, 0.45) 0%%, rgba(224, 234, 255, 0.45) 25%%,
-                rgba(214, 214, 235, 0.62) 25%%, rgba(214, 214, 235, 0.62) 50%%,
-                rgba(224, 195, 145, 0.82) 50%%, rgba(224, 195, 145, 0.82) 75%%,
-                #E3B156 75%%, #E3B156 100%%);
         }
 
         #ar-bar::after {
@@ -576,9 +594,10 @@ const wasmShellHTML = `<!doctype html>
         const resp = await fetch(%s);
         const total = Number(resp.headers.get('X-Arasy-Uncompressed-Length')) ||
             Number(resp.headers.get('Content-Length')) || 0;
+        const streamingCompile = %t;
 
         let instantiated;
-        if (resp.body && total > 0) {
+        if (resp.body && total > 0 && !streamingCompile) {
             const reader = resp.body.getReader();
             const chunks = [];
             let received = 0;

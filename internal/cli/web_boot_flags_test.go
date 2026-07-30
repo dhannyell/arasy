@@ -26,3 +26,16 @@ func TestWebBootFlagsRejectInvalidBackground(t *testing.T) {
 		t.Fatal("non-hexadecimal boot background succeeded")
 	}
 }
+
+func TestDevDisablesEngineSplashByDefault(t *testing.T) {
+	flag := devCmd.Flags().Lookup("no-engine-splash")
+	if flag == nil {
+		t.Fatal("dev command has no --no-engine-splash flag")
+	}
+	if flag.DefValue != "true" {
+		t.Fatalf("dev --no-engine-splash default = %q, want %q", flag.DefValue, "true")
+	}
+	if !devBoot.noEngineSplash {
+		t.Fatal("dev boot flags default the engine splash to on, want off")
+	}
+}

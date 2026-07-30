@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -92,12 +95,35 @@ func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	cmd := exec.Command("go", wasmBuildArgs(pkg, outDir, opts.Release, opts.NoDefaultFont)...)
+	// Build beside the target and swap only when the bytes changed: rebuilds
+	// that produce identical output preserve app.wasm's mtime, so the
+	// browser's conditional request revalidates to a cheap 304 instead of
+	// re-downloading the whole binary.
+	tmp, err := os.CreateTemp(outDir, ".app-*.wasm")
+	if err != nil {
+		return fmt.Errorf("create temporary wasm output: %w", err)
+	}
+	tmpPath := tmp.Name()
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary wasm output: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpPath) }() // no-op after a successful swap
+
+	cmd := exec.Command("go", wasmBuildArgs(pkg, tmpPath, opts.Release, opts.NoDefaultFont)...)
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("build %s: %w", pkg, err)
+	}
+	same, err := sameFileContent(tmpPath, filepath.Join(outDir, "app.wasm"))
+	if err != nil {
+		return err
+	}
+	if !same {
+		if err := os.Rename(tmpPath, filepath.Join(outDir, "app.wasm")); err != nil {
+			return fmt.Errorf("replace app.wasm: %w", err)
+		}
 	}
 	wasmExec, err := wasmserve.DefaultWASMExecPath()
 	if err != nil {
@@ -120,8 +146,8 @@ func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr 
 }
 
 // wasmBuildArgs assembles the go build command line for a WASM artifact.
-func wasmBuildArgs(pkg, outDir string, release, noDefaultFont bool) []string {
-	args := []string{"build", "-o", filepath.Join(outDir, "app.wasm"), "-trimpath", "-buildvcs=false"}
+func wasmBuildArgs(pkg, out string, release, noDefaultFont bool) []string {
+	args := []string{"build", "-o", out, "-trimpath", "-buildvcs=false"}
 	if release {
 		args = append(args, "-ldflags", "-s -w")
 	}
@@ -129,6 +155,45 @@ func wasmBuildArgs(pkg, outDir string, release, noDefaultFont bool) []string {
 		args = append(args, "-tags", "arr_no_default_font")
 	}
 	return append(args, pkg)
+}
+
+// sameFileContent reports whether two files hold identical bytes. A missing
+// destination is simply "not the same".
+func sameFileContent(candidate, current string) (bool, error) {
+	fa, err := os.Open(candidate)
+	if err != nil {
+		return false, fmt.Errorf("open %s: %w", candidate, err)
+	}
+	defer func() { _ = fa.Close() }()
+	fb, err := os.Open(current)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("open %s: %w", current, err)
+	}
+	defer func() { _ = fb.Close() }()
+
+	faInfo, err := fa.Stat()
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", candidate, err)
+	}
+	fbInfo, err := fb.Stat()
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", current, err)
+	}
+	if faInfo.Size() != fbInfo.Size() {
+		return false, nil
+	}
+
+	ha, hb := sha256.New(), sha256.New()
+	if _, err := io.Copy(ha, fa); err != nil {
+		return false, fmt.Errorf("hash %s: %w", candidate, err)
+	}
+	if _, err := io.Copy(hb, fb); err != nil {
+		return false, fmt.Errorf("hash %s: %w", current, err)
+	}
+	return bytes.Equal(ha.Sum(nil), hb.Sum(nil)), nil
 }
 
 func rebuildWASM(pkg, outDir, title string, boot wasmserve.BootOptions) error {

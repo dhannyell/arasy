@@ -158,6 +158,23 @@ color_test.go
 command_test.go
 ```
 
+### `internal/svggen`
+
+The SVG-to-Go compiler (`arasy svg`), tool-time only. Coverage is organized
+by property, not one file per source file:
+
+```text
+parse_test.go      -> accepted subset, rejections, FuzzParseSVG
+path_test.go        -> path commands, arc conversion, FuzzParsePathData
+generate_test.go    -> TestGenerateIsDeterministicAndFormatted (generate twice, compare bytes)
+```
+
+`FuzzParseSVG`/`FuzzParsePathData` run as ordinary regression tests through
+`go test ./...` (committed seed corpus) and as a real fuzzer on demand
+(`go test ./internal/svggen -fuzz FuzzParseSVG -fuzztime 60s`), the same
+spirit as the simulation fuzzing described below. See
+`docs/vector-graphics-en.md` for what the compiler accepts/rejects.
+
 ### Small Packages
 
 Packages such as `math2d`, `loop`, `input`, and `ui` can keep only a few files

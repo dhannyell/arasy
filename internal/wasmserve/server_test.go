@@ -152,13 +152,19 @@ func TestGzipHandlerLeavesResponsePlainWithoutNegotiation(t *testing.T) {
 
 func TestGzipHandlerHonorsExplicitZeroQuality(t *testing.T) {
 	handler := gzipHandler(newHandler(ServerOptions{}))
-	req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)
-	req.Header.Set("Accept-Encoding", "gzip;q=0, identity")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	for _, header := range []string{
+		"gzip;q=0, identity",
+		"gzip;q=0.0, identity",
+		"gzip; Q=0.00",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)
+		req.Header.Set("Accept-Encoding", header)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Content-Encoding"); got != "" {
-		t.Fatalf("content encoding = %q for gzip;q=0", got)
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Fatalf("content encoding = %q for Accept-Encoding %q", got, header)
+		}
 	}
 }
 
@@ -346,5 +352,26 @@ func TestShellUsesDecodedLengthHeaderForGzipProgress(t *testing.T) {
 	fallbackIndex := strings.Index(html, "resp.headers.get('Content-Length')")
 	if headerIndex < 0 || fallbackIndex < 0 || headerIndex > fallbackIndex {
 		t.Fatal("shell does not prefer decoded gzip length before Content-Length")
+	}
+}
+
+func TestShellStreamingCompileSkipsBufferedProgress(t *testing.T) {
+	streaming, err := ShellHTML("Arasy", "app.wasm", BootOptions{StreamingCompile: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(streaming), "const streamingCompile = true;") {
+		t.Fatal("streaming shell does not enable the streamingCompile flag")
+	}
+
+	buffered, err := ShellHTML("Arasy", "app.wasm", BootOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(buffered), "const streamingCompile = false;") {
+		t.Fatal("default shell does not disable the streamingCompile flag")
+	}
+	if !strings.Contains(string(buffered), "resp.body && total > 0 && !streamingCompile") {
+		t.Fatal("buffered progress no longer guards on the streamingCompile flag")
 	}
 }

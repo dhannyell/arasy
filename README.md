@@ -278,6 +278,8 @@ go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 - Camera, world, and viewport: [Portuguese](docs/camera-world-viewport.md) | [English](docs/camera-world-viewport-en.md)
 - Bidirectional time scrubbing: [Portuguese](docs/scrubbing.md) | [English](docs/scrubbing-en.md)
 - Test structure conventions: [Portuguese](docs/testing.md) | [English](docs/testing-en.md)
+- Animation: [Portuguese](docs/animation.md) | [English](docs/animation-en.md)
+- Vector graphics and SVG compilation: [Portuguese](docs/vector-graphics.md) | [English](docs/vector-graphics-en.md)
 
 ## License
 
