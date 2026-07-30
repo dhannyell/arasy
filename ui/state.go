@@ -8,6 +8,7 @@ type State struct {
 	activeID ID
 	focusID  ID
 	scroll   map[ID]float64
+	tabs     map[ID]int
 }
 
 // Clone is used by the runtime driver when capturing rewind snapshots.
@@ -16,5 +17,6 @@ func (s State) Clone() State {
 		activeID: s.activeID,
 		focusID:  s.focusID,
 		scroll:   maps.Clone(s.scroll),
+		tabs:     maps.Clone(s.tabs),
 	}
 }
