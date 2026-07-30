@@ -1,5 +1,7 @@
 package input
 
+import "maps"
+
 type Mapper struct {
 	bindings        []Binding
 	sourceValues    map[Source]float64
@@ -139,13 +141,9 @@ func (m *Mapper) Clone() *Mapper {
 		current:         m.current.clone(),
 	}
 
-	for source, value := range m.sourceValues {
-		clone.sourceValues[source] = value
-	}
+	maps.Copy(clone.sourceValues, m.sourceValues)
 
-	for source, value := range m.latched {
-		clone.latched[source] = value
-	}
+	maps.Copy(clone.latched, m.latched)
 
 	return clone
 }
