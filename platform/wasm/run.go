@@ -11,7 +11,6 @@ import (
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
-	"github.com/dhannyell/arasy/platform/web/browserinput"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -66,9 +65,9 @@ type host struct {
 	inputCbs []js.Func
 
 	gamepadTracker        platforminput.GamepadTracker
-	gamepadSelector       browserinput.StickyGamepadSelector
+	gamepadSelector       platforminput.StickyGamepadSelector
 	gamepadSupportScratch []bool
-	touch                 browserinput.SingleTouch
+	touch                 platforminput.SingleTouch
 }
 
 // Run starts the browser WASM host for game and blocks forever.

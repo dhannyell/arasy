@@ -1,4 +1,7 @@
-// Package platforminput contains shared host-side input translation helpers.
+// Package platforminput contains shared host-side input translation helpers:
+// DOM keyboard/pointer event constructors, single-touch ownership, browser
+// gamepad selection, and the normalized gamepad snapshot/diff shared by the
+// native and browser hosts.
 package platforminput
 
 import "github.com/dhannyell/arasy/input"

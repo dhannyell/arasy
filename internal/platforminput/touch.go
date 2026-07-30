@@ -1,4 +1,4 @@
-package browserinput
+package platforminput
 
 // TouchPhase identifies the lifecycle transition of one DOM touch pointer.
 type TouchPhase uint8

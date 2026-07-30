@@ -1,4 +1,4 @@
-package browserinput
+package platforminput
 
 // StickyGamepadSelector owns the browser index assigned to gamepad slot zero.
 // A selected index remains assigned while supported; losing it produces one

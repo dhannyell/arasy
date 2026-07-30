@@ -6,7 +6,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/platform/web/browserinput"
+	"github.com/dhannyell/arasy/internal/platforminput"
 )
 
 func (h *host) registerInputListeners() {
@@ -36,7 +36,7 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), true)
+		keyEvent, ok := platforminput.KeyEvent(event.Get("code").String(), true)
 		if !ok {
 			return nil
 		}
@@ -52,7 +52,7 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), false)
+		keyEvent, ok := platforminput.KeyEvent(event.Get("code").String(), false)
 		if !ok {
 			return nil
 		}
@@ -65,19 +65,19 @@ func (h *host) registerInputListeners() {
 	addCanvasListener("pointermove", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" {
-			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchMove) {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchMove) {
 				return nil
 			}
 		}
 		x, y := h.canvasXY(event)
-		h.queueInput(browserinput.MouseMoveEvent(x, y), event)
+		h.queueInput(platforminput.MouseMoveEvent(x, y), event)
 		return nil
 	}))
 
 	addCanvasListener("pointerdown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" {
-			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchBegin) {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchBegin) {
 				return nil
 			}
 			event.Call("preventDefault")
@@ -85,7 +85,7 @@ func (h *host) registerInputListeners() {
 		}
 		x, y := h.canvasXY(event)
 
-		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
+		mouseEvent, ok := platforminput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
 		if !ok {
 			return nil
 		}
@@ -97,7 +97,7 @@ func (h *host) registerInputListeners() {
 		event := args[0]
 		isTouch := event.Get("pointerType").String() == "touch"
 		if isTouch {
-			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchEnd) {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchEnd) {
 				return nil
 			}
 			event.Call("preventDefault")
@@ -105,7 +105,7 @@ func (h *host) registerInputListeners() {
 		}
 		x, y := h.canvasXY(event)
 
-		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
+		mouseEvent, ok := platforminput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
 		if !ok {
 			return nil
 		}
@@ -113,7 +113,7 @@ func (h *host) registerInputListeners() {
 		if isTouch {
 			// Touch has no hover state: end the pointer frame at the same
 			// boundary as the up event while preserving the click edge.
-			h.queueInput(browserinput.PointerLeaveEvent(), event)
+			h.queueInput(platforminput.PointerLeaveEvent(), event)
 		}
 		return nil
 	}))
@@ -121,21 +121,21 @@ func (h *host) registerInputListeners() {
 	addCanvasListener("pointerleave", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" &&
-			!h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchMove) {
+			!h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchMove) {
 			return nil
 		}
-		h.queueInput(browserinput.PointerLeaveEvent(), event)
+		h.queueInput(platforminput.PointerLeaveEvent(), event)
 		return nil
 	}))
 
 	addCanvasListener("pointercancel", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
 		if event.Get("pointerType").String() == "touch" {
-			if !h.touch.Accept(event.Get("pointerId").Int(), browserinput.TouchEnd) {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchEnd) {
 				return nil
 			}
 		}
-		h.queueInput(browserinput.PointerLeaveEvent(), event)
+		h.queueInput(platforminput.PointerLeaveEvent(), event)
 		return nil
 	}))
 
@@ -147,7 +147,7 @@ func (h *host) registerInputListeners() {
 		dx := event.Get("deltaX").Float()
 		dy := event.Get("deltaY").Float()
 
-		wheelEvents := browserinput.WheelEvent(dx, dy)
+		wheelEvents := platforminput.WheelEvent(dx, dy)
 		for i := range wheelEvents {
 			wheelEvents[i].X = x
 			wheelEvents[i].Y = y

@@ -1,4 +1,4 @@
-package browserinput
+package platforminput
 
 import "github.com/dhannyell/arasy/input"
 
