@@ -339,9 +339,14 @@ func ShellHTML(title, wasmFile string, boot BootOptions) ([]byte, error) {
 	enableEngineSplash := !boot.DisableEngineSplash && !boot.DisableRuntimeSplash
 	enableGameSplash := !boot.DisableRuntimeSplash
 	return []byte(fmt.Sprintf(wasmShellHTML,
-		html.EscapeString(title), background, canvasVisibility,
-		background, bootMarkup, enableEngineSplash, enableGameSplash,
-		encodedWASMFile,
+		html.EscapeString(title), // <title>
+		background,               // html/body background
+		canvasVisibility,         // #ar-canvas visibility
+		background,               // #ar-boot background
+		bootMarkup,               // poster + progress bar markup (empty when --no-loading)
+		enableEngineSplash,       // arasySplashPolicy.engine
+		enableGameSplash,         // arasySplashPolicy.game
+		encodedWASMFile,          // fetch() target, JSON-quoted
 	)), nil
 }
 
@@ -459,6 +464,11 @@ const wasmShellHTML = `<!doctype html>
             height: 100%%;
         }
 
+        /* margin-top anchors the bar just below the poster's wordmark:
+           poster baseline (dvh) + fraction of the fitted composition height
+           + gap. The fractions mirror the internal layout of the poster SVGs
+           served beside the shell (landscape and portrait variants); if the
+           poster layout changes, re-derive them from the SVG. */
         #ar-bar {
             position: relative;
             flex: none;
@@ -467,7 +477,12 @@ const wasmShellHTML = `<!doctype html>
             margin-top: calc(60dvh + 0.155 * var(--ar-fit-h) + 24px);
             border-radius: 4px;
             overflow: hidden;
-			z-index: 2;
+            z-index: 2;
+            background: linear-gradient(to right,
+                rgba(224, 234, 255, 0.45) 0%%, rgba(224, 234, 255, 0.45) 25%%,
+                rgba(214, 214, 235, 0.62) 25%%, rgba(214, 214, 235, 0.62) 50%%,
+                rgba(224, 195, 145, 0.82) 50%%, rgba(224, 195, 145, 0.82) 75%%,
+                #E3B156 75%%, #E3B156 100%%);
         }
 
         @media (max-aspect-ratio: 1/1) {
@@ -479,15 +494,6 @@ const wasmShellHTML = `<!doctype html>
             #ar-bar {
                 margin-top: calc(50dvh + 0.444 * var(--ar-fit-h) + 24px);
             }
-
-        }
-
-        #ar-bar {
-            background: linear-gradient(to right,
-                rgba(224, 234, 255, 0.45) 0%%, rgba(224, 234, 255, 0.45) 25%%,
-                rgba(214, 214, 235, 0.62) 25%%, rgba(214, 214, 235, 0.62) 50%%,
-                rgba(224, 195, 145, 0.82) 50%%, rgba(224, 195, 145, 0.82) 75%%,
-                #E3B156 75%%, #E3B156 100%%);
         }
 
         #ar-bar::after {
