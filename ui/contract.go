@@ -15,6 +15,7 @@ type Interactor interface {
 	RowHeight() float64
 	HeaderHeight() float64
 	TableBodyRect(rect math2d.Rect) math2d.Rect
+	TabsBodyRect(rect math2d.Rect) math2d.Rect
 }
 
 // Drawer emits UI render commands and exposes animation primitives.
@@ -24,6 +25,7 @@ type Drawer interface {
 	RowHeight() float64
 	HeaderHeight() float64
 	TableBodyRect(rect math2d.Rect) math2d.Rect
+	TabsBodyRect(rect math2d.Rect) math2d.Rect
 	SetFont(id render.FontID)
 
 	// Animation primitives — state-driven

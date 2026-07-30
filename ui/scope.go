@@ -40,6 +40,12 @@ func (s InteractScope) ListHit(id string, rect math2d.Rect, rowH float64, rowCou
 	return s.u.listHitIn(id, rect, rowH, rowCount, s.space)
 }
 
+// TabsInput selects the active tab from this tick's pointer events. It is the
+// Update half of the widget; DrawScope.Tabs only reads what it stored.
+func (s InteractScope) TabsInput(id string, rect math2d.Rect, count int) (active int, changed bool) {
+	return s.u.tabsInputIn(id, rect, count, s.space)
+}
+
 func (s InteractScope) Hovered(rect math2d.Rect) bool {
 	return s.u.hoveredIn(rect, s.space)
 }
@@ -57,6 +63,17 @@ func (s DrawScope) Button(id, label string, rect math2d.Rect) {
 
 func (s DrawScope) Panel(rect math2d.Rect) {
 	s.u.panelIn(rect, s.space)
+}
+
+// TitledPanel draws a panel with a title bar. Static container, no state.
+func (s DrawScope) TitledPanel(rect math2d.Rect, title string) {
+	s.u.titledPanelIn(rect, title, s.space)
+}
+
+// Tabs draws the header band and returns the active tab index. Selection
+// belongs to InteractScope.TabsInput; drawing never changes the active tab.
+func (s DrawScope) Tabs(id string, rect math2d.Rect, labels []string) int {
+	return s.u.tabsIn(id, rect, labels, s.space)
 }
 
 func (s DrawScope) Label(text string, pos math2d.Vec2) {
