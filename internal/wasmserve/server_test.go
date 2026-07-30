@@ -152,13 +152,19 @@ func TestGzipHandlerLeavesResponsePlainWithoutNegotiation(t *testing.T) {
 
 func TestGzipHandlerHonorsExplicitZeroQuality(t *testing.T) {
 	handler := gzipHandler(newHandler(ServerOptions{}))
-	req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)
-	req.Header.Set("Accept-Encoding", "gzip;q=0, identity")
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	for _, header := range []string{
+		"gzip;q=0, identity",
+		"gzip;q=0.0, identity",
+		"gzip; Q=0.00",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/"+PosterLandscapeFile, nil)
+		req.Header.Set("Accept-Encoding", header)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Content-Encoding"); got != "" {
-		t.Fatalf("content encoding = %q for gzip;q=0", got)
+		if got := rec.Header().Get("Content-Encoding"); got != "" {
+			t.Fatalf("content encoding = %q for Accept-Encoding %q", got, header)
+		}
 	}
 }
 

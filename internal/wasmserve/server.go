@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -197,7 +198,13 @@ func acceptsEncoding(header, encoding string) bool {
 		}
 		enabled := true
 		for _, parameter := range parts[1:] {
-			if strings.EqualFold(strings.TrimSpace(parameter), "q=0") {
+			value, ok := strings.CutPrefix(strings.ToLower(strings.TrimSpace(parameter)), "q=")
+			if !ok {
+				continue
+			}
+			// RFC 9110 q-values: any zero form ("0", "0.0", "0.00") refuses
+			// the encoding; parse instead of string-matching one spelling.
+			if q, err := strconv.ParseFloat(value, 64); err == nil && q <= 0 {
 				enabled = false
 			}
 		}
