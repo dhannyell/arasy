@@ -208,8 +208,9 @@ func (m Manifest) AudioClips() []audio.Clip {
 
 // SplashDecl is one manifest-declared boot splash segment: a texture
 // flip-book, resolved by name against the manifest's declared textures. It
-// carries the same fields as runtime.SplashSegment's flip-book form; runtime
-// resolves Texture to a render.TextureID when building the boot playlist.
+// carries the same fields as the runtime splash segment's flip-book form;
+// the runtime resolves Texture to a render.TextureID when building the boot
+// playlist.
 type SplashDecl struct {
 	Texture      string
 	CellW, CellH float64

@@ -1,34 +1,34 @@
 package runtime
 
 import (
-	"math"
 	"time"
 
 	"github.com/dhannyell/arasy/anim"
-	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/internal/enginesplash"
-	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
 
-// SplashContent renders a texture-free segment at timeline time. The returned
+// splashContent renders a texture-free segment at timeline time. The returned
 // commands are consumed synchronously and may be backed by a reusable
 // workspace. Content must be a pure function of (timeline, viewport): it runs
 // before tick 0 and never observes world/game state.
-type SplashContent func(
+type splashContent func(
 	timeline anim.Timeline,
 	viewport math2d.Rect,
 ) []render.Command
 
-// SplashSegment is one entry in the boot splash sequence, shown for at least
+// splashSegment is one entry in the boot splash sequence, shown for at least
 // MinTime, optionally cross-faded and skippable. A segment renders either a
 // texture flip-book (Texture set — a static segment sets Frames <= 1) or a
 // vector command Content (e.g. the compiled engine brand animation); Content
 // takes precedence when both are set. Content is render-only and lives
 // entirely before tick 0.
-type SplashSegment struct {
+//
+// Games declare segments through the asset manifest's "splash" array, never
+// by constructing this type; it is unexported because no caller outside the
+// runtime builds playlists. Future content kinds belong in the manifest.
+type splashSegment struct {
 	Texture render.TextureID // atlas/image to show
 
 	// Grid describes the flip-book atlas. CellW/CellH are the cell size in
@@ -42,7 +42,7 @@ type SplashSegment struct {
 	// Content, when non-nil, renders this segment as a vector command
 	// timeline instead of the texture flip-book above. No manifest entry or
 	// texture upload is needed for this content.
-	Content SplashContent
+	Content splashContent
 
 	MinTime float64 // minimum on-screen seconds
 	Fade    float64 // cross-fade seconds at each edge; 0 = hard cut
@@ -66,7 +66,7 @@ type SplashSegment struct {
 	// that wants its particles to fade with the rest of its content must
 	// fold alpha into each returned command's Intensity itself. A nil or
 	// empty result draws nothing this frame.
-	Particles func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles
+	Particles func(elapsed, frameDt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles
 
 	source splashSource
 }
@@ -81,7 +81,7 @@ const (
 // splashPlayer drives the boot splash sequence. It never touches d.tick, the
 // timeline, the recorder, or the checksum. Zero segments = inert.
 type splashPlayer struct {
-	segments []SplashSegment
+	segments []splashSegment
 	index    int
 	elapsed  float64
 }
@@ -125,7 +125,7 @@ func (d *Driver) SkipDefaultSplash() {
 	currentWasDefault := d.splashActive() &&
 		d.splash.segments[d.splash.index].source == splashSourceDefault
 	removedBeforeCurrent := 0
-	segments := make([]SplashSegment, 0, len(d.splash.segments))
+	segments := make([]splashSegment, 0, len(d.splash.segments))
 	for i, segment := range d.splash.segments {
 		if segment.source == splashSourceDefault {
 			if i < d.splash.index {
@@ -160,12 +160,13 @@ func (d *Driver) splashFrameReadyForHandoff() bool {
 
 // RunSplashFrame owns the canonical pre-tick-0 host sequence: apply the
 // viewport, interpret activation input, advance the current segment, render
-// it, and determine poster handoff readiness. A zero result means no splash
-// was active; the host must retain the input and continue with its game frame.
-// A rendered splash consumes all supplied events but never advances d.tick or
-// invokes game state. Viewport changes retain SetViewport's normal tick-0
-// timeline semantics.
-func (d *Driver) RunSplashFrame(batch SplashFrameBatch, elapsed time.Duration, r FrameRenderer) SplashFrameResult {
+// it, and determine poster handoff readiness. frameDelta is the host frame's
+// wall-clock delta — not the segment's accumulated time. A zero result means
+// no splash was active; the host must retain the input and continue with its
+// game frame. A rendered splash consumes all supplied events but never
+// advances d.tick or invokes game state. Viewport changes retain SetViewport's
+// normal tick-0 timeline semantics.
+func (d *Driver) RunSplashFrame(batch SplashFrameBatch, frameDelta time.Duration, r FrameRenderer) SplashFrameResult {
 	if !d.splashActive() {
 		return SplashFrameResult{}
 	}
@@ -181,20 +182,20 @@ func (d *Driver) RunSplashFrame(batch SplashFrameBatch, elapsed time.Duration, r
 		}
 	}
 
-	d.advanceSplash(elapsed, skip)
-	d.renderSplashFrame(elapsed, r)
+	d.advanceSplash(frameDelta, skip)
+	d.renderSplashFrame(frameDelta, r)
 	return SplashFrameResult{
 		Rendered:        true,
 		ReadyForHandoff: d.splashFrameReadyForHandoff(),
 	}
 }
 
-func (d *Driver) advanceSplash(elapsed time.Duration, skip bool) {
+func (d *Driver) advanceSplash(frameDelta time.Duration, skip bool) {
 	if !d.splashActive() {
 		return
 	}
 	seg := d.splash.segments[d.splash.index]
-	d.splash.elapsed += elapsed.Seconds()
+	d.splash.elapsed += frameDelta.Seconds()
 	done := d.splash.elapsed >= seg.MinTime || (skip && seg.Skippable)
 	if done {
 		d.splash.index++
@@ -202,217 +203,8 @@ func (d *Driver) advanceSplash(elapsed time.Duration, skip bool) {
 	}
 }
 
-func (d *Driver) renderSplashFrame(elapsed time.Duration, r FrameRenderer) {
-	frame := d.splashFrame(elapsed.Seconds())
+func (d *Driver) renderSplashFrame(frameDelta time.Duration, r FrameRenderer) {
+	frame := d.splashFrame(frameDelta.Seconds())
 	r.UpdateResources(FrameUpdates{})
 	r.Render(frame)
-}
-
-func (d *Driver) splashFrame(dt float64) Frame {
-	cam := render.Camera{World: d.viewport, Viewport: d.viewport}
-	if !d.splashActive() {
-		// The frame that drains the playlist is still presented by hosts (it
-		// consumes the final skip/timeout without leaking that input into
-		// tick 0). Paint the last segment's backdrop instead of returning an
-		// empty frame, so the transition to the first game frame never
-		// flashes a bare Config.Clear screen.
-		if d.splash == nil || len(d.splash.segments) == 0 {
-			return Frame{Camera: cam}
-		}
-		last := d.splash.segments[len(d.splash.segments)-1]
-		return Frame{
-			Camera:   cam,
-			Commands: []render.Command{d.splashBackgroundRect(last)},
-		}
-	}
-
-	seg := d.splash.segments[d.splash.index]
-	alpha := splashFadeAlpha(d.splash.elapsed, seg.MinTime, seg.Fade)
-
-	commands := []render.Command{d.splashBackgroundRect(seg)}
-
-	var builder render.Builder
-	builder.Reset(commands)
-	builder.Push(render.Group{Opacity: alpha})
-	if seg.Content != nil {
-		content := seg.Content(anim.At(d.splash.elapsed), d.viewport)
-		for _, cmd := range content {
-			builder.Add(cmd)
-		}
-	} else {
-		builder.Add(splashFlipbookImage(seg, d.splash.elapsed, d.viewport))
-	}
-	builder.Pop()
-
-	commands = builder.Commands()
-	if seg.Particles != nil {
-		for _, p := range seg.Particles(d.splash.elapsed, dt, d.viewport, alpha) {
-			commands = append(commands, p)
-		}
-	}
-
-	return Frame{Camera: cam, Commands: commands}
-}
-
-// splashBackgroundRect paints the backdrop behind a segment across the full
-// viewport: the segment's own Background, then Config.BootBackground, then
-// Config.Clear.
-func (d *Driver) splashBackgroundRect(seg SplashSegment) render.DrawRect {
-	background := seg.Background
-	if background == (render.Color{}) {
-		background = d.cfg.BootBackground
-		if background == (render.Color{}) {
-			background = d.cfg.Clear
-		}
-	}
-	return render.DrawRect{
-		BaseCommand: render.BaseCommand{
-			LayerValue: enginesplash.BackgroundLayer,
-		},
-		Rect: d.viewport,
-		Fill: background,
-	}
-}
-
-// splashFlipbookImage computes the current cell of a texture flip-book
-// segment and its letterboxed destination rectangle. The cell advance
-// mirrors internal/renderbatch's flip-book arithmetic, but is driven by the
-// segment's own Columns (the Driver never decodes texture dimensions).
-func splashFlipbookImage(seg SplashSegment, elapsed float64, viewport math2d.Rect) render.DrawImage {
-	frame := 0
-	if seg.Frames > 1 && seg.Rate > 0 {
-		tw := float64(renderbatch.WrapTime(elapsed))
-		frame = int(math.Floor(tw*float64(seg.Rate))) % int(seg.Frames)
-	}
-
-	col := frame % seg.Columns
-	row := frame / seg.Columns
-	src := math2d.NewRect(
-		math2d.Vec2{X: float64(col) * seg.CellW, Y: float64(row) * seg.CellH},
-		math2d.Vec2{X: seg.CellW, Y: seg.CellH},
-	)
-	dest := fitCentered(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: seg.CellW, Y: seg.CellH}), viewport)
-
-	return render.DrawImage{
-		BaseCommand: render.BaseCommand{LayerValue: 1},
-		Texture:     seg.Texture,
-		Dest:        dest,
-		Src:         src,
-	}
-}
-
-// splashFadeAlpha computes the cross-fade envelope for a segment: it rises
-// over Fade seconds at the start and falls over Fade seconds before MinTime
-// ends. Fade <= 0 is a hard cut (always opaque).
-//
-// A host with its own loading screen (e.g. internal/wasmserve's poster)
-// must hide it with a hard cut, not its own opacity transition — stacking
-// a second fade on top of this rise makes the reveal visibly dip instead of
-// resolving to one smooth fade-in.
-func splashFadeAlpha(elapsed, minTime, fade float64) float64 {
-	if fade <= 0 {
-		return 1
-	}
-	alpha := 1.0
-	if elapsed < fade {
-		alpha = elapsed / fade
-	}
-	if remain := minTime - elapsed; remain < fade {
-		if out := remain / fade; out < alpha {
-			alpha = out
-		}
-	}
-	return math2d.Clamp(alpha, 0, 1)
-}
-
-// fitCentered scales cell to fit inside viewport preserving aspect ratio
-// (letterbox), centered on both axes.
-func fitCentered(cell, viewport math2d.Rect) math2d.Rect {
-	cellW, cellH := cell.Width(), cell.Height()
-	vw, vh := viewport.Width(), viewport.Height()
-	if cellW <= 0 || cellH <= 0 || vw <= 0 || vh <= 0 {
-		return viewport
-	}
-
-	scale := math.Min(vw/cellW, vh/cellH)
-	fitW, fitH := cellW*scale, cellH*scale
-	offset := math2d.Vec2{
-		X: viewport.Min.X + (vw-fitW)/2,
-		Y: viewport.Min.Y + (vh-fitH)/2,
-	}
-	return math2d.NewRect(offset, math2d.Vec2{X: fitW, Y: fitH})
-}
-
-// buildSplashPlaylist assembles the boot splash playlist: the built-in
-// engine brand segment (unless disabled), followed by the manifest-declared
-// segments in order.
-func buildSplashPlaylist(cfg Config) []SplashSegment {
-	var segments []SplashSegment
-	if !cfg.DisableDefaultSplash {
-		var content enginesplash.Content
-		segments = append(segments, SplashSegment{
-			Content:    content.Append,
-			MinTime:    enginesplash.MinTime,
-			Fade:       enginesplash.Fade,
-			Skippable:  enginesplash.Skippable,
-			Background: enginesplash.Background,
-			Particles:  enginesplash.NewParticles(cfg.Assets),
-			source:     splashSourceDefault,
-		})
-	}
-	for index, decl := range cfg.Assets.Splash() {
-		segments = append(segments, SplashSegment{
-			Texture:   cfg.Assets.Texture(decl.Texture),
-			CellW:     decl.CellW,
-			CellH:     decl.CellH,
-			Columns:   decl.Columns,
-			Frames:    decl.Frames,
-			Rate:      decl.Rate,
-			MinTime:   decl.MinTime,
-			Fade:      decl.Fade,
-			Skippable: decl.Skippable,
-			Particles: manifestSplashParticles(cfg.Assets, index, decl),
-		})
-	}
-	return segments
-}
-
-// manifestSplashParticles resolves a game-declared segment's optional
-// "effect" reference into a segment-scoped emitter at a fractional viewport
-// anchor.
-func manifestSplashParticles(assets asset.Manifest, segmentIndex int, decl asset.SplashDecl) func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
-	if decl.Effect == "" {
-		return nil
-	}
-	effect := assets.Effect(decl.Effect)
-	// EmitterSet keys live state by (effect, emitter) and only rebuilds an
-	// existing key when its seed changes. Scoping both values to manifest
-	// order prevents consecutive segments that share an effect from
-	// inheriting each other's particles while keeping each segment stable
-	// across its own frames.
-	emitter := render.EmitterID(segmentIndex + 1)
-	seed := uint64(effect)<<32 | uint64(emitter)
-	intensity := decl.EffectIntensity
-	if intensity == 0 {
-		intensity = 1
-	}
-	return func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles {
-		if effect == 0 || alpha <= 0 {
-			return nil
-		}
-		pos := math2d.Vec2{
-			X: viewport.Min.X + viewport.Width()*decl.EffectAnchorX,
-			Y: viewport.Min.Y + viewport.Height()*decl.EffectAnchorY,
-		}
-		return []render.DrawParticles{{
-			BaseCommand: render.BaseCommand{LayerValue: 2},
-			Effect:      effect,
-			Emitter:     emitter,
-			Pos:         pos,
-			Intensity:   intensity * alpha,
-			Time:        elapsed,
-			Dt:          dt,
-			Seed:        seed,
-		}}
-	}
 }

@@ -585,7 +585,7 @@ func TestRunSplashFrameAppliesViewportAndOnlyActivationSkips(t *testing.T) {
 }
 
 func TestFlipBookCellByRenderClock(t *testing.T) {
-	seg := SplashSegment{CellW: 10, CellH: 10, Columns: 2, Frames: 4, Rate: 2}
+	seg := splashSegment{CellW: 10, CellH: 10, Columns: 2, Frames: 4, Rate: 2}
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
 
 	img0 := splashFlipbookImage(seg, 0, viewport)
