@@ -8,13 +8,25 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-// Tabs owns the active index the same way it owns any other widget state: it
-// lives in ui.State keyed by widget id, so callers don't have to thread it
-// through their own state, and it survives rewind with the rest of ui.State.
+// Tabs comes in two ownership modes, and which one to reach for follows the
+// same line the rest of this package draws.
 //
-// Like every stateful widget the work is split in two: selection happens in
-// Update (tabsInputIn, which reads the tick's pointer events), and Render
-// (tabsIn) only reads the persisted index. Drawing never selects.
+// Caller-owned (tabsInputValueIn / tabsAtIn) is the mode for state the game
+// means something by: the caller passes the active index in and gets the next
+// one back, exactly like sliderInputIn does with its value and tableIn with
+// its selected row. Screen navigation belongs here — it lives in the game's
+// own state, so it rewinds with the simulation, shows up in a replay
+// fingerprint, and can be written by paths the UI never sees (a keyboard
+// shortcut cycling screens) without anything to keep in sync.
+//
+// Widget-owned (tabsInputIn / tabsIn) is a thin shell over that core which
+// parks the index in ui.State keyed by widget id. It is for state nobody
+// would think to declare or to save — a tooling overlay's open tab. It gets
+// cloned with the rest of ui.State, so it survives rewind too.
+//
+// Both modes split Update from Render the same way: selection is processed in
+// Update from the tick's pointer events, and drawing only reads. Drawing
+// never selects.
 
 // TabsBodyRect returns the content area of a tab widget occupying rect (rect
 // minus the header band), using the theme's bar height.
@@ -22,32 +34,43 @@ func (u *UI) TabsBodyRect(rect math2d.Rect) math2d.Rect {
 	return tabsBodyRect(rect, u.theme.Tabs.BarHeight)
 }
 
-// tabsInputIn is called in Update. It returns the active tab index and whether
-// this tick changed it.
+// tabsInputValueIn is called in Update. It is the caller-owned core: current
+// is the index the caller holds, and the returned index is the one it should
+// hold next. Taking the headers as rects rather than a bar rect and a count
+// leaves every layout question — widths, gaps, which edge the row is anchored
+// to — with the caller, who is the only one who can answer them.
+func (u *UI) tabsInputValueIn(id string, headers []math2d.Rect, current int, space Space) (int, bool) {
+	active := clampTab(current, len(headers))
+	for i, header := range headers {
+		if !u.clickedIn(tabHeaderID(id, i), header, space) {
+			continue
+		}
+		if i != active {
+			return i, true
+		}
+		break
+	}
+	// An out-of-range index the caller handed us was clamped above, which is
+	// a change it needs to hear about — same contract as sliderInputIn.
+	return active, active != current
+}
+
+// tabsInputIn is the widget-owned shell: it reads the active tab out of
+// ui.State, runs the caller-owned core over an equal-width header row, and
+// stores the result back.
 func (u *UI) tabsInputIn(id string, rect math2d.Rect, count int, space Space) (int, bool) {
 	wid := HashID(id)
 	u.ensureTabs()
 
-	active := clampTab(u.state.tabs[wid], count)
-	changed := false
-	barH := u.theme.Tabs.BarHeight
-	for i := range count {
-		if !u.clickedIn(tabHeaderID(id, i), tabHeaderRect(rect, i, count, barH), space) {
-			continue
-		}
-		if i != active {
-			active = i
-			changed = true
-		}
-		break
-	}
-
+	headers := tabHeaderRects(rect, count, u.theme.Tabs.BarHeight)
+	active, changed := u.tabsInputValueIn(id, headers, u.state.tabs[wid], space)
 	u.state.tabs[wid] = active
 	return active, changed
 }
 
-// tabsIn is called in Render. It draws the header band and returns the active
-// tab index so the caller can draw that tab's content in TabsBodyRect.
+// tabsIn is the widget-owned shell for Render: it draws the band behind an
+// equal-width header row and returns the active tab index so the caller can
+// draw that tab's content in TabsBodyRect.
 func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) int {
 	wid := HashID(id)
 	u.ensureTabs()
@@ -55,20 +78,34 @@ func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) i
 	tabs := u.theme.Tabs
 	active := clampTab(u.state.tabs[wid], len(labels))
 	u.state.tabs[wid] = active
-	bar := tabsBarRect(rect, tabs.BarHeight)
 
 	layer := u.nextLayer()
 	u.commands = append(u.commands, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: layer},
-		Rect:        u.rectToWorld(bar, space),
+		Rect:        u.rectToWorld(tabsBarRect(rect, tabs.BarHeight), space),
 		Fill:        tabs.Bar,
 		Stroke:      tabs.Border,
 		StrokeWidth: u.sizeToWorld(tabs.BorderWidth, space),
 	})
 
+	u.tabsAtIn(tabHeaderRects(rect, len(labels), tabs.BarHeight), labels, active, space)
+	return active
+}
+
+// tabsAtIn draws one header per rect in the theme's tab styling. It is the
+// caller-owned draw: no state is read or written, and the band behind the
+// headers belongs to the caller, who chose the layout and may not have laid
+// the headers out as one contiguous row.
+func (u *UI) tabsAtIn(headers []math2d.Rect, labels []string, active int, space Space) {
+	tabs := u.theme.Tabs
+	layer := u.nextLayer()
+
 	cursor := u.cursorIn(space)
-	for i, label := range labels {
-		header := tabHeaderRect(rect, i, len(labels), tabs.BarHeight)
+	for i, header := range headers {
+		if i >= len(labels) {
+			break
+		}
+		label := labels[i]
 		fill := tabs.TabInactive
 		switch {
 		case i == active:
@@ -78,7 +115,7 @@ func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) i
 		}
 		u.commands = append(u.commands,
 			render.DrawRect{
-				BaseCommand:  render.BaseCommand{LayerValue: layer + 1},
+				BaseCommand:  render.BaseCommand{LayerValue: layer},
 				Rect:         u.rectToWorld(header, space),
 				Fill:         fill,
 				Stroke:       tabs.Border,
@@ -86,7 +123,7 @@ func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) i
 				CornerRadius: u.sizeToWorld(tabs.CornerRadius, space),
 			},
 			render.DrawText{
-				BaseCommand: render.BaseCommand{LayerValue: layer + 2},
+				BaseCommand: render.BaseCommand{LayerValue: layer + 1},
 				Position:    u.toWorld(header.Center(), space),
 				Text:        label,
 				Color:       tabs.TextColor,
@@ -96,8 +133,6 @@ func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) i
 				Baseline:    render.BaselineMiddle,
 			})
 	}
-
-	return active
 }
 
 // titledPanelIn draws a panel with a header band carrying title. It is a
@@ -156,8 +191,18 @@ func tabsBodyRect(rect math2d.Rect, barH float64) math2d.Rect {
 	)
 }
 
-// tabHeaderRect returns the i-th header of count equal-width headers. Widths
-// are equal in this version; per-content widths are a follow-up.
+// tabHeaderRects lays count equal-width headers across the band. It is the
+// default layout of the widget-owned mode; callers that own their index pass
+// their own header rects instead.
+func tabHeaderRects(rect math2d.Rect, count int, barH float64) []math2d.Rect {
+	headers := make([]math2d.Rect, max(count, 0))
+	for i := range headers {
+		headers[i] = tabHeaderRect(rect, i, count, barH)
+	}
+	return headers
+}
+
+// tabHeaderRect returns the i-th header of count equal-width headers.
 func tabHeaderRect(rect math2d.Rect, i, count int, barH float64) math2d.Rect {
 	if count <= 0 {
 		return math2d.NewRect(rect.Min, math2d.Vec2{})

@@ -30,6 +30,120 @@ func clickTab(pos math2d.Vec2) []input.PointerEvent {
 	}
 }
 
+// gappedHeaders is a layout the equal-width mode cannot express: three
+// headers of different widths with dead space between them. It is what the
+// caller-owned mode exists for.
+func gappedHeaders() []math2d.Rect {
+	return []math2d.Rect{
+		math2d.NewRect(math2d.Vec2{X: 100, Y: 100}, math2d.Vec2{X: 150, Y: 40}),
+		math2d.NewRect(math2d.Vec2{X: 280, Y: 100}, math2d.Vec2{X: 90, Y: 40}),
+		math2d.NewRect(math2d.Vec2{X: 400, Y: 100}, math2d.Vec2{X: 120, Y: 40}),
+	}
+}
+
+func TestTabsInputValueReturnsClickedTabWithoutTouchingState(t *testing.T) {
+	state := &State{}
+	headers := gappedHeaders()
+	u := tabsUpdate(state, clickTab(headers[2].Center())...)
+
+	next, changed := u.tabsInputValueIn("nav", headers, 0, SpaceRef)
+
+	if next != 2 || !changed {
+		t.Fatalf("tabsInputValueIn() = (%d, %v), want (2, true)", next, changed)
+	}
+	if len(state.tabs) != 0 {
+		t.Fatalf("state.tabs = %v, want the caller-owned mode to store nothing", state.tabs)
+	}
+}
+
+func TestTabsInputValueKeepsCallerIndexWithoutClick(t *testing.T) {
+	u := tabsUpdate(&State{})
+
+	next, changed := u.tabsInputValueIn("nav", gappedHeaders(), 1, SpaceRef)
+
+	if next != 1 || changed {
+		t.Fatalf("tabsInputValueIn() = (%d, %v), want the caller's index back (1, false)", next, changed)
+	}
+}
+
+// Clicking the gap between two headers must not select anything — the layout
+// belongs to the caller, and so do the holes in it.
+func TestTabsInputValueIgnoresClickBetweenHeaders(t *testing.T) {
+	headers := gappedHeaders()
+	gap := math2d.Vec2{X: headers[0].Max.X + 10, Y: headers[0].Center().Y}
+	u := tabsUpdate(&State{}, clickTab(gap)...)
+
+	if next, changed := u.tabsInputValueIn("nav", headers, 1, SpaceRef); next != 1 || changed {
+		t.Fatalf("tabsInputValueIn() = (%d, %v), want the gap ignored (1, false)", next, changed)
+	}
+}
+
+// Clamping an out-of-range index the caller handed over counts as a change,
+// so the caller writes the corrected value back — same contract as
+// sliderInputIn normalizing a value.
+func TestTabsInputValueReportsClampAsChange(t *testing.T) {
+	u := tabsUpdate(&State{})
+
+	if next, changed := u.tabsInputValueIn("nav", gappedHeaders(), 9, SpaceRef); next != 2 || !changed {
+		t.Fatalf("tabsInputValueIn() = (%d, %v), want clamped (2, true)", next, changed)
+	}
+}
+
+// The widget-owned mode is a shell over the caller-owned core, so a click
+// still has to land through it and reach ui.State.
+func TestTabsInputStoresThroughTheCallerOwnedCore(t *testing.T) {
+	state := &State{}
+	header := tabHeaderRect(tabsRect(), 1, 3, DefaultTheme().Tabs.BarHeight)
+	u := tabsUpdate(state, clickTab(header.Center())...)
+
+	if active, changed := u.tabsInputIn("inspector", tabsRect(), 3, SpaceRef); active != 1 || !changed {
+		t.Fatalf("tabsInputIn() = (%d, %v), want (1, true)", active, changed)
+	}
+	if state.tabs[HashID("inspector")] != 1 {
+		t.Fatalf("persisted tab = %d, want 1", state.tabs[HashID("inspector")])
+	}
+}
+
+func TestTabsAtDrawsOneHeaderPerRectWithoutABand(t *testing.T) {
+	cam := testCamera()
+	store := AnimStore{}
+	theme := DefaultTheme()
+	headers := gappedHeaders()
+	draw := New(&State{}, math2d.Vec2{}, true, cam, theme, cam.Viewport, &store, 0, 0)
+
+	draw.tabsAtIn(headers, tabsLabels(), 2, SpaceRef)
+
+	commands := draw.Commands()
+	if len(commands) != 2*len(headers) {
+		t.Fatalf("len(commands) = %d, want a rect and a label per header and no band", len(commands))
+	}
+	first := commands[0].(render.DrawRect)
+	if first.Fill != theme.Tabs.TabInactive {
+		t.Fatalf("first header fill = %v, want inactive %v", first.Fill, theme.Tabs.TabInactive)
+	}
+	if first.Rect.Width() != headers[0].Width() {
+		t.Fatalf("first header width = %v, want the caller's %v", first.Rect.Width(), headers[0].Width())
+	}
+	if active := commands[4].(render.DrawRect); active.Fill != theme.Tabs.TabActive {
+		t.Fatalf("third header fill = %v, want active %v", active.Fill, theme.Tabs.TabActive)
+	}
+}
+
+// Drawing must not read or write ui.State in the caller-owned mode, or the
+// two modes would fight over the same map entry.
+func TestTabsAtLeavesStateUntouched(t *testing.T) {
+	cam := testCamera()
+	store := AnimStore{}
+	state := &State{}
+	draw := New(state, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
+
+	draw.tabsAtIn(gappedHeaders(), tabsLabels(), 2, SpaceRef)
+
+	if len(state.tabs) != 0 {
+		t.Fatalf("state.tabs = %v, want untouched", state.tabs)
+	}
+}
+
 func TestTabsInputSelectsClickedHeader(t *testing.T) {
 	state := &State{}
 	header := tabHeaderRect(tabsRect(), 2, 3, DefaultTheme().Tabs.BarHeight)

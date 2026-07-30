@@ -40,8 +40,22 @@ func (s InteractScope) ListHit(id string, rect math2d.Rect, rowH float64, rowCou
 	return s.u.listHitIn(id, rect, rowH, rowCount, s.space)
 }
 
-// TabsInput selects the active tab from this tick's pointer events. It is the
-// Update half of the widget; DrawScope.Tabs only reads what it stored.
+// TabsInputValue selects the active tab from this tick's pointer events,
+// leaving the index itself with the caller: pass the one you hold, store the
+// one returned. Reach for this whenever the selection is state your game
+// means something by — a screen the player navigates to belongs in the game's
+// own state, where it rewinds with the simulation and can also be set by
+// paths the UI never sees, like a keyboard shortcut.
+//
+// headers carries one rect per tab, so widths, gaps and alignment stay the
+// caller's to decide.
+func (s InteractScope) TabsInputValue(id string, headers []math2d.Rect, current int) (next int, changed bool) {
+	return s.u.tabsInputValueIn(id, headers, current, s.space)
+}
+
+// TabsInput is the widget-owned variant: it keeps the active tab in ui.State
+// keyed by id, for selections nobody would think to declare or to save, such
+// as a tooling overlay's open tab. DrawScope.Tabs only reads what it stored.
 func (s InteractScope) TabsInput(id string, rect math2d.Rect, count int) (active int, changed bool) {
 	return s.u.tabsInputIn(id, rect, count, s.space)
 }
@@ -70,8 +84,17 @@ func (s DrawScope) TitledPanel(rect math2d.Rect, title string) {
 	s.u.titledPanelIn(rect, title, s.space)
 }
 
-// Tabs draws the header band and returns the active tab index. Selection
-// belongs to InteractScope.TabsInput; drawing never changes the active tab.
+// TabsAt draws one themed header per rect, highlighting active. It is the
+// draw half of TabsInputValue: the caller owns both the index and the layout,
+// so no band is drawn behind the headers — that background is the caller's,
+// which is what lets the headers be spaced, staggered or styled freely.
+func (s DrawScope) TabsAt(headers []math2d.Rect, labels []string, active int) {
+	s.u.tabsAtIn(headers, labels, active, s.space)
+}
+
+// Tabs draws the band plus an equal-width header row and returns the active
+// tab index. It is the draw half of TabsInput, and reads the index that one
+// stored; drawing never changes the active tab.
 func (s DrawScope) Tabs(id string, rect math2d.Rect, labels []string) int {
 	return s.u.tabsIn(id, rect, labels, s.space)
 }
