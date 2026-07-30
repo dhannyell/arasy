@@ -62,6 +62,15 @@ func isGamepadCode(code SourceCode) bool {
 	return offset >= GamepadA-gamepadCodeStart && offset <= GamepadRightStickY-gamepadCodeStart
 }
 
+func isGamepadStickAxis(code SourceCode) bool {
+	if !isGamepadCode(code) {
+		return false
+	}
+	offset := (code - gamepadCodeStart) % gamepadSlotStride
+	return offset >= GamepadLeftStickX-gamepadCodeStart &&
+		offset <= GamepadRightStickY-gamepadCodeStart
+}
+
 // GamepadSlotCode maps one of the slot-zero gamepad codes into a reserved
 // slot range. Only slot zero is emitted by the built-in hosts today, but the
 // ranges are reserved so adding local multiplayer does not change Event.

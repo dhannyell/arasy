@@ -108,6 +108,7 @@ func (h *host) startLoop() {
 
 func (h *host) pollGamepad() []input.Event {
 	current, present := h.browserGamepadSnapshot()
+	h.driver.SetGamepadConnected(present)
 	return h.gamepadTracker.Update(present, current)
 }
 

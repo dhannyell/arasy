@@ -444,6 +444,9 @@ const wasmShellHTML = `<!doctype html>
             height: 100%%;
             visibility: %s;
             -webkit-tap-highlight-color: transparent;
+			-webkit-touch-callout: none;
+            user-select: none;
+            touch-action: none;
         }
 
         #ar-boot {

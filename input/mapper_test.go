@@ -197,6 +197,41 @@ func TestMapperAppliesGamepadDeadzoneBeforeScale(t *testing.T) {
 	}
 }
 
+func TestMapperPreservesTriggerRangeWithoutStickDeadzone(t *testing.T) {
+	for _, value := range []float64{.5, 1} {
+		mapper := input.NewMapperWithDeadzone([]input.Binding{
+			{Source: gamepad(input.GamepadLeftTrigger), Action: input.ActionConfirm, Scale: 1},
+		}, .8)
+		mapper.Apply(input.Event{
+			Source: gamepad(input.GamepadLeftTrigger),
+			Kind:   input.EventAxisChanged,
+			Value:  value,
+		})
+
+		state := mapper.State()
+		if got := state.Value(input.ActionConfirm); got != value {
+			t.Fatalf("trigger value = %v, want %v without stick deadzone", got, value)
+		}
+	}
+}
+
+func TestMapperAppliesDeadzoneToStickAxesInReservedSlots(t *testing.T) {
+	code, ok := input.GamepadSlotCode(3, input.GamepadRightStickY)
+	if !ok {
+		t.Fatal("expected valid gamepad slot code")
+	}
+	source := input.Source{Device: input.DeviceGamepad, Code: code}
+	mapper := input.NewMapperWithDeadzone([]input.Binding{
+		{Source: source, Action: input.ActionMoveY, Scale: 1},
+	}, .2)
+	mapper.Apply(input.Event{Source: source, Kind: input.EventAxisChanged, Value: .6})
+
+	state := mapper.State()
+	if got := state.Value(input.ActionMoveY); math.Abs(got-.5) > 1e-12 {
+		t.Fatalf("slotted stick value = %v, want .5 after deadzone", got)
+	}
+}
+
 func TestMapperConstructorsUseDefaultGamepadDeadzoneForZero(t *testing.T) {
 	bindings := []input.Binding{
 		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},

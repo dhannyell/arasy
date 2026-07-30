@@ -12,9 +12,9 @@ type Recording struct {
 	Events []input.Event
 	Ticks  uint64
 	Seed   uint64
-	// GamepadDeadzone is the effective deterministic axis deadzone. Zero, or
-	// an invalid value in a Recording constructed in memory, means use the
-	// fresh game's configured effective deadzone.
+	// GamepadDeadzone is the effective deterministic stick-axis deadzone.
+	// Zero, or an invalid value in a Recording constructed in memory, means
+	// use the fresh game's configured effective deadzone.
 	GamepadDeadzone float64
 	Anchors         []Anchor
 

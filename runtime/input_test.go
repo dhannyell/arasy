@@ -234,6 +234,9 @@ func TestDriverInputSnapshotRestoreRoundTrip(t *testing.T) {
 			snapshotState.Value(input.ActionMoveX),
 		)
 	}
+	if got := restoredState.LastInputDevice(); got != input.DeviceMouse {
+		t.Fatalf("restored last input device = %v, want mouse", got)
+	}
 	pointer := driverInput.Pointer()
 	if pointer.Pos() != (math2d.Vec2{X: 15, Y: 20}) || !pointer.Inside() || pointer.Wheel() != (math2d.Vec2{X: 2, Y: 1}) {
 		t.Fatalf("restored pointer = pos %+v wheel %+v inside=%v, want 15,20 wheel 2,1 inside", pointer.Pos(), pointer.Wheel(), pointer.Inside())

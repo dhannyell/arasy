@@ -274,15 +274,18 @@ func (h *host) pollGamepad() []input.Event {
 	}
 
 	if h.gamepadJoystick == noGamepadJoystick {
+		h.driver.SetGamepadConnected(false)
 		return nil
 	}
 
 	state := h.gamepadJoystick.GetGamepadState()
 	if state == nil {
+		h.driver.SetGamepadConnected(false)
 		events := h.gamepadTracker.Update(false, platforminput.GamepadSnapshot{})
 		h.gamepadJoystick = noGamepadJoystick
 		return events
 	}
+	h.driver.SetGamepadConnected(true)
 
 	var buttons [15]bool
 	for i := range buttons {

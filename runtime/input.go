@@ -48,9 +48,7 @@ func (i *driverInput) Apply(events []input.Event, tick uint64) {
 	for _, event := range events {
 		event.Tick = tick
 
-		if event.Kind != input.EventPointerMove && event.Kind != input.EventPointerLeave {
-			i.mapper.Apply(event)
-		}
+		i.mapper.Apply(event)
 
 		if event.Source.Device == input.DeviceMouse {
 			i.accumulatePointer(event)
