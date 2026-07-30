@@ -11,8 +11,8 @@ const gamepadSlotCount = 16
 // change the event journal without changing the recorded simulation state.
 const GamepadAxisEpsilon = 0.001
 
-// DefaultGamepadDeadzone is the effective deadzone used when a runtime config
-// leaves GamepadDeadzone at its zero value.
+// DefaultGamepadDeadzone is the effective deadzone used when configuration or
+// a direct Mapper caller supplies zero or an invalid value.
 const DefaultGamepadDeadzone = 0.15
 
 const (
@@ -45,8 +45,8 @@ func Gamepad(code SourceCode) Source {
 	return Source{Device: DeviceGamepad, Code: code}
 }
 
-// EffectiveGamepadDeadzone resolves the runtime zero value and rejects
-// unusable configuration while keeping the result in [0, 1).
+// EffectiveGamepadDeadzone resolves zero and rejects unusable configuration
+// while keeping the result in [0, 1).
 func EffectiveGamepadDeadzone(value float64) float64 {
 	if value == 0 || value < 0 || value >= 1 || math.IsNaN(value) {
 		return DefaultGamepadDeadzone
@@ -94,29 +94,23 @@ func GamepadAxisChanged(previous, current float64) bool {
 	return math.Abs(current-previous) > GamepadAxisEpsilon
 }
 
-// ApplyGamepadDeadzone removes the center deadzone and rescales the remaining
-// range back to [-1, 1]. Values exactly on the boundary are treated as zero;
-// only values strictly above it reach the action mapper.
+// ApplyGamepadDeadzone resolves deadzone through EffectiveGamepadDeadzone,
+// removes the center region, and rescales the remainder to [-1, 1].
+// abs(value) <= deadzone becomes zero; values strictly above it are rescaled.
 func ApplyGamepadDeadzone(value, deadzone float64) float64 {
+	return applyEffectiveGamepadDeadzone(value, EffectiveGamepadDeadzone(deadzone))
+}
+
+// applyEffectiveGamepadDeadzone assumes deadzone is already resolved to
+// [0, 1), avoiding repeated configuration work in Mapper.State.
+func applyEffectiveGamepadDeadzone(value, deadzone float64) float64 {
 	value = NormalizeGamepadAxis(value)
-	if deadzone <= 0 {
-		return value
-	}
-	if deadzone >= 1 || math.IsNaN(deadzone) {
-		return 0
-	}
 	abs := math.Abs(value)
 	if abs <= deadzone {
 		return 0
 	}
 	negative := math.Signbit(value)
 	value = (abs - deadzone) / (1 - deadzone)
-	if value > 1 {
-		value = 1
-	}
-	if value < 0 {
-		return 0
-	}
 	if negative {
 		return -value
 	}

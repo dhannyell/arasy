@@ -1,6 +1,7 @@
 package platforminput_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
@@ -26,6 +27,42 @@ func TestGamepadTrackerConnectsAndEmitsButtonAxisChanges(t *testing.T) {
 	}
 	if events[2].Source.Code != input.GamepadLeftTrigger || events[2].Value != .5 {
 		t.Fatalf("trigger event = %+v", events[2])
+	}
+}
+
+func TestGamepadTrackerMapsEveryCanonicalButton(t *testing.T) {
+	codes := [...]input.SourceCode{
+		input.GamepadA,
+		input.GamepadB,
+		input.GamepadX,
+		input.GamepadY,
+		input.GamepadLeftBumper,
+		input.GamepadRightBumper,
+		input.GamepadBack,
+		input.GamepadStart,
+		input.GamepadGuide,
+		input.GamepadLeftThumb,
+		input.GamepadRightThumb,
+		input.GamepadDpadUp,
+		input.GamepadDpadRight,
+		input.GamepadDpadDown,
+		input.GamepadDpadLeft,
+	}
+	for index, code := range codes {
+		t.Run(fmt.Sprintf("%d", code), func(t *testing.T) {
+			var tracker platforminput.GamepadTracker
+			current := platforminput.GamepadSnapshot{}
+			current.Buttons[index] = true
+
+			events := tracker.Update(true, current)
+
+			if len(events) != 1 {
+				t.Fatalf("button %d events = %+v, want exactly one", index, events)
+			}
+			if events[0].Source.Code != code || events[0].Kind != input.EventButtonDown {
+				t.Fatalf("button %d event = %+v, want code %v down", index, events[0], code)
+			}
+		})
 	}
 }
 

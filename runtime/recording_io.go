@@ -303,10 +303,7 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 	if log == nil {
 		log = slog.Default()
 	}
-	driver := newDriver(game, log, &rec.Seed)
-	if rec.GamepadDeadzone > 0 && rec.GamepadDeadzone < 1 {
-		driver.input.SetGamepadDeadzone(rec.GamepadDeadzone)
-	}
+	driver := newDriverFromRecording(game, log, rec)
 	driver.recorder = nil
 
 	// Restore the surface size active at tick 0 so viewport-dependent logic

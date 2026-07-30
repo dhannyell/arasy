@@ -49,6 +49,9 @@ func TestNormalizeGamepadAxis(t *testing.T) {
 }
 
 func TestApplyGamepadDeadzoneUsesStrictlyAboveBoundary(t *testing.T) {
+	if got := input.ApplyGamepadDeadzone(.1, .2); got != 0 {
+		t.Fatalf("axis below deadzone = %v, want 0", got)
+	}
 	if got := input.ApplyGamepadDeadzone(.2, .2); got != 0 {
 		t.Fatalf("axis at deadzone = %v, want 0", got)
 	}
@@ -57,6 +60,14 @@ func TestApplyGamepadDeadzoneUsesStrictlyAboveBoundary(t *testing.T) {
 	}
 	if got := input.ApplyGamepadDeadzone(-.6, .2); math.Abs(got+.5) > 1e-12 {
 		t.Fatalf("negative axis above deadzone = %v, want -.5", got)
+	}
+}
+
+func TestApplyGamepadDeadzoneResolvesInvalidValuesToDefault(t *testing.T) {
+	for _, deadzone := range []float64{0, -1, 1, math.NaN()} {
+		if got := input.ApplyGamepadDeadzone(.1, deadzone); got != 0 {
+			t.Fatalf("ApplyGamepadDeadzone(.1, %v) = %v, want default-deadzone zero", deadzone, got)
+		}
 	}
 }
 

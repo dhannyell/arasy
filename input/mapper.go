@@ -23,8 +23,10 @@ func NewMapper(bindings []Binding) *Mapper {
 	return NewMapperWithDeadzone(bindings, 0)
 }
 
-// NewMapperWithDeadzone constructs a mapper that applies deadzone to
-// gamepad-axis events before binding scale is applied.
+// NewMapperWithDeadzone constructs a mapper that transforms values from
+// DeviceGamepad sources before applying Binding.Scale. Zero or an invalid
+// deadzone selects DefaultGamepadDeadzone. abs(value) <= deadzone becomes
+// zero; values above it are rescaled to the remaining range.
 func NewMapperWithDeadzone(bindings []Binding, deadzone float64) *Mapper {
 	validBindings := make([]Binding, 0, len(bindings))
 	for _, binding := range bindings {
@@ -36,7 +38,7 @@ func NewMapperWithDeadzone(bindings []Binding, deadzone float64) *Mapper {
 	return &Mapper{
 		bindings:        validBindings,
 		sourceValues:    make(map[Source]float64),
-		gamepadDeadzone: deadzone,
+		gamepadDeadzone: EffectiveGamepadDeadzone(deadzone),
 		latched:         make(map[Source]bool),
 		previous:        NewState(),
 		current:         NewState(),
@@ -80,7 +82,7 @@ func (m *Mapper) State() State {
 		}
 
 		if binding.Source.Device == DeviceGamepad {
-			raw = ApplyGamepadDeadzone(raw, m.gamepadDeadzone)
+			raw = applyEffectiveGamepadDeadzone(raw, m.gamepadDeadzone)
 		}
 		value := raw * binding.Scale
 		if value == 0 {
@@ -148,12 +150,13 @@ func (m *Mapper) Clone() *Mapper {
 	return clone
 }
 
-// SetGamepadDeadzone updates the deterministic gamepad-axis transform.
+// SetGamepadDeadzone updates the deterministic gamepad transform, resolving
+// zero or an invalid value to DefaultGamepadDeadzone.
 func (m *Mapper) SetGamepadDeadzone(deadzone float64) {
-	m.gamepadDeadzone = deadzone
+	m.gamepadDeadzone = EffectiveGamepadDeadzone(deadzone)
 }
 
-// GamepadDeadzone returns the deadzone currently applied by the mapper.
+// GamepadDeadzone returns the effective deadzone currently applied.
 func (m *Mapper) GamepadDeadzone() float64 {
 	return m.gamepadDeadzone
 }
