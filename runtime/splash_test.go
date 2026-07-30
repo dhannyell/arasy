@@ -1,6 +1,9 @@
 package runtime
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"log/slog"
 	"testing"
 	"testing/fstest"
@@ -34,14 +37,17 @@ func newTestDriver(t *testing.T, cfg Config) *Driver {
 }
 
 // mustSplashManifest loads a manifest from an in-memory manifest.json,
-// synthesizing empty files for every "file" it references (Load stores raw
-// bytes verbatim without decoding images).
+// synthesizing a valid texture large enough for the test flip-books.
 func mustSplashManifest(t *testing.T, manifestJSON []byte) asset.Manifest {
 	t.Helper()
+	var texture bytes.Buffer
+	if err := png.Encode(&texture, image.NewNRGBA(image.Rect(0, 0, 16, 16))); err != nil {
+		t.Fatalf("png.Encode: %v", err)
+	}
 	fsys := fstest.MapFS{
 		"manifest.json": {Data: manifestJSON},
-		"a.png":         {Data: []byte{0}},
-		"b.png":         {Data: []byte{0}},
+		"a.png":         {Data: texture.Bytes()},
+		"b.png":         {Data: texture.Bytes()},
 	}
 	m, err := asset.Load(fsys)
 	if err != nil {

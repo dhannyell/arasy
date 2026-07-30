@@ -19,6 +19,7 @@ const (
 	maxTotalAudioBytes     int64 = 64 << 20
 
 	defaultSplashEffectAnchor = 0.5
+	maxSplashFrames           = 1<<16 - 1
 )
 
 type manifestFile struct {
@@ -242,6 +243,9 @@ func Load(layers ...fs.FS) (Manifest, error) {
 		}
 		textures[name] = TextureDecl{Data: data}
 	}
+	if err := validateSplashAtlases(splashEntries, textures); err != nil {
+		return Manifest{}, err
+	}
 	for name, entry := range fntByName {
 		data, err := readLayered(layers, entry.File, maxFontBytes)
 		if err != nil {
@@ -297,9 +301,6 @@ func Load(layers ...fs.FS) (Manifest, error) {
 
 	splash := make([]SplashDecl, 0, len(splashEntries))
 	for _, entry := range splashEntries {
-		if _, ok := manifest.textByName[entry.Texture]; !ok {
-			return Manifest{}, fmt.Errorf("asset: splash %q references unknown texture", entry.Texture)
-		}
 		if entry.Effect != "" {
 			if _, ok := manifest.effectByName[entry.Effect]; !ok {
 				return Manifest{}, fmt.Errorf("asset: splash %q references unknown effect %q", entry.Texture, entry.Effect)
@@ -419,20 +420,92 @@ func validateSplashEntries(entries []splashEntry) error {
 		if entry.Texture == "" {
 			return fmt.Errorf("asset: splash entry %d has an empty texture name", i)
 		}
+		if !finitePositive(entry.CellW) {
+			return fmt.Errorf("asset: splash %q has invalid cell_w %g, must be finite and > 0", entry.Texture, entry.CellW)
+		}
+		if !finitePositive(entry.CellH) {
+			return fmt.Errorf("asset: splash %q has invalid cell_h %g, must be finite and > 0", entry.Texture, entry.CellH)
+		}
 		if entry.Columns < 1 {
 			return fmt.Errorf("asset: splash %q has columns %d, must be >= 1", entry.Texture, entry.Columns)
 		}
 		if entry.Frames < 1 {
 			return fmt.Errorf("asset: splash %q has frames %d, must be >= 1", entry.Texture, entry.Frames)
 		}
-		if entry.MinTime < 0 {
-			return fmt.Errorf("asset: splash %q has negative min_time %g", entry.Texture, entry.MinTime)
+		if entry.Frames > maxSplashFrames {
+			return fmt.Errorf("asset: splash %q has frames %d, must be <= %d", entry.Texture, entry.Frames, maxSplashFrames)
 		}
-		if entry.Fade < 0 {
-			return fmt.Errorf("asset: splash %q has negative fade %g", entry.Texture, entry.Fade)
+		if !finiteNonNegative(entry.Rate) || entry.Rate > math.MaxFloat32 {
+			return fmt.Errorf("asset: splash %q has invalid rate %g, must be finite, non-negative, and fit float32", entry.Texture, entry.Rate)
+		}
+		if !finiteNonNegative(entry.MinTime) {
+			return fmt.Errorf("asset: splash %q has invalid min_time %g, must be finite and non-negative", entry.Texture, entry.MinTime)
+		}
+		if !finiteNonNegative(entry.Fade) {
+			return fmt.Errorf("asset: splash %q has invalid fade %g, must be finite and non-negative", entry.Texture, entry.Fade)
+		}
+		anchorX := splashEffectAnchor(entry.EffectAnchorX)
+		if !finiteUnitInterval(anchorX) {
+			return fmt.Errorf("asset: splash %q has effect_anchor_x %g outside [0, 1]", entry.Texture, anchorX)
+		}
+		anchorY := splashEffectAnchor(entry.EffectAnchorY)
+		if !finiteUnitInterval(anchorY) {
+			return fmt.Errorf("asset: splash %q has effect_anchor_y %g outside [0, 1]", entry.Texture, anchorY)
+		}
+		if !finiteNonNegative(entry.EffectIntensity) {
+			return fmt.Errorf("asset: splash %q has invalid effect_intensity %g, must be finite and non-negative", entry.Texture, entry.EffectIntensity)
 		}
 	}
 	return nil
+}
+
+func validateSplashAtlases(entries []splashEntry, textures map[string]TextureDecl) error {
+	dimensions := make(map[string]textureDimensions, len(entries))
+	for _, entry := range entries {
+		texture, ok := textures[entry.Texture]
+		if !ok {
+			return fmt.Errorf("asset: splash %q references unknown texture", entry.Texture)
+		}
+
+		size, ok := dimensions[entry.Texture]
+		if !ok {
+			var err error
+			size, err = declaredTextureDimensions(texture)
+			if err != nil {
+				return fmt.Errorf("asset: splash %q cannot inspect texture dimensions: %w", entry.Texture, err)
+			}
+			dimensions[entry.Texture] = size
+		}
+
+		usedColumns := min(entry.Columns, entry.Frames)
+		rows := 1 + (entry.Frames-1)/entry.Columns
+		requiredW := float64(usedColumns) * entry.CellW
+		requiredH := float64(rows) * entry.CellH
+		if requiredW > float64(size.width) || requiredH > float64(size.height) {
+			return fmt.Errorf(
+				"asset: splash %q atlas requires %gx%g pixels for %d frames, texture is %dx%d",
+				entry.Texture,
+				requiredW,
+				requiredH,
+				entry.Frames,
+				size.width,
+				size.height,
+			)
+		}
+	}
+	return nil
+}
+
+func finitePositive(value float64) bool {
+	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
+}
+
+func finiteNonNegative(value float64) bool {
+	return value >= 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
+}
+
+func finiteUnitInterval(value float64) bool {
+	return value >= 0 && value <= 1 && !math.IsInf(value, 0) && !math.IsNaN(value)
 }
 
 func validateAssetPath(kind, name, path string) error {
