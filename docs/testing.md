@@ -176,6 +176,23 @@ color_test.go
 command_test.go
 ```
 
+### `internal/svggen`
+
+Compilador SVG-para-Go (`arasy svg`), tool-time only. Cobertura por
+características, nao por arquivo espelhado:
+
+```text
+parse_test.go      -> subconjunto aceito, rejeicoes, FuzzParseSVG
+path_test.go        -> comandos de path, conversao de arco, FuzzParsePathData
+generate_test.go    -> TestGenerateIsDeterministicAndFormatted (gera duas vezes, compara bytes)
+```
+
+`FuzzParseSVG`/`FuzzParsePathData` rodam como testes de regressao normais via
+`go test ./...` (corpus commitado) e como fuzzer real sob demanda
+(`go test ./internal/svggen -fuzz FuzzParseSVG -fuzztime 60s`), no mesmo
+espirito do fuzzing de simulacao descrito abaixo. Veja
+`docs/vector-graphics.md` para o que o compilador aceita/rejeita.
+
 ### Pacotes pequenos
 
 Pacotes como `math2d`, `loop`, `input` e `ui` podem continuar com poucos
