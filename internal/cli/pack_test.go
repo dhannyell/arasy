@@ -12,7 +12,7 @@ import (
 func TestPackContainsStaticBuildAtArchiveRoot(t *testing.T) {
 	staging := t.TempDir()
 	pkg := filepath.Join(repoRoot(t), "examples", "breakout", "wasm")
-	if err := buildWASM(pkg, staging, "Breakout", true, false, io.Discard, io.Discard); err != nil {
+	if err := buildWASM(pkg, staging, "Breakout", wasmBuildOptions{Release: true}, io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(t.TempDir(), "breakout.zip")

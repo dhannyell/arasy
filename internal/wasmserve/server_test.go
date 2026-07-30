@@ -221,7 +221,7 @@ func TestHandlerRebuildErrorIsReturnedToBrowser(t *testing.T) {
 }
 
 func TestShellHTMLEscapesTitleAndWASMFile(t *testing.T) {
-	body, err := ShellHTML("<unsafe>", `demo".wasm`)
+	body, err := ShellHTML("<unsafe>", `demo".wasm`, BootOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,27 +231,91 @@ func TestShellHTMLEscapesTitleAndWASMFile(t *testing.T) {
 	}
 }
 
-func TestShellCanDisableLoadingAndRuntimeSplashes(t *testing.T) {
-	body, err := shellHTML("Arasy", "app.wasm", true)
+func TestShellDefaultDelaysLoadingAndPreservesRuntimeSplashPolicy(t *testing.T) {
+	body, err := ShellHTML("Arasy", "app.wasm", BootOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	html := string(body)
-	if strings.Contains(html, `id="ar-boot"`) ||
-		strings.Contains(html, PosterLandscapeFile) ||
-		strings.Contains(html, PosterStackedFile) {
-		t.Fatal("disabled shell still contains loading splash markup")
+	for _, want := range []string{
+		`id="ar-boot"`,
+		PosterLandscapeFile,
+		PosterStackedFile,
+		"setTimeout(() =>",
+		"}, 500)",
+		"engine: true",
+		"game: true",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("default shell missing %q", want)
+		}
 	}
-	if !strings.Contains(html, "window.arasyDisableSplash = true;") {
-		t.Fatal("disabled shell does not signal runtime splash suppression")
+}
+
+func TestShellLoadingAndRuntimeSplashAreIndependent(t *testing.T) {
+	t.Run("runtime splash off keeps loading", func(t *testing.T) {
+		body, err := ShellHTML("Arasy", "app.wasm", BootOptions{DisableRuntimeSplash: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		html := string(body)
+		if !strings.Contains(html, `id="ar-boot"`) {
+			t.Fatal("runtime splash opt-out removed the loading indicator")
+		}
+		if !strings.Contains(html, "engine: false") || !strings.Contains(html, "game: false") {
+			t.Fatal("runtime splash opt-out was not propagated to the WASM host")
+		}
+	})
+
+	t.Run("loading off preserves game splash", func(t *testing.T) {
+		body, err := ShellHTML("Arasy", "app.wasm", BootOptions{DisableLoadingIndicator: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		html := string(body)
+		if strings.Contains(html, `id="ar-boot"`) ||
+			strings.Contains(html, PosterLandscapeFile) ||
+			strings.Contains(html, PosterStackedFile) {
+			t.Fatal("disabled loading shell still contains loading markup")
+		}
+		if !strings.Contains(html, "game: true") {
+			t.Fatal("loading opt-out disabled game splash")
+		}
+		if !strings.Contains(html, "visibility: visible;") {
+			t.Fatal("loading opt-out does not expose canvas immediately")
+		}
+	})
+}
+
+func TestShellCanDisableOnlyEngineSplash(t *testing.T) {
+	body, err := ShellHTML("Arasy", "app.wasm", BootOptions{DisableEngineSplash: true})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(html, "visibility: visible;") {
-		t.Fatal("disabled shell does not expose canvas immediately")
+	html := string(body)
+	if !strings.Contains(html, "engine: false") || !strings.Contains(html, "game: true") {
+		t.Fatal("engine-only splash opt-out was not propagated independently")
+	}
+}
+
+func TestShellBootBackground(t *testing.T) {
+	body, err := ShellHTML("Arasy", "app.wasm", BootOptions{Background: "#123abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(body), "background: #123abc;"); count < 2 {
+		t.Fatalf("custom background appears %d times, want page and loading overlay", count)
+	}
+
+	for _, invalid := range []string{"red", "#12", "#xyzxyz", "#12345"} {
+		if _, err := ShellHTML("Arasy", "app.wasm", BootOptions{Background: invalid}); err == nil {
+			t.Fatalf("ShellHTML accepted invalid background %q", invalid)
+		}
 	}
 }
 
 func TestShellUsesDecodedLengthHeaderForGzipProgress(t *testing.T) {
-	body, err := ShellHTML("Arasy", "app.wasm")
+	body, err := ShellHTML("Arasy", "app.wasm", BootOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}

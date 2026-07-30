@@ -139,6 +139,69 @@ func TestSplashDisabledSkipsEngineSegment(t *testing.T) {
 	}
 }
 
+func TestSkipDefaultSplashPreservesManifestSegments(t *testing.T) {
+	d := newTestDriver(t, Config{
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "studio", "file": "a.png"}],
+			"splash": [{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"min_time": 1
+			}]
+		}`)),
+	})
+
+	d.SkipDefaultSplash()
+	if !d.SplashActive() {
+		t.Fatal("SplashActive() = false after skipping the default segment; manifest segment was removed")
+	}
+
+	d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}))
+	frame := d.splashFrame(0)
+	var image *render.DrawImage
+	for _, command := range frame.Commands {
+		if draw, ok := command.(render.DrawImage); ok {
+			image = &draw
+			break
+		}
+	}
+	if image == nil || image.Texture == 0 {
+		t.Fatalf("manifest segment frame = %+v, want its resolved texture", image)
+	}
+}
+
+func TestSkipDefaultSplashAfterItPlayedPreservesManifestElapsed(t *testing.T) {
+	d := newTestDriver(t, Config{
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "studio", "file": "a.png"}],
+			"splash": [{
+				"texture": "studio",
+				"cell_w": 1,
+				"cell_h": 1,
+				"columns": 1,
+				"frames": 1,
+				"min_time": 2
+			}]
+		}`)),
+	})
+
+	d.AdvanceSplash(time.Duration(enginesplash.EngineSplashMinTime*float64(time.Second)), false)
+	d.AdvanceSplash(500*time.Millisecond, false)
+	d.SkipDefaultSplash()
+
+	if !d.SplashActive() {
+		t.Fatal("manifest segment was removed after the default segment had already played")
+	}
+	if got := d.splash.elapsed; got != 0.5 {
+		t.Fatalf("manifest elapsed = %v, want 0.5", got)
+	}
+}
+
 func TestSkipSplashRemovesDefaultAndManifestSegmentsWithoutAdvancingTick(t *testing.T) {
 	d := newTestDriver(t, Config{
 		Assets: mustSplashManifest(t, []byte(`{
@@ -240,6 +303,62 @@ func TestEngineSplashBackgroundMatchesBrandOnTallViewport(t *testing.T) {
 	}
 	if rect.Fill != enginesplash.EngineSplashBackground {
 		t.Fatalf("background = %+v, want the brand backdrop %+v (not Config.Clear)", rect.Fill, enginesplash.EngineSplashBackground)
+	}
+}
+
+func TestManifestSplashUsesBootBackgroundThenClearFallback(t *testing.T) {
+	manifest := mustSplashManifest(t, []byte(`{
+		"version": 1,
+		"textures": [{"name": "studio", "file": "a.png"}],
+		"splash": [{
+			"texture": "studio",
+			"cell_w": 1,
+			"cell_h": 1,
+			"columns": 1,
+			"frames": 1,
+			"min_time": 1
+		}]
+	}`))
+	clear := render.RGBA8(10, 20, 30, 255)
+	boot := render.RGBA8(40, 50, 60, 255)
+
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want render.Color
+	}{
+		{
+			name: "configured boot background",
+			cfg: Config{
+				Assets:               manifest,
+				Clear:                clear,
+				BootBackground:       boot,
+				DisableDefaultSplash: true,
+			},
+			want: boot,
+		},
+		{
+			name: "clear fallback",
+			cfg: Config{
+				Assets:               manifest,
+				Clear:                clear,
+				DisableDefaultSplash: true,
+			},
+			want: clear,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newTestDriver(t, tc.cfg)
+			d.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}))
+			frame := d.splashFrame(0)
+			background, ok := frame.Commands[0].(render.DrawRect)
+			if !ok {
+				t.Fatalf("Commands[0] = %T, want render.DrawRect", frame.Commands[0])
+			}
+			if background.Fill != tc.want {
+				t.Fatalf("background = %+v, want %+v", background.Fill, tc.want)
+			}
+		})
 	}
 }
 

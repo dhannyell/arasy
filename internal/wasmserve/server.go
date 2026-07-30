@@ -48,15 +48,39 @@ const (
 	uncompressedLengthHeader = "X-Arasy-Uncompressed-Length"
 )
 
+// BootOptions separates the web download phase from runtime splash policy.
+// Its zero value shows the loading indicator after a short delay and preserves
+// the runtime.Config splash policy. Native hosts do not use this policy.
+type BootOptions struct {
+	// DisableLoadingIndicator omits the poster/progress overlay. The page still
+	// uses Background until the first canvas frame is presented.
+	DisableLoadingIndicator bool
+	// DisableRuntimeSplash removes every pre-tick runtime splash segment while
+	// leaving the download indicator independent and available.
+	DisableRuntimeSplash bool
+	// DisableEngineSplash removes only the animated engine brand in the web
+	// host, preserving game-declared splash segments. Without this explicit
+	// host opt-out, Config.DisableDefaultSplash is authoritative.
+	DisableEngineSplash bool
+	// Background is the web download/boot color in #RGB, #RGBA, #RRGGBB, or
+	// #RRGGBBAA form. Empty uses the engine poster background.
+	Background string
+}
+
+// Validate checks the shell policy without generating HTML or starting a
+// server, so CLI adapters can reject invalid configuration before building.
+func (o BootOptions) Validate() error {
+	_, err := normalizeBootBackground(o.Background)
+	return err
+}
+
 type ServerOptions struct {
 	Dir          string
 	Title        string
 	WASMFile     string
 	WASMExecPath string
 	Addr         string
-	// DisableSplash omits the loading poster and tells the WASM host to skip
-	// every runtime splash segment for this served session.
-	DisableSplash bool
+	Boot         BootOptions
 	// Rebuild runs before serving WASMFile. Development hosts use it to build
 	// on browser reload; a failure is returned to the browser as plain text.
 	Rebuild func() error
@@ -75,6 +99,9 @@ func NewServerOptions(dir, title, file, execPath, addr string) *ServerOptions {
 func Start(opts *ServerOptions) error {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 
+	if err := opts.Boot.Validate(); err != nil {
+		return err
+	}
 	if opts.WASMExecPath == "" {
 		var err error
 		opts.WASMExecPath, err = DefaultWASMExecPath()
@@ -85,12 +112,12 @@ func Start(opts *ServerOptions) error {
 	}
 
 	handler := newHandler(ServerOptions{
-		Dir:           opts.Dir,
-		Title:         opts.Title,
-		WASMFile:      opts.WASMFile,
-		WASMExecPath:  opts.WASMExecPath,
-		DisableSplash: opts.DisableSplash,
-		Rebuild:       opts.Rebuild,
+		Dir:          opts.Dir,
+		Title:        opts.Title,
+		WASMFile:     opts.WASMFile,
+		WASMExecPath: opts.WASMExecPath,
+		Boot:         opts.Boot,
+		Rebuild:      opts.Rebuild,
 	})
 
 	fs := http.FileServer(http.Dir(opts.Dir))
@@ -249,9 +276,9 @@ func WritePosterAssets(dir string) error {
 }
 
 func serveIndex(w http.ResponseWriter, opts ServerOptions) {
-	body, err := shellHTML(opts.Title, opts.WASMFile, opts.DisableSplash)
+	body, err := ShellHTML(opts.Title, opts.WASMFile, opts.Boot)
 	if err != nil {
-		http.Error(w, "invalid wasm file", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -261,19 +288,19 @@ func serveIndex(w http.ResponseWriter, opts ServerOptions) {
 }
 
 // ShellHTML returns the browser shell used by both the development server and
-// static builds. The canvas stays hidden behind an inline poster + download
-// progress bar until the WASM host signals its first presented frame
+// static builds. By default, the canvas stays hidden behind a delayed poster +
+// download progress bar until the WASM host signals its first presented frame
 // (window.arasyFirstFrame = true) — no black canvas flash between navigation
 // and the first frame, matching the Unity WebGL / Godot web pattern: static
 // content painted by the host page, replaced atomically once the engine can
 // draw. Hosts serving app.wasm outside `arasy serve`/`dev`/`build` must
-// reproduce the arasyFirstFrame contract themselves.
-func ShellHTML(title, wasmFile string) ([]byte, error) {
-	return shellHTML(title, wasmFile, false)
-}
-
-func shellHTML(title, wasmFile string, disableSplash bool) ([]byte, error) {
+// reproduce the arasyFirstFrame and arasySplashPolicy contracts themselves.
+func ShellHTML(title, wasmFile string, boot BootOptions) ([]byte, error) {
 	encodedWASMFile, err := json.Marshal(wasmFile)
+	if err != nil {
+		return nil, err
+	}
+	background, err := normalizeBootBackground(boot.Background)
 	if err != nil {
 		return nil, err
 	}
@@ -288,14 +315,37 @@ func shellHTML(title, wasmFile string, disableSplash bool) ([]byte, error) {
 			<div id="ar-bar-fill"></div>
 		</div>
     </div>`
-	if disableSplash {
+	if boot.DisableLoadingIndicator {
 		canvasVisibility = "visible"
 		bootMarkup = ""
 	}
+	enableEngineSplash := !boot.DisableEngineSplash && !boot.DisableRuntimeSplash
+	enableGameSplash := !boot.DisableRuntimeSplash
 	return []byte(fmt.Sprintf(wasmShellHTML,
-		html.EscapeString(title), posterBackground, canvasVisibility,
-		posterBackground, bootMarkup, disableSplash, encodedWASMFile,
+		html.EscapeString(title), background, canvasVisibility,
+		background, bootMarkup, enableEngineSplash, enableGameSplash,
+		encodedWASMFile,
 	)), nil
+}
+
+func normalizeBootBackground(background string) (string, error) {
+	if background == "" {
+		return posterBackground, nil
+	}
+	if background[0] != '#' {
+		return "", fmt.Errorf("boot background %q must be a hexadecimal CSS color", background)
+	}
+	switch len(background) {
+	case 4, 5, 7, 9:
+	default:
+		return "", fmt.Errorf("boot background %q must use #RGB, #RGBA, #RRGGBB, or #RRGGBBAA", background)
+	}
+	for _, r := range background[1:] {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", r) {
+			return "", fmt.Errorf("boot background %q contains a non-hexadecimal digit", background)
+		}
+	}
+	return background, nil
 }
 
 // DefaultWASMExecPath finds the Go runtime support script for the Go tool on
@@ -373,6 +423,7 @@ const wasmShellHTML = `<!doctype html>
             align-items: center;
             justify-content: flex-start;
             background: %s;
+            visibility: hidden;
             --ar-fit-w: min(max(100vw, 80dvh), 177.78dvh);
             --ar-fit-h: calc(var(--ar-fit-w) * 0.5625);
         }
@@ -483,12 +534,19 @@ const wasmShellHTML = `<!doctype html>
 <script src="wasm_exec.js"></script>
 <script>
 (async () => {
-    window.arasyDisableSplash = %t;
+    window.arasySplashPolicy = Object.freeze({
+        engine: %t,
+        game: %t
+    });
     const boot = document.getElementById('ar-boot');
     const fill = document.getElementById('ar-bar-fill');
     const canvas = document.getElementById('ar-canvas');
     const go = new Go();
+    const loadingTimer = boot ? setTimeout(() => {
+        boot.style.visibility = 'visible';
+    }, 500) : 0;
     function reveal() {
+        if (loadingTimer) clearTimeout(loadingTimer);
         canvas.style.visibility = 'visible';
         if (boot) boot.remove();
         window.arasyBootFadeDone = true;

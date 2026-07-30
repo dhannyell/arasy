@@ -159,7 +159,7 @@ func runWatchBrowser(cmd *cobra.Command, corpus, replayBytes []byte, title strin
 	if err := os.WriteFile(filepath.Join(dir, "watch-replay.arrp"), replayBytes, 0o644); err != nil {
 		return fmt.Errorf("stage replay: %w", err)
 	}
-	if err := buildWASM("./internal/simfuzz/wasm", dir, "watch: "+title, false, false, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+	if err := buildWASM("./internal/simfuzz/wasm", dir, "watch: "+title, wasmBuildOptions{}, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return fmt.Errorf("build browser viewer: %w", err)
 	}
 

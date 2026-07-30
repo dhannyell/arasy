@@ -40,9 +40,10 @@ func (g *Game) Setup() runtime.Config {
 		},
 		Assets: g.assets,
 		Clear:  render.RGBA(0.02, 0.04, 0.08, 1),
-		// DisableDefaultSplash is left at its zero value (false): the engine
-		// segment plays, then the manifest's "studio-logo" segment, then
-		// tick 0. Set it to true to skip straight to the developer segment.
+		// DisableDefaultSplash is left at its zero value (false), so native and
+		// web play the engine segment, then the manifest's "studio-logo"
+		// segment. Web exports can pass --no-engine-splash to preserve only the
+		// developer segment.
 	}
 }
 

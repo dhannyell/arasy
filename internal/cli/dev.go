@@ -12,7 +12,7 @@ var (
 	devPlatform string
 	devAddress  string
 	devTitle    string
-	devNoSplash bool
+	devBoot     webBootFlags
 )
 
 var devCmd = &cobra.Command{
@@ -28,6 +28,10 @@ var devCmd = &cobra.Command{
 		if title == "" {
 			title = defaultTitle(pkg)
 		}
+		boot, err := devBoot.options()
+		if err != nil {
+			return err
+		}
 		dir, err := os.MkdirTemp("", "Arasy-dev-*")
 		if err != nil {
 			return err
@@ -39,7 +43,7 @@ var devCmd = &cobra.Command{
 		}()
 		stopInterruptCleanup := watchTempDirInterrupt(dir)
 		defer stopInterruptCleanup()
-		if err := rebuildWASM(pkg, dir, title); err != nil {
+		if err := rebuildWASM(pkg, dir, title, boot); err != nil {
 			if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "initial build failed; reload the browser after fixing it:\n%s\n", err); writeErr != nil {
 				return writeErr
 			}
@@ -49,8 +53,8 @@ var devCmd = &cobra.Command{
 		}
 		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: title, WASMFile: "app.wasm", Addr: devAddress,
-			DisableSplash: devNoSplash,
-			Rebuild:       func() error { return rebuildWASM(pkg, dir, title) },
+			Boot:    boot,
+			Rebuild: func() error { return rebuildWASM(pkg, dir, title, boot) },
 		})
 	},
 }
@@ -59,7 +63,7 @@ func init() {
 	devCmd.Flags().StringVarP(&devPlatform, "platform", "p", "wasm", "target platform")
 	devCmd.Flags().StringVarP(&devAddress, "address", "a", "127.0.0.1:8080", "server address")
 	devCmd.Flags().StringVar(&devTitle, "title", "", "HTML page title")
-	devCmd.Flags().BoolVar(&devNoSplash, "no-splash", false, "skip loading and runtime splash screens")
+	devBoot.bind(devCmd)
 	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
 	}); err != nil {

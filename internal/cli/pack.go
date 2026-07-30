@@ -15,6 +15,7 @@ var (
 	packOutput        string
 	packTitle         string
 	packNoDefaultFont bool
+	packBoot          webBootFlags
 )
 
 var packCmd = &cobra.Command{
@@ -31,6 +32,10 @@ var packCmd = &cobra.Command{
 		if output == "" {
 			output = filepath.Join("dist", defaultTitle(pkg)+".zip")
 		}
+		boot, err := packBoot.options()
+		if err != nil {
+			return err
+		}
 		staging, err := os.MkdirTemp("", "Arasy-pack-*")
 		if err != nil {
 			return err
@@ -38,7 +43,11 @@ var packCmd = &cobra.Command{
 		defer func() { _ = removeTempDir(staging) }()
 		stopInterruptCleanup := watchTempDirInterrupt(staging)
 		defer stopInterruptCleanup()
-		if err := buildWASM(pkg, staging, title, true, packNoDefaultFont, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		if err := buildWASM(pkg, staging, title, wasmBuildOptions{
+			Release:       true,
+			NoDefaultFont: packNoDefaultFont,
+			Boot:          boot,
+		}, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
 		return zipBuild(output, staging)
@@ -49,6 +58,7 @@ func init() {
 	packCmd.Flags().StringVarP(&packOutput, "output", "o", "", "output ZIP path")
 	packCmd.Flags().StringVar(&packTitle, "title", "", "HTML page title")
 	packCmd.Flags().BoolVar(&packNoDefaultFont, "no-default-font", false, "exclude the embedded default font (~140 KB); FontID 0 falls back to the built-in 7x13 bitmap")
+	packBoot.bind(packCmd)
 	rootCmd.AddCommand(packCmd)
 }
 

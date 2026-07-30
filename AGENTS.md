@@ -132,6 +132,13 @@ platform/* -> asset/pixel -> asset
   segments declared in the manifest's `"splash"` array are texture
   flip-books (`cell_w`/`cell_h`/`columns`/`frames`/`rate`/`min_time`/`fade`/
   `skippable`), packed with `arasy atlas <frames-dir|gif> -o out.png`.
+- Both native and web honor `Config.DisableDefaultSplash`; false shows the
+  engine segment. Web uses a delayed static download indicator, and
+  `--no-engine-splash` provides a host-only opt-out that preserves manifest
+  segments. `--no-loading` controls only the HTML download indicator;
+  `--no-splash` controls only runtime segments. `--boot-background`
+  configures the web phase-0 color, while `Config.BootBackground` configures
+  runtime splash segments and falls back to `Config.Clear`.
 - Loading-screen behavior (`HoldUntilReady`, tied to asset group readiness)
   is deferred until asset groups land; every segment today is bounded by
   `MinTime`.

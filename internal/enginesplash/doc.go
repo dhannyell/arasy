@@ -33,6 +33,8 @@ const EngineSplashMinTime = 2.0
 // (Config.Clear, painted unfaded behind every segment) instead of a hard cut.
 const EngineSplashFade = 0.15
 
+const IsEngineSplashSkippable = true
+
 // EngineSplashBackground matches the flat backdrop rect the compiled
 // animation paints inside its own 1920x1080 viewBox (#020B14). The generated
 // content only fills that letterboxed area; runtime.Driver paints this same

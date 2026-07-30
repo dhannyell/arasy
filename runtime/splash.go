@@ -52,11 +52,12 @@ type SplashSegment struct {
 	Skippable bool
 
 	// Background paints behind this segment's content, covering the full
-	// viewport (never faded). Zero value uses Config.Clear. Content whose
-	// own asset already paints a flat backdrop only covering its own
-	// letterboxed area (like the compiled engine animation) should set this
-	// to the same color, or the two backgrounds seam together whenever the
-	// viewport's aspect ratio isn't the content's own.
+	// viewport (never faded). Zero value uses Config.BootBackground, then
+	// Config.Clear. Content whose own asset already paints a flat backdrop
+	// only covering its own letterboxed area (like the compiled engine
+	// animation) should set this to the same color, or the two backgrounds
+	// seam together whenever the viewport's aspect ratio isn't the content's
+	// own.
 	Background render.Color
 
 	// Particles, when non-nil, computes this segment's particle emissions
@@ -67,7 +68,16 @@ type SplashSegment struct {
 	// fold alpha into each returned command's Intensity itself. A nil or
 	// empty result draws nothing this frame.
 	Particles func(elapsed, dt float64, viewport math2d.Rect, alpha float64) []render.DrawParticles
+
+	source splashSource
 }
+
+type splashSource uint8
+
+const (
+	splashSourceGame splashSource = iota
+	splashSourceDefault
+)
 
 // splashPlayer drives the boot splash sequence. It never touches d.tick, the
 // timeline, the recorder, or the checksum. Zero segments = inert.
@@ -77,11 +87,46 @@ type splashPlayer struct {
 	elapsed  float64
 }
 
-// SkipSplash removes the remaining boot splash playlist. Development hosts
+// SkipSplash removes the remaining runtime boot splash playlist. Web hosts
 // use it before presenting the first frame when their command-line session
-// explicitly disables splash screens; simulation tick state is untouched.
+// explicitly disables runtime splash screens; the independent HTML download
+// indicator and simulation tick state are untouched.
 func (d *Driver) SkipSplash() {
 	d.splash = nil
+}
+
+// SkipDefaultSplash removes only the built-in engine brand segment, preserving
+// every game-declared manifest segment. Browser hosts call it before their
+// first frame only for an explicit host-level engine-brand opt-out; otherwise
+// Config.DisableDefaultSplash remains authoritative on every host. Simulation
+// tick state is untouched.
+func (d *Driver) SkipDefaultSplash() {
+	if d.splash == nil {
+		return
+	}
+
+	currentWasDefault := d.SplashActive() &&
+		d.splash.segments[d.splash.index].source == splashSourceDefault
+	removedBeforeCurrent := 0
+	segments := make([]SplashSegment, 0, len(d.splash.segments))
+	for i, segment := range d.splash.segments {
+		if segment.source == splashSourceDefault {
+			if i < d.splash.index {
+				removedBeforeCurrent++
+			}
+			continue
+		}
+		segments = append(segments, segment)
+	}
+
+	d.splash.segments = segments
+	d.splash.index -= removedBeforeCurrent
+	if currentWasDefault {
+		d.splash.elapsed = 0
+	}
+	if d.splash.index >= len(segments) {
+		d.splash = nil
+	}
 }
 
 // SplashActive reports whether the boot splash still has a segment to play.
@@ -128,7 +173,10 @@ func (d *Driver) splashFrame(dt float64) Frame {
 
 	background := seg.Background
 	if background == (render.Color{}) {
-		background = d.cfg.Clear
+		background = d.cfg.BootBackground
+		if background == (render.Color{}) {
+			background = d.cfg.Clear
+		}
 	}
 
 	commands := []render.Command{
@@ -250,9 +298,10 @@ func buildSplashPlaylist(cfg Config) []SplashSegment {
 			},
 			MinTime:    enginesplash.EngineSplashMinTime,
 			Fade:       enginesplash.EngineSplashFade,
-			Skippable:  false,
+			Skippable:  enginesplash.IsEngineSplashSkippable,
 			Background: enginesplash.EngineSplashBackground,
 			Particles:  enginesplash.EngineSplashParticles(cfg.Assets),
+			source:     splashSourceDefault,
 		})
 	}
 	for _, decl := range cfg.Assets.Splash() {
