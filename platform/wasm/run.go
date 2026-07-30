@@ -74,6 +74,9 @@ func Run(game runtime.Game, opts Options) error {
 // forever. It mirrors platform/web/canvas.RunDriver so an app that built its
 // own driver (e.g. to load a .arrp before serving) can still use the host.
 func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
+	if disabled := js.Global().Get("arasyDisableSplash"); disabled.Type() == js.TypeBoolean && disabled.Bool() {
+		driver.SkipSplash()
+	}
 	log := opts.Log
 	if log == nil {
 		log = slog.Default()

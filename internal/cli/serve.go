@@ -10,9 +10,10 @@ import (
 )
 
 var (
-	serveAddress string
-	serveTitle   string
-	serveWASM    string
+	serveAddress  string
+	serveTitle    string
+	serveWASM     string
+	serveNoSplash bool
 )
 
 var serveCmd = &cobra.Command{
@@ -33,6 +34,7 @@ var serveCmd = &cobra.Command{
 		}
 		return wasmserve.Start(&wasmserve.ServerOptions{
 			Dir: dir, Title: serveTitle, WASMFile: serveWASM, Addr: serveAddress,
+			DisableSplash: serveNoSplash,
 		})
 	},
 }
@@ -41,5 +43,6 @@ func init() {
 	serveCmd.Flags().StringVarP(&serveAddress, "address", "a", "127.0.0.1:8080", "server address")
 	serveCmd.Flags().StringVar(&serveTitle, "title", "", "HTML page title")
 	serveCmd.Flags().StringVar(&serveWASM, "wasm", "app.wasm", "WASM file name")
+	serveCmd.Flags().BoolVar(&serveNoSplash, "no-splash", false, "skip loading and runtime splash screens")
 	rootCmd.AddCommand(serveCmd)
 }

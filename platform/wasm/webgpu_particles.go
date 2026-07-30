@@ -312,7 +312,10 @@ func (g *gpuParticles) bindTexture(decl particle.EffectDecl) (js.Value, bool) {
 		view = g.missingTexture.Call("createView")
 		if gt, ok := g.renderer.textureFor(g.renderer.manifest.Texture(decl.Texture)); ok {
 			missing = false
-			view = gt.texture.Call("createView")
+			// gt.texture may be the shared array resource. gt.view is always
+			// the declared texture's single-layer 2D view, which matches the
+			// particle texture layout and also works for standalone textures.
+			view = gt.view
 		}
 	}
 	bindGroup := g.device.Call("createBindGroup", map[string]any{

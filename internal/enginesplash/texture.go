@@ -18,11 +18,5 @@ const (
 //go:embed assets/mote.png
 var engineMoteTexturePNG []byte
 
-//go:embed assets/ember.png
-var engineEmberTexturePNG []byte
-
 // EngineMoteTexture returns the mote texture's encoded PNG bytes.
 func EngineMoteTexture() []byte { return engineMoteTexturePNG }
-
-// EngineEmberTexture returns the ember texture's encoded PNG bytes.
-func EngineEmberTexture() []byte { return engineEmberTexturePNG }

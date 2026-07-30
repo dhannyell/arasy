@@ -7,6 +7,21 @@ package enginesplash
 
 import "github.com/dhannyell/arasy/render"
 
+// engineSkyLayer is the starfield's and Crux's LayerValue: below
+// engineSplashContentLayer (Content's default, unset BaseCommand.LayerValue
+// == 0), so the logo's own opaque shapes occlude the sky behind them the
+// way they would a real one, instead of the field needing a keep-clear zone
+// carved out around the ring/wordmark. This only works because the compiled
+// splash's content paints no full-canvas backdrop rect of its own at that
+// layer — engineSplashBackgroundLayer sits below engineSkyLayer so the sky
+// is never itself occluded by the segment's own backdrop rect (see
+// splashFrame in runtime/splash.go, which paints Background at this same
+// layer).
+const (
+	EngineSplashBackgroundLayer = -2
+	EngineSkyLayer              = -1
+)
+
 // EngineSplashMinTime is the engine brand segment's minimum on-screen time.
 // It matches the duration of the compiled brand animation (internal/
 // enginesplash) so the segment holds until the animation completes, unless

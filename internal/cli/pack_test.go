@@ -5,6 +5,8 @@ import (
 	"io"
 	"path/filepath"
 	"testing"
+
+	"github.com/dhannyell/arasy/internal/wasmserve"
 )
 
 func TestPackContainsStaticBuildAtArchiveRoot(t *testing.T) {
@@ -26,7 +28,10 @@ func TestPackContainsStaticBuildAtArchiveRoot(t *testing.T) {
 	for _, f := range zr.File {
 		found[f.Name] = true
 	}
-	for _, name := range []string{"index.html", "app.wasm", "wasm_exec.js"} {
+	for _, name := range []string{
+		"index.html", "app.wasm", "wasm_exec.js",
+		wasmserve.PosterLandscapeFile, wasmserve.PosterStackedFile,
+	} {
 		if !found[name] {
 			t.Fatalf("archive missing %s", name)
 		}

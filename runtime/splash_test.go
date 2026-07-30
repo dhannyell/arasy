@@ -139,6 +139,28 @@ func TestSplashDisabledSkipsEngineSegment(t *testing.T) {
 	}
 }
 
+func TestSkipSplashRemovesDefaultAndManifestSegmentsWithoutAdvancingTick(t *testing.T) {
+	d := newTestDriver(t, Config{
+		Assets: mustSplashManifest(t, []byte(`{
+			"version": 1,
+			"textures": [{"name": "a", "file": "a.png"}],
+			"splash": [{"texture": "a", "cell_w": 4, "cell_h": 4, "columns": 1, "frames": 1, "min_time": 10}]
+		}`)),
+	})
+	if !d.SplashActive() {
+		t.Fatal("test setup has no splash to skip")
+	}
+
+	d.SkipSplash()
+
+	if d.SplashActive() {
+		t.Fatal("SplashActive() = true after SkipSplash")
+	}
+	if got := d.State().Tick; got != 0 {
+		t.Fatalf("Tick = %d after SkipSplash, want 0", got)
+	}
+}
+
 func TestSplashFrameEmitsDrawImage(t *testing.T) {
 	d := newTestDriver(t, Config{
 		DisableDefaultSplash: true,
