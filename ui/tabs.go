@@ -70,14 +70,15 @@ func (u *UI) tabsInputIn(id string, rect math2d.Rect, count int, space Space) (i
 
 // tabsIn is the widget-owned shell for Render: it draws the band behind an
 // equal-width header row and returns the active tab index so the caller can
-// draw that tab's content in TabsBodyRect.
+// draw that tab's content in TabsBodyRect. Like scrollAreaIn, it reads the
+// stored index clamped to the current label count without writing the clamp
+// back — drawing never mutates ui.State.
 func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) int {
 	wid := HashID(id)
 	u.ensureTabs()
 
 	tabs := u.theme.Tabs
 	active := clampTab(u.state.tabs[wid], len(labels))
-	u.state.tabs[wid] = active
 
 	layer := u.nextLayer()
 	u.commands = append(u.commands, render.DrawRect{

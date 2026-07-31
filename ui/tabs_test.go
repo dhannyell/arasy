@@ -254,6 +254,24 @@ func TestTabsClampsActiveToTabCount(t *testing.T) {
 	}
 }
 
+// Drawing clamps the read without writing the clamp back: a stale index left
+// in ui.State stays there for the next Update to normalize, and Render never
+// mutates ui.State — same contract as scrollAreaIn.
+func TestTabsDrawClampsWithoutWritingBack(t *testing.T) {
+	wid := HashID("inspector")
+	state := &State{tabs: map[ID]int{wid: 5}}
+	cam := testCamera()
+	store := AnimStore{}
+	draw := New(state, math2d.Vec2{}, true, cam, DefaultTheme(), cam.Viewport, &store, 0, 0)
+
+	if active := draw.tabsIn("inspector", tabsRect(), tabsLabels(), SpaceRef); active != 2 {
+		t.Fatalf("tabsIn() = %d, want clamped to last tab 2", active)
+	}
+	if state.tabs[wid] != 5 {
+		t.Fatalf("state.tabs[inspector] = %d, want the stored value untouched (5)", state.tabs[wid])
+	}
+}
+
 func TestTabsDrawEmitsBarAndOneHeaderPerLabel(t *testing.T) {
 	cam := testCamera()
 	store := AnimStore{}
