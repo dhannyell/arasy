@@ -122,6 +122,38 @@ para adotar uma gravacao num host interativo: scrub para tras fica barato
 desde o primeiro salto (nao precisa esperar a janela densa se formar de novo)
 e o driver ja sai pronto para tocar.
 
+### O painel de dev
+
+Nada disso precisa de codigo de UI no jogo: os hosts interativos montam um
+painel de tooling proprio, aberto e fechado com a tecla de crase
+(`` ` ``/`~`). Ele e a mesma implementacao nos dois hosts -- widgets do
+pacote `ui` desenhados como render commands dentro do proprio frame, nao um
+overlay de HTML --, entao o navegador e o host nativo oferecem exatamente os
+mesmos controles.
+
+| Aba | O que faz |
+|---|---|
+| Sim | play/pause, +1 tick, reset, velocidade |
+| Timeline | barra de scrub (busca ao soltar), campo de tick + Go, back 1 tick / 1 s |
+| Replay | record/stop, save, load, grupo assistir (play/pause/step) e **Take control** |
+| Layers | camadas de debug; so existe em dev mode |
+
+Ligue com `DevTools` (e `RecordReplay` + `GameFactory` para a aba Replay) em
+`wasm.Options` ou `native.Options`. **Load** verifica a gravacao, adota um
+driver de `ReplayForViewing` e rebobina para o tick 0: a gravacao carregada
+chega pausada, pronta para assistir do inicio. **Take control** e o unico
+botao que sai do modo assistir.
+
+Onde o `.arrp` vai parar e a unica parte especifica de plataforma: o
+navegador baixa o arquivo e abre um seletor para carregar; o host nativo
+escreve em `recordings/` ao lado do jogo e carrega o mais recente.
+
+O painel e chrome do host, nao do jogo. O que ele captura (clique sobre o
+painel, ou tecla enquanto um campo dele tem foco) nao chega ao `ApplyInput`,
+logo **nao entra na gravacao** -- clicar em Pause nao faz parte da sessao
+gravada. O estado do painel tambem fica fora dos snapshots: rebobinar a
+simulacao nao mexe na aba aberta.
+
 ## Checksum: a prova de que o scrub e exato
 
 `World.Checksum()` e um hash deterministico do estado da simulacao, e
