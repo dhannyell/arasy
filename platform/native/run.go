@@ -9,6 +9,7 @@ import (
 	goruntime "runtime"
 	"time"
 
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
@@ -76,11 +77,9 @@ type Options struct {
 	// with it the swapchain paces the loop and the software frame limiter
 	// stays off, so it only caps frames when VSync is off.
 	VSync VSyncMode
-	// MSAA is the anti-aliasing sample count: 0 keeps the engine default of
-	// 4x, 1 disables multi-sampling entirely (cheapest fill rate and no MSAA
-	// surface, which at 4K frees over a hundred MB of VRAM), 2/4/8 request an
-	// explicit level.
-	MSAA int
+	// MSAA selects the anti-aliasing level. The zero value is
+	// render.MSAADefault (4x); render.MSAAOff turns anti-aliasing off.
+	MSAA render.MSAAMode
 	// Icon is an optional window icon.
 	Icon image.Image
 	// Log receives host diagnostics. The default is slog.Default().

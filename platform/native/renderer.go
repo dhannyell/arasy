@@ -20,30 +20,18 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-const (
-	// defaultMSAASamples is the anti-aliasing level used unless the app asks
-	// otherwise: 4x, the quality/cost sweet spot for 2D geometry.
-	defaultMSAASamples = 4
-)
-
-// normalizeMSAASamples validates an Options.MSAA request: 0 means the
-// default, 1 disables multi-sampling, 2/4/8 pass through, anything else
-// warns and falls back to the default rather than failing device creation
-// on an unsupported count.
-func normalizeMSAASamples(requested int, log *slog.Logger) uint32 {
-	switch requested {
-	case 0:
-		return defaultMSAASamples
-	case 1, 2, 4, 8:
-		return uint32(requested)
-	default:
+// msaaSampleCount resolves the requested level, logging a fallback when the
+// mode is outside the enum rather than failing device creation.
+func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) uint32 {
+	samples, ok := mode.Samples()
+	if !ok {
 		if log == nil {
 			log = slog.Default()
 		}
-		log.Warn("unsupported MSAA sample count, using the default",
-			"requested", requested, "fallback", defaultMSAASamples)
-		return defaultMSAASamples
+		log.Warn("unknown MSAA mode, using the default",
+			"requested", uint8(mode), "fallback", samples)
 	}
+	return uint32(samples)
 }
 
 // Renderer is the provisional streaming renderer for a native GLFW window.
@@ -111,7 +99,7 @@ func NewRenderer(
 	clear render.Color,
 	manifest asset.Manifest,
 	vsync VSyncMode,
-	msaaSamples int,
+	msaa render.MSAAMode,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -131,7 +119,7 @@ func NewRenderer(
 		log:          log,
 		fontProvider: provider,
 		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
-		msaaSamples:  normalizeMSAASamples(msaaSamples, log),
+		msaaSamples:  msaaSampleCount(msaa, log),
 	}
 	defer func() {
 		if err != nil {
