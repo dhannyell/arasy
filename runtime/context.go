@@ -60,7 +60,13 @@ type RenderContext struct {
 	// Alpha is the normalized fraction [0, 1) between fixed simulation ticks.
 	// It is 0 when render interpolation is disabled or unavailable.
 	// Use it with World.RenderCommandsInterpolated to produce smooth visuals.
-	Alpha              float64
+	Alpha float64
+	// GamepadConnected reports whether a supported gamepad is currently
+	// available to the host. Built-in hosts only recognize standard browser
+	// mappings or devices mapped by GLFW. It is presentation-only: unlike
+	// Input.LastInputDevice, it is not available to Update and never enters
+	// snapshots, recordings, or checksums.
+	GamepadConnected   bool
 	UpdateTextureField *TexturePort
 	// Batches publishes retained sprite/text batch content. Publications made
 	// here are drained before the same frame's Render because RenderFrame

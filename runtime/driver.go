@@ -41,6 +41,9 @@ type Driver struct {
 	renderTime float64
 	renderDt   float64
 	animStore  ui.AnimStore
+	// gamepadConnected is a host-owned supported-gamepad availability hint.
+	// It deliberately stays outside deterministic snapshots and recordings.
+	gamepadConnected bool
 
 	splash *splashPlayer
 
@@ -129,6 +132,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	if cfg.KeyframeInterval <= 0 {
 		cfg.KeyframeInterval = defaultKeyframeInterval
 	}
+	cfg.GamepadDeadzone = input.EffectiveGamepadDeadzone(cfg.GamepadDeadzone)
 	if log == nil {
 		log = slog.Default()
 	}
@@ -140,7 +144,7 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	d := &Driver{
 		game:     game,
 		cfg:      cfg,
-		input:    newDriverInput(cfg.InputBindings),
+		input:    newDriverInputWithDeadzone(cfg.InputBindings, cfg.GamepadDeadzone),
 		clock:    newClock(cfg.SimulationHz),
 		controls: devControls{speed: 1},
 		log:      log.With("scope", "engine"),
@@ -351,6 +355,14 @@ func (d *Driver) State() DriveState {
 }
 
 func (d *Driver) Config() Config { return d.cfg }
+
+// SetGamepadConnected updates the render-only supported-gamepad availability
+// hint. Interactive hosts should call it when polling; it has no simulation
+// effect.
+func (d *Driver) SetGamepadConnected(connected bool) {
+	d.gamepadConnected = connected
+}
+
 func (d *Driver) historyLen() int {
 	if d.recorder == nil {
 		return 0
@@ -469,6 +481,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		Log:                d.log.With("scope", "game"),
 		Tick:               d.tick,
 		Alpha:              alpha,
+		GamepadConnected:   d.gamepadConnected,
 		UpdateTextureField: &TexturePort{texture: &d.texture},
 		Batches:            &d.batchPort,
 		camera:             d.cameraForSurface(),

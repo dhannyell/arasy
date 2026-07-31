@@ -6,6 +6,7 @@ import (
 	"syscall/js"
 	"time"
 
+	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -20,6 +21,10 @@ func (h *host) startLoop() {
 	cb = js.FuncOf(func(this js.Value, args []js.Value) any {
 		ts := args[0].Float()
 		elapsed := frameTimer.ElapsedMillis(ts)
+		if events := h.pollGamepad(); len(events) > 0 {
+			h.noteInputAt(ts, len(events))
+			h.pending = append(h.pending, events...)
+		}
 
 		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
 			Events: h.pending,
@@ -99,6 +104,12 @@ func (h *host) startLoop() {
 	})
 	h.loopCb = cb
 	js.Global().Call("requestAnimationFrame", cb)
+}
+
+func (h *host) pollGamepad() []input.Event {
+	current, present := h.browserGamepadSnapshot()
+	h.driver.SetGamepadConnected(present)
+	return h.gamepadTracker.Update(present, current)
 }
 
 // signalFirstFramePresented sets the arasyFirstFrame <-> shell contract flag

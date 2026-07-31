@@ -6,12 +6,13 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/platform/web/browserinput"
+	"github.com/dhannyell/arasy/internal/platforminput"
 )
 
 func (h *host) registerInputListeners() {
 	window := js.Global()
 	canvas := h.canvas
+	canvas.Get("style").Set("touchAction", "none")
 
 	addWindowListener := func(name string, fn js.Func) {
 		h.inputCbs = append(h.inputCbs, fn)
@@ -35,7 +36,7 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), true)
+		keyEvent, ok := platforminput.KeyEvent(event.Get("code").String(), true)
 		if !ok {
 			return nil
 		}
@@ -51,7 +52,7 @@ func (h *host) registerInputListeners() {
 			return nil
 		}
 
-		keyEvent, ok := browserinput.KeyEvent(event.Get("code").String(), false)
+		keyEvent, ok := platforminput.KeyEvent(event.Get("code").String(), false)
 		if !ok {
 			return nil
 		}
@@ -61,17 +62,30 @@ func (h *host) registerInputListeners() {
 		return nil
 	}))
 
-	addCanvasListener("mousemove", js.FuncOf(func(this js.Value, args []js.Value) any {
-		x, y := h.canvasXY(args[0])
-		h.queueInput(browserinput.MouseMoveEvent(x, y), args[0])
+	addCanvasListener("pointermove", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchMove) {
+				return nil
+			}
+		}
+		x, y := h.canvasXY(event)
+		h.queueInput(platforminput.MouseMoveEvent(x, y), event)
 		return nil
 	}))
 
-	addCanvasListener("mousedown", js.FuncOf(func(this js.Value, args []js.Value) any {
+	addCanvasListener("pointerdown", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		if event.Get("pointerType").String() == "touch" {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchBegin) {
+				return nil
+			}
+			event.Call("preventDefault")
+			canvas.Call("setPointerCapture", event.Get("pointerId"))
+		}
 		x, y := h.canvasXY(event)
 
-		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
+		mouseEvent, ok := platforminput.MouseButtonEvent(event.Get("button").Int(), true, x, y)
 		if !ok {
 			return nil
 		}
@@ -79,20 +93,49 @@ func (h *host) registerInputListeners() {
 		return nil
 	}))
 
-	addCanvasListener("mouseup", js.FuncOf(func(this js.Value, args []js.Value) any {
+	addCanvasListener("pointerup", js.FuncOf(func(this js.Value, args []js.Value) any {
 		event := args[0]
+		isTouch := event.Get("pointerType").String() == "touch"
+		if isTouch {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchEnd) {
+				return nil
+			}
+			event.Call("preventDefault")
+			canvas.Call("releasePointerCapture", event.Get("pointerId"))
+		}
 		x, y := h.canvasXY(event)
 
-		mouseEvent, ok := browserinput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
+		mouseEvent, ok := platforminput.MouseButtonEvent(event.Get("button").Int(), false, x, y)
 		if !ok {
 			return nil
 		}
 		h.queueInput(mouseEvent, event)
+		if isTouch {
+			// Touch has no hover state: end the pointer frame at the same
+			// boundary as the up event while preserving the click edge.
+			h.queueInput(platforminput.PointerLeaveEvent(), event)
+		}
 		return nil
 	}))
 
-	addCanvasListener("mouseleave", js.FuncOf(func(this js.Value, args []js.Value) any {
-		h.queueInput(browserinput.PointerLeaveEvent(), args[0])
+	addCanvasListener("pointerleave", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" &&
+			!h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchMove) {
+			return nil
+		}
+		h.queueInput(platforminput.PointerLeaveEvent(), event)
+		return nil
+	}))
+
+	addCanvasListener("pointercancel", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		if event.Get("pointerType").String() == "touch" {
+			if !h.touch.Accept(event.Get("pointerId").Int(), platforminput.TouchEnd) {
+				return nil
+			}
+		}
+		h.queueInput(platforminput.PointerLeaveEvent(), event)
 		return nil
 	}))
 
@@ -104,7 +147,7 @@ func (h *host) registerInputListeners() {
 		dx := event.Get("deltaX").Float()
 		dy := event.Get("deltaY").Float()
 
-		wheelEvents := browserinput.WheelEvent(dx, dy)
+		wheelEvents := platforminput.WheelEvent(dx, dy)
 		for i := range wheelEvents {
 			wheelEvents[i].X = x
 			wheelEvents[i].Y = y
@@ -115,20 +158,32 @@ func (h *host) registerInputListeners() {
 
 		return nil
 	}))
+
+	addCanvasListener("contextmenu", js.FuncOf(func(this js.Value, args []js.Value) any {
+		event := args[0]
+		event.Call("preventDefault")
+		return nil
+	}))
 }
 
 func (h *host) queueInput(inputEvent input.Event, browserEvent js.Value) {
-	if h.onFrameMetrics != nil {
-		stamp := browserEvent.Get("timeStamp")
-		if !stamp.IsUndefined() && !stamp.IsNull() {
-			millis := stamp.Float()
-			now := performanceNowMillis()
-			if millis >= 0 && millis <= now && (h.pendingInputAtMillis < 0 || millis < h.pendingInputAtMillis) {
-				h.pendingInputAtMillis = millis
-			}
-		}
+	stamp := browserEvent.Get("timeStamp")
+	if !stamp.IsUndefined() && !stamp.IsNull() {
+		h.noteInputAt(stamp.Float(), 1)
 	}
 	h.pending = append(h.pending, inputEvent)
+}
+
+func (h *host) noteInputAt(millis float64, eventCount int) {
+	if h.onFrameMetrics == nil || eventCount == 0 {
+		return
+	}
+	h.pendingInputAtMillis = pendingInputMillis(
+		h.pendingInputAtMillis,
+		millis,
+		performanceNowMillis(),
+		eventCount,
+	)
 }
 
 func (h *host) handleOverlayToggleKey(event js.Value) bool {

@@ -19,12 +19,20 @@ type driverInputSnapshot struct {
 }
 
 func newDriverInput(bindings []input.Binding) *driverInput {
+	return newDriverInputWithDeadzone(bindings, 0)
+}
+
+func newDriverInputWithDeadzone(bindings []input.Binding, deadzone float64) *driverInput {
 	i := &driverInput{
-		mapper:    input.NewMapper(withDefaultUIBindings(bindings)),
+		mapper:    input.NewMapperWithDeadzone(withDefaultUIBindings(bindings), deadzone),
 		lastInput: input.NewState(),
 	}
 	i.resetFrame()
 	return i
+}
+
+func (i *driverInput) SetGamepadDeadzone(deadzone float64) {
+	i.mapper.SetGamepadDeadzone(deadzone)
 }
 
 func withDefaultUIBindings(bindings []input.Binding) []input.Binding {
@@ -40,9 +48,7 @@ func (i *driverInput) Apply(events []input.Event, tick uint64) {
 	for _, event := range events {
 		event.Tick = tick
 
-		if event.Kind != input.EventPointerMove && event.Kind != input.EventPointerLeave {
-			i.mapper.Apply(event)
-		}
+		i.mapper.Apply(event)
 
 		if event.Source.Device == input.DeviceMouse {
 			i.accumulatePointer(event)

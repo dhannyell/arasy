@@ -424,5 +424,7 @@ func breakoutBindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyArrowLeft), Action: input.ActionMoveX, Scale: -1},
 		{Source: input.Keyboard(input.KeyArrowRight), Action: input.ActionMoveX, Scale: 1},
 		{Source: input.Keyboard(input.KeySpace), Action: input.ActionJump, Scale: 1},
+		{Source: input.Gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+		{Source: input.Gamepad(input.GamepadA), Action: input.ActionJump, Scale: 1},
 	}
 }

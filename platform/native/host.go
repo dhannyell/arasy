@@ -10,6 +10,7 @@ import (
 	metrics "runtime/metrics"
 
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -22,6 +23,8 @@ type cpuPhaseReporter interface {
 type gpuBufferReporter interface {
 	particleGPUBufferBytes() (bytes uint64, ok bool)
 }
+
+const noGamepadJoystick glfw.Joystick = -1
 
 type host struct {
 	driver      *runtime.Driver
@@ -39,6 +42,9 @@ type host struct {
 	viewport math2d.Rect
 	fbDirty  bool
 
+	gamepadJoystick glfw.Joystick
+	gamepadTracker  platforminput.GamepadTracker
+
 	savedWindowed windowRect
 	altEnter      bool
 
@@ -48,13 +54,14 @@ type host struct {
 func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, opts Options) *host {
 	fbW, fbH := window.GetFramebufferSize()
 	h := &host{
-		driver:     driver,
-		renderer:   renderer,
-		window:     window,
-		log:        opts.Log,
-		onMetrics:  opts.FrameMetrics,
-		logMetrics: opts.Metrics,
-		viewport:   viewportForFramebuffer(fbW, fbH),
+		driver:          driver,
+		renderer:        renderer,
+		window:          window,
+		log:             opts.Log,
+		onMetrics:       opts.FrameMetrics,
+		logMetrics:      opts.Metrics,
+		viewport:        viewportForFramebuffer(fbW, fbH),
+		gamepadJoystick: noGamepadJoystick,
 		savedWindowed: windowRect{
 			width:  opts.Width,
 			height: opts.Height,
@@ -175,6 +182,10 @@ func (h *host) run() error {
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
+		if gamepadEvents := h.pollGamepad(); len(gamepadEvents) > 0 {
+			h.noteInput()
+			h.pending = append(h.pending, gamepadEvents...)
+		}
 
 		splash := h.driver.RunSplashFrame(runtime.SplashFrameBatch{
 			Viewport: &h.viewport,
@@ -249,6 +260,43 @@ func (h *host) run() error {
 		pacer.wait()
 	}
 	return nil
+}
+
+func (h *host) pollGamepad() []input.Event {
+	// Poll the first mapped GLFW device and emit input.DeviceGamepad events.
+	if h.gamepadJoystick == noGamepadJoystick {
+		for joystick := glfw.Joystick1; joystick <= glfw.Joystick16; joystick++ {
+			if joystick.Present() && joystick.IsGamepad() {
+				h.gamepadJoystick = joystick
+				break
+			}
+		}
+	}
+
+	if h.gamepadJoystick == noGamepadJoystick {
+		h.driver.SetGamepadConnected(false)
+		return nil
+	}
+
+	state := h.gamepadJoystick.GetGamepadState()
+	if state == nil {
+		h.driver.SetGamepadConnected(false)
+		events := h.gamepadTracker.Update(false, platforminput.GamepadSnapshot{})
+		h.gamepadJoystick = noGamepadJoystick
+		return events
+	}
+	h.driver.SetGamepadConnected(true)
+
+	var buttons [15]bool
+	for i := range buttons {
+		buttons[i] = state.Buttons[i] == glfw.Press
+	}
+	var axes [6]float64
+	for i := range axes {
+		axes[i] = float64(state.Axes[i])
+	}
+	current := platforminput.GLFWGamepadSnapshot(buttons, axes)
+	return h.gamepadTracker.Update(true, current)
 }
 
 func (h *host) resizeIfNeeded() {

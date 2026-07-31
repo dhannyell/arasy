@@ -456,13 +456,16 @@ without filling the new slots used by scroll, tables, and focus.
 
 ## Web Canvas Platform
 
-On web canvas, the browser sends mouse events in backing pixels:
+On web canvas, the browser sends pointer events in backing pixels:
 
 ```text
-mousemove  -> EventPointerMove
-mousedown  -> EventButtonDown
-mouseup    -> EventButtonUp
-mouseleave -> EventPointerLeave
+pointermove  -> EventPointerMove
+pointerdown  -> EventButtonDown
+pointerup    -> EventButtonUp
+pointerleave/pointercancel -> EventPointerLeave
+
+The WASM host uses Pointer Events for mouse, touch, and pen. The canvas gets
+`touch-action: none`; multitouch remains outside the single-pointer model.
 ```
 
 The server translates those events to `input.Event`, `runtime.Driver`

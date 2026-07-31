@@ -238,8 +238,15 @@ func bindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyS), Action: actionLane1, Scale: 1},
 		{Source: input.Keyboard(input.KeyJ), Action: actionLane2, Scale: 1},
 		{Source: input.Keyboard(input.KeyK), Action: actionLane3, Scale: 1},
+		{Source: input.Gamepad(input.GamepadLeftTrigger), Action: actionLane0, Scale: 1},
+		{Source: input.Gamepad(input.GamepadLeftBumper), Action: actionLane1, Scale: 1},
+		{Source: input.Gamepad(input.GamepadRightBumper), Action: actionLane2, Scale: 1},
+		{Source: input.Gamepad(input.GamepadRightTrigger), Action: actionLane3, Scale: 1},
 		{Source: input.Keyboard(input.KeySpace), Action: input.ActionConfirm, Scale: 1},
+		{Source: input.Gamepad(input.GamepadStart), Action: input.ActionConfirm, Scale: 1},
 		{Source: input.Keyboard(input.KeyArrowLeft), Action: actionOffsetDown, Scale: 1},
 		{Source: input.Keyboard(input.KeyArrowRight), Action: actionOffsetUp, Scale: 1},
+		{Source: input.Gamepad(input.GamepadDpadLeft), Action: actionOffsetDown, Scale: 1},
+		{Source: input.Gamepad(input.GamepadDpadRight), Action: actionOffsetUp, Scale: 1},
 	}
 }
