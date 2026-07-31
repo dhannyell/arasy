@@ -254,6 +254,15 @@ func (r *Renderer) SetCPUTiming(enabled bool) {
 // C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
 func (r *Renderer) SetGPUTiming(bool) {}
 
+// adapterIDs returns the PCI vendor and device IDs of the adapter the
+// renderer selected, for the OS probes that need to find the same GPU.
+func (r *Renderer) adapterIDs() (vendor, device uint32) {
+	if r == nil || r.device == nil {
+		return 0, 0
+	}
+	return r.device.vendorID, r.device.deviceID
+}
+
 // renderCPUTimings reports CPU-side wall times for tessellation, upload and
 // command encoding. These values exclude GPU execution time.
 func (r *Renderer) renderCPUTimings() (time.Duration, time.Duration, time.Duration, bool) {

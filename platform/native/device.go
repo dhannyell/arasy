@@ -18,6 +18,11 @@ type device struct {
 	device   *wgpu.Device
 	queue    *wgpu.Queue
 	config   *wgpu.SurfaceConfiguration
+
+	// vendorID/deviceID identify the adapter to the OS probes, so the dev
+	// panel's VRAM reading lands on the same GPU the game renders to.
+	vendorID uint32
+	deviceID uint32
 }
 
 func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *device, err error) {
@@ -51,6 +56,8 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 		return d, fmt.Errorf("request WebGPU adapter: %w", err)
 	}
 	info := d.adapter.GetInfo()
+	d.vendorID = info.VendorId
+	d.deviceID = info.DeviceId
 	log.Info("native WebGPU adapter selected",
 		"backend", info.BackendType,
 		"vendor", info.Vendor,
