@@ -315,13 +315,13 @@ func TestScrubSeeksOnReleaseOnly(t *testing.T) {
 
 func TestLayersTabIsHiddenOutsideDevMode(t *testing.T) {
 	plain := newTestPanel(t, Options{})
-	if got := len(plain.tabs()); got != 3 {
-		t.Fatalf("tabs without dev mode = %d, want 3", got)
+	if got := len(plain.tabs()); got != tabLayers {
+		t.Fatalf("tabs without dev mode = %d, want %d", got, tabLayers)
 	}
 
 	dev := newTestPanel(t, Options{DevMode: true})
-	if got := len(dev.tabs()); got != 4 {
-		t.Fatalf("tabs in dev mode = %d, want 4", got)
+	if got := len(dev.tabs()); got != tabLayers+1 {
+		t.Fatalf("tabs in dev mode = %d, want %d", got, tabLayers+1)
 	}
 }
 
@@ -360,9 +360,9 @@ func TestTabSelectionFollowsHeaderClicks(t *testing.T) {
 
 func TestRenderStaysAboveGameLayers(t *testing.T) {
 	p := openPanel(t, Options{DevMode: true}, tabSim)
-	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabLayers} {
+	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabPerf, tabLayers} {
 		p.activeTab = tab
-		cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{FPS: 60, Commands: 12})
+		cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{Commands: 12})
 		if len(cmds) == 0 {
 			t.Fatalf("tab %d drew nothing", tab)
 		}

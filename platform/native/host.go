@@ -52,8 +52,8 @@ type host struct {
 	// panel is the optional dev tooling overlay; nil unless the app asked for
 	// it. It draws through the ordinary renderer, so there is no second
 	// window and nothing platform-specific about it beyond the file I/O.
-	panel *devpanel.Panel
-	fps   fpsCounter
+	panel      *devpanel.Panel
+	panelStats devpanel.Stats
 
 	spinMargin time.Duration
 }
@@ -113,6 +113,16 @@ func (h *host) mountDevPanel(opts Options) {
 		panelOpts.Recording = newRecordingPort()
 	}
 	h.panel = devpanel.New(h.driver, panelOpts)
+
+	// The panel reports heap use, which is what a collector pause looks like
+	// before it becomes a frame spike. Sampling it needs the same probes the
+	// metrics reporter uses.
+	if h.heapSamples == nil {
+		h.heapSamples = []metrics.Sample{
+			{Name: "/memory/classes/heap/objects:bytes"},
+			{Name: "/memory/classes/total:bytes"},
+		}
+	}
 }
 
 func (h *host) noteInput() {
@@ -262,8 +272,11 @@ func (h *host) run() error {
 
 		inputAt := h.lastInputAt
 		h.lastInputAt = time.Time{}
+		// The dev panel reports the same split the metrics reporter does, so
+		// an app that never asked for metrics still gets a Perf tab.
+		sampleCPU := h.metrics != nil || h.panelWantsStats()
 		var tickStart time.Time
-		if h.metrics != nil {
+		if sampleCPU {
 			tickStart = time.Now()
 		}
 		// The panel sees every event first and returns the ones the game
@@ -285,11 +298,14 @@ func (h *host) run() error {
 		}
 
 		var tickEnd time.Time
-		if h.metrics != nil {
+		if sampleCPU {
 			tickEnd = time.Now()
 		}
 		h.renderFrame(elapsed)
 		renderEnd := time.Now()
+		if h.panelWantsStats() {
+			h.samplePanelStats(tickStart, tickEnd, renderEnd, inputAt)
+		}
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
 		}
@@ -338,30 +354,33 @@ func (h *host) renderFrame(elapsed time.Duration) {
 	}
 
 	frame := h.driver.Frame(elapsed)
-	stats := devpanel.Stats{FPS: h.fps.observe(elapsed), Commands: len(frame.Commands)}
-	frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, stats)...)
+	h.panelStats.Commands = len(frame.Commands)
+	frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, h.panelStats)...)
 	h.renderer.UpdateResources(h.driver.ConsumeFrameUpdates())
 	h.renderer.Render(frame)
 }
 
-// fpsCounter is a one-second frame count for the panel footer. The host's
-// FrameStatsTracker would do the same and more, but it only exists when the
-// app asked for metrics, and the panel should report a rate either way.
-type fpsCounter struct {
-	frames  int
-	elapsed time.Duration
-	rate    float64
+// panelWantsStats reports whether the dev panel is open and therefore worth
+// measuring for.
+func (h *host) panelWantsStats() bool {
+	return h.panel != nil && h.panel.Visible()
 }
 
-func (c *fpsCounter) observe(elapsed time.Duration) float64 {
-	c.frames++
-	c.elapsed += elapsed
-	if c.elapsed >= time.Second {
-		c.rate = float64(c.frames) / c.elapsed.Seconds()
-		c.frames = 0
-		c.elapsed = 0
+// samplePanelStats fills in the numbers the panel cannot measure for itself.
+// They describe the frame just submitted, so the panel shows them one frame
+// late: the render time of the frame the panel is being drawn into is not
+// known until after it has been drawn.
+func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt time.Time) {
+	h.panelStats.CPUTick = tickEnd.Sub(tickStart)
+	h.panelStats.CPURender = renderEnd.Sub(tickEnd)
+	h.panelStats.CPUSet = true
+
+	h.panelStats.InputLatencySet = !inputAt.IsZero()
+	if h.panelStats.InputLatencySet {
+		h.panelStats.InputLatency = renderEnd.Sub(inputAt)
 	}
-	return c.rate
+
+	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
 }
 
 func (h *host) pollGamepad() []input.Event {

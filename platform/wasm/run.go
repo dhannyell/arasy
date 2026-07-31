@@ -63,8 +63,9 @@ type host struct {
 	// panel is the optional runtime tooling UI; nil when no overlay is
 	// enabled. It draws inside the canvas like everything else, so there is
 	// no DOM overlay to keep in sync with the frame.
-	panel *devpanel.Panel
-	audio *audioSink
+	panel      *devpanel.Panel
+	panelStats devpanel.Stats
+	audio      *audioSink
 
 	loopCb   js.Func
 	resizeCb js.Func

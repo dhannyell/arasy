@@ -7,15 +7,11 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/runtime"
 )
 
 func (h *host) startLoop() {
 	var frameTimer runtime.FrameTimer
-	var fpsFrames int
-	var fpsElapsed time.Duration
-	var fps int
 	var firstFramePresented bool
 
 	var cb js.Func
@@ -43,7 +39,9 @@ func (h *host) startLoop() {
 		inputAtMillis := h.pendingInputAtMillis
 		h.pendingInputAtMillis = -1
 
-		sampleCPU := h.onFrameMetrics != nil
+		// The dev panel reports the same split the metrics callback does, so
+		// an app that never asked for metrics still gets a Perf tab.
+		sampleCPU := h.onFrameMetrics != nil || h.panelWantsStats()
 		var tickStart float64
 		if sampleCPU {
 			tickStart = performanceNowMillis()
@@ -66,8 +64,11 @@ func (h *host) startLoop() {
 			tickEnd = performanceNowMillis()
 		}
 
-		h.renderFrame(elapsed, fps)
+		h.renderFrame(elapsed)
 		signalFirstFramePresented(&firstFramePresented)
+		if h.panelWantsStats() {
+			h.samplePanelStats(tickStart, tickEnd, inputAtMillis)
+		}
 
 		if h.onFrameMetrics != nil {
 			renderEnd := performanceNowMillis()
@@ -94,14 +95,6 @@ func (h *host) startLoop() {
 			}
 		}
 
-		fpsFrames++
-		fpsElapsed += elapsed
-		if fpsElapsed >= time.Second {
-			fps = fpsFrames
-			fpsFrames = 0
-			fpsElapsed = 0
-		}
-
 		js.Global().Call("requestAnimationFrame", cb)
 		return nil
 	})
@@ -113,14 +106,40 @@ func (h *host) startLoop() {
 // panel's commands are appended after the game's, in a layer band above every
 // game layer. With the panel closed this is command-for-command the frame the
 // driver would have rendered on its own.
-func (h *host) renderFrame(elapsed time.Duration, fps int) {
+func (h *host) renderFrame(elapsed time.Duration) {
 	frame := h.driver.Frame(elapsed)
 	if h.panel != nil {
-		stats := devpanel.Stats{FPS: float64(fps), Commands: len(frame.Commands)}
-		frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, stats)...)
+		h.panelStats.Commands = len(frame.Commands)
+		frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, h.panelStats)...)
 	}
 	h.renderer.UpdateResources(h.driver.ConsumeFrameUpdates())
 	h.renderer.Render(frame)
+}
+
+// panelWantsStats reports whether the dev panel is open and therefore worth
+// measuring for. The timings cost a performance.now() call each, which is not
+// worth paying for a panel nobody is looking at.
+func (h *host) panelWantsStats() bool {
+	return h.panel != nil && h.panel.Visible()
+}
+
+// samplePanelStats fills in the numbers the panel cannot measure for itself.
+// They describe the frame that was just submitted, so the panel shows them
+// one frame late — the render time of the frame the panel is being drawn into
+// is not known until after it has been drawn.
+func (h *host) samplePanelStats(tickStart, tickEnd, inputAtMillis float64) {
+	renderEnd := performanceNowMillis()
+	h.panelStats.CPUTick = durationFromMillis(tickEnd - tickStart)
+	h.panelStats.CPURender = durationFromMillis(renderEnd - tickEnd)
+	h.panelStats.CPUSet = true
+
+	if latency, ok := inputLatencySince(inputAtMillis); ok {
+		h.panelStats.InputLatency = latency
+		h.panelStats.InputLatencySet = true
+	}
+
+	used, limit, ok := browserHeapMetrics()
+	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = used, limit, ok
 }
 
 func (h *host) pollGamepad() []input.Event {

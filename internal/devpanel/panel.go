@@ -12,22 +12,47 @@ import (
 )
 
 // Tab indices. Layers is last because it only exists in dev mode, so the
-// three that are always there keep the same position either way.
+// four that are always there keep the same position either way.
 const (
 	tabSim = iota
 	tabTimeline
 	tabReplay
+	tabPerf
 	tabLayers
 )
 
-var tabLabels = [...]string{"Sim", "Timeline", "Replay", "Layers"}
+var tabLabels = [...]string{"Sim", "Timeline", "Replay", "Perf", "Layers"}
 
-// Stats is the per-frame host telemetry the footer reports. The panel cannot
-// measure either one: frame pacing is the host's clock, and the command count
-// is what the host was handed for this frame.
+// Stats is the per-frame host telemetry the panel cannot measure for itself.
+// Frame pacing is not here: the panel is handed the elapsed time of every
+// frame anyway, so it keeps its own tracker rather than depending on a host
+// having been asked for metrics.
+//
+// Every field below is optional. A host that measures none of them still
+// gets a working Perf tab; it just shows less.
 type Stats struct {
-	FPS      float64
+	// Commands is how many render commands the frame carried before the
+	// panel appended its own.
 	Commands int
+
+	// CPUTick and CPURender split the host's frame between advancing the
+	// simulation and building plus submitting the frame. They necessarily
+	// describe the previous frame: this frame's render time is not known
+	// until after the panel has been drawn into it.
+	CPUTick   time.Duration
+	CPURender time.Duration
+	CPUSet    bool
+
+	// InputLatency is host event arrival to render submission. It is not a
+	// measurement of when the pixel reached the display.
+	InputLatency    time.Duration
+	InputLatencySet bool
+
+	// HeapInUse and HeapTotal are the runtime's memory, which is what a
+	// collector pause looks like before it becomes a frame spike.
+	HeapInUse uint64
+	HeapTotal uint64
+	HeapSet   bool
 }
 
 // Options configures a panel. Every field is optional; the zero value gives a
@@ -79,6 +104,14 @@ type Panel struct {
 	visible   bool
 	activeTab int
 	time      float64
+
+	// The panel measures frame pacing itself, from the elapsed time every
+	// host already hands it. Depending on the host's own tracker would mean
+	// the Perf tab worked only for apps that had asked for metrics.
+	frames     runtime.FrameStatsTracker
+	frameStats runtime.FrameStats
+	history    frameHistory
+	stats      Stats
 
 	// Caller-owned widget values. Every value widget in ui hands its value
 	// back to whoever owns it; for the panel that is these fields, which is
@@ -218,6 +251,10 @@ func (p *Panel) Render(cam render.Camera, elapsed time.Duration, stats Stats) []
 	// closed: hiding the panel must not strand a recording waiting for the
 	// reset it asked for.
 	p.rec.tick(p.driver, state)
+	// Frame pacing is sampled while closed too. A history that only began
+	// when the panel opened would be blank exactly when somebody opens it to
+	// find out what just happened.
+	p.observeFrame(elapsed, stats)
 	if !p.visible {
 		return nil
 	}
@@ -259,6 +296,16 @@ func (p *Panel) update(in ui.InteractScope, lay layout) {
 	case tabLayers:
 		p.updateLayers(in, lay.body, state)
 	}
+	// The Perf tab is a readout: it has nothing to interact with.
+}
+
+// observeFrame folds one frame into the pacing history.
+func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
+	p.stats = stats
+	if frame, ready := p.frames.Observe(elapsed); ready {
+		p.frameStats = frame
+	}
+	p.history.push(elapsed)
 }
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {
@@ -272,6 +319,8 @@ func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, st
 		p.drawTimeline(draw, lay.body, state)
 	case tabReplay:
 		p.drawReplay(draw, lay.body, state)
+	case tabPerf:
+		p.drawPerf(draw, lay.body)
 	case tabLayers:
 		p.drawLayers(draw, lay.body, state)
 	}
@@ -291,7 +340,7 @@ func (p *Panel) drawFooter(draw ui.DrawScope, rect math2d.Rect, state runtime.Dr
 			" paused=" + formatBool(state.Paused) +
 			" speed=" + formatFloat(state.Speed) +
 			" mode=" + mode,
-		"fps=" + formatFloat(stats.FPS) +
+		"fps=" + formatFloat(p.frameStats.FPS) +
 			" cmds=" + formatInt(stats.Commands) +
 			" rec=" + formatBool(p.rec.active()),
 	}
