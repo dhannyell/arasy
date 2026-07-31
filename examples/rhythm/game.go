@@ -100,7 +100,7 @@ func (g *Game) Setup() runtime.Config {
 		},
 		Clear:               render.RGBA(0.025, 0.025, 0.03, 1),
 		SimulationHz:        simHz,
-		FPS:                 60,
+		FPS:                 61,
 		RenderInterpolation: true,
 		InputBindings:       bindings(),
 		HistoryLen:          simHz * 90,
