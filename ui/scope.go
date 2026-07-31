@@ -24,6 +24,14 @@ func (s InteractScope) Focusable(id string, rect math2d.Rect) {
 	s.u.focusableIn(id, rect, s.space)
 }
 
+// Focused reports whether id holds keyboard focus. It is the keyboard
+// counterpart of Hovered: the query a game needs when it draws its own chrome
+// and has to show the player where the keyboard is. The themed widgets draw
+// their own ring and need nothing here.
+func (s InteractScope) Focused(id string) bool {
+	return s.u.focusedIn(id)
+}
+
 func (s InteractScope) ScrollOffset(id string, view math2d.Rect, contentH float64) float64 {
 	return s.u.scrollOffsetIn(id, view, contentH, s.space)
 }
@@ -32,12 +40,58 @@ func (s InteractScope) SliderInput(id string, rect math2d.Rect, value float64, o
 	return s.u.sliderInputIn(id, rect, value, opts, s.space)
 }
 
+// TextInput edits the text the caller holds: pass the value you own, store the
+// one that comes back. Typed text is game state — it filters game data, names
+// game things — so it rewinds with the simulation instead of hiding in the
+// widget. The caret and the key-repeat clock stay in ui.State, where nobody
+// has to declare them.
+func (s InteractScope) TextInput(id string, rect math2d.Rect, text string, opts TextInputOptions) TextInputResult {
+	return s.u.textInputIn(id, rect, text, opts, s.space)
+}
+
 func (s InteractScope) TableHit(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int) int {
 	return s.u.tableHitIn(id, rect, cols, rowCount, selected, s.space)
 }
 
+// TableHeaderHit returns the column whose header was clicked this tick, or -1.
+// Turning that into an ordering is the caller's: the rows are its data, and
+// only it knows how a column compares. Pass the resulting TableSort back to
+// DrawScope.TableSorted to get the arrow.
+func (s InteractScope) TableHeaderHit(id string, rect math2d.Rect, cols []TableColumn) int {
+	return s.u.tableHeaderHitIn(id, rect, cols, s.space)
+}
+
 func (s InteractScope) ListHit(id string, rect math2d.Rect, rowH float64, rowCount int) int {
 	return s.u.listHitIn(id, rect, rowH, rowCount, s.space)
+}
+
+// ListInputValue is the caller-owned selection of a row list: pass the index
+// you hold, store the one returned. Clicks select, and so do the arrows, Home,
+// End and the page keys while the list holds focus — both paths write the same
+// index, which is why it belongs to the caller.
+func (s InteractScope) ListInputValue(id string, rect math2d.Rect, rowH float64, rowCount, selected int) (next int, changed bool) {
+	return s.u.listInputValueIn(id, rect, rowH, rowCount, selected, s.space)
+}
+
+// TableInputValue is ListInputValue for a table, measuring rows against the
+// body below the header.
+func (s InteractScope) TableInputValue(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int) (next int, changed bool) {
+	return s.u.tableInputValueIn(id, rect, cols, rowCount, selected, s.space)
+}
+
+// CheckboxInput toggles the flag the caller holds: pass the one you own, store
+// the one returned. Clicking anywhere in rect toggles, and so does activating
+// the widget from the keyboard while it holds focus.
+func (s InteractScope) CheckboxInput(id string, rect math2d.Rect, checked bool) (next, changed bool) {
+	return s.u.checkboxInputIn(id, rect, checked, s.space)
+}
+
+// DropdownInput selects from a popup list. The index is caller-owned like every
+// selection in this package; whether the menu is open right now is not, and
+// stays in ui.State. count is the number of options — the same length the draw
+// half receives as labels.
+func (s InteractScope) DropdownInput(id string, rect math2d.Rect, count, selected int) (next int, changed bool) {
+	return s.u.dropdownInputIn(id, rect, count, selected, s.space)
 }
 
 // TabsInputValue selects the active tab from this tick's pointer events,
@@ -99,6 +153,13 @@ func (s DrawScope) Tabs(id string, rect math2d.Rect, labels []string) int {
 	return s.u.tabsIn(id, rect, labels, s.space)
 }
 
+// TextInput draws a text field with the caller's text, and the caret while it
+// holds focus. Call InteractScope.TextInput with the same id and rect during
+// Update to make it editable.
+func (s DrawScope) TextInput(id string, rect math2d.Rect, text string, opts TextInputOptions) {
+	s.u.textInputDrawIn(id, rect, text, opts, s.space)
+}
+
 func (s DrawScope) Label(text string, pos math2d.Vec2) {
 	s.u.labelIn(text, pos, s.space)
 }
@@ -128,7 +189,27 @@ func (s DrawScope) Table(id string, rect math2d.Rect, cols []TableColumn, rowCou
 }
 
 func (s DrawScope) TableStyled(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle) int {
-	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, style, s.space)
+	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, style, NoTableSort, s.space)
+}
+
+// TableSorted is Table plus the arrow marking the ordering the caller applied.
+// Pair it with InteractScope.TableHeaderHit, which reports the clicks.
+func (s DrawScope) TableSorted(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int, sort TableSort, cell func(row, col int) string) int {
+	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, nil, sort, s.space)
+}
+
+// Checkbox draws a box, its mark and an optional label. Call
+// InteractScope.CheckboxInput with the same id and rect during Update to make
+// it interactive.
+func (s DrawScope) Checkbox(id string, rect math2d.Rect, checked bool, label string) {
+	s.u.checkboxIn(id, rect, checked, label, s.space)
+}
+
+// Dropdown draws the closed button, and — while the menu is open — the list of
+// options above every other widget. Call InteractScope.DropdownInput with the
+// same id and rect during Update to make it selectable.
+func (s DrawScope) Dropdown(id string, rect math2d.Rect, labels []string, selected int) {
+	s.u.dropdownDrawIn(id, rect, labels, selected, s.space)
 }
 
 func (s DrawScope) List(id string, rect math2d.Rect, rowH float64, rowCount, selected int, draw ListDraw) int {
@@ -137,6 +218,20 @@ func (s DrawScope) List(id string, rect math2d.Rect, rowH float64, rowCount, sel
 
 func (s DrawScope) Hovered(rect math2d.Rect) bool {
 	return s.u.hoveredIn(rect, s.space)
+}
+
+// Focused reports whether id holds keyboard focus, so a game drawing its own
+// widget can react to it the way it already reacts to Hovered.
+func (s DrawScope) Focused(id string) bool {
+	return s.u.focusedIn(id)
+}
+
+// FocusRing draws the theme's focus ring around rect. It is the outline the
+// themed widgets draw for themselves, exposed for chrome the game draws: a
+// hand-drawn button gets the same focus language as an engine one, from the
+// same FocusTheme, instead of inventing a second visual vocabulary.
+func (s DrawScope) FocusRing(rect math2d.Rect) {
+	s.u.focusRingIn(rect, s.u.nextLayer(), s.space)
 }
 
 func (s DrawScope) FillRect(rect math2d.Rect, fill render.Color) {

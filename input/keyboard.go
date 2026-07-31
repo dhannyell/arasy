@@ -39,7 +39,22 @@ const (
 	KeyArrowDown
 	KeyArrowLeft
 	KeyArrowRight
+
+	// Editing keys. They are ordinary buttons like every key above — text
+	// itself travels as EventText — but a text field needs them named, and
+	// both hosts can produce them.
+	KeyBackspace
+	KeyDelete
+	KeyHome
+	KeyEnd
+	KeyPageUp
+	KeyPageDown
 )
+
+// keyCodeCount bounds the keyboard catalogue, so a per-tick snapshot of held
+// keys is a fixed array rather than a map: cheap to clone into a rewind
+// snapshot and iterated in a fixed order.
+const keyCodeCount = int(KeyPageDown) + 1
 
 func Keyboard(code SourceCode) Source {
 	return Source{
@@ -49,5 +64,5 @@ func Keyboard(code SourceCode) Source {
 }
 
 func isKeyboardCode(code SourceCode) bool {
-	return code >= KeyA && code <= KeyArrowRight
+	return code >= KeyA && code <= KeyPageDown
 }

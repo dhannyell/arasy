@@ -32,7 +32,19 @@ func (h *host) registerInputListeners() {
 		if isEditableTarget(event.Get("target")) {
 			return nil
 		}
-		if event.Get("repeat").Bool() {
+
+		// Text repeats, buttons do not. A held letter is meant to keep typing,
+		// while a held action key would fire the action once per browser
+		// repeat — so the repeat cut sits between the two emissions, and the
+		// button stream keeps the repeat-free contract the Mapper relies on.
+		repeat := event.Get("repeat").Bool()
+
+		textEvent, hasText := platforminput.TextEvent(event.Get("key").String())
+		if hasText {
+			event.Call("preventDefault")
+			h.queueInput(textEvent, event)
+		}
+		if repeat {
 			return nil
 		}
 

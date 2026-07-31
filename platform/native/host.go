@@ -123,6 +123,17 @@ func (h *host) registerCallbacks() {
 		h.noteInput()
 		h.pending = append(h.pending, keyEvent(code, action == glfw.Press))
 	})
+	// GLFW resolves layout, modifiers and IME for us and delivers finished
+	// codepoints here, repeats included — the same characters the browser
+	// path derives from KeyboardEvent.key.
+	h.window.SetCharCallback(func(_ *glfw.Window, char rune) {
+		event, ok := input.TextEvent(char)
+		if !ok {
+			return
+		}
+		h.noteInput()
+		h.pending = append(h.pending, event)
+	})
 	h.window.SetMouseButtonCallback(func(_ *glfw.Window, button glfw.MouseButton, action glfw.Action, _ glfw.ModifierKey) {
 		if action != glfw.Press && action != glfw.Release {
 			return

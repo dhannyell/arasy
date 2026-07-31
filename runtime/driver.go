@@ -453,7 +453,7 @@ func (d *Driver) newRenderUI() *ui.UI {
 // newUpdateUI builds the interaction face of the UI, used in Update.
 func (d *Driver) newUpdateUI() *ui.UI {
 	cam := d.cameraForSurface()
-	return ui.NewUpdateWithInput(&d.uiState, d.input.PointerFrame(), d.input.LastInput(), cam, d.uiTheme, d.cfg.Camera.Viewport)
+	return ui.NewUpdateWithKeys(&d.uiState, d.input.PointerFrame(), d.input.KeyFrame(), d.input.LastInput(), cam, d.uiTheme, d.cfg.Camera.Viewport)
 }
 
 // SetViewport updates the surface size used for camera fitting and UI layout.

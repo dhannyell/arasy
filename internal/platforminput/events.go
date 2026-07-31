@@ -1,6 +1,10 @@
 package platforminput
 
-import "github.com/dhannyell/arasy/input"
+import (
+	"unicode"
+
+	"github.com/dhannyell/arasy/input"
+)
 
 // KeyEvent converts a DOM KeyboardEvent.code and button direction into a
 // validated Arasy event.
@@ -18,6 +22,20 @@ func KeyEvent(code string, down bool) (input.Event, bool) {
 		Kind:   kind,
 	}
 	return event, event.Valid()
+}
+
+// TextEvent converts a DOM KeyboardEvent.key into a text event. The browser
+// resolves layout, shift and simple dead keys for us and hands back the
+// character itself, so a key that produced exactly one character is a typed
+// character; everything else ("Enter", "ArrowLeft", "Dead", the "Process" and
+// "Unidentified" of an IME or a mobile virtual keyboard) is not text and is
+// left to the physical-key path.
+func TextEvent(key string) (input.Event, bool) {
+	runes := []rune(key)
+	if len(runes) != 1 || unicode.IsControl(runes[0]) {
+		return input.Event{}, false
+	}
+	return input.TextEvent(runes[0])
 }
 
 // MouseButtonEvent converts a DOM MouseEvent.button value into a validated

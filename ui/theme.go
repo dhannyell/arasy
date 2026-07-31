@@ -18,9 +18,12 @@ type Theme struct {
 	Row      RowTheme
 	Header   HeaderTheme
 	Badge    BadgeTheme
-	Text     TextTheme
-	Focus    FocusTheme
-	Tabs     TabsTheme
+	Text      TextTheme
+	Focus     FocusTheme
+	Tabs      TabsTheme
+	TextInput TextInputTheme
+	Checkbox  CheckboxTheme
+	Dropdown  DropdownTheme
 }
 
 // ButtonStyle describes one button state.
@@ -133,6 +136,59 @@ type TabsTheme struct {
 	CornerRadius float64
 }
 
+// TextInputTheme styles a text field. BlinkPeriod is the full caret cycle in
+// seconds of render time, so it never touches simulation state.
+type TextInputTheme struct {
+	Background        render.Color
+	BackgroundHovered render.Color
+	BackgroundFocused render.Color
+	Border            render.Color
+	BorderWidth       float64
+	CornerRadius      float64
+	TextColor         render.Color
+	PlaceholderColor  render.Color
+	CaretColor        render.Color
+	CaretWidth        float64
+	TextSize          float64
+	PaddingX          float64
+	PaddingY          float64
+	BlinkPeriod       float64
+}
+
+// CheckboxTheme styles the box and its check mark. BoxSize is the side of the
+// square, centred vertically in the rect the caller passes.
+type CheckboxTheme struct {
+	Background        render.Color
+	BackgroundHovered render.Color
+	BackgroundChecked render.Color
+	Border            render.Color
+	BorderWidth       float64
+	CornerRadius      float64
+	Mark              render.Color
+	MarkWidth         float64
+	BoxSize           float64
+	LabelGap          float64
+	TextColor         render.Color
+	TextSize          float64
+}
+
+// DropdownTheme styles the closed button and the popup list it opens.
+// MaxVisibleRows caps the popup height; longer lists scroll.
+type DropdownTheme struct {
+	Background        render.Color
+	BackgroundHovered render.Color
+	BackgroundOpen    render.Color
+	Border            render.Color
+	BorderWidth       float64
+	CornerRadius      float64
+	TextColor         render.Color
+	TextSize          float64
+	PaddingX          float64
+	ArrowSize         float64
+	PopupBackground   render.Color
+	MaxVisibleRows    int
+}
+
 type FocusTheme struct {
 	Color        render.Color
 	Width        float64
@@ -225,6 +281,50 @@ func DefaultTheme() Theme {
 			CornerRadius: 6,
 			Inset:        2,
 		},
+		TextInput: TextInputTheme{
+			Background:        render.RGBA(0, 0, 0, 0.25),
+			BackgroundHovered: render.RGBA(1, 1, 1, 0.06),
+			BackgroundFocused: render.RGBA(0, 0, 0, 0.35),
+			Border:            subtle,
+			BorderWidth:       1,
+			CornerRadius:      6,
+			TextColor:         white,
+			PlaceholderColor:  muted,
+			CaretColor:        white,
+			CaretWidth:        2,
+			TextSize:          16,
+			PaddingX:          8,
+			PaddingY:          6,
+			BlinkPeriod:       1,
+		},
+		Checkbox: CheckboxTheme{
+			Background:        render.RGBA(0, 0, 0, 0.25),
+			BackgroundHovered: render.RGBA(1, 1, 1, 0.10),
+			BackgroundChecked: accent,
+			Border:            subtle,
+			BorderWidth:       1,
+			CornerRadius:      4,
+			Mark:              white,
+			MarkWidth:         2,
+			BoxSize:           18,
+			LabelGap:          8,
+			TextColor:         white,
+			TextSize:          14,
+		},
+		Dropdown: DropdownTheme{
+			Background:        btnBg,
+			BackgroundHovered: btnHover,
+			BackgroundOpen:    btnActive,
+			Border:            subtle,
+			BorderWidth:       1,
+			CornerRadius:      6,
+			TextColor:         white,
+			TextSize:          14,
+			PaddingX:          8,
+			ArrowSize:         8,
+			PopupBackground:   render.RGBA(0.10, 0.12, 0.16, 0.98),
+			MaxVisibleRows:    8,
+		},
 		Tabs: TabsTheme{
 			BarHeight:    32,
 			Bar:          render.RGBA(1, 1, 1, 0.04),
@@ -277,6 +377,15 @@ func WithDefaults(theme Theme) Theme {
 	}
 	if theme.Tabs == (TabsTheme{}) {
 		theme.Tabs = defaults.Tabs
+	}
+	if theme.TextInput == (TextInputTheme{}) {
+		theme.TextInput = defaults.TextInput
+	}
+	if theme.Checkbox == (CheckboxTheme{}) {
+		theme.Checkbox = defaults.Checkbox
+	}
+	if theme.Dropdown == (DropdownTheme{}) {
+		theme.Dropdown = defaults.Dropdown
 	}
 	return theme
 }

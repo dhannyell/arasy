@@ -8,6 +8,14 @@ import (
 
 const LayerBase = 10_000
 
+// LayerOverlay opens a block of layers reserved for popups. Widgets allocate
+// upward from LayerBase in declaration order, so a dropdown opened early in a
+// frame would otherwise be painted over by everything declared after it. Its
+// popup allocates from here instead, which is far enough above any plausible
+// widget count to keep the overlay on top without the caller ordering
+// anything.
+const LayerOverlay = 1_000_000
+
 type UI struct {
 	state     *State
 	camera    render.Camera
@@ -15,12 +23,19 @@ type UI struct {
 	theme     Theme
 	font      render.FontID
 	frame     input.PointerFrame
+	keys      input.KeyFrame
 	layer     int
+	overlay   int
 	inside    bool
 	cursorPos math2d.Vec2
 	input     input.State
 	activated ID
 	focusable []ID
+	// The repeat clock is resolved at most once per frame and shared by every
+	// widget that reads a held key, so two of them do not advance it twice.
+	repeatResolved bool
+	repeatCode     input.SourceCode
+	repeatFired    bool
 	commands  []render.Command
 	store     *AnimStore
 	groups    []groupFrame
@@ -43,6 +58,7 @@ func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, th
 		dt:        dt,
 		time:      time,
 		layer:     LayerBase,
+		overlay:   LayerOverlay,
 	}
 }
 
@@ -61,6 +77,7 @@ func NewUpdate(state *State, frame input.PointerFrame, cam render.Camera, theme 
 		font:      theme.Font,
 		reference: reference,
 		layer:     LayerBase,
+		overlay:   LayerOverlay,
 	}
 }
 
@@ -73,6 +90,20 @@ func NewUpdateWithInput(state *State, frame input.PointerFrame, inputState input
 	return u
 }
 
+// NewUpdateWithKeys is NewUpdateWithInput plus the tick's keyboard frame, which
+// text widgets read directly: characters and editing keys are not actions and
+// no binding could describe them.
+func NewUpdateWithKeys(state *State, frame input.PointerFrame, keys input.KeyFrame, inputState input.State, cam render.Camera, theme Theme, reference math2d.Rect) *UI {
+	u := NewUpdateWithInput(state, frame, inputState, cam, theme, reference)
+	u.keys = keys
+	return u
+}
+
+// EndFrame closes the tick's UI: it cycles focus on Tab and drops it on
+// Escape. Both run here rather than inside a widget because they are about the
+// frame as a whole — the cycle needs every focusable already declared. Tab is
+// only claimed when the frame declared at least one, so a game with no UI up
+// keeps the key for itself.
 func (u *UI) EndFrame() {
 	if u.state == nil {
 		return
@@ -153,3 +184,12 @@ func (u *UI) nextLayer() int {
 	u.layer++
 	return l
 }
+
+// beginOverlay moves layer allocation into the reserved overlay block, so
+// everything emitted until endOverlay paints above the ordinary widgets —
+// including those declared after it. Swapping the two counters (rather than
+// saving and restoring one) keeps both advancing, so two popups in one frame
+// stack in declaration order instead of fighting for the same layer.
+func (u *UI) beginOverlay() { u.layer, u.overlay = u.overlay, u.layer }
+
+func (u *UI) endOverlay() { u.layer, u.overlay = u.overlay, u.layer }

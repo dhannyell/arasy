@@ -170,11 +170,18 @@ Tudo que depende de um retangulo/posicao mora no scope devolvido por `In`.
 - `Panel(rect)`
 - `ProgressBar(rect, value)`
 - `Slider(id, rect, value, opts)`
+- `TextInput(id, rect, text, opts)`
+- `Checkbox(id, rect, checked, label)`
+- `Dropdown(id, rect, labels, selected)`
+- `Tabs(id, rect, labels)` / `TabsAt(headers, labels, active)`
 - `Table(id, rect, cols, rowCount, selected, cell)`
 - `TableStyled(id, rect, cols, rowCount, selected, cell, style)`
+- `TableSorted(id, rect, cols, rowCount, selected, sort, cell)`
 - `List(id, rect, rowH, rowCount, selected, draw)`
 - `ScrollArea(id, view, contentH)`
 - `Hovered(rect)`
+- `Focused(id)`
+- `FocusRing(rect)`
 - `FillRect(rect, fill)`
 - `DrawText(text, pos, color, size, align, baseline)`
 - `DrawTextRot(text, pos, color, size, rotation, align, baseline)`
@@ -188,11 +195,19 @@ Tudo que depende de um retangulo/posicao mora no scope devolvido por `In`.
 - `Clicked(id, rect)`
 - `Activated(id, rect)`
 - `Focusable(id, rect)`
+- `Focused(id)`
 - `Hovered(rect)`
 - `ScrollOffset(id, view, contentH)`
 - `SliderInput(id, rect, value, opts)`
+- `TextInput(id, rect, text, opts)`
+- `CheckboxInput(id, rect, checked)`
+- `DropdownInput(id, rect, count, selected)`
+- `TabsInputValue(id, headers, current)` / `TabsInput(id, rect, count)`
 - `TableHit(id, rect, cols, rowCount, selected)`
+- `TableHeaderHit(id, rect, cols)`
+- `TableInputValue(id, rect, cols, rowCount, selected)`
 - `ListHit(id, rect, rowH, rowCount)`
+- `ListInputValue(id, rect, rowH, rowCount, selected)`
 
 `Button`, `Panel` e `ProgressBar` desenham retangulos. `Label` e o texto de
 `Button` usam `render.DrawText` com alinhamento central e baseline middle.
@@ -226,6 +241,74 @@ capturado fora do retangulo e faz clamp em `[Min, Max]`.
 
 `Card` desenha um painel arredondado com uma barra de accent opcional. `Badge`
 desenha um chip pequeno dimensionado por `render.MeasureText`.
+
+## Texto digitado
+
+Digitacao entra pelo vocabulario `input`, como qualquer outra entrada: o host
+emite `input.EventText` com o codepoint resolvido pela plataforma (o browser
+usa `KeyboardEvent.key`, o host nativo o char callback do GLFW) e o evento e
+gravado no ARRP junto com os demais. Uma sessao digitada e replayavel e
+scrubbavel de graca — nao existe caminho de texto fora do journal.
+
+`TextInput` e caller-owned como o `Slider`: o jogo passa o texto que tem e
+guarda o que volta.
+
+```go
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
+    result := ctx.UI.In(ui.SpaceRef).TextInput("search", searchRect, g.Query, ui.TextInputOptions{
+        Placeholder: "BUSCAR",
+        MaxRunes:    24,
+    })
+    if result.Changed {
+        g.Query = result.Text
+    }
+    if result.Submitted { // Enter com o campo focado
+        g.RunSearch()
+    }
+}
+
+func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
+    ctx.UI.In(ui.SpaceRef).TextInput("search", searchRect, g.Query, ui.TextInputOptions{Placeholder: "BUSCAR"})
+    return nil
+}
+```
+
+O texto e estado do jogo (entra no fingerprint de replay e rewina com a
+simulacao). O que o widget guarda em `ui.State` e a posicao do caret e o
+relogio de auto-repeat — clonados no snapshot como o resto.
+
+Edicao: caracteres inserem no caret; Backspace/Delete apagam; setas, Home e End
+movem; Enter submete; Esc desfoca; clique posiciona o caret e clique fora tira
+o foco. O auto-repeat de teclas de edicao e contado em ticks pela engine
+(`~30` ticks de espera, depois um a cada `3`), nao pela taxa de repeat do SO —
+por isso um Backspace segurado apaga o mesmo tanto ao vivo, no replay e depois
+de um rewind. O caret pisca pelo relogio de render, nunca por estado de
+simulacao.
+
+Fora da v1 (follow-ups registrados): IME/composicao, selecao de texto,
+clipboard, teclado virtual mobile e modificadores como eventos.
+
+## Checkbox, dropdown e ordenacao
+
+`CheckboxInput` recebe e devolve o bool, no mesmo padrao caller-owned.
+
+`DropdownInput` devolve o indice selecionado; se o menu esta aberto agora e
+estado do widget, guardado em `ui.State`. A lista aberta desenha no bloco de
+layers reservado `LayerOverlay`, acima de qualquer widget declarado depois
+dela, e reivindica aquela area em `ui.State` — assim a linha coberta pela
+lista nao responde ao clique que escolheu um item. A lista em si e a `List`
+virtualizada, entao mil opcoes custam o que oito custam.
+
+Ordenacao de tabela e do jogo: `TableHeaderHit` devolve a coluna clicada (ou
+-1) e `TableSorted` desenha a seta da `ui.TableSort` que o jogo passou. O
+widget nao ordena nada — as linhas sao dados do jogo, e so ele sabe como uma
+coluna compara.
+
+```go
+if col := in.TableHeaderHit("market", tableRect, cols); col >= 0 {
+    g.Sort = toggleSort(g.Sort, col) // decisao do jogo
+}
+```
 
 ## Scroll, tabelas e foco
 
@@ -262,6 +345,41 @@ Foco de teclado e minimo: `Focusable` registra widgets na ordem de chamada,
 Tab avanca, Enter ativa o focado e Esc limpa o foco. `Activated` e o superset
 recomendado de clique + Enter; `Clicked` continua disponivel quando o widget
 deve responder somente ao pointer.
+
+A ordem de foco e a ordem de declaracao — a UI e reconstruida todo frame,
+entao a ordem que o jogo escreve e a ordem que o jogador tabula, sem nada para
+manter em sincronia. **Regra de conflito**: a engine so consome Tab quando o
+frame declarou pelo menos um widget focavel; sem UI focavel, a tecla continua
+livre para bindings do jogo. Duas teclas ficam com o jogo de proposito:
+Espaco nao ativa widget (e pulo/tiro/pause em jogo demais) e Shift+Tab ainda
+nao volta o foco, porque modificadores nao fazem parte do vocabulario `input`.
+
+Os widgets do pacote desenham o proprio anel de foco (`FocusTheme`). Um jogo
+que desenha o proprio botao — como o uimanager, cujos botoes sao paineis
+cortados na diagonal — usa `Activated` para a interacao e precisa mostrar o
+foco por conta propria: `Focused(id)` responde se a tecla esta ali (o
+equivalente de teclado do `Hovered`) e `FocusRing(rect)` desenha o anel do
+tema, para o caso de chrome retangular. Ambos existem porque `ui.State` e
+privado — sem eles o estado de foco fica invisivel fora do pacote.
+
+```go
+// Update
+if in.Activated("btn_sim", simButtonRect()) { SimulateRound(&g.State) }
+
+// Render
+if in.Focused("btn_sim") { in.FocusRing(simButtonRect()) }
+```
+
+Cuidado com bindings que se anulam: o runtime ja injeta
+`Enter → ActionConfirm` com `Scale: 1`, e o `Mapper` **soma** as bindings de
+uma mesma acao. Declarar `Enter → ActionConfirm` com `Scale: -1` zera a acao e
+o teclado para de ativar qualquer coisa, sem erro nenhum.
+
+`ListInputValue` e `TableInputValue` sao as variantes caller-owned da selecao
+de linha: clique seleciona, e com a lista focada as setas, Home, End e
+PageUp/PageDown tambem — os dois caminhos escrevem o mesmo indice, que e do
+jogo. A linha selecionada pelo teclado e trazida para dentro da janela visivel
+automaticamente.
 
 ## Animacao de UI
 

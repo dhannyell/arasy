@@ -60,8 +60,10 @@ func (g *Manager) Init(ctx *runtime.UpdateContext) {
 		Clubs:          clubs,
 		Fixtures:       fixtures,
 		SelectedPlayer: -1,
+		ScoutSelected:  -1,
 	}
 	initSquadOrder(g.State.Clubs[0].Squad)
+	g.State.ScoutPool = buildScoutPool(initialSeasonSeed, clubs)
 }
 
 func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
@@ -86,15 +88,15 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 		g.UIState.SelectedNavItem = -1
 	}
 
-	if in.Clicked("btn_sim_dashboard", simButtonRect()) {
+	if in.Activated("btn_sim_dashboard", simButtonRect()) {
 		SimulateRound(&g.State)
 	}
-	if seasonEnded(g.State) && in.Clicked("btn_new_season_dash", simButtonRect()) {
+	if seasonEnded(g.State) && in.Activated("btn_new_season_dash", simButtonRect()) {
 		g.startNewSeason()
 	}
 	if g.State.Screen == ScreenTable {
 		in.ScrollOffset("tbl_standings", standingsBodyRect(ctx.UI), float64(len(g.State.Clubs))*ctx.UI.RowHeight())
-		if seasonEnded(g.State) && in.Clicked("btn_new_season_table", tableNewSeasonButtonRect()) {
+		if seasonEnded(g.State) && in.Activated("btn_new_season_table", tableNewSeasonButtonRect()) {
 			g.startNewSeason()
 		}
 	}
@@ -103,6 +105,9 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	}
 	if g.State.Screen == ScreenCalendar {
 		g.updateCalendar(ctx)
+	}
+	if g.State.Screen == ScreenScout {
+		g.updateScout(ctx)
 	}
 
 	g.checkPressedButtons(ctx)
@@ -124,8 +129,10 @@ func (g *Manager) startNewSeason() {
 		Clubs:          clubs,
 		Fixtures:       fixtures,
 		SelectedPlayer: -1,
+		ScoutSelected:  -1,
 	}
 	initSquadOrder(g.State.Clubs[0].Squad)
+	g.State.ScoutPool = buildScoutPool(nextSeed, clubs)
 }
 
 func (g *Manager) checkPressedButtons(ctx *runtime.UpdateContext) {
@@ -196,6 +203,8 @@ func (g *Manager) drawScreenUIForScreen(ctx *runtime.RenderContext, screen Scree
 		cmds = append(cmds, g.drawSquad(ctx)...)
 	case ScreenCalendar:
 		cmds = append(cmds, g.drawCalendar(ctx)...)
+	case ScreenScout:
+		cmds = append(cmds, g.drawScout(ctx)...)
 	}
 	return cmds
 }
@@ -214,6 +223,8 @@ func screenStateToName(screen Screen) string {
 		return "CALENDAR"
 	case ScreenSquad:
 		return "SQUAD"
+	case ScreenScout:
+		return "SCOUT"
 	default:
 		return ""
 	}
@@ -393,6 +404,7 @@ var navItems = buildNavItems([]struct {
 	{"nav_table", "TABLE", 120},
 	{"nav_squad", "SQUAD", 120},
 	{"nav_calendar", "CALENDAR", 150},
+	{"nav_scout", "SCOUT", 120},
 })
 
 // navHeaderRects is the nav row as the tab widget sees it: one rect per
@@ -426,14 +438,54 @@ func buildNavItems(entries []struct {
 
 func simButtonRect() math2d.Rect { return rect(720, 425, 238, 56) }
 
-func drawSeasonEndedButton(idPrefix string, button math2d.Rect, ctx *runtime.RenderContext) []render.Command {
-	btnTarget := 1.0
-	if ctx.UI.In(ui.SpaceRef).Hovered(button) {
-		btnTarget = 1.08
+// callToAction is the primary button of a screen: the rect it occupies plus
+// the id Update wired to it. Drawing needs the id because a button that
+// answers the keyboard has to show when the keyboard is on it, and only the
+// id can ask.
+type callToAction struct {
+	id   string
+	rect math2d.Rect
+}
+
+const (
+	focusOutlineWidth = 3.0
+	focusOutlineGap   = 5.0
+)
+
+// focusOutline marks the focused button. It repeats the button's own slanted
+// silhouette instead of calling DrawScope.FocusRing, whose rectangle would cut
+// across the diagonal — but it uses the colour matchdayTheme gives
+// ui.FocusTheme, so this outline and the ring the engine draws on the scout
+// screen's fields are the same mark.
+func focusOutline(button math2d.Rect) []render.Command {
+	outline := rect(
+		button.Min.X-focusOutlineGap,
+		button.Min.Y-focusOutlineGap,
+		button.Width()+2*focusOutlineGap,
+		button.Height()+2*focusOutlineGap,
+	)
+	return slantedPanel(outline, render.Color{}, focusColor, focusOutlineWidth, 18, 14)
+}
+
+// ctaScale is the button's reaction to attention: the same lift for the mouse
+// and for the keyboard, so neither input feels like the second-class one.
+func ctaScale(cta callToAction, ctx *runtime.RenderContext, springID string) (scaled math2d.Rect, focused bool) {
+	in := ctx.UI.In(ui.SpaceRef)
+	focused = in.Focused(cta.id)
+	target := 1.0
+	if focused || in.Hovered(cta.rect) {
+		target = 1.08
 	}
-	scaled := ctx.UI.SpringScale(idPrefix+"_btn_new_season", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, button)
+	return ctx.UI.SpringScale(springID, target, ui.SpringConfig{Stiffness: 200, Damping: 12}, cta.rect), focused
+}
+
+func drawSeasonEndedButton(idPrefix string, cta callToAction, ctx *runtime.RenderContext) []render.Command {
+	scaled, focused := ctaScale(cta, ctx, idPrefix+"_btn_new_season")
 	cmds := slantedPanel(scaled, gold, render.RGBA(0, 0, 0, 0), 0, 16, 12)
 	cmds = append(cmds, text("START NEW SEASON", scaled.Center(), bgDeep, 17, render.AlignCenter, render.BaselineMiddle, 13)...)
+	if focused {
+		cmds = append(cmds, focusOutline(scaled)...)
+	}
 	return cmds
 }
 

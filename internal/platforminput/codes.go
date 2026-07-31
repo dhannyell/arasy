@@ -73,6 +73,18 @@ func KeyboardCode(code string) (input.SourceCode, bool) {
 		return input.KeyArrowLeft, true
 	case "ArrowRight":
 		return input.KeyArrowRight, true
+	case "Backspace":
+		return input.KeyBackspace, true
+	case "Delete":
+		return input.KeyDelete, true
+	case "Home":
+		return input.KeyHome, true
+	case "End":
+		return input.KeyEnd, true
+	case "PageUp":
+		return input.KeyPageUp, true
+	case "PageDown":
+		return input.KeyPageDown, true
 	default:
 		return 0, false
 	}

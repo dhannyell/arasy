@@ -125,14 +125,7 @@ func (u *UI) sliderIn(id string, rect math2d.Rect, value float64, opts SliderOpt
 	u.commands = append(u.commands, commands...)
 
 	if u.state.focusID == HashID(id) {
-		focusRect := insetRect(rect, -u.theme.Focus.Inset)
-		u.commands = append(u.commands, render.DrawRect{
-			BaseCommand:  render.BaseCommand{LayerValue: layer + 3},
-			Rect:         u.rectToWorld(focusRect, space),
-			Stroke:       u.theme.Focus.Color,
-			StrokeWidth:  u.sizeToWorld(u.theme.Focus.Width, space),
-			CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
-		})
+		u.focusRingIn(rect, layer+3, space)
 	}
 }
 

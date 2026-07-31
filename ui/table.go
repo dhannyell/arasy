@@ -2,6 +2,7 @@ package ui
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
@@ -9,8 +10,9 @@ import (
 )
 
 const (
-	tableCellPaddingX = 8
-	tableTextSize     = 14
+	tableCellPaddingX  = 8
+	tableTextSize      = 14
+	tableSortArrowSize = 8.0
 )
 
 type TableColumn struct {
@@ -21,6 +23,64 @@ type TableColumn struct {
 
 type TableCellStyle struct {
 	Color render.Color
+}
+
+// TableSort is the ordering the caller applied to the rows it hands the table,
+// so the header can point at it. The table never sorts anything: the rows are
+// the game's data, in the game's order, and only the game knows how a column
+// compares — the widget reports the header click and draws the arrow.
+type TableSort struct {
+	Col  int
+	Desc bool
+}
+
+// NoTableSort is the unsorted marker, for tables drawn without an indicator.
+var NoTableSort = TableSort{Col: -1}
+
+// tableHeaderID derives the clickable id of one column header, so two tables
+// on the same screen never share a hit target.
+func tableHeaderID(id string, col int) string {
+	return id + "#col" + strconv.Itoa(col)
+}
+
+// tableHeaderHitIn is called in Update. It returns the clicked column index,
+// or -1. The caller turns that into an ordering — toggling direction when the
+// same column is clicked twice is a decision about the caller's data.
+func (u *UI) tableHeaderHitIn(id string, rect math2d.Rect, cols []TableColumn, space Space) int {
+	header := math2d.NewRect(rect.Min, math2d.Vec2{X: rect.Width(), Y: u.theme.Header.Height})
+	x := rect.Min.X
+	for col, width := range resolveTableWidths(rect.Width(), cols) {
+		cell := math2d.NewRect(
+			math2d.Vec2{X: x, Y: header.Min.Y},
+			math2d.Vec2{X: width, Y: header.Height()},
+		)
+		if u.clickedIn(tableHeaderID(id, col), cell, space) {
+			return col
+		}
+		x += width
+	}
+	return -1
+}
+
+// sortIndicator emits the arrow marking the sorted column: up for ascending,
+// down for descending.
+func (u *UI) sortIndicator(cell math2d.Rect, desc bool, layer int, space Space) {
+	size := tableSortArrowSize
+	center := math2d.Vec2{X: cell.Max.X - tableCellPaddingX - size/2, Y: cell.Center().Y}
+	half := size / 2
+	top, bottom := center.Y-half, center.Y+half
+	if desc {
+		top, bottom = bottom, top
+	}
+	u.commands = append(u.commands, render.DrawPolygon{
+		BaseCommand: render.BaseCommand{LayerValue: layer},
+		Points: []math2d.Vec2{
+			u.toWorld(math2d.Vec2{X: center.X, Y: top}, space),
+			u.toWorld(math2d.Vec2{X: center.X - half, Y: bottom}, space),
+			u.toWorld(math2d.Vec2{X: center.X + half, Y: bottom}, space),
+		},
+		Fill: u.theme.Header.TextColor,
+	})
 }
 
 func (u *UI) cardIn(rect math2d.Rect, accent render.Color, space Space) {
@@ -139,10 +199,10 @@ func (u *UI) tableHitIn(id string, rect math2d.Rect, cols []TableColumn, rowCoun
 }
 
 func (u *UI) tableIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, space Space) int {
-	return u.tableStyledIn(id, rect, cols, rowCount, selected, cell, nil, space)
+	return u.tableStyledIn(id, rect, cols, rowCount, selected, cell, nil, NoTableSort, space)
 }
 
-func (u *UI) tableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle, space Space) int {
+func (u *UI) tableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowCount int, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle, sort TableSort, space Space) int {
 	if cell == nil {
 		cell = func(row, col int) string { return "" }
 	}
@@ -176,6 +236,10 @@ func (u *UI) tableStyledIn(id string, rect math2d.Rect, cols []TableColumn, rowC
 			Align:       cols[col].Align,
 			Baseline:    render.BaselineMiddle,
 		})
+		if col == sort.Col {
+			cell := math2d.NewRect(math2d.Vec2{X: x, Y: header.Min.Y}, math2d.Vec2{X: width, Y: header.Height()})
+			u.sortIndicator(cell, sort.Desc, layer+1, space)
+		}
 		x += width
 	}
 
