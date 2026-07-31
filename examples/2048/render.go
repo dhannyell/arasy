@@ -24,7 +24,6 @@ const slideFraction = 0.65
 
 var (
 	boardSize = worldSize - 2*boardMarginX
-	cellSize  = (boardSize - 2*boardPad - (gridSize-1)*cellGap) / gridSize
 
 	boardColor = render.RGBA(0.48, 0.43, 0.39, 1)
 	cellColor  = render.RGBA(0.70, 0.65, 0.60, 1)
@@ -188,12 +187,13 @@ func drawOverlay(ctx *runtime.RenderContext, title, subtitle, primaryID, primary
 	}
 }
 
+// The board is one padded rect cut into a gridSize by gridSize grid, so the
+// cell size follows from the board instead of every cell re-deriving its own
+// origin from the same four constants.
 func cellRect(index int) math2d.Rect {
+	inner := ui.Inset(boardRect(), boardPad)
 	row, col := index/gridSize, index%gridSize
-	return math2d.NewRect(math2d.Vec2{
-		X: boardMarginX + boardPad + float64(col)*(cellSize+cellGap),
-		Y: boardTop + boardPad + float64(row)*(cellSize+cellGap),
-	}, math2d.Vec2{X: cellSize, Y: cellSize})
+	return ui.Column(ui.Row(inner, row, gridSize, cellGap), col, gridSize, cellGap)
 }
 
 func cellCenter(index int) math2d.Vec2 { return cellRect(index).Center() }
@@ -264,6 +264,9 @@ func tileTextSize(value uint64) float64 {
 func powerButtonRect(index, count int) math2d.Rect {
 	const width, height, gap = 110.0, 48.0, 12.0
 	total := float64(count)*width + float64(count-1)*gap
-	x := (viewportSize-total)/2 + float64(index)*(width+gap)
-	return math2d.NewRect(math2d.Vec2{X: x, Y: powersBarY}, math2d.Vec2{X: width, Y: height})
+	bar := math2d.NewRect(
+		math2d.Vec2{X: (viewportSize - total) / 2, Y: powersBarY},
+		math2d.Vec2{X: total, Y: height},
+	)
+	return ui.Column(bar, index, count, gap)
 }

@@ -26,10 +26,7 @@ func (g *Manager) drawLeagueTable(ctx *runtime.RenderContext) []render.Command {
 // and both Render helpers below — duplicating these rects per function let
 // them silently drift out of sync with each other.
 func standingsPanel() math2d.Rect { return rect(190, 170, 740, 690) }
-func standingsTableRect() math2d.Rect {
-	p := standingsPanel()
-	return rect(p.Min.X+20, p.Min.Y+52, p.Width()-40, p.Height()-72)
-}
+func standingsTableRect() math2d.Rect { return panelBodyRect(standingsPanel()) }
 
 // Right column: three stacked cards (RODADA, PRÓXIMO JOGO, legenda
 // TOPO/RISCO), filling the same y=170..860 band the left-column panels use
