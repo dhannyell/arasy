@@ -37,6 +37,10 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
+	// MSAA selects the anti-aliasing level of the WebGPU renderer. The zero
+	// value is render.MSAADefault (4x); render.MSAAOff turns anti-aliasing
+	// off. The Canvas2D fallback ignores it.
+	MSAA render.MSAAMode
 	// FrameMetrics receives lightweight browser frame telemetry. The callback
 	// runs at most four times per second after a frame has been submitted.
 	// InputToSubmit measures browser-event arrival to render submission; it is
@@ -122,7 +126,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if len(cfg.Assets.AudioClips()) > 0 {
 		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, log)
 	}
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, opts.MSAA, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -160,13 +164,13 @@ func applyBrowserSplashPolicy(driver *runtime.Driver) {
 	}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, log *slog.Logger) runtime.FrameRenderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, log)
+	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, msaa, log)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r

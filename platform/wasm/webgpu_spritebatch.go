@@ -253,7 +253,7 @@ func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
 			"vertex":      map[string]any{"module": shader, "entryPoint": "vs_main"},
 			"fragment":    map[string]any{"module": shader, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": r.format, "blend": gpu.PremultipliedBlend()}}},
 			"primitive":   map[string]any{"topology": "triangle-list"},
-			"multisample": map[string]any{"count": msaaSampleCount},
+			"multisample": map[string]any{"count": r.msaaSamples},
 		})
 	}
 
