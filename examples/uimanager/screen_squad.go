@@ -19,16 +19,13 @@ const (
 // squad list panel + body rects
 func squadListPanel() math2d.Rect   { return rect(190, 170, 740, 690) }
 func squadDetailPanel() math2d.Rect { return rect(970, 170, 770, 690) }
-func squadBodyRect() math2d.Rect {
-	p := squadListPanel()
-	return rect(p.Min.X+20, p.Min.Y+52, p.Width()-40, p.Height()-72)
-}
+func squadBodyRect() math2d.Rect { return panelBodyRect(squadListPanel()) }
 
 // squadListRect is the scrollable row area of the squad body, i.e.
 // squadBodyRect() minus the column header band drawn above it.
 func squadListRect() math2d.Rect {
-	body := squadBodyRect()
-	return rect(body.Min.X, body.Min.Y+squadHeaderH, body.Width(), body.Height()-squadHeaderH)
+	_, rows := ui.CutTop(squadBodyRect(), squadHeaderH)
+	return rows
 }
 
 func (g *Manager) updateSquad(ctx *runtime.UpdateContext) {

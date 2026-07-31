@@ -548,14 +548,13 @@ func drawSegmentBar(r math2d.Rect, value float64, col render.Color, layer int) [
 	segments := 10
 	gap := 6.0
 	cmds := rectCmd(layer, r, render.RGBA(1, 1, 1, 0.06))
-	w := (r.Width() - gap*float64(segments-1)) / float64(segments)
 	active := int(math.Round(value * float64(segments)))
-	for i := range segments {
+	for i, seg := range ui.Columns(r, segments, gap) {
 		fill := render.RGBA(1, 1, 1, 0.10)
 		if i < active {
 			fill = col
 		}
-		cmds = append(cmds, rectCmd(layer+1, rect(r.Min.X+float64(i)*(w+gap), r.Min.Y, w, r.Height()), fill)...)
+		cmds = append(cmds, rectCmd(layer+1, seg, fill)...)
 	}
 	return cmds
 }
@@ -572,6 +571,19 @@ type tableGeometry interface {
 
 func standingsBodyRect(g tableGeometry) math2d.Rect {
 	return g.TableBodyRect(standingsTableRect())
+}
+
+// Every screen frames its content the same way: pad the panel, then drop the
+// band the title sits in. Deriving it once keeps the three screens that use it
+// from drifting apart a pixel at a time.
+const (
+	panelPad    = 20.0
+	panelTitleH = 32.0
+)
+
+func panelBodyRect(panel math2d.Rect) math2d.Rect {
+	_, body := ui.CutTop(ui.Inset(panel, panelPad), panelTitleH)
+	return body
 }
 
 func rect(x, y, w, h float64) math2d.Rect {
