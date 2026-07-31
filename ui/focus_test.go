@@ -5,7 +5,66 @@ import (
 
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
+
+// A game that draws its own button has no other way to see focus: ui.State is
+// private, so without this query the keyboard position is invisible to it.
+func TestFocusedReportsTheFocusedWidget(t *testing.T) {
+	state := &State{focusID: HashID("btn_sim")}
+	cam := testInteractCamera()
+
+	update := NewUpdate(state, pointerFrame(), cam, DefaultTheme(), cam.Viewport)
+	if !update.focusedIn("btn_sim") {
+		t.Fatal("Focused reported false for the focused widget in Update")
+	}
+	if update.focusedIn("btn_other") {
+		t.Fatal("Focused reported true for an unfocused widget")
+	}
+
+	draw := New(state, math2d.Vec2{}, false, cam, DefaultTheme(), cam.Viewport, &AnimStore{}, 0, 0)
+	if !draw.focusedIn("btn_sim") {
+		t.Fatal("Focused reported false in Render; both phases must agree")
+	}
+}
+
+func TestFocusedIsFalseWithoutFocus(t *testing.T) {
+	cam := testInteractCamera()
+	u := NewUpdate(&State{}, pointerFrame(), cam, DefaultTheme(), cam.Viewport)
+
+	if u.focusedIn("btn_sim") {
+		t.Fatal("Focused reported true with nothing focused")
+	}
+}
+
+// The ring a game draws must be the ring the engine draws: same theme, same
+// inset, so hand-drawn chrome cannot drift into a second focus language.
+func TestFocusRingUsesTheThemeAndInset(t *testing.T) {
+	cam := testCamera()
+	theme := DefaultTheme()
+	rect := math2d.NewRect(math2d.Vec2{X: 20, Y: 20}, math2d.Vec2{X: 100, Y: 40})
+
+	u := New(&State{}, math2d.Vec2{}, false, cam, theme, cam.Viewport, &AnimStore{}, 0, 0)
+	u.focusRingIn(rect, u.nextLayer(), SpaceRef)
+
+	cmds := u.Commands()
+	if len(cmds) != 1 {
+		t.Fatalf("FocusRing emitted %d commands, want 1", len(cmds))
+	}
+	ring, ok := cmds[0].(render.DrawRect)
+	if !ok {
+		t.Fatalf("command type = %T, want render.DrawRect", cmds[0])
+	}
+	if ring.Stroke != theme.Focus.Color || ring.StrokeWidth != theme.Focus.Width {
+		t.Fatalf("ring stroke = %+v/%v, want the theme's", ring.Stroke, ring.StrokeWidth)
+	}
+	if ring.Fill.A != 0 {
+		t.Fatal("the ring is an outline; it must not fill over the widget")
+	}
+	if want := rect.Min.X - theme.Focus.Inset; ring.Rect.Min.X != want {
+		t.Fatalf("ring left edge = %v, want %v (inset outward)", ring.Rect.Min.X, want)
+	}
+}
 
 func rowsRect() math2d.Rect {
 	// Four rows of the default 32px row height fit in the view.

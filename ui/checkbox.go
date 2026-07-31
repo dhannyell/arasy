@@ -97,15 +97,3 @@ func checkboxBoxRect(rect math2d.Rect, theme CheckboxTheme) math2d.Rect {
 		math2d.Vec2{X: size, Y: size},
 	)
 }
-
-// focusRingIn draws the themed focus ring around rect. Every focusable widget
-// draws the same ring, so keyboard focus reads the same everywhere.
-func (u *UI) focusRingIn(rect math2d.Rect, layer int, space Space) {
-	u.commands = append(u.commands, render.DrawRect{
-		BaseCommand:  render.BaseCommand{LayerValue: layer},
-		Rect:         u.rectToWorld(insetRect(rect, -u.theme.Focus.Inset), space),
-		Stroke:       u.theme.Focus.Color,
-		StrokeWidth:  u.sizeToWorld(u.theme.Focus.Width, space),
-		CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
-	})
-}

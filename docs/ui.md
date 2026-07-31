@@ -180,6 +180,8 @@ Tudo que depende de um retangulo/posicao mora no scope devolvido por `In`.
 - `List(id, rect, rowH, rowCount, selected, draw)`
 - `ScrollArea(id, view, contentH)`
 - `Hovered(rect)`
+- `Focused(id)`
+- `FocusRing(rect)`
 - `FillRect(rect, fill)`
 - `DrawText(text, pos, color, size, align, baseline)`
 - `DrawTextRot(text, pos, color, size, rotation, align, baseline)`
@@ -193,6 +195,7 @@ Tudo que depende de um retangulo/posicao mora no scope devolvido por `In`.
 - `Clicked(id, rect)`
 - `Activated(id, rect)`
 - `Focusable(id, rect)`
+- `Focused(id)`
 - `Hovered(rect)`
 - `ScrollOffset(id, view, contentH)`
 - `SliderInput(id, rect, value, opts)`
@@ -350,6 +353,27 @@ frame declarou pelo menos um widget focavel; sem UI focavel, a tecla continua
 livre para bindings do jogo. Duas teclas ficam com o jogo de proposito:
 Espaco nao ativa widget (e pulo/tiro/pause em jogo demais) e Shift+Tab ainda
 nao volta o foco, porque modificadores nao fazem parte do vocabulario `input`.
+
+Os widgets do pacote desenham o proprio anel de foco (`FocusTheme`). Um jogo
+que desenha o proprio botao — como o uimanager, cujos botoes sao paineis
+cortados na diagonal — usa `Activated` para a interacao e precisa mostrar o
+foco por conta propria: `Focused(id)` responde se a tecla esta ali (o
+equivalente de teclado do `Hovered`) e `FocusRing(rect)` desenha o anel do
+tema, para o caso de chrome retangular. Ambos existem porque `ui.State` e
+privado — sem eles o estado de foco fica invisivel fora do pacote.
+
+```go
+// Update
+if in.Activated("btn_sim", simButtonRect()) { SimulateRound(&g.State) }
+
+// Render
+if in.Focused("btn_sim") { in.FocusRing(simButtonRect()) }
+```
+
+Cuidado com bindings que se anulam: o runtime ja injeta
+`Enter → ActionConfirm` com `Scale: 1`, e o `Mapper` **soma** as bindings de
+uma mesma acao. Declarar `Enter → ActionConfirm` com `Scale: -1` zera a acao e
+o teclado para de ativar qualquer coisa, sem erro nenhum.
 
 `ListInputValue` e `TableInputValue` sao as variantes caller-owned da selecao
 de linha: clique seleciona, e com a lista focada as setas, Home, End e

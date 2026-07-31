@@ -5,6 +5,7 @@ import (
 
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 )
 
 // Keyboard navigation follows the order widgets are declared in: an immediate
@@ -21,6 +22,29 @@ import (
 // default. Shift+Tab has no backward step yet, because modifier keys are not
 // part of the input vocabulary — when they arrive, this is where the reverse
 // cycle goes.
+
+// focusedIn reports whether id holds keyboard focus right now. The themed
+// widgets draw their own focus ring, so this exists for the chrome a game
+// draws itself: a button with a shape the engine does not know how to outline
+// still has to show the player where the keyboard is. Without it the focus
+// state is invisible outside this package, since ui.State is private.
+func (u *UI) focusedIn(id string) bool {
+	return u.state != nil && u.state.focusID == HashID(id)
+}
+
+// focusRingIn draws the themed focus ring around rect. Every focusable widget
+// in this package draws the same ring, so keyboard focus reads the same
+// everywhere; a game drawing its own widget can reach it through
+// DrawScope.FocusRing.
+func (u *UI) focusRingIn(rect math2d.Rect, layer int, space Space) {
+	u.commands = append(u.commands, render.DrawRect{
+		BaseCommand:  render.BaseCommand{LayerValue: layer},
+		Rect:         u.rectToWorld(insetRect(rect, -u.theme.Focus.Inset), space),
+		Stroke:       u.theme.Focus.Color,
+		StrokeWidth:  u.sizeToWorld(u.theme.Focus.Width, space),
+		CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
+	})
+}
 
 // keyActs reports whether an editing or navigation key should act this tick:
 // either it was pressed now, or it is held and the repeat clock fired. The

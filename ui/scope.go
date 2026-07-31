@@ -24,6 +24,14 @@ func (s InteractScope) Focusable(id string, rect math2d.Rect) {
 	s.u.focusableIn(id, rect, s.space)
 }
 
+// Focused reports whether id holds keyboard focus. It is the keyboard
+// counterpart of Hovered: the query a game needs when it draws its own chrome
+// and has to show the player where the keyboard is. The themed widgets draw
+// their own ring and need nothing here.
+func (s InteractScope) Focused(id string) bool {
+	return s.u.focusedIn(id)
+}
+
 func (s InteractScope) ScrollOffset(id string, view math2d.Rect, contentH float64) float64 {
 	return s.u.scrollOffsetIn(id, view, contentH, s.space)
 }
@@ -210,6 +218,20 @@ func (s DrawScope) List(id string, rect math2d.Rect, rowH float64, rowCount, sel
 
 func (s DrawScope) Hovered(rect math2d.Rect) bool {
 	return s.u.hoveredIn(rect, s.space)
+}
+
+// Focused reports whether id holds keyboard focus, so a game drawing its own
+// widget can react to it the way it already reacts to Hovered.
+func (s DrawScope) Focused(id string) bool {
+	return s.u.focusedIn(id)
+}
+
+// FocusRing draws the theme's focus ring around rect. It is the outline the
+// themed widgets draw for themselves, exposed for chrome the game draws: a
+// hand-drawn button gets the same focus language as an engine one, from the
+// same FocusTheme, instead of inventing a second visual vocabulary.
+func (s DrawScope) FocusRing(rect math2d.Rect) {
+	s.u.focusRingIn(rect, s.u.nextLayer(), s.space)
 }
 
 func (s DrawScope) FillRect(rect math2d.Rect, fill render.Color) {

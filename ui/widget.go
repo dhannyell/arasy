@@ -50,14 +50,7 @@ func (u *UI) buttonIn(id, label string, rect math2d.Rect, space Space) {
 			Baseline:    render.BaselineMiddle,
 		})
 	if u.state.focusID == wid {
-		focusRect := insetRect(rect, -u.theme.Focus.Inset)
-		u.commands = append(u.commands, render.DrawRect{
-			BaseCommand:  render.BaseCommand{LayerValue: layer + 2},
-			Rect:         u.rectToWorld(focusRect, space),
-			Stroke:       u.theme.Focus.Color,
-			StrokeWidth:  u.sizeToWorld(u.theme.Focus.Width, space),
-			CornerRadius: u.sizeToWorld(u.theme.Focus.CornerRadius, space),
-		})
+		u.focusRingIn(rect, layer+2, space)
 	}
 }
 
