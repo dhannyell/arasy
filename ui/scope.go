@@ -45,8 +45,31 @@ func (s InteractScope) TableHit(id string, rect math2d.Rect, cols []TableColumn,
 	return s.u.tableHitIn(id, rect, cols, rowCount, selected, s.space)
 }
 
+// TableHeaderHit returns the column whose header was clicked this tick, or -1.
+// Turning that into an ordering is the caller's: the rows are its data, and
+// only it knows how a column compares. Pass the resulting TableSort back to
+// DrawScope.TableSorted to get the arrow.
+func (s InteractScope) TableHeaderHit(id string, rect math2d.Rect, cols []TableColumn) int {
+	return s.u.tableHeaderHitIn(id, rect, cols, s.space)
+}
+
 func (s InteractScope) ListHit(id string, rect math2d.Rect, rowH float64, rowCount int) int {
 	return s.u.listHitIn(id, rect, rowH, rowCount, s.space)
+}
+
+// CheckboxInput toggles the flag the caller holds: pass the one you own, store
+// the one returned. Clicking anywhere in rect toggles, and so does activating
+// the widget from the keyboard while it holds focus.
+func (s InteractScope) CheckboxInput(id string, rect math2d.Rect, checked bool) (next, changed bool) {
+	return s.u.checkboxInputIn(id, rect, checked, s.space)
+}
+
+// DropdownInput selects from a popup list. The index is caller-owned like every
+// selection in this package; whether the menu is open right now is not, and
+// stays in ui.State. count is the number of options — the same length the draw
+// half receives as labels.
+func (s InteractScope) DropdownInput(id string, rect math2d.Rect, count, selected int) (next int, changed bool) {
+	return s.u.dropdownInputIn(id, rect, count, selected, s.space)
 }
 
 // TabsInputValue selects the active tab from this tick's pointer events,
@@ -144,7 +167,27 @@ func (s DrawScope) Table(id string, rect math2d.Rect, cols []TableColumn, rowCou
 }
 
 func (s DrawScope) TableStyled(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int, cell func(row, col int) string, style func(row, col int) TableCellStyle) int {
-	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, style, s.space)
+	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, style, NoTableSort, s.space)
+}
+
+// TableSorted is Table plus the arrow marking the ordering the caller applied.
+// Pair it with InteractScope.TableHeaderHit, which reports the clicks.
+func (s DrawScope) TableSorted(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int, sort TableSort, cell func(row, col int) string) int {
+	return s.u.tableStyledIn(id, rect, cols, rowCount, selected, cell, nil, sort, s.space)
+}
+
+// Checkbox draws a box, its mark and an optional label. Call
+// InteractScope.CheckboxInput with the same id and rect during Update to make
+// it interactive.
+func (s DrawScope) Checkbox(id string, rect math2d.Rect, checked bool, label string) {
+	s.u.checkboxIn(id, rect, checked, label, s.space)
+}
+
+// Dropdown draws the closed button, and — while the menu is open — the list of
+// options above every other widget. Call InteractScope.DropdownInput with the
+// same id and rect during Update to make it selectable.
+func (s DrawScope) Dropdown(id string, rect math2d.Rect, labels []string, selected int) {
+	s.u.dropdownDrawIn(id, rect, labels, selected, s.space)
 }
 
 func (s DrawScope) List(id string, rect math2d.Rect, rowH float64, rowCount, selected int, draw ListDraw) int {

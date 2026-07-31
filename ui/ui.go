@@ -8,6 +8,14 @@ import (
 
 const LayerBase = 10_000
 
+// LayerOverlay opens a block of layers reserved for popups. Widgets allocate
+// upward from LayerBase in declaration order, so a dropdown opened early in a
+// frame would otherwise be painted over by everything declared after it. Its
+// popup allocates from here instead, which is far enough above any plausible
+// widget count to keep the overlay on top without the caller ordering
+// anything.
+const LayerOverlay = 1_000_000
+
 type UI struct {
 	state     *State
 	camera    render.Camera
@@ -45,6 +53,7 @@ func New(state *State, cursorPos math2d.Vec2, inside bool, cam render.Camera, th
 		dt:        dt,
 		time:      time,
 		layer:     LayerBase,
+		overlay:   LayerOverlay,
 	}
 }
 
@@ -63,6 +72,7 @@ func NewUpdate(state *State, frame input.PointerFrame, cam render.Camera, theme 
 		font:      theme.Font,
 		reference: reference,
 		layer:     LayerBase,
+		overlay:   LayerOverlay,
 	}
 }
 
@@ -164,3 +174,12 @@ func (u *UI) nextLayer() int {
 	u.layer++
 	return l
 }
+
+// beginOverlay moves layer allocation into the reserved overlay block, so
+// everything emitted until endOverlay paints above the ordinary widgets —
+// including those declared after it. Swapping the two counters (rather than
+// saving and restoring one) keeps both advancing, so two popups in one frame
+// stack in declaration order instead of fighting for the same layer.
+func (u *UI) beginOverlay() { u.layer, u.overlay = u.overlay, u.layer }
+
+func (u *UI) endOverlay() { u.layer, u.overlay = u.overlay, u.layer }
