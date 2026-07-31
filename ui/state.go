@@ -31,6 +31,18 @@ type State struct {
 	popupRect  math2d.Rect
 }
 
+// ActiveID reports the widget currently holding the pointer, or zero when
+// none does. A widget stays active for as long as the press lasts, which is
+// what makes it the right question for an overlay deciding whether to keep
+// the mouse: a slider dragged past its own bounds is still being dragged, and
+// a hit test against the overlay rect would answer no.
+func (s *State) ActiveID() ID { return s.activeID }
+
+// FocusID reports the widget currently holding keyboard focus, or zero when
+// none does. An overlay reads it to decide whether the keys of this frame are
+// being typed into it or belong to the game.
+func (s *State) FocusID() ID { return s.focusID }
+
 // Clone is used by the runtime driver when capturing rewind snapshots.
 func (s State) Clone() State {
 	return State{
