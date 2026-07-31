@@ -72,7 +72,9 @@ type Options struct {
 	Height int
 	// Fullscreen starts in borderless fullscreen mode.
 	Fullscreen bool
-	// VSync selects the surface presentation mode. The zero value is VSyncOn.
+	// VSync selects the surface presentation mode. The zero value is VSyncOn;
+	// with it the swapchain paces the loop and the software frame limiter
+	// stays off, so it only caps frames when VSync is off.
 	VSync VSyncMode
 	// Icon is an optional window icon.
 	Icon image.Image

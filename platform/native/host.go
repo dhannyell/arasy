@@ -48,6 +48,7 @@ type host struct {
 
 	savedWindowed windowRect
 	altEnter      bool
+	vsync         VSyncMode
 
 	// panel is the optional tooling overlay; nil in builds without the
 	// arr_dev tag, where the panel is not compiled at all. It draws through
@@ -79,6 +80,7 @@ func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, op
 			width:  opts.Width,
 			height: opts.Height,
 		},
+		vsync: opts.VSync,
 	}
 	if opts.Metrics || opts.FrameMetrics != nil {
 		h.metrics = &runtime.FrameStatsTracker{}
@@ -206,7 +208,7 @@ func (h *host) registerCallbacks() {
 func (h *host) run() error {
 	var frameTimer runtime.FrameTimer
 	pacer := framePacer{
-		budget:     frameBudget(h.driver.Config().FPS),
+		budget:     pacerBudget(h.driver.Config().FPS, h.vsync),
 		spinMargin: h.spinMargin,
 	}
 	windowShown := false

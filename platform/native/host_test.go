@@ -24,3 +24,15 @@ func TestFrameBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestPacerBudgetStaysOffWhenVSyncPaces(t *testing.T) {
+	if got := pacerBudget(60, VSyncOn); got != 0 {
+		t.Fatalf("pacerBudget(60, VSyncOn) = %v, want 0: the swapchain is the clock", got)
+	}
+	if got := pacerBudget(60, VSyncOff); got != time.Second/60 {
+		t.Fatalf("pacerBudget(60, VSyncOff) = %v, want %v", got, time.Second/60)
+	}
+	if got := pacerBudget(0, VSyncOff); got != 0 {
+		t.Fatalf("pacerBudget(0, VSyncOff) = %v, want uncapped", got)
+	}
+}
