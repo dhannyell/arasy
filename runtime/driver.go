@@ -367,6 +367,13 @@ func (d *Driver) Config() Config { return d.cfg }
 // hint. Interactive hosts should call it when polling; it has no simulation
 // effect.
 func (d *Driver) SetGamepadConnected(connected bool) {
+	// Unplugging is the one event that invalidates the debug mirror of the
+	// pad: no release events arrive for a controller that is gone, so without
+	// this a button held at the moment it was pulled would read as held
+	// forever.
+	if d.gamepadConnected && !connected {
+		d.input.gamepad.reset()
+	}
 	d.gamepadConnected = connected
 }
 

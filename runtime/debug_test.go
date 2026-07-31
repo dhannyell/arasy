@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
@@ -243,5 +244,141 @@ func TestDebugChecksumInvalidatedByReset(t *testing.T) {
 	}
 	if got := driver.debugChecksumForFrame(); got != driver.world.Checksum() {
 		t.Fatalf("checksum after reset = %x, want the rebuilt world's %x", got, driver.world.Checksum())
+	}
+}
+
+// debugInputGame binds one action per device so the overlay has something to
+// report from each half of the pipeline.
+type debugInputGame struct{}
+
+func (debugInputGame) Setup() Config {
+	return Config{
+		InputBindings: []input.Binding{
+			{Source: input.Keyboard(input.KeyD), Action: input.ActionMoveX, Scale: 1},
+			{Source: input.Gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+		},
+	}
+}
+
+func (debugInputGame) Init(*UpdateContext)                    {}
+func (debugInputGame) Update(*UpdateContext, float64)         {}
+func (debugInputGame) Render(*RenderContext) []render.Command { return nil }
+
+func debugInputLine(t *testing.T, lines []string, prefix string) string {
+	t.Helper()
+	for _, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			return line
+		}
+	}
+	t.Fatalf("no line starting with %q in %v", prefix, lines)
+	return ""
+}
+
+// The Mapper keeps what a pad event means and drops the event; without the
+// raw state the overlay cannot tell an unplugged pad from a dead binding.
+func TestDebugInputStateLinesReportsRawGamepadState(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.SetGamepadConnected(true)
+	driver.ApplyInput([]input.Event{
+		{Source: input.Gamepad(input.GamepadA), Kind: input.EventButtonDown},
+		{Source: input.Gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: 0.5},
+	})
+	driver.Step()
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+
+	if got := debugInputLine(t, lines, "gamepad:"); !strings.Contains(got, "connected=true") {
+		t.Fatalf("got %q, want a connected pad", got)
+	}
+	if got := debugInputLine(t, lines, "pad buttons:"); !strings.Contains(got, "A") {
+		t.Fatalf("got %q, want the held A button", got)
+	}
+	if got := debugInputLine(t, lines, "pad axes:"); !strings.Contains(got, "LX +0.50") {
+		t.Fatalf("got %q, want the left stick reading", got)
+	}
+	if got := debugInputLine(t, lines, "Input ("); !strings.Contains(got, "gamepad") {
+		t.Fatalf("got %q, want the pad as the last input device", got)
+	}
+}
+
+// Releasing has to be visible too: a button stuck on the readout is worse
+// than no readout.
+func TestDebugInputStateLinesClearsReleasedGamepadButtons(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.SetGamepadConnected(true)
+	driver.ApplyInput([]input.Event{{Source: input.Gamepad(input.GamepadB), Kind: input.EventButtonDown}})
+	driver.Step()
+	driver.ApplyInput([]input.Event{{Source: input.Gamepad(input.GamepadB), Kind: input.EventButtonUp}})
+	driver.Step()
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+
+	if got := debugInputLine(t, lines, "pad buttons:"); strings.Contains(got, "B") {
+		t.Fatalf("got %q, want the released button gone", got)
+	}
+}
+
+func TestDebugInputStateLinesReportsHeldKeys(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.ApplyInput([]input.Event{{Source: input.Keyboard(input.KeyD), Kind: input.EventButtonDown}})
+	driver.Step()
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+
+	if got := debugInputLine(t, lines, "keys:"); !strings.Contains(got, "D") {
+		t.Fatalf("got %q, want the held D key", got)
+	}
+}
+
+// A bound action at rest still gets a line: a list that hides its zeroes
+// reshuffles itself as the player moves.
+func TestDebugInputStateLinesListsBoundActionsAtRest(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.Step()
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+
+	if got := debugInputLine(t, lines, "MoveX:"); !strings.Contains(got, "+0.00") {
+		t.Fatalf("got %q, want the resting action listed", got)
+	}
+}
+
+// Pad state describes the controller, not the simulation, so a rewind must
+// not restore an old reading over what the pad is doing now.
+func TestDebugGamepadStateSurvivesRewind(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.SetGamepadConnected(true)
+	driver.Step()
+	driver.Step()
+
+	driver.ApplyInput([]input.Event{{Source: input.Gamepad(input.GamepadY), Kind: input.EventButtonDown}})
+	driver.Control(ControlCommand{Kind: ControlBack})
+	driver.Step()
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+	if got := debugInputLine(t, lines, "pad buttons:"); !strings.Contains(got, "Y") {
+		t.Fatalf("got %q, want the pad still reporting the held button after a rewind", got)
+	}
+}
+
+// No release events arrive for a controller that is gone, so unplugging is
+// the one event that has to clear the mirror.
+func TestDebugGamepadStateClearedOnDisconnect(t *testing.T) {
+	driver := NewDriver(debugInputGame{}, slog.Default())
+	driver.SetGamepadConnected(true)
+	driver.ApplyInput([]input.Event{{Source: input.Gamepad(input.GamepadA), Kind: input.EventButtonDown}})
+	driver.Step()
+
+	driver.SetGamepadConnected(false)
+
+	lines := debugInputStateLines(debugRenderer{driver: driver}, debugContext{})
+	if got := debugInputLine(t, lines, "gamepad:"); !strings.Contains(got, "connected=false") {
+		t.Fatalf("got %q, want a disconnected pad", got)
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "pad buttons:") && strings.Contains(line, "A") {
+			t.Fatalf("got %q, want the stale button gone after unplugging", line)
+		}
 	}
 }
