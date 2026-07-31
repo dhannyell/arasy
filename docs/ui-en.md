@@ -263,6 +263,36 @@ order, Tab advances focus, Enter activates the focused widget, and Esc clears
 focus. `Activated` is the recommended click + Enter superset; `Clicked` remains
 available when a widget should respond only to pointer input.
 
+## Layout Helpers
+
+Every widget takes a finished `math2d.Rect` — the package never decides where
+anything goes. What it offers is pure functions to *produce* those rects, in
+`ui/layout.go`: they take a rect and return rects, remember nothing between
+frames, and never touch `ui.State`.
+
+The model is cutting: `CutTop`, `CutBottom`, `CutLeft`, and `CutRight` return
+two things — the slice you asked for and what is left — so stacking is chaining
+cuts on the rest:
+
+```go
+header, rest := ui.CutTop(panel, 48)
+footer, body := ui.CutBottom(rest, 32)
+draw.Label("title", ui.Inset(header, 12), s.Title)
+draw.Table("rows", ui.Inset(body, 12), cols, len(rows), sel, cell)
+```
+
+`Inset`/`InsetXY` shrink a rect (a negative amount grows it, which is how the
+focus ring is drawn just outside its widget). `Columns`/`Rows` split a rect
+into equal parts separated by a gap, `Column`/`Row` return a single cell
+without allocating the slice, and `Grid` combines both in row-major order
+(`index = y*cols+x`).
+
+**There is no content-driven sizing, by design.** A box that grows to fit its
+own text needs either a second pass or last frame's measurements, and `ui` is
+immediate and deterministic: its whole state fits in the few fields the driver
+clones every tick. A caller that needs a measured width calls
+`render.MeasureText` and passes the number.
+
 ## UI Animation
 
 UI animation is cosmetic: it runs in `Render`, uses the

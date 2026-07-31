@@ -129,7 +129,7 @@ func drawAssets(draw ui.DrawScope, body math2d.Rect) {
 		{"scene", "vector", "6 KB"},
 		{"click", "audio", "3 KB"},
 	}
-	draw.Table("assets", insetRect(body, 24), cols, len(rows), -1, func(row, col int) string {
+	draw.Table("assets", ui.Inset(body, 24), cols, len(rows), -1, func(row, col int) string {
 		return rows[row][col]
 	})
 }
@@ -169,13 +169,6 @@ func densityRect(g tabsGeometry) math2d.Rect {
 	return math2d.NewRect(
 		math2d.Vec2{X: body.Center().X - 160, Y: body.Min.Y + 70},
 		math2d.Vec2{X: 320, Y: 32},
-	)
-}
-
-func insetRect(r math2d.Rect, inset float64) math2d.Rect {
-	return math2d.NewRectFromCorners(
-		math2d.Vec2{X: r.Min.X + inset, Y: r.Min.Y + inset},
-		math2d.Vec2{X: r.Max.X - inset, Y: r.Max.Y - inset},
 	)
 }
 
