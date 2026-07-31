@@ -15,7 +15,9 @@ type UI struct {
 	theme     Theme
 	font      render.FontID
 	frame     input.PointerFrame
+	keys      input.KeyFrame
 	layer     int
+	overlay   int
 	inside    bool
 	cursorPos math2d.Vec2
 	input     input.State
@@ -70,6 +72,15 @@ func NewUpdateWithInput(state *State, frame input.PointerFrame, inputState input
 	if inputState.JustPressed(input.ActionConfirm) && state.focusID != noID {
 		u.activated = state.focusID
 	}
+	return u
+}
+
+// NewUpdateWithKeys is NewUpdateWithInput plus the tick's keyboard frame, which
+// text widgets read directly: characters and editing keys are not actions and
+// no binding could describe them.
+func NewUpdateWithKeys(state *State, frame input.PointerFrame, keys input.KeyFrame, inputState input.State, cam render.Camera, theme Theme, reference math2d.Rect) *UI {
+	u := NewUpdateWithInput(state, frame, inputState, cam, theme, reference)
+	u.keys = keys
 	return u
 }
 

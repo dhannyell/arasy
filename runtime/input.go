@@ -8,7 +8,9 @@ import (
 type driverInput struct {
 	mapper    *input.Mapper
 	pointer   input.PointerState
+	keyboard  input.KeyboardState
 	frame     input.PointerFrame
+	keys      input.KeyFrame
 	lastInput input.State
 }
 
@@ -16,6 +18,7 @@ type driverInputSnapshot struct {
 	mapper    *input.Mapper
 	lastInput input.State
 	pointer   input.PointerState
+	keyboard  input.KeyboardState
 }
 
 func newDriverInput(bindings []input.Binding) *driverInput {
@@ -50,8 +53,11 @@ func (i *driverInput) Apply(events []input.Event, tick uint64) {
 
 		i.mapper.Apply(event)
 
-		if event.Source.Device == input.DeviceMouse {
+		switch event.Source.Device {
+		case input.DeviceMouse:
 			i.accumulatePointer(event)
+		case input.DeviceKeyboard:
+			i.accumulateKey(event)
 		}
 	}
 }
@@ -63,6 +69,13 @@ func (i *driverInput) BeginTick() input.State {
 
 func (i *driverInput) PointerFrame() input.PointerFrame {
 	return i.frame
+}
+
+// KeyFrame returns the tick's typed characters and editing-key edges. It is
+// what text widgets read: Mapper answers what the game means by a key, this
+// answers which characters arrived.
+func (i *driverInput) KeyFrame() input.KeyFrame {
+	return i.keys
 }
 
 func (i *driverInput) EndTick(tick uint64) {
@@ -87,6 +100,7 @@ func (i *driverInput) Snapshot() driverInputSnapshot {
 		mapper:    i.mapper.Clone(),
 		lastInput: i.lastInput.Clone(),
 		pointer:   i.pointer.Clone(),
+		keyboard:  i.keyboard.Clone(),
 	}
 }
 
@@ -94,12 +108,14 @@ func (i *driverInput) Restore(snapshot driverInputSnapshot) {
 	i.mapper = snapshot.mapper
 	i.lastInput = snapshot.lastInput
 	i.pointer = snapshot.pointer
+	i.keyboard = snapshot.keyboard
 	i.resetFrame()
 }
 
 func (i *driverInput) Reset() {
 	i.mapper.Reset()
 	i.lastInput = input.NewState()
+	i.keyboard = input.KeyboardState{}
 	i.resetFrame()
 }
 
@@ -108,6 +124,20 @@ func (i *driverInput) resetFrame() {
 		Pos:     i.pointer.Pos(),
 		Inside:  i.pointer.Inside(),
 		Buttons: i.pointer.Buttons(),
+	}
+	i.keys = i.keyboard.BeginFrame()
+}
+
+// accumulateKey folds a keyboard event into the tick's frame and the held-key
+// state that outlives it. Text arrives here too: it is keyboard input the
+// Mapper has no use for.
+func (i *driverInput) accumulateKey(e input.Event) {
+	i.keys = i.keys.AddEvent(e)
+	switch e.Kind {
+	case input.EventButtonDown:
+		i.keyboard.SetDown(e.Source.Code, true)
+	case input.EventButtonUp:
+		i.keyboard.SetDown(e.Source.Code, false)
 	}
 }
 
