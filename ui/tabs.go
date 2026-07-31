@@ -196,11 +196,7 @@ func tabsBodyRect(rect math2d.Rect, barH float64) math2d.Rect {
 // default layout of the widget-owned mode; callers that own their index pass
 // their own header rects instead.
 func tabHeaderRects(rect math2d.Rect, count int, barH float64) []math2d.Rect {
-	headers := make([]math2d.Rect, max(count, 0))
-	for i := range headers {
-		headers[i] = tabHeaderRect(rect, i, count, barH)
-	}
-	return headers
+	return Columns(tabsBarRect(rect, barH), count, 0)
 }
 
 // tabHeaderRect returns the i-th header of count equal-width headers.

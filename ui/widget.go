@@ -55,10 +55,7 @@ func (u *UI) buttonIn(id, label string, rect math2d.Rect, space Space) {
 }
 
 func insetRect(rect math2d.Rect, inset float64) math2d.Rect {
-	return math2d.NewRectFromCorners(
-		math2d.Vec2{X: rect.Min.X + inset, Y: rect.Min.Y + inset},
-		math2d.Vec2{X: rect.Max.X - inset, Y: rect.Max.Y - inset},
-	)
+	return Inset(rect, inset)
 }
 
 func lerpButtonStyle(a, b ButtonStyle, t float64) ButtonStyle {
