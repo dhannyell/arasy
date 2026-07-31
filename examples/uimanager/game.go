@@ -68,15 +68,18 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	ctx.HoldSimulation()
 
 	in := ctx.UI.In(ui.SpaceRef)
-	for i, item := range navItems {
-		if in.Clicked(item.id, item.rect) {
-			if g.State.Screen != Screen(i) {
-				g.State.PreviousScreen = g.State.Screen
-				g.State.Screen = Screen(i)
-				g.UIState.SelectedNavItem = i
-				g.UIState.NavPulseTick = ctx.Tick
-			}
-		}
+
+	// The nav row is a tab bar, so the widget does the hit-testing — but the
+	// index stays here, in ManagerState, because the active screen is game
+	// state: it rewinds with the simulation, and cycleScreen writes it from
+	// the keyboard without the UI in the loop. Drawing stays hand-rolled
+	// (drawNavAnimated) since the slanted panels and per-item spring are this
+	// demo's identity, not something the engine should grow a knob for.
+	if next, changed := in.TabsInputValue("nav", navHeaderRects(), int(g.State.Screen)); changed {
+		g.State.PreviousScreen = g.State.Screen
+		g.State.Screen = Screen(next)
+		g.UIState.SelectedNavItem = next
+		g.UIState.NavPulseTick = ctx.Tick
 	}
 
 	if ctx.Tick-g.UIState.NavPulseTick > 30 {
@@ -391,6 +394,17 @@ var navItems = buildNavItems([]struct {
 	{"nav_squad", "SQUAD", 120},
 	{"nav_calendar", "CALENDAR", 150},
 })
+
+// navHeaderRects is the nav row as the tab widget sees it: one rect per
+// entry, gaps included. The gaps are dead space, exactly as they were when
+// each entry hit-tested itself.
+func navHeaderRects() []math2d.Rect {
+	rects := make([]math2d.Rect, len(navItems))
+	for i, item := range navItems {
+		rects[i] = item.rect
+	}
+	return rects
+}
 
 func buildNavItems(entries []struct {
 	id, label string

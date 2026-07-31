@@ -14,6 +14,7 @@ func (f drawFace) In(space Space) DrawScope { return DrawScope{u: f.u, space: sp
 func (f drawFace) RowHeight() float64                         { return f.u.RowHeight() }
 func (f drawFace) HeaderHeight() float64                      { return f.u.HeaderHeight() }
 func (f drawFace) TableBodyRect(rect math2d.Rect) math2d.Rect { return f.u.TableBodyRect(rect) }
+func (f drawFace) TabsBodyRect(rect math2d.Rect) math2d.Rect  { return f.u.TabsBodyRect(rect) }
 func (f drawFace) SetFont(id render.FontID)                   { f.u.SetFont(id) }
 
 func (f drawFace) Approach(id string, target, speed float64) float64 {
@@ -47,6 +48,7 @@ func (f interactFace) In(space Space) InteractScope { return InteractScope{u: f.
 func (f interactFace) RowHeight() float64                         { return f.u.RowHeight() }
 func (f interactFace) HeaderHeight() float64                      { return f.u.HeaderHeight() }
 func (f interactFace) TableBodyRect(rect math2d.Rect) math2d.Rect { return f.u.TableBodyRect(rect) }
+func (f interactFace) TabsBodyRect(rect math2d.Rect) math2d.Rect  { return f.u.TabsBodyRect(rect) }
 
 // Draw returns the Render-phase face of this UI.
 func (u *UI) Draw() Drawer { return drawFace{u} }

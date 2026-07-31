@@ -20,6 +20,7 @@ type Theme struct {
 	Badge    BadgeTheme
 	Text     TextTheme
 	Focus    FocusTheme
+	Tabs     TabsTheme
 }
 
 // ButtonStyle describes one button state.
@@ -117,6 +118,21 @@ type TextTheme struct {
 	Muted   render.Color
 }
 
+// TabsTheme styles the header band of a tab bar. BarHeight is the height of
+// the band; the body below it belongs to the caller.
+type TabsTheme struct {
+	BarHeight    float64
+	Bar          render.Color
+	TabActive    render.Color
+	TabInactive  render.Color
+	TabHovered   render.Color
+	TextColor    render.Color
+	TextSize     float64
+	Border       render.Color
+	BorderWidth  float64
+	CornerRadius float64
+}
+
 type FocusTheme struct {
 	Color        render.Color
 	Width        float64
@@ -209,6 +225,18 @@ func DefaultTheme() Theme {
 			CornerRadius: 6,
 			Inset:        2,
 		},
+		Tabs: TabsTheme{
+			BarHeight:    32,
+			Bar:          render.RGBA(1, 1, 1, 0.04),
+			TabActive:    btnActive,
+			TabInactive:  btnBg,
+			TabHovered:   btnHover,
+			TextColor:    white,
+			TextSize:     14,
+			Border:       subtle,
+			BorderWidth:  1,
+			CornerRadius: 6,
+		},
 	}
 }
 
@@ -246,6 +274,9 @@ func WithDefaults(theme Theme) Theme {
 	}
 	if theme.Focus == (FocusTheme{}) {
 		theme.Focus = defaults.Focus
+	}
+	if theme.Tabs == (TabsTheme{}) {
+		theme.Tabs = defaults.Tabs
 	}
 	return theme
 }
