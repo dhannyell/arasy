@@ -32,6 +32,15 @@ func (s InteractScope) SliderInput(id string, rect math2d.Rect, value float64, o
 	return s.u.sliderInputIn(id, rect, value, opts, s.space)
 }
 
+// TextInput edits the text the caller holds: pass the value you own, store the
+// one that comes back. Typed text is game state — it filters game data, names
+// game things — so it rewinds with the simulation instead of hiding in the
+// widget. The caret and the key-repeat clock stay in ui.State, where nobody
+// has to declare them.
+func (s InteractScope) TextInput(id string, rect math2d.Rect, text string, opts TextInputOptions) TextInputResult {
+	return s.u.textInputIn(id, rect, text, opts, s.space)
+}
+
 func (s InteractScope) TableHit(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int) int {
 	return s.u.tableHitIn(id, rect, cols, rowCount, selected, s.space)
 }
@@ -97,6 +106,13 @@ func (s DrawScope) TabsAt(headers []math2d.Rect, labels []string, active int) {
 // stored; drawing never changes the active tab.
 func (s DrawScope) Tabs(id string, rect math2d.Rect, labels []string) int {
 	return s.u.tabsIn(id, rect, labels, s.space)
+}
+
+// TextInput draws a text field with the caller's text, and the caret while it
+// holds focus. Call InteractScope.TextInput with the same id and rect during
+// Update to make it editable.
+func (s DrawScope) TextInput(id string, rect math2d.Rect, text string, opts TextInputOptions) {
+	s.u.textInputDrawIn(id, rect, text, opts, s.space)
 }
 
 func (s DrawScope) Label(text string, pos math2d.Vec2) {
