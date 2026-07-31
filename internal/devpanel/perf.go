@@ -144,18 +144,47 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 			"   budget " + formatMillis(budget),
 	}
 
+	// Host timings share one row: three short readings never justify three
+	// rows of a panel this size, especially once the system rows join in.
+	timings := ""
 	if p.stats.CPUSet {
-		lines = append(lines, "cpu  tick "+formatMillis(p.stats.CPUTick)+
-			"   render "+formatMillis(p.stats.CPURender))
+		timings = "cpu tick " + formatMillis(p.stats.CPUTick) +
+			"   render " + formatMillis(p.stats.CPURender)
 	}
 	if p.stats.InputLatencySet {
-		lines = append(lines, "input to submit "+formatMillis(p.stats.InputLatency))
+		if timings != "" {
+			timings += "   input " + formatMillis(p.stats.InputLatency)
+		} else {
+			timings = "input to submit " + formatMillis(p.stats.InputLatency)
+		}
 	}
+	if timings != "" {
+		lines = append(lines, timings)
+	}
+
+	heap := "commands " + formatInt(p.stats.Commands)
 	if p.stats.HeapSet {
-		lines = append(lines, "heap "+formatMegabytes(p.stats.HeapInUse)+
-			" / "+formatMegabytes(p.stats.HeapTotal))
+		heap = "heap " + formatMegabytes(p.stats.HeapInUse) +
+			" / " + formatMegabytes(p.stats.HeapTotal) + "   " + heap
 	}
-	lines = append(lines, "commands "+formatInt(p.stats.Commands))
+	lines = append(lines, heap)
+
+	// System rows, each present only when the host's probes could measure it.
+	// Together they answer "is it the game or the machine?": the process
+	// number is the game, the system number is everything else.
+	if p.stats.MemSet {
+		lines = append(lines, "mem "+formatMegabytes(p.stats.MemProcessBytes)+
+			"   sys "+formatGigabytes(p.stats.MemSystemUsedBytes)+
+			" / "+formatGigabytes(p.stats.MemSystemTotalBytes))
+	}
+	if p.stats.VRAMSet {
+		lines = append(lines, "vram "+formatMegabytes(p.stats.VRAMProcessBytes)+
+			" / "+formatGigabytes(p.stats.VRAMBudgetBytes))
+	}
+	if p.stats.GPUSet {
+		lines = append(lines, "gpu "+formatPercent(p.stats.GPUProcessPercent)+
+			"   sys "+formatPercent(p.stats.GPUSystemPercent))
+	}
 
 	for i, line := range lines {
 		p.text(draw, line, math2d.Vec2{
