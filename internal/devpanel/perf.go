@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/math2d"
-	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/ui"
 )
 
@@ -127,7 +126,7 @@ func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.
 		}
 		fill := p.theme.Progress.Fill
 		if frame > budget {
-			fill = perfOverBudget
+			fill = colorWarning
 		}
 		draw.FillRect(math2d.NewRect(
 			math2d.Vec2{X: rect.Min.X + float64(index)*width, Y: rect.Max.Y - height},
@@ -165,8 +164,3 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 		}, p.theme.Text.Color, p.theme.Text.Caption)
 	}
 }
-
-// perfOverBudget marks a frame that missed. It is a literal rather than a
-// theme entry because the theme has no vocabulary for "this is wrong" — and
-// inventing one for a debug overlay would put it in every game's theme.
-var perfOverBudget = render.RGBA(0.95, 0.55, 0.25, 1)

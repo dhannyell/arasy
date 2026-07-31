@@ -83,3 +83,72 @@ func TestTimestampedNameSortsChronologically(t *testing.T) {
 		t.Fatalf("%q lost its extension", second)
 	}
 }
+
+// The panel lists what is on disk instead of guessing at the newest, so the
+// listing has to be complete, ordered and free of anything that is not a
+// recording.
+func TestRecordingPortListsSavedRecordings(t *testing.T) {
+	port := &recordingPort{dir: t.TempDir()}
+
+	write := func(name, data string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(port.dir, name), []byte(data), 0o644); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	write("arasy-replay-20260101-130000.arrp", "newer")
+	write("arasy-replay-20260101-120000.arrp", "older")
+	write("notes.txt", "ignore me")
+
+	entries, err := port.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("listed %d recordings, want 2", len(entries))
+	}
+	// Names sort chronologically, so the oldest comes first.
+	if entries[0].Name != "arasy-replay-20260101-120000.arrp" {
+		t.Fatalf("first entry is %q, want the oldest", entries[0].Name)
+	}
+	// The label drops the shared prefix and extension: in a list of nothing
+	// but recordings, the timestamp is what tells them apart.
+	if entries[0].Label != "20260101-120000" {
+		t.Fatalf("label = %q, want the timestamp alone", entries[0].Label)
+	}
+
+	data, err := port.LoadNamed(entries[1].Name)
+	if err != nil {
+		t.Fatalf("LoadNamed: %v", err)
+	}
+	if string(data) != "newer" {
+		t.Fatalf("loaded %q, want the second entry's contents", data)
+	}
+}
+
+func TestRecordingPortListIsEmptyWithoutADirectory(t *testing.T) {
+	port := &recordingPort{dir: filepath.Join(t.TempDir(), "never-created")}
+
+	entries, err := port.List()
+	if err != nil {
+		t.Fatalf("List on a missing directory returned %v, want no error", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("listed %d recordings, want none", len(entries))
+	}
+}
+
+// The name reaches LoadNamed as a string and ends up in a path, so it is
+// checked rather than trusted.
+func TestRecordingPortRejectsNamesThatEscapeTheDirectory(t *testing.T) {
+	port := &recordingPort{dir: t.TempDir()}
+
+	for _, name := range []string{
+		filepath.Join("..", "escape.arrp"),
+		filepath.Join("nested", "file.arrp"),
+	} {
+		if _, err := port.LoadNamed(name); err == nil {
+			t.Fatalf("LoadNamed(%q) was allowed", name)
+		}
+	}
+}

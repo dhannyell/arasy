@@ -124,13 +124,13 @@ func TestPerfMarksFramesOverBudget(t *testing.T) {
 	for range 30 {
 		p.Render(frameCamera(), 8*time.Millisecond, Stats{})
 	}
-	onTime := countFill(p.Render(frameCamera(), 8*time.Millisecond, Stats{}), perfOverBudget)
+	onTime := countFill(p.Render(frameCamera(), 8*time.Millisecond, Stats{}), colorWarning)
 	if onTime != 0 {
 		t.Fatalf("%d bars marked late while every frame was inside the budget", onTime)
 	}
 
 	p.Render(frameCamera(), 40*time.Millisecond, Stats{})
-	late := countFill(p.Render(frameCamera(), 8*time.Millisecond, Stats{}), perfOverBudget)
+	late := countFill(p.Render(frameCamera(), 8*time.Millisecond, Stats{}), colorWarning)
 	if late == 0 {
 		t.Fatal("a 40ms frame was not marked as over budget")
 	}

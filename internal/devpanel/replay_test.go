@@ -50,7 +50,7 @@ func (p *fakePort) Load() ([]byte, string, bool, error) {
 // buttons and returns the bytes the host was handed.
 func recordRun(t *testing.T, p *Panel, port *fakePort, ticks int) []byte {
 	t.Helper()
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 
 	// Record queues a reset first, so the recording starts from tick 0 rather
 	// than from the middle of a run Replay could never reconstruct. The reset
@@ -98,7 +98,7 @@ func TestRecordStopSaveWritesThroughThePort(t *testing.T) {
 func TestSaveWithoutARecordingReportsIt(t *testing.T) {
 	port := &fakePort{}
 	p := openPanel(t, Options{Recording: port}, tabReplay)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 
 	clickPanel(p, lay.record[1].Center())
 
@@ -122,7 +122,7 @@ func TestLoadLeavesThePanelPausedAtTickZeroInWatchMode(t *testing.T) {
 	p.adopt = func(d *runtime.Driver) { adopted = d }
 	before := p.driver
 
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 
 	if p.driver == before {
@@ -165,7 +165,7 @@ func TestAsyncLoadAppliesLater(t *testing.T) {
 	port.async = true
 	before := p.driver
 
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 	if p.driver != before {
 		t.Fatal("an async port swapped the driver synchronously")
@@ -186,7 +186,7 @@ func TestLoadFailureLeavesTheDriverAlone(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: func() runtime.Game { return testGame{} }}, tabReplay)
 	before := p.driver
 
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 
 	if p.driver != before {
@@ -214,7 +214,7 @@ func TestWatchPlayAndTakeControl(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
 
 	port.pending = recordRun(t, p, port, 6)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 
 	clickPanel(p, lay.watch[0].Center())
@@ -239,7 +239,7 @@ func TestWatchPlayAndTakeControl(t *testing.T) {
 // must not fake a mode over a run that was never recorded.
 func TestWatchControlsInertWithoutARecordedTimeline(t *testing.T) {
 	p := openPanel(t, Options{}, tabReplay)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 
 	clickPanel(p, lay.watch[0].Center())
 
@@ -250,7 +250,7 @@ func TestWatchControlsInertWithoutARecordedTimeline(t *testing.T) {
 
 func TestLoadWithoutAGameFactoryReportsIt(t *testing.T) {
 	p := openPanel(t, Options{Recording: &fakePort{pending: []byte("x")}}, tabReplay)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 
 	clickPanel(p, lay.record[2].Center())
 
@@ -264,7 +264,7 @@ func TestLoadWithoutAGameFactoryReportsIt(t *testing.T) {
 func TestHiddenPanelStillCompletesADeferredStart(t *testing.T) {
 	port := &fakePort{}
 	p := openPanel(t, Options{Recording: port}, tabReplay)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 
 	clickPanel(p, lay.record[0].Center())
 	p.SetVisible(false)
@@ -283,7 +283,7 @@ func TestReplayScrubSeeksIntoTheRecording(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
 
 	port.pending = recordRun(t, p, port, 40)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 	p.driver.AdvanceTime(0)
 
@@ -307,7 +307,7 @@ func TestReplayScrubStaysInWatchMode(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
 
 	port.pending = recordRun(t, p, port, 30)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 	p.driver.AdvanceTime(0)
 
@@ -337,7 +337,7 @@ func TestReplayScrubSeeksOnReleaseOnly(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
 
 	port.pending = recordRun(t, p, port, 30)
-	lay := replayRects(p.frameLayout(testViewport()).body)
+	lay := replayRects(p.frameLayout(testViewport()).body, p.rec.hasPicker())
 	clickPanel(p, lay.record[2].Center())
 	p.driver.AdvanceTime(0)
 
@@ -352,5 +352,152 @@ func TestReplayScrubSeeksOnReleaseOnly(t *testing.T) {
 	p.driver.AdvanceTime(0)
 	if p.driver.State().Tick == 0 {
 		t.Fatal("releasing the bar did not seek")
+	}
+}
+
+// listPort is a fakePort that can also enumerate, which is what a desktop
+// host does and a browser cannot.
+type listPort struct {
+	fakePort
+	files   map[string][]byte
+	order   []string
+	listErr error
+}
+
+func newListPort() *listPort {
+	return &listPort{files: map[string][]byte{}}
+}
+
+func (p *listPort) Save(name string, data []byte) error {
+	if err := p.fakePort.Save(name, data); err != nil {
+		return err
+	}
+	stored := name + "-" + formatInt(len(p.order))
+	p.files[stored] = append([]byte(nil), data...)
+	p.order = append(p.order, stored)
+	return nil
+}
+
+func (p *listPort) List() ([]RecordingEntry, error) {
+	if p.listErr != nil {
+		return nil, p.listErr
+	}
+	entries := make([]RecordingEntry, 0, len(p.order))
+	for _, name := range p.order {
+		entries = append(entries, RecordingEntry{Name: name, Label: "take " + name})
+	}
+	return entries, nil
+}
+
+func (p *listPort) LoadNamed(name string) ([]byte, error) {
+	data, ok := p.files[name]
+	if !ok {
+		return nil, errors.New("no such recording")
+	}
+	return data, nil
+}
+
+// A host that can list what it saved gets a picker; the panel loads the entry
+// chosen rather than guessing at the newest.
+func TestLoadPicksTheSelectedRecording(t *testing.T) {
+	port := newListPort()
+	factory := func() runtime.Game { return testGame{} }
+	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
+
+	recordRun(t, p, &port.fakePort, 6)
+	first := port.order[0]
+	recordRun(t, p, &port.fakePort, 14)
+	if len(port.order) != 2 {
+		t.Fatalf("saved %d recordings, want 2", len(port.order))
+	}
+
+	p.rec.refresh()
+	// Pick the older one; the newest is what a blind load would have taken.
+	p.rec.selected = 0
+	if p.rec.entries[0].Name != first {
+		t.Fatalf("entry 0 is %q, want the first save %q", p.rec.entries[0].Name, first)
+	}
+
+	lay := replayRects(p.frameLayout(testViewport()).body, true)
+	clickPanel(p, lay.record[2].Center())
+	p.driver.AdvanceTime(0)
+
+	if got := p.driver.State().MaxRecordedTick; got != 6 {
+		t.Fatalf("loaded a recording of %d ticks, want the selected 6", got)
+	}
+}
+
+// Saving puts a new file in the list the user is looking at, and moves the
+// selection onto it — that is the one they just made.
+func TestSaveRefreshesTheListAndSelectsTheNewEntry(t *testing.T) {
+	port := newListPort()
+	p := openPanel(t, Options{Recording: port, NewGame: func() runtime.Game { return testGame{} }}, tabReplay)
+
+	recordRun(t, p, &port.fakePort, 5)
+	if len(p.rec.entries) != 1 {
+		t.Fatalf("list holds %d entries after one save, want 1", len(p.rec.entries))
+	}
+
+	recordRun(t, p, &port.fakePort, 5)
+	if len(p.rec.entries) != 2 {
+		t.Fatalf("list holds %d entries after two saves, want 2", len(p.rec.entries))
+	}
+	if p.rec.selected != 1 {
+		t.Fatalf("selection is %d, want the recording just saved", p.rec.selected)
+	}
+}
+
+// Entering the tab is when the list is read, not every frame: it is a
+// filesystem call, and the files only change when this panel changes them.
+func TestEnteringTheReplayTabRefreshesTheList(t *testing.T) {
+	port := newListPort()
+	p := openPanel(t, Options{Recording: port, NewGame: func() runtime.Game { return testGame{} }}, tabSim)
+
+	port.order = append(port.order, "made-elsewhere")
+	port.files["made-elsewhere"] = []byte("x")
+	if len(p.rec.entries) != 0 {
+		t.Fatal("the list was populated before the tab was ever opened")
+	}
+
+	lay := p.frameLayout(testViewport())
+	clickPanel(p, lay.headers[tabReplay].Center())
+
+	if len(p.rec.entries) != 1 {
+		t.Fatalf("list holds %d entries after opening the tab, want 1", len(p.rec.entries))
+	}
+}
+
+// An empty directory is a normal state, and Load has to say so rather than
+// fall through to a picker this host does not have.
+func TestLoadWithAnEmptyListReportsIt(t *testing.T) {
+	port := newListPort()
+	p := openPanel(t, Options{Recording: port, NewGame: func() runtime.Game { return testGame{} }}, tabReplay)
+	before := p.driver
+
+	lay := replayRects(p.frameLayout(testViewport()).body, true)
+	clickPanel(p, lay.record[2].Center())
+
+	if p.driver != before {
+		t.Fatal("loading from an empty list swapped the driver")
+	}
+	if p.rec.status == "" {
+		t.Fatal("loading from an empty list said nothing")
+	}
+}
+
+// A host with no listing keeps the plain button, and the row it would have
+// occupied is not reserved.
+func TestBrowserStylePortKeepsThePlainLoadButton(t *testing.T) {
+	p := openPanel(t, Options{Recording: &fakePort{}}, tabReplay)
+
+	if p.rec.hasPicker() {
+		t.Fatal("a port that cannot list offered a picker")
+	}
+
+	body := p.frameLayout(testViewport()).body
+	withPicker := replayRects(body, true)
+	without := replayRects(body, false)
+	if without.watch[0].Min.Y >= withPicker.watch[0].Min.Y {
+		t.Fatal("the picker row took up space on a host that has no picker")
 	}
 }

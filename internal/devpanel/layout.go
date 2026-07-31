@@ -14,8 +14,12 @@ const (
 	// the window at 1080p, at 4K and in fullscreen instead of shrinking into
 	// a corner.
 	panelWidth  = 400
-	panelHeight = 302
+	panelHeight = 334
 	panelMargin = 8
+
+	// badgeWidth and badgeInset size the title-bar warning.
+	badgeWidth = 78
+	badgeInset = 5
 
 	contentPad   = 8
 	rowHeight    = 26

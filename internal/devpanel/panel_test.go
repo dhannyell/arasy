@@ -469,3 +469,39 @@ func advance(p *Panel, ticks int) {
 		p.driver.Step()
 	}
 }
+
+// Determinism is the property replay and rewind rest on, so its failure gets
+// the title bar — visible from every tab — rather than a stats line somebody
+// has to go looking for.
+func TestDivergedBadgeDrawsOnlyWhenViolated(t *testing.T) {
+	p := newTestPanel(t, Options{})
+	cam := frameCamera()
+
+	badge := func(state runtime.DriveState) []render.Command {
+		u := ui.New(&p.state, math2d.Vec2{}, false, cam, p.theme,
+			panelSpace(cam.Viewport), &p.anim, 0, 0)
+		p.drawDivergedBadge(u.Draw().In(ui.SpaceRef), p.frameLayout(cam.Viewport).panel, state)
+		return raiseLayer(u.Commands())
+	}
+
+	if got := countFill(badge(runtime.DriveState{}), colorDanger); got != 0 {
+		t.Fatalf("a healthy driver drew %d warning marks, want none", got)
+	}
+
+	violated := badge(runtime.DriveState{DeterminismViolated: true})
+	if got := countFill(violated, colorDanger); got == 0 {
+		t.Fatal("a diverged driver drew no warning")
+	}
+	if !containsText(violated, "DIVERGED") {
+		t.Fatal("the warning has no label saying what is wrong")
+	}
+}
+
+func containsText(commands []render.Command, want string) bool {
+	for _, command := range commands {
+		if text, ok := command.(render.DrawText); ok && text.Text == want {
+			return true
+		}
+	}
+	return false
+}

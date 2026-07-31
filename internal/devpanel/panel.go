@@ -284,7 +284,7 @@ func (p *Panel) update(in ui.InteractScope, lay layout) {
 	state := p.driver.State()
 
 	active, _ := in.TabsInputValue("devpanel#tabs", lay.headers, p.activeTab)
-	p.activeTab = active
+	p.enterTab(active)
 
 	switch active {
 	case tabSim:
@@ -299,6 +299,19 @@ func (p *Panel) update(in ui.InteractScope, lay layout) {
 	// The Perf tab is a readout: it has nothing to interact with.
 }
 
+// enterTab switches tabs, doing the work a tab needs done once on arrival
+// rather than every frame it is open. Listing saved recordings reads the
+// filesystem, and the set of files only changes when this panel changes it.
+func (p *Panel) enterTab(tab int) {
+	if tab == p.activeTab {
+		return
+	}
+	p.activeTab = tab
+	if tab == tabReplay {
+		p.rec.refresh()
+	}
+}
+
 // observeFrame folds one frame into the pacing history.
 func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 	p.stats = stats
@@ -310,6 +323,7 @@ func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {
 	draw.TitledPanel(lay.panel, "Arasy dev")
+	p.drawDivergedBadge(draw, lay.panel, state)
 	draw.TabsAt(lay.headers, p.tabs(), p.activeTab)
 
 	switch p.activeTab {
@@ -326,6 +340,24 @@ func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, st
 	}
 
 	p.drawFooter(draw, lay.footer, state, stats)
+}
+
+// drawDivergedBadge marks a driver that reconstructed a tick and got a
+// different world than the one it recorded. Determinism is the property the
+// whole replay and rewind machinery rests on, so its failure belongs in the
+// title bar, visible from every tab, rather than in a stats line somebody has
+// to go looking for.
+func (p *Panel) drawDivergedBadge(draw ui.DrawScope, panel math2d.Rect, state runtime.DriveState) {
+	if !state.DeterminismViolated {
+		return
+	}
+
+	header := math2d.NewRect(panel.Min, math2d.Vec2{X: panel.Width(), Y: p.theme.Header.Height})
+	badge, _ := ui.CutRight(ui.Inset(header, badgeInset), badgeWidth)
+
+	draw.FillRect(badge, colorDanger)
+	draw.DrawText("DIVERGED", badge.Center(), p.theme.Text.Color, p.theme.Text.Caption,
+		render.AlignCenter, render.BaselineMiddle)
 }
 
 func (p *Panel) drawFooter(draw ui.DrawScope, rect math2d.Rect, state runtime.DriveState, stats Stats) {

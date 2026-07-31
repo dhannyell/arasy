@@ -10,6 +10,7 @@ const (
 	idRecord      = "devpanel#record"
 	idSave        = "devpanel#save"
 	idLoad        = "devpanel#load"
+	idRecordings  = "devpanel#recordings"
 	idReplayScrub = "devpanel#replay-scrub"
 	idWatchPlay   = "devpanel#watch-play"
 	idWatchPause  = "devpanel#watch-pause"
@@ -19,6 +20,8 @@ const (
 
 type replayLayout struct {
 	record     []math2d.Rect
+	picker     math2d.Rect
+	hasPicker  bool
 	scrub      math2d.Rect
 	scrubLabel math2d.Rect
 	watch      []math2d.Rect
@@ -26,9 +29,17 @@ type replayLayout struct {
 	status     math2d.Rect
 }
 
-func replayRects(rect math2d.Rect) replayLayout {
+// replayRects lays the tab out. The picker row only exists on a host that can
+// list what it saved; in a browser the file picker is the list, so the row
+// would be an empty control taking up space.
+func replayRects(rect math2d.Rect, hasPicker bool) replayLayout {
 	r := newRows(rect)
 	record := ui.Columns(r.next(), 3, rowGap)
+
+	var picker math2d.Rect
+	if hasPicker {
+		picker = r.next()
+	}
 
 	// The bar and its counter share one row. Watching wants the position
 	// picker right above the transport it drives, and the panel has no room
@@ -39,6 +50,8 @@ func replayRects(rect math2d.Rect) replayLayout {
 
 	return replayLayout{
 		record:     record,
+		picker:     picker,
+		hasPicker:  hasPicker,
 		scrub:      scrub,
 		scrubLabel: label,
 		watch:      ui.Columns(r.next(), 3, rowGap),
@@ -48,7 +61,7 @@ func replayRects(rect math2d.Rect) replayLayout {
 }
 
 func (p *Panel) updateReplay(in ui.InteractScope, rect math2d.Rect, state runtime.DriveState) {
-	lay := replayRects(rect)
+	lay := replayRects(rect, p.rec.hasPicker())
 
 	if in.Clicked(idRecord, lay.record[0]) {
 		p.rec.toggle(p.driver)
@@ -58,6 +71,11 @@ func (p *Panel) updateReplay(in ui.InteractScope, rect math2d.Rect, state runtim
 	}
 	if in.Clicked(idLoad, lay.record[2]) {
 		p.loadRecording()
+	}
+
+	if lay.hasPicker {
+		selected, _ := in.DropdownInput(idRecordings, lay.picker, len(p.rec.labels()), p.rec.selected)
+		p.rec.selected = selected
 	}
 
 	// Scrubbing a recording picks the point to watch from. It repositions
@@ -89,7 +107,7 @@ func (p *Panel) updateReplay(in ui.InteractScope, rect math2d.Rect, state runtim
 }
 
 func (p *Panel) drawReplay(draw ui.DrawScope, rect math2d.Rect, state runtime.DriveState) {
-	lay := replayRects(rect)
+	lay := replayRects(rect, p.rec.hasPicker())
 
 	record := "Record"
 	if p.rec.active() {
@@ -98,6 +116,10 @@ func (p *Panel) drawReplay(draw ui.DrawScope, rect math2d.Rect, state runtime.Dr
 	draw.Button(idRecord, record, lay.record[0])
 	draw.Button(idSave, "Save", lay.record[1])
 	draw.Button(idLoad, "Load", lay.record[2])
+
+	if lay.hasPicker {
+		draw.Dropdown(idRecordings, lay.picker, p.rec.labels(), p.rec.selected)
+	}
 
 	p.drawScrub(draw, idReplayScrub, lay.scrub, state)
 	p.text(draw, p.scrubLabel(state), leftOf(lay.scrubLabel), p.theme.Text.Muted, p.theme.Text.Body)
@@ -119,9 +141,10 @@ func (p *Panel) watchable(state runtime.DriveState) bool {
 	return state.MaxRecordedTick > 0
 }
 
-// loadRecording asks the host for bytes. A host that answers immediately is
-// applied on the spot; one that has to open a picker answers later through
-// ApplyRecording.
+// loadRecording loads the picked recording on a host that lists them, and
+// otherwise asks the host to produce some bytes. A host that answers
+// immediately is applied on the spot; one that has to open a file picker
+// answers later, through ApplyRecording.
 func (p *Panel) loadRecording() {
 	if p.rec.port == nil {
 		p.rec.status = "load unavailable on this host"
@@ -131,6 +154,22 @@ func (p *Panel) loadRecording() {
 		p.rec.status = "load unavailable: no game factory"
 		return
 	}
+
+	if entry, lister, ok := p.rec.picked(); ok {
+		data, err := lister.LoadNamed(entry.Name)
+		if err != nil {
+			p.log.Error("load recording failed", "name", entry.Name, "err", err)
+			p.rec.status = "load failed: " + err.Error()
+			return
+		}
+		p.ApplyRecording(data, entry.Label)
+		return
+	}
+	if p.rec.hasPicker() {
+		p.rec.status = "nothing to load - no recordings saved yet"
+		return
+	}
+
 	data, name, ok, err := p.rec.port.Load()
 	if err != nil {
 		p.log.Error("load recording failed", "err", err)
@@ -173,7 +212,7 @@ func (p *Panel) ApplyRecording(data []byte, name string) {
 	// Land the user on the tab that explains what just happened. The index is
 	// the panel's own, so setting it here is the same path a click takes —
 	// nothing reaches into ui.State.
-	p.activeTab = tabReplay
+	p.enterTab(tabReplay)
 }
 
 func (p *Panel) adoptDriver(driver *runtime.Driver) {
