@@ -128,7 +128,10 @@ func (u *UI) listInputValueIn(id string, rect math2d.Rect, rowH float64, rowCoun
 
 	if row := u.listHitIn(id, rect, rowH, rowCount, space); row >= 0 {
 		next = row
-	} else if u.state.focusID == HashID(id) {
+	} else if u.state.focusID == HashID(id) && selected >= 0 {
+		// Keyboard navigation needs a selection to move; without one
+		// rowNavigation would clamp the -1 to row 0 and revealRow would
+		// scroll the list back to the top on every click.
 		next = u.rowNavigation(next, rowCount, visibleRows(rect.Height(), rowH))
 	}
 	if next != selected {
@@ -147,7 +150,9 @@ func (u *UI) tableInputValueIn(id string, rect math2d.Rect, cols []TableColumn, 
 
 	if row := u.tableHitIn(id, rect, cols, rowCount, selected, space); row >= 0 {
 		next = row
-	} else if u.state.focusID == HashID(id) {
+	} else if u.state.focusID == HashID(id) && selected >= 0 {
+		// Same guard as listInputValueIn: no selection, no navigation,
+		// and no reveal snapping the scroll to row 0.
 		next = u.rowNavigation(next, rowCount, visibleRows(body.Height(), rowH))
 	}
 	if next != selected {
