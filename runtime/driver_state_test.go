@@ -151,3 +151,26 @@ func TestNewDriverWiresKeyframeArchiveBudget(t *testing.T) {
 		})
 	}
 }
+
+// The zero value of Config.FPS means "the engine default", so a game that
+// never sets it gets a capped loop. FPSUncapped is the explicit opt-out and
+// must survive normalization -- collapsing it to the default would silently
+// re-cap a game that asked for no cap.
+func TestFPSUncappedSurvivesConfigDefaults(t *testing.T) {
+	if got := NewDriver(fpsGame{fps: 0}, nil).Config().FPS; got != defaultFPS {
+		t.Fatalf("zero FPS = %d, want the default %d", got, defaultFPS)
+	}
+	if got := NewDriver(fpsGame{fps: FPSUncapped}, nil).Config().FPS; got != FPSUncapped {
+		t.Fatalf("FPSUncapped = %d, want it preserved (%d)", got, FPSUncapped)
+	}
+	if got := NewDriver(fpsGame{fps: 144}, nil).Config().FPS; got != 144 {
+		t.Fatalf("explicit FPS = %d, want 144", got)
+	}
+}
+
+type fpsGame struct{ fps int }
+
+func (g fpsGame) Setup() Config                          { return Config{FPS: g.fps} }
+func (g fpsGame) Init(*UpdateContext)                    {}
+func (g fpsGame) Update(*UpdateContext, float64)         {}
+func (g fpsGame) Render(*RenderContext) []render.Command { return nil }
