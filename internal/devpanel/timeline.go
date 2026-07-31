@@ -41,25 +41,8 @@ func timelineRects(rect math2d.Rect) timelineLayout {
 
 func (p *Panel) updateTimeline(in ui.InteractScope, rect math2d.Rect, state runtime.DriveState) {
 	lay := timelineRects(rect)
-	maxTick := maxRecordedTick(state)
-	scrubRange := ui.SliderOptions{Max: float64(maxTick), Step: 1}
 
-	// Scrubbing seeks on release, not while dragging: every intermediate
-	// position would be a reconstruction of the world, and dragging across a
-	// thousand ticks would rebuild a thousand of them. The thumb still
-	// follows the pointer — that preview is the whole point of a scrub bar.
-	dragging := p.state.ActiveID() == ui.HashID(idScrub)
-	if !dragging && !p.scrubActive {
-		p.scrub = float64(state.Tick)
-	}
-	next, _ := in.SliderInput(idScrub, lay.scrub, p.scrub, scrubRange)
-	p.scrub = next
-
-	dragging = p.state.ActiveID() == ui.HashID(idScrub)
-	if p.scrubActive && !dragging {
-		p.control(runtime.ControlCommand{Kind: runtime.ControlScrubToTick, Tick: uint64(p.scrub)})
-	}
-	p.scrubActive = dragging
+	p.updateScrub(in, idScrub, lay.scrub, state)
 
 	result := in.TextInput(idTick, lay.tick, p.tickText, ui.TextInputOptions{Placeholder: "tick"})
 	p.tickText = result.Text
@@ -79,10 +62,9 @@ func (p *Panel) updateTimeline(in ui.InteractScope, rect math2d.Rect, state runt
 
 func (p *Panel) drawTimeline(draw ui.DrawScope, rect math2d.Rect, state runtime.DriveState) {
 	lay := timelineRects(rect)
-	maxTick := maxRecordedTick(state)
 
-	draw.Slider(idScrub, lay.scrub, p.scrub, ui.SliderOptions{Max: float64(maxTick), Step: 1})
-	p.text(draw, "scrub "+formatUint(uint64(p.scrub))+"/"+formatUint(maxTick),
+	p.drawScrub(draw, idScrub, lay.scrub, state)
+	p.text(draw, "scrub "+p.scrubLabel(state),
 		leftOf(lay.scrubLabel), p.theme.Text.Color, p.theme.Text.Body)
 
 	draw.TextInput(idTick, lay.tick, p.tickText, ui.TextInputOptions{Placeholder: "tick"})

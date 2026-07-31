@@ -10,6 +10,7 @@ const (
 	idRecord      = "devpanel#record"
 	idSave        = "devpanel#save"
 	idLoad        = "devpanel#load"
+	idReplayScrub = "devpanel#replay-scrub"
 	idWatchPlay   = "devpanel#watch-play"
 	idWatchPause  = "devpanel#watch-pause"
 	idWatchStep   = "devpanel#watch-step"
@@ -18,7 +19,8 @@ const (
 
 type replayLayout struct {
 	record     []math2d.Rect
-	watchLabel math2d.Rect
+	scrub      math2d.Rect
+	scrubLabel math2d.Rect
 	watch      []math2d.Rect
 	take       math2d.Rect
 	status     math2d.Rect
@@ -26,9 +28,19 @@ type replayLayout struct {
 
 func replayRects(rect math2d.Rect) replayLayout {
 	r := newRows(rect)
+	record := ui.Columns(r.next(), 3, rowGap)
+
+	// The bar and its counter share one row. Watching wants the position
+	// picker right above the transport it drives, and the panel has no room
+	// to spend a whole row on a number.
+	scrubRow := r.next()
+	scrub, label := ui.CutLeft(scrubRow, scrubRow.Width()*0.7)
+	_, label = ui.CutLeft(label, rowGap)
+
 	return replayLayout{
-		record:     ui.Columns(r.next(), 3, rowGap),
-		watchLabel: r.next(),
+		record:     record,
+		scrub:      scrub,
+		scrubLabel: label,
 		watch:      ui.Columns(r.next(), 3, rowGap),
 		take:       ui.Columns(r.next(), 2, rowGap)[0],
 		status:     r.remaining(),
@@ -47,6 +59,11 @@ func (p *Panel) updateReplay(in ui.InteractScope, rect math2d.Rect, state runtim
 	if in.Clicked(idLoad, lay.record[2]) {
 		p.loadRecording()
 	}
+
+	// Scrubbing a recording picks the point to watch from. It repositions
+	// without leaving watch mode, which is what separates it from Play and
+	// Step — those are the gesture that takes control and forks.
+	p.updateScrub(in, idReplayScrub, lay.scrub, state)
 
 	// Watching is only possible over a timeline that exists. The controls
 	// stay drawn either way, so their place on the panel does not move.
@@ -82,11 +99,8 @@ func (p *Panel) drawReplay(draw ui.DrawScope, rect math2d.Rect, state runtime.Dr
 	draw.Button(idSave, "Save", lay.record[1])
 	draw.Button(idLoad, "Load", lay.record[2])
 
-	watch := "watch: no recorded timeline"
-	if p.watchable(state) {
-		watch = "watch " + formatUint(state.Tick) + "/" + formatUint(state.MaxRecordedTick)
-	}
-	p.text(draw, watch, leftOf(lay.watchLabel), p.theme.Text.Muted, p.theme.Text.Body)
+	p.drawScrub(draw, idReplayScrub, lay.scrub, state)
+	p.text(draw, p.scrubLabel(state), leftOf(lay.scrubLabel), p.theme.Text.Muted, p.theme.Text.Body)
 
 	draw.Button(idWatchPlay, "Play", lay.watch[0])
 	draw.Button(idWatchPause, "Pause", lay.watch[1])

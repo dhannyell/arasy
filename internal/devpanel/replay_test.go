@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -270,5 +272,85 @@ func TestHiddenPanelStillCompletesADeferredStart(t *testing.T) {
 
 	if p.rec.pending {
 		t.Fatal("a hidden panel left the recording waiting to start")
+	}
+}
+
+// Watching a recording needs a way to pick where to watch from, not only
+// play/pause/step from wherever it happens to sit.
+func TestReplayScrubSeeksIntoTheRecording(t *testing.T) {
+	port := &fakePort{}
+	factory := func() runtime.Game { return testGame{} }
+	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
+
+	port.pending = recordRun(t, p, port, 40)
+	lay := replayRects(p.frameLayout(testViewport()).body)
+	clickPanel(p, lay.record[2].Center())
+	p.driver.AdvanceTime(0)
+
+	// Drag the bar to the middle of the recording and let go there.
+	target := lay.scrub.Center()
+	p.HandleInput([]input.Event{moveTo(target), pressAt(target)}, testViewport())
+	p.HandleInput([]input.Event{releaseAt(target)}, testViewport())
+	p.driver.AdvanceTime(0)
+
+	tick := p.driver.State().Tick
+	if tick == 0 || tick > 40 {
+		t.Fatalf("scrub landed on tick %d, want somewhere inside the recorded 40", tick)
+	}
+}
+
+// Repositioning is not the gesture that takes control: only Play and Step
+// fork, and a scrub has to leave the watcher watching.
+func TestReplayScrubStaysInWatchMode(t *testing.T) {
+	port := &fakePort{}
+	factory := func() runtime.Game { return testGame{} }
+	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
+
+	port.pending = recordRun(t, p, port, 30)
+	lay := replayRects(p.frameLayout(testViewport()).body)
+	clickPanel(p, lay.record[2].Center())
+	p.driver.AdvanceTime(0)
+
+	if !p.driver.State().ReplayMode {
+		t.Fatal("the loaded recording did not start in watch mode")
+	}
+
+	target := lay.scrub.Center()
+	p.HandleInput([]input.Event{moveTo(target), pressAt(target)}, testViewport())
+	p.HandleInput([]input.Event{releaseAt(target)}, testViewport())
+	p.driver.AdvanceTime(0)
+
+	state := p.driver.State()
+	if !state.ReplayMode {
+		t.Fatal("scrubbing dropped out of watch mode")
+	}
+	if !state.Paused {
+		t.Fatal("scrubbing left the replay running")
+	}
+}
+
+// Dragging must not seek on every position it passes through: each one would
+// be a full reconstruction of the world.
+func TestReplayScrubSeeksOnReleaseOnly(t *testing.T) {
+	port := &fakePort{}
+	factory := func() runtime.Game { return testGame{} }
+	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
+
+	port.pending = recordRun(t, p, port, 30)
+	lay := replayRects(p.frameLayout(testViewport()).body)
+	clickPanel(p, lay.record[2].Center())
+	p.driver.AdvanceTime(0)
+
+	start := lay.scrub.Min.Add(math2d.Vec2{X: lay.scrub.Width() * 0.8, Y: lay.scrub.Height() / 2})
+	p.HandleInput([]input.Event{moveTo(start), pressAt(start)}, testViewport())
+	p.driver.AdvanceTime(0)
+	if got := p.driver.State().Tick; got != 0 {
+		t.Fatalf("tick moved to %d mid-drag, want the seek held until release", got)
+	}
+
+	p.HandleInput([]input.Event{releaseAt(start)}, testViewport())
+	p.driver.AdvanceTime(0)
+	if p.driver.State().Tick == 0 {
+		t.Fatal("releasing the bar did not seek")
 	}
 }
