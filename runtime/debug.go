@@ -3,6 +3,7 @@ package runtime
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
@@ -73,29 +74,31 @@ func (r debugRenderer) runtimeCommands(ctx debugContext) []render.Command {
 	return cmds
 }
 
+// debugInputStateLines reports the input pipeline from both ends: the actions
+// the game reads, and the raw devices they came from. Both halves are needed
+// to answer the question the layer exists for — a binding that does not fire
+// looks identical whether the pad is unplugged, the axis is inside the
+// deadzone, or the binding is wrong, and only the raw side tells them apart.
+//
+// Every bound action is listed, at rest included. A list that hides its
+// zeroes rearranges itself as the player moves, which is the opposite of what
+// a state readout is for.
 func debugInputStateLines(r debugRenderer, _ debugContext) []string {
 	d := r.driver
-	lines := []string{"Input"}
-
 	lastInput := d.input.LastInput()
-	actions := debugInputActions(d.input.Bindings())
-	for _, action := range actions {
-		value := lastInput.Value(action)
-		pressed := lastInput.Pressed(action)
-		justPressed := lastInput.JustPressed(action)
-		justReleased := lastInput.JustReleased(action)
 
-		if value == 0 && !pressed && !justPressed && !justReleased {
-			continue
-		}
+	lines := []string{
+		fmt.Sprintf("Input (last: %s)", debugDeviceName(lastInput.LastInputDevice())),
+	}
 
+	for _, action := range debugInputActions(d.input.Bindings()) {
 		lines = append(lines, fmt.Sprintf(
-			"%s: %.2f pressed=%v jp=%v jr=%v",
+			"%s: %+.2f pressed=%v jp=%v jr=%v",
 			debugActionName(action),
-			value,
-			pressed,
-			justPressed,
-			justReleased,
+			lastInput.Value(action),
+			lastInput.Pressed(action),
+			lastInput.JustPressed(action),
+			lastInput.JustReleased(action),
 		))
 	}
 
@@ -106,8 +109,57 @@ func debugInputStateLines(r debugRenderer, _ debugContext) []string {
 		fmt.Sprintf("pointer: %.0f, %.0f wheel: %.0f, %.0f inside=%v", pos.X, pos.Y, pointer.Wheel().X, pointer.Wheel().Y, pointer.Inside()),
 		fmt.Sprintf("mouse: primary=%v secondary=%v middle=%v", buttons[0], buttons[1], buttons[2]),
 	)
+	lines = append(lines, debugKeyboardLines(d)...)
+	lines = append(lines, debugGamepadLines(d)...)
 
 	return lines
+}
+
+func debugKeyboardLines(d *Driver) []string {
+	held := make([]string, 0, 4)
+	for code := input.KeyA; code <= input.KeyPageDown; code++ {
+		if d.input.keyboard.Down(code) {
+			held = append(held, debugKeyName(code))
+		}
+	}
+
+	lines := []string{"keys: " + joinOrNone(held)}
+	if text := d.input.KeyFrame().Text; len(text) > 0 {
+		lines = append(lines, "text: "+string(text))
+	}
+	return lines
+}
+
+// debugGamepadLines reports the pad underneath the Mapper: which buttons are
+// held and where the sticks and triggers actually sit, before deadzone and
+// bindings have had their say.
+func debugGamepadLines(d *Driver) []string {
+	pad := &d.input.gamepad
+	lines := []string{fmt.Sprintf("gamepad: connected=%v", d.gamepadConnected)}
+	if !d.gamepadConnected && !pad.seen {
+		return lines
+	}
+
+	lines = append(lines, "pad buttons: "+joinOrNone(pad.pressed()))
+
+	axes := make([]string, 0, 6)
+	for index, value := range pad.axes {
+		if value == 0 {
+			continue
+		}
+		code := input.GamepadA + input.SourceCode(index)
+		axes = append(axes, fmt.Sprintf("%s %+.2f", debugGamepadName(code), value))
+	}
+	lines = append(lines, "pad axes: "+joinOrNone(axes))
+
+	return lines
+}
+
+func joinOrNone(parts []string) string {
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " ")
 }
 
 func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
@@ -120,7 +172,7 @@ func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
 		fmt.Sprintf("paused: %v", state.Paused),
 		fmt.Sprintf("speed: %.2fx", state.Speed),
 		fmt.Sprintf("history: %d", state.HistoryLen),
-		fmt.Sprintf("checksum: %016x", d.world.Checksum()),
+		fmt.Sprintf("checksum: %016x", d.debugChecksumForFrame()),
 	}
 
 	if state.HistoryLen > 0 {
@@ -131,6 +183,18 @@ func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
 	}
 
 	return lines
+}
+
+// debugChecksumForFrame returns the world checksum for the current tick,
+// hashing at most once per tick rather than once per frame.
+func (d *Driver) debugChecksumForFrame() uint64 {
+	if d.debugChecksumValid && d.debugChecksumTick == d.tick {
+		return d.debugChecksum
+	}
+	d.debugChecksum = d.world.Checksum()
+	d.debugChecksumTick = d.tick
+	d.debugChecksumValid = true
+	return d.debugChecksum
 }
 
 func debugRenderLayerLines(_ debugRenderer, ctx debugContext) []string {

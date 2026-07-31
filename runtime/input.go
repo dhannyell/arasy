@@ -16,6 +16,10 @@ type driverInput struct {
 	// the journal replays. It rewinds with the rest of the input state, so it
 	// always describes the presses of the tick the driver is actually on.
 	held []heldInput
+	// gamepad mirrors raw pad state for the debug overlay only. It is
+	// deliberately outside Snapshot/Restore: it describes the physical
+	// controller, not the simulation.
+	gamepad debugGamepadState
 }
 
 type driverInputSnapshot struct {
@@ -64,6 +68,8 @@ func (i *driverInput) Apply(events []input.Event, tick uint64) {
 			i.accumulatePointer(event)
 		case input.DeviceKeyboard:
 			i.accumulateKey(event)
+		case input.DeviceGamepad:
+			i.gamepad.apply(event)
 		}
 	}
 }
@@ -125,6 +131,9 @@ func (i *driverInput) Reset() {
 	i.lastInput = input.NewState()
 	i.keyboard = input.KeyboardState{}
 	i.held = nil
+	// The gamepad mirror is deliberately not cleared here. Reset rewinds the
+	// simulation; it does not unplug the controller, and a readout that blanked
+	// on every scrub would be describing the wrong thing.
 	i.resetFrame()
 }
 

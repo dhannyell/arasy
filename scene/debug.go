@@ -142,14 +142,10 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	cmds := make([]render.Command, 0, 4)
 
 	if layers.Has(DebugGrid) {
-		cmds = append(cmds, debugGridAreaCommands(
-			cfg.Bounds,
-			cfg.CellSize,
-			cfg.Style.Grid.GridColor,
-			cfg.Style.Grid.GridStrokeWidth,
-			cfg.Style.Grid.GridDashLength,
-			cfg.Style.Grid.GridLayer,
-		)...)
+		grid := w.debugGridAreaCached(cfg)
+		// The grid dwarfs every other layer in command count, so it decides
+		// the capacity of the frame's slice rather than growing it by halves.
+		cmds = append(make([]render.Command, 0, len(grid)+16), grid...)
 	}
 	if layers.Has(DebugActiveGrid) {
 		cmds = append(cmds, w.debugActiveGridCommands(
@@ -208,6 +204,46 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	}
 
 	return cmds
+}
+
+// debugGridCache memoizes the grid overlay. The grid is a pure function of
+// the bounds, the cell size and the style, none of which move while a game
+// runs — but it is one command per dash, in the thousands, and every command
+// is an interface value that has to be boxed on the heap. Rebuilding it each
+// frame cost more than every other debug layer put together, and the garbage
+// showed up as periodic frame drops rather than a steady tax.
+type debugGridCache struct {
+	bounds   math2d.Rect
+	cellSize float64
+	style    DebugGridStyle
+	commands []render.Command
+	built    bool
+}
+
+// debugGridAreaCached returns the grid for this configuration, rebuilding it
+// only when the configuration it was built for has changed.
+func (w *World) debugGridAreaCached(cfg DebugOverlayConfig) []render.Command {
+	cache := &w.debugGrid
+	if cache.built &&
+		cache.bounds == cfg.Bounds &&
+		cache.cellSize == cfg.CellSize &&
+		cache.style == cfg.Style.Grid {
+		return cache.commands
+	}
+
+	cache.bounds = cfg.Bounds
+	cache.cellSize = cfg.CellSize
+	cache.style = cfg.Style.Grid
+	cache.commands = debugGridAreaCommands(
+		cfg.Bounds,
+		cfg.CellSize,
+		cfg.Style.Grid.GridColor,
+		cfg.Style.Grid.GridStrokeWidth,
+		cfg.Style.Grid.GridDashLength,
+		cfg.Style.Grid.GridLayer,
+	)
+	cache.built = true
+	return cache.commands
 }
 
 func (w *World) debugVelocityCommands(color render.Color, width, scale float64, layer int) []render.Command {

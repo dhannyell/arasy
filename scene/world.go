@@ -76,6 +76,10 @@ type World struct {
 	// by substepFastColliders this tick, so integrate skips them. Transient:
 	// rebuilt each tick, never cloned or checksummed.
 	ccdMoved map[EntityID]struct{}
+
+	// debugGrid memoizes the static grid overlay. Transient: derived from the
+	// overlay configuration, never cloned or checksummed.
+	debugGrid debugGridCache
 }
 
 func NewWorld() *World {
@@ -121,6 +125,7 @@ func (w *World) Clone() *World {
 		// contacts are transient per-tick — not cloned
 		// collisionScratch is transient broad-phase working memory — not cloned
 		// renderIDScratch is transient render working memory — not cloned
+		// debugGrid is a derived overlay cache — not cloned
 	}
 }
 

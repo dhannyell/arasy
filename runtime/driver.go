@@ -45,6 +45,13 @@ type Driver struct {
 	// It deliberately stays outside deterministic snapshots and recordings.
 	gamepadConnected bool
 
+	// debugChecksum memoizes World.Checksum for the runtime-stats overlay.
+	// The checksum walks every component store, and the overlay asks for it
+	// once per rendered frame while it can only change once per tick.
+	debugChecksum      uint64
+	debugChecksumTick  uint64
+	debugChecksumValid bool
+
 	splash *splashPlayer
 
 	pendingReset bool
@@ -385,6 +392,13 @@ func (d *Driver) Config() Config { return d.cfg }
 // hint. Interactive hosts should call it when polling; it has no simulation
 // effect.
 func (d *Driver) SetGamepadConnected(connected bool) {
+	// Unplugging is the one event that invalidates the debug mirror of the
+	// pad: no release events arrive for a controller that is gone, so without
+	// this a button held at the moment it was pulled would read as held
+	// forever.
+	if d.gamepadConnected && !connected {
+		d.input.gamepad.reset()
+	}
 	d.gamepadConnected = connected
 }
 
@@ -518,6 +532,8 @@ func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
 	d.timeline.reset()
+	// A reset is the one way the world changes without the tick changing.
+	d.debugChecksumValid = false
 	if d.recordingEnabled {
 		// Ticks restart at 0: keeping the pre-reset events would collide
 		// with the new run's ticks and Replay would apply both. Restart the
