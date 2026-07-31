@@ -199,7 +199,7 @@ func (h *host) noteInputAt(millis float64, eventCount int) {
 }
 
 func (h *host) handleOverlayToggleKey(event js.Value) bool {
-	if h.debugPanel == nil {
+	if h.panel == nil {
 		return false
 	}
 	if isEditableTarget(event.Get("target")) {
@@ -217,7 +217,7 @@ func (h *host) handleOverlayToggleKey(event js.Value) bool {
 	if event.Get("repeat").Bool() {
 		return true
 	}
-	h.debugPanel.setVisible(!h.debugPanel.visible)
+	h.panel.Toggle()
 	return true
 }
 

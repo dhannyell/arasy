@@ -85,6 +85,20 @@ type Options struct {
 	// FrameMetrics receives periodic frame-pacing reports. Nil disables delivery.
 	FrameMetrics func(FrameMetrics)
 
+	// DevTools enables the in-window dev panel. Default false; the panel
+	// starts hidden and is toggled with the Backquote/~ key.
+	DevTools bool
+	// RecordReplay enables the panel's recording controls: start/stop
+	// recording, write the .arrp next to the game, and load one back to
+	// verify and watch. Default false; shipped builds leave it off. Requires
+	// GameFactory.
+	RecordReplay bool
+	// GameFactory builds a fresh game instance for verify and replay. Replay
+	// mutates its game argument, so each call needs a new one. Required when
+	// RecordReplay is true, ignored otherwise: the engine never clones an
+	// arbitrary user type, so construction stays with the app.
+	GameFactory func() runtime.Game
+
 	// SmoothPacing enables a ~1ms busy-spin tail on the frame limiter for tighter
 	// pacing (video capture, latency benchmarks) at the cost of one busy core.
 	// Off by default: the plain sleep cap keeps CPU low.
@@ -148,6 +162,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer renderer.Close()
 
 	h := newHost(driver, renderer, window, opts)
+	h.mountDevPanel(opts)
 	h.registerCallbacks()
 
 	var sink *audioSink

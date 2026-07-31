@@ -44,6 +44,57 @@ func TestStateCloneCopiesTabsMap(t *testing.T) {
 	}
 }
 
+// A tooling overlay decides whether it keeps this frame's mouse and keyboard
+// by asking who is active and who is focused. Both answers have to track the
+// live interaction, or a slider dragged outside the overlay would hand the
+// drag back to the game mid-gesture.
+func TestActiveAndFocusAccessorsFollowInteraction(t *testing.T) {
+	state := &State{}
+	rect := btnRect()
+	cam := testInteractCamera()
+
+	if state.ActiveID() != noID || state.FocusID() != noID {
+		t.Fatalf("fresh state = (%v, %v), want no active or focused widget", state.ActiveID(), state.FocusID())
+	}
+
+	down := NewUpdate(state, pointerFrame(
+		input.PointerEvent{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
+	), cam, DefaultTheme(), cam.Viewport)
+	down.clickedIn("btn", rect, SpaceRef)
+
+	want := HashID("btn")
+	if state.ActiveID() != want {
+		t.Fatalf("ActiveID after press = %v, want %v", state.ActiveID(), want)
+	}
+	if state.FocusID() != want {
+		t.Fatalf("FocusID after press = %v, want %v", state.FocusID(), want)
+	}
+
+	up := NewUpdate(state, pointerFrame(
+		input.PointerEvent{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 150, Y: 120}},
+	), cam, DefaultTheme(), cam.Viewport)
+	up.clickedIn("btn", rect, SpaceRef)
+
+	if state.ActiveID() != noID {
+		t.Fatalf("ActiveID after release = %v, want none", state.ActiveID())
+	}
+	if state.FocusID() != want {
+		t.Fatalf("FocusID after release = %v, want %v (focus outlives the press)", state.FocusID(), want)
+	}
+}
+
+// The accessors read the snapshot they are called on, so a cloned state
+// answers for the clone and not for the live one it was taken from.
+func TestActiveAndFocusAccessorsSurviveClone(t *testing.T) {
+	state := State{activeID: HashID("slider"), focusID: HashID("field")}
+	clone := state.Clone()
+
+	if clone.ActiveID() != state.ActiveID() || clone.FocusID() != state.FocusID() {
+		t.Fatalf("clone = (%v, %v), want (%v, %v)",
+			clone.ActiveID(), clone.FocusID(), state.ActiveID(), state.FocusID())
+	}
+}
+
 // Everything a text field, a dropdown or the repeat clock remembers has to
 // rewind with the snapshot too — a caret restored to the wrong character would
 // make the same replayed keystroke edit a different place.
