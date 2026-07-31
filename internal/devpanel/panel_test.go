@@ -315,13 +315,13 @@ func TestScrubSeeksOnReleaseOnly(t *testing.T) {
 
 func TestLayersTabIsHiddenOutsideDevMode(t *testing.T) {
 	plain := newTestPanel(t, Options{})
-	if got := len(plain.tabs()); got != 3 {
-		t.Fatalf("tabs without dev mode = %d, want 3", got)
+	if got := len(plain.tabs()); got != tabLayers {
+		t.Fatalf("tabs without dev mode = %d, want %d", got, tabLayers)
 	}
 
 	dev := newTestPanel(t, Options{DevMode: true})
-	if got := len(dev.tabs()); got != 4 {
-		t.Fatalf("tabs in dev mode = %d, want 4", got)
+	if got := len(dev.tabs()); got != tabLayers+1 {
+		t.Fatalf("tabs in dev mode = %d, want %d", got, tabLayers+1)
 	}
 }
 
@@ -360,9 +360,9 @@ func TestTabSelectionFollowsHeaderClicks(t *testing.T) {
 
 func TestRenderStaysAboveGameLayers(t *testing.T) {
 	p := openPanel(t, Options{DevMode: true}, tabSim)
-	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabLayers} {
+	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabPerf, tabLayers} {
 		p.activeTab = tab
-		cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{FPS: 60, Commands: 12})
+		cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{Commands: 12})
 		if len(cmds) == 0 {
 			t.Fatalf("tab %d drew nothing", tab)
 		}
@@ -468,4 +468,40 @@ func advance(p *Panel, ticks int) {
 	for range ticks {
 		p.driver.Step()
 	}
+}
+
+// Determinism is the property replay and rewind rest on, so its failure gets
+// the title bar — visible from every tab — rather than a stats line somebody
+// has to go looking for.
+func TestDivergedBadgeDrawsOnlyWhenViolated(t *testing.T) {
+	p := newTestPanel(t, Options{})
+	cam := frameCamera()
+
+	badge := func(state runtime.DriveState) []render.Command {
+		u := ui.New(&p.state, math2d.Vec2{}, false, cam, p.theme,
+			panelSpace(cam.Viewport), &p.anim, 0, 0)
+		p.drawDivergedBadge(u.Draw().In(ui.SpaceRef), p.frameLayout(cam.Viewport).panel, state)
+		return raiseLayer(u.Commands())
+	}
+
+	if got := countFill(badge(runtime.DriveState{}), colorDanger); got != 0 {
+		t.Fatalf("a healthy driver drew %d warning marks, want none", got)
+	}
+
+	violated := badge(runtime.DriveState{DeterminismViolated: true})
+	if got := countFill(violated, colorDanger); got == 0 {
+		t.Fatal("a diverged driver drew no warning")
+	}
+	if !containsText(violated, "DIVERGED") {
+		t.Fatal("the warning has no label saying what is wrong")
+	}
+}
+
+func containsText(commands []render.Command, want string) bool {
+	for _, command := range commands {
+		if text, ok := command.(render.DrawText); ok && text.Text == want {
+			return true
+		}
+	}
+	return false
 }

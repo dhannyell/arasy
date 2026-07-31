@@ -13,9 +13,13 @@ const (
 	// designHeight and scale from there, so the panel keeps the same share of
 	// the window at 1080p, at 4K and in fullscreen instead of shrinking into
 	// a corner.
-	panelWidth  = 360
-	panelHeight = 302
+	panelWidth  = 400
+	panelHeight = 334
 	panelMargin = 8
+
+	// badgeWidth and badgeInset size the title-bar warning.
+	badgeWidth = 78
+	badgeInset = 5
 
 	contentPad   = 8
 	rowHeight    = 26
@@ -26,7 +30,7 @@ const (
 	// taller window scales everything up by the ratio; a shorter one does not
 	// scale down, because shrinking the text is worse than letting the panel
 	// take more of a small window.
-	designHeight = 900
+	designHeight = 800
 )
 
 // panelScale is how many pixels one unit of panel space is worth.

@@ -1,6 +1,17 @@
 package devpanel
 
-import "strconv"
+import (
+	"strconv"
+	"time"
+)
+
+func formatMillis(d time.Duration) string {
+	return strconv.FormatFloat(d.Seconds()*1000, 'f', 1, 64) + "ms"
+}
+
+func formatMegabytes(bytes uint64) string {
+	return strconv.FormatFloat(float64(bytes)/(1024*1024), 'f', 1, 64) + "MB"
+}
 
 func formatUint(v uint64) string { return strconv.FormatUint(v, 10) }
 

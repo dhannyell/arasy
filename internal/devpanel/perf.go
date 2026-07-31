@@ -1,0 +1,166 @@
+package devpanel
+
+import (
+	"math"
+	"time"
+
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/ui"
+)
+
+// The Perf tab exists because an average hides the thing that actually hurts.
+// A run that drops four frames a second still reports a healthy mean, and the
+// only symptom a developer can name is "it stutters sometimes" — which is how
+// a garbage-collection problem is usually described before it is measured.
+// The graph below shows every frame, so a spike is a spike instead of a
+// rounding error in an average.
+
+const (
+	// frameHistoryLen is a couple of seconds at 60Hz: long enough to catch a
+	// periodic spike, short enough that the bars stay wide enough to see.
+	frameHistoryLen = 120
+
+	perfGraphHeight = 58
+	// perfCeilingFactor is how far above the frame budget the graph reaches.
+	// Anything taller is clipped to the top — past twice the budget the exact
+	// height stops mattering, the point is that it is bad.
+	perfCeilingFactor = 3
+	perfLineHeight    = 18
+)
+
+// frameHistory is a ring of recent frame durations.
+type frameHistory struct {
+	samples [frameHistoryLen]time.Duration
+	next    int
+	filled  bool
+}
+
+func (h *frameHistory) push(frame time.Duration) {
+	if frame <= 0 {
+		return
+	}
+	h.samples[h.next] = frame
+	h.next = (h.next + 1) % len(h.samples)
+	if h.next == 0 {
+		h.filled = true
+	}
+}
+
+// each walks the samples oldest to newest, so the graph scrolls left to right
+// regardless of where the ring's cursor happens to sit.
+func (h *frameHistory) each(visit func(index int, frame time.Duration)) {
+	count := h.next
+	start := 0
+	if h.filled {
+		count = len(h.samples)
+		start = h.next
+	}
+	for i := range count {
+		visit(i, h.samples[(start+i)%len(h.samples)])
+	}
+}
+
+func (h *frameHistory) count() int {
+	if h.filled {
+		return len(h.samples)
+	}
+	return h.next
+}
+
+type perfLayout struct {
+	graph math2d.Rect
+	lines math2d.Rect
+}
+
+func perfRects(rect math2d.Rect) perfLayout {
+	graph, rest := ui.CutTop(rect, perfGraphHeight)
+	_, lines := ui.CutTop(rest, rowGap)
+	return perfLayout{graph: graph, lines: lines}
+}
+
+// frameBudget is the frame time the host is aiming for, taken from the game's
+// configured frame rate rather than assumed: a game running at 30 has a
+// different idea of a bad frame than one running at 144.
+func (p *Panel) frameBudget() time.Duration {
+	fps := p.driver.Config().FPS
+	if fps <= 0 {
+		return time.Second / 60
+	}
+	return time.Second / time.Duration(fps)
+}
+
+func (p *Panel) drawPerf(draw ui.DrawScope, rect math2d.Rect) {
+	lay := perfRects(rect)
+	budget := p.frameBudget()
+
+	p.drawFrameGraph(draw, lay.graph, budget)
+	p.drawPerfLines(draw, lay.lines, budget)
+}
+
+func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.Duration) {
+	draw.FillRect(rect, p.theme.Progress.Background)
+
+	ceiling := float64(budget) * perfCeilingFactor
+	if ceiling <= 0 {
+		return
+	}
+
+	// The budget line is what turns the bars into a judgement: below it the
+	// frame was delivered on time, above it something was missed.
+	budgetY := rect.Max.Y - rect.Height()*float64(budget)/ceiling
+	draw.FillRect(math2d.NewRect(
+		math2d.Vec2{X: rect.Min.X, Y: budgetY},
+		math2d.Vec2{X: rect.Width(), Y: 1},
+	), p.theme.Text.Muted)
+
+	samples := p.history.count()
+	if samples == 0 {
+		return
+	}
+	width := rect.Width() / float64(len(p.history.samples))
+
+	p.history.each(func(index int, frame time.Duration) {
+		height := math.Min(float64(frame)/ceiling, 1) * rect.Height()
+		if height <= 0 {
+			return
+		}
+		fill := p.theme.Progress.Fill
+		if frame > budget {
+			fill = colorWarning
+		}
+		draw.FillRect(math2d.NewRect(
+			math2d.Vec2{X: rect.Min.X + float64(index)*width, Y: rect.Max.Y - height},
+			math2d.Vec2{X: math.Max(width-1, 1), Y: height},
+		), fill)
+	})
+}
+
+func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.Duration) {
+	frame := p.frameStats
+	lines := []string{
+		"fps " + formatFloat(frame.FPS) + "   frame " + formatMillis(frame.FrameTime),
+		"mean " + formatMillis(frame.MeanFrameTime) +
+			"   p99 " + formatMillis(frame.P99FrameTime) +
+			"   budget " + formatMillis(budget),
+	}
+
+	if p.stats.CPUSet {
+		lines = append(lines, "cpu  tick "+formatMillis(p.stats.CPUTick)+
+			"   render "+formatMillis(p.stats.CPURender))
+	}
+	if p.stats.InputLatencySet {
+		lines = append(lines, "input to submit "+formatMillis(p.stats.InputLatency))
+	}
+	if p.stats.HeapSet {
+		lines = append(lines, "heap "+formatMegabytes(p.stats.HeapInUse)+
+			" / "+formatMegabytes(p.stats.HeapTotal))
+	}
+	lines = append(lines, "commands "+formatInt(p.stats.Commands))
+
+	for i, line := range lines {
+		p.text(draw, line, math2d.Vec2{
+			X: rect.Min.X,
+			Y: rect.Min.Y + float64(i)*perfLineHeight + perfLineHeight/2,
+		}, p.theme.Text.Color, p.theme.Text.Caption)
+	}
+}

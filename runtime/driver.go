@@ -196,9 +196,34 @@ func (d *Driver) ApplyInput(events []input.Event) {
 
 // Control applies a platform control command before AdvanceTime or Step.
 func (d *Driver) Control(cmd ControlCommand) {
+	watching := d.controls.replayMode
 	if d.controls.apply(cmd) {
 		d.pendingReset = true
 	}
+	// Taking control ends the recording's presses. Until this point the
+	// journal owned them and would have released them at the tick it recorded
+	// the release; from here the driver never reaches that tick, so a key
+	// held at the moment control was taken would stay down forever. A reset
+	// needs none of this — it rebuilds the input state outright.
+	if watching && !d.controls.replayMode && !d.pendingReset {
+		d.releaseWatchedInput()
+	}
+}
+
+// releaseWatchedInput ends every press the recording left held.
+//
+// The releases are applied as ordinary input rather than written straight
+// into the input state, so they land in the journal alongside everything
+// else. A later scrub back across this tick then reproduces the release; had
+// the state been edited directly, resimulation would rebuild a world where
+// the key was never let go and the checksum would diverge from the live run.
+func (d *Driver) releaseWatchedInput() {
+	events := d.input.releaseEvents()
+	if len(events) == 0 {
+		return
+	}
+	d.log.Debug("released input held by the recording", "tick", d.tick, "count", len(events))
+	d.ApplyInput(events)
 }
 
 // AdvanceTime advances using elapsed wall time. Platforms should use this entry
@@ -560,11 +585,17 @@ func (d *Driver) restoreSnapshot(snap driverSnapshot) {
 	}
 }
 
+// cloneDriverInputSnapshot deep-copies a snapshot so restoring it twice does
+// not hand out the same mapper. Every field is carried: a restore that
+// dropped one would silently reset that part of the input state, which reads
+// as a key that was held before the rewind and is not held after it.
 func cloneDriverInputSnapshot(snapshot driverInputSnapshot) driverInputSnapshot {
 	return driverInputSnapshot{
 		mapper:    snapshot.mapper.Clone(),
 		lastInput: snapshot.lastInput.Clone(),
 		pointer:   snapshot.pointer.Clone(),
+		keyboard:  snapshot.keyboard.Clone(),
+		held:      append([]heldInput(nil), snapshot.held...),
 	}
 }
 
