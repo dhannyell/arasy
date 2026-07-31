@@ -31,12 +31,38 @@ func standingsTableRect() math2d.Rect {
 	return rect(p.Min.X+20, p.Min.Y+52, p.Width()-40, p.Height()-72)
 }
 
-// Right column: three stacked cards (plans/implementacao/021 §3.3 — RODADA,
-// PRÓXIMO JOGO, legenda TOPO/RISCO), sized to fill the same y=170..860 band
-// the left-column panels use elsewhere in this demo.
-func tableRoundPanel() math2d.Rect     { return rect(970, 170, 770, 200) }
-func tableNextMatchPanel() math2d.Rect { return rect(970, 390, 770, 300) }
-func tableLegendPanel() math2d.Rect    { return rect(970, 710, 770, 150) }
+// Right column: three stacked cards (RODADA, PRÓXIMO JOGO, legenda
+// TOPO/RISCO), filling the same y=170..860 band the left-column panels use
+// elsewhere in this demo. The strip is cut top-down with a fixed gap, so
+// changing one card's height moves the ones below it instead of leaving three
+// hand-computed origins to keep in sync.
+const (
+	tablePanelGap        = 20.0
+	tableRoundHeight     = 200.0
+	tableNextMatchHeight = 300.0
+	tableLegendHeight    = 150.0
+)
+
+func tableRightColumn() math2d.Rect { return rect(970, 170, 770, 690) }
+
+func tableRoundPanel() math2d.Rect {
+	panel, _ := ui.CutTop(tableRightColumn(), tableRoundHeight)
+	return panel
+}
+
+func tableNextMatchPanel() math2d.Rect {
+	_, rest := ui.CutTop(tableRightColumn(), tableRoundHeight+tablePanelGap)
+	panel, _ := ui.CutTop(rest, tableNextMatchHeight)
+	return panel
+}
+
+func tableLegendPanel() math2d.Rect {
+	_, rest := ui.CutTop(tableRightColumn(),
+		tableRoundHeight+tablePanelGap+tableNextMatchHeight+tablePanelGap)
+	panel, _ := ui.CutTop(rest, tableLegendHeight)
+	return panel
+}
+
 func tableNewSeasonButtonRect() math2d.Rect {
 	p := tableNextMatchPanel()
 	return rect(p.Min.X+180, p.Max.Y-88, p.Width()-360, 56)
