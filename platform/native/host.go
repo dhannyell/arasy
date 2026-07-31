@@ -25,6 +25,13 @@ type gpuBufferReporter interface {
 	particleGPUBufferBytes() (bytes uint64, ok bool)
 }
 
+// presentWaitReporter exposes the presentation-queue block time of the last
+// frame (acquire + present), which with vsync is the vblank wait and must
+// not be read as CPU render work.
+type presentWaitReporter interface {
+	presentWaitDuration() (time.Duration, bool)
+}
+
 const noGamepadJoystick glfw.Joystick = -1
 
 type host struct {
@@ -356,6 +363,10 @@ func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt
 	}
 
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+
+	if reporter, ok := any(h.renderer).(presentWaitReporter); ok {
+		h.panelStats.PresentWait, h.panelStats.PresentSet = reporter.presentWaitDuration()
+	}
 
 	probe := h.sysprobe.Sample(time.Now())
 	h.panelStats.MemProcessBytes = probe.MemProcessBytes

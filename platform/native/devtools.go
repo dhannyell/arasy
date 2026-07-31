@@ -51,4 +51,9 @@ type overlayStats struct {
 	GPUProcessPercent float64
 	GPUSystemPercent  float64
 	GPUSet            bool
+
+	// PresentWait is the presentation-queue block of the last frame — the
+	// vblank wait under vsync, reported apart from CPU render time.
+	PresentWait time.Duration
+	PresentSet  bool
 }

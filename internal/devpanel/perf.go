@@ -146,10 +146,20 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 
 	// Host timings share one row: three short readings never justify three
 	// rows of a panel this size, especially once the system rows join in.
+	// The present wait is shown apart from CPU render work: with vsync it is
+	// the vblank block, and reading it as render time makes an idle loop
+	// look saturated.
 	timings := ""
 	if p.stats.CPUSet {
+		renderCPU := p.stats.CPURender
+		if p.stats.PresentSet {
+			renderCPU = max(p.stats.CPURender-p.stats.PresentWait, 0)
+		}
 		timings = "cpu tick " + formatMillis(p.stats.CPUTick) +
-			"   render " + formatMillis(p.stats.CPURender)
+			"   render " + formatMillis(renderCPU)
+		if p.stats.PresentSet {
+			timings += "   present " + formatMillis(p.stats.PresentWait)
+		}
 	}
 	if p.stats.InputLatencySet {
 		if timings != "" {

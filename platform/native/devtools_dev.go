@@ -45,6 +45,8 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		GPUProcessPercent:   stats.GPUProcessPercent,
 		GPUSystemPercent:    stats.GPUSystemPercent,
 		GPUSet:              stats.GPUSet,
+		PresentWait:         stats.PresentWait,
+		PresentSet:          stats.PresentSet,
 	})
 }
 
@@ -77,6 +79,10 @@ func (h *host) mountDevPanel(opts Options) {
 		panelOpts.Recording = newRecordingPort()
 	}
 	h.panel = &panelOverlay{panel: devpanel.New(h.driver, panelOpts)}
+
+	// The panel splits CPU work from the vblank wait; the wait is only
+	// measured when CPU timing is on, so turn it on for the panel too.
+	h.renderer.SetCPUTiming(true)
 
 	// The panel reports heap use, which is what a collector pause looks like
 	// before it becomes a frame spike. Sampling it needs the same probes the

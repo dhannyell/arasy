@@ -144,6 +144,29 @@ func TestPerfSystemRowsFollowTheirSetFlags(t *testing.T) {
 	requireText(t, full, "gpu 12%   sys 47%")
 }
 
+func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:    17,
+		CPUTick:     300 * time.Microsecond,
+		CPURender:   16400 * time.Microsecond,
+		CPUSet:      true,
+		PresentWait: 16100 * time.Microsecond,
+		PresentSet:  true,
+	})
+	requireText(t, cmds, "cpu tick 0.3ms   render 0.3ms   present 16.1ms")
+
+	// Without the probe the line keeps the old shape, render unadjusted.
+	bare := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:  17,
+		CPUTick:   300 * time.Microsecond,
+		CPURender:  16400 * time.Microsecond,
+		CPUSet:    true,
+	})
+	requireText(t, bare, "cpu tick 0.3ms   render 16.4ms")
+}
+
 func TestPerfMarksFramesOverBudget(t *testing.T) {
 	p := openPanel(t, Options{}, tabPerf)
 

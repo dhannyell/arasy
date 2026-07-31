@@ -72,6 +72,11 @@ type Renderer struct {
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
 	cpuPhasesSet       bool
+	// presentWait is how long the last frame blocked on presentation
+	// (surface acquire plus present). With vsync this is the vblank wait —
+	// idle time, not work — so it must be reported apart from the CPU
+	// phases or "render time" reads like saturation.
+	presentWait time.Duration
 }
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
@@ -192,7 +197,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.recordErr(err)
 		return
 	}
+	var acquireStart time.Time
+	if r.timeCPU {
+		acquireStart = time.Now()
+	}
 	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
+	if r.timeCPU {
+		r.presentWait = time.Since(acquireStart)
+	}
 	if err != nil {
 		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
 		return
@@ -232,7 +244,13 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuEncode = time.Since(phaseStart)
 		r.cpuPhasesSet = true
 	}
+	if r.timeCPU {
+		phaseStart = time.Now()
+	}
 	r.device.surface.Present()
+	if r.timeCPU {
+		r.presentWait += time.Since(phaseStart)
+	}
 	r.presentedFrame = true
 	if r.particles != nil {
 		r.particles.endFrame()
@@ -253,6 +271,17 @@ func (r *Renderer) SetCPUTiming(enabled bool) {
 // SetGPUTiming is retained for option compatibility. The current binding's
 // C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
 func (r *Renderer) SetGPUTiming(bool) {}
+
+// presentWaitDuration reports how long the last frame blocked on the
+// presentation queue: surface acquire plus present. With vsync that is the
+// vblank wait — idle time, not CPU work. ok is false while CPU timing is
+// disabled, meaning no measurement was taken.
+func (r *Renderer) presentWaitDuration() (time.Duration, bool) {
+	if r == nil {
+		return 0, false
+	}
+	return r.presentWait, r.timeCPU
+}
 
 // adapterIDs returns the PCI vendor and device IDs of the adapter the
 // renderer selected, for the OS probes that need to find the same GPU.

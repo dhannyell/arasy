@@ -76,6 +76,13 @@ type Stats struct {
 	GPUProcessPercent float64
 	GPUSystemPercent  float64
 	GPUSet            bool
+
+	// PresentWait is how long the last frame blocked on the presentation
+	// queue (acquire + present). With vsync that is the vblank wait — idle
+	// time that must not be read as CPU render work, so hosts that measure
+	// it report it apart.
+	PresentWait time.Duration
+	PresentSet  bool
 }
 
 // Options configures a panel. Every field is optional; the zero value gives a
