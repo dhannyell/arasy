@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import "github.com/dhannyell/arasy/render"

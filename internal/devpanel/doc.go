@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 // Package devpanel is the engine's dev tooling overlay: pause, step, speed,
 // scrubbing, debug layers and recording, built out of ui widgets and emitted
 // as ordinary render commands.

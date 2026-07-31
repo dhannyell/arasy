@@ -365,31 +365,8 @@ func (d *Driver) warnManualStepOnce() {
 	d.log.Warn("game called World.Step inside Update; auto-step skipped; migrate to PostStep (AD-1)")
 }
 
-// WorldView returns the read-only face of the simulation world — the same
-// view games receive through the update/render contexts. Hosts and
-// development tooling (the dev panel's inspector) use it to enumerate and
-// inspect entities; mutation through it is a compile error by construction.
-func (d *Driver) WorldView() scene.WorldView { return d.world.View() }
-
-// DebugWorld exposes the live simulation world for development tooling that
-// mutates state on purpose — the dev panel's inspector editor. Mutations
-// land between ticks exactly like input does, but they are not journaled:
-// a session edited this way no longer replays exactly, which the recording
-// verification will catch. Games never see this; they get the world through
-// the update context.
-func (d *Driver) DebugWorld() *scene.World { return d.world }
-
-// DebugGameState captures a fresh snapshot of the game's state and returns
-// it unwrapped from its GameState box, for development tooling. ok is false
-// when the game does not implement StatefulGame. The value is a snapshot —
-// read it, never mutate it.
-func (d *Driver) DebugGameState() (value any, ok bool) {
-	state := d.captureGameState()
-	if state == nil {
-		return nil, false
-	}
-	return DebugStateValue(state), true
-}
+// The development-only accessors the dev panel's inspector needs live in
+// devaccess_dev.go, behind the arr_dev build tag.
 
 func (d *Driver) State() DriveState {
 	state := DriveState{

@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package runtime
 
 import (
@@ -71,6 +73,30 @@ func TestDriverDebugWorldMutationsAreVisibleThroughTheView(t *testing.T) {
 	transform, ok := driver.WorldView().Transform(id)
 	if !ok || transform.Position.X != 5 {
 		t.Fatalf("WorldView().Transform() = (%+v, %v), want the DebugWorld write", transform, ok)
+	}
+}
+
+// An inspector edit changes the world without advancing the tick, so handing
+// the world out has to drop the overlay's per-tick checksum memo — otherwise
+// the stats line keeps reporting the world as it was before the edit.
+func TestDebugWorldDropsTheChecksumMemo(t *testing.T) {
+	driver := NewDriver(&statefulGame{}, nil)
+	driver.Step()
+
+	id := driver.DebugWorld().Spawn()
+	before := driver.debugChecksumForFrame()
+
+	driver.DebugWorld().SetTransform(id, scene.Transform{Position: math2d.Vec2{X: 7}})
+	if driver.debugChecksumValid {
+		t.Fatal("DebugWorld left the checksum memo valid across an edit")
+	}
+
+	after := driver.debugChecksumForFrame()
+	if after != driver.world.Checksum() {
+		t.Fatalf("checksum after the edit = %x, want the live %x", after, driver.world.Checksum())
+	}
+	if after == before {
+		t.Fatal("the overlay still reports the pre-edit checksum")
 	}
 }
 
