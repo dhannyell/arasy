@@ -100,6 +100,46 @@ func TestListSelectionClampsAtTheEnds(t *testing.T) {
 	}
 }
 
+// A list with no selection (-1) must not move the scroll on click: before
+// the guard, taking focus ran rowNavigation, which clamped the -1 to row 0,
+// and revealRow snapped the list back to the top — clicking a scrolled row
+// then resolved against the reset offset and hit the wrong row.
+func TestListWithoutSelectionKeepsScrollOnClick(t *testing.T) {
+	state := &State{scroll: map[ID]float64{HashID("players"): 40}}
+	rect := math2d.NewRect(math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 200, Y: 100})
+	cam := testInteractCamera()
+
+	down := []input.PointerEvent{
+		{Kind: input.EventButtonDown, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 20, Y: 52}},
+	}
+	u := NewUpdate(state, pointerFrame(down...), cam, DefaultTheme(), cam.Viewport)
+	if _, changed := u.listInputValueIn("players", rect, 20, 20, -1, SpaceRef); changed {
+		t.Fatal("the press frame reported a selection change before any row was clicked")
+	}
+	if got := state.scroll[HashID("players")]; got != 40 {
+		t.Fatalf("scroll moved to %v on press, want it kept at 40", got)
+	}
+
+	up := []input.PointerEvent{
+		{Kind: input.EventButtonUp, Button: input.PointerPrimary, Pos: math2d.Vec2{X: 20, Y: 52}},
+	}
+	u = NewUpdate(state, pointerFrame(up...), cam, DefaultTheme(), cam.Viewport)
+	if next, changed := u.listInputValueIn("players", rect, 20, 20, -1, SpaceRef); next != 4 || !changed {
+		t.Fatalf("ListInputValue() = (%d, %v), want (4, true) at the kept offset", next, changed)
+	}
+}
+
+// Keyboard navigation needs a selection to move: with none, the arrows wait
+// for the first click instead of manufacturing row 0.
+func TestListArrowsDoNothingWithoutSelection(t *testing.T) {
+	state := &State{}
+	next, changed := navigating(state, "roster", input.KeyArrowDown).
+		listInputValueIn("roster", rowsRect(), 32, 10, -1, SpaceRef)
+	if next != -1 || changed {
+		t.Fatalf("ListInputValue() = (%d, %v), want (-1, false) with no selection", next, changed)
+	}
+}
+
 func TestListPageAndHomeEndKeys(t *testing.T) {
 	cases := []struct {
 		key      input.SourceCode

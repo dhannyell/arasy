@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import (
@@ -11,6 +13,14 @@ func formatMillis(d time.Duration) string {
 
 func formatMegabytes(bytes uint64) string {
 	return strconv.FormatFloat(float64(bytes)/(1024*1024), 'f', 1, 64) + "MB"
+}
+
+func formatGigabytes(bytes uint64) string {
+	return strconv.FormatFloat(float64(bytes)/(1024*1024*1024), 'f', 1, 64) + "GB"
+}
+
+func formatPercent(v float64) string {
+	return strconv.FormatFloat(v, 'f', 0, 64) + "%"
 }
 
 func formatUint(v uint64) string { return strconv.FormatUint(v, 10) }

@@ -25,11 +25,19 @@ import (
 
 var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
-// msaaSampleCount is the multisample count for the main render pass. 4 is the
-// value WebGPU guarantees is supported on every adapter; it smooths geometry
-// edges (circles, rounded corners, polygon silhouettes) that would otherwise
-// rasterize with hard, aliased edges at one sample per pixel.
-const msaaSampleCount = 4
+// msaaSampleCount resolves the requested level, logging a fallback when the
+// mode is outside the enum rather than failing renderer creation.
+func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) int {
+	samples, ok := mode.Samples()
+	if !ok {
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("unknown MSAA mode, using the default",
+			"requested", uint8(mode), "fallback", samples)
+	}
+	return samples
+}
 
 type webgpuRenderer struct {
 	canvas   js.Value
@@ -133,6 +141,7 @@ type webgpuRenderer struct {
 	// recent Render call split by phase; cpuTimingValid is false until the
 	// first instrumented frame completes.
 	sampleCPUTiming               bool
+	msaaSamples                   int
 	cpuTess, cpuUpload, cpuEncode time.Duration
 	cpuTimingValid                bool
 	// cpuResourceUpdate is the most recent UpdateResources call's wall time
@@ -158,7 +167,7 @@ type webgpuRenderer struct {
 	lostCb       js.Func
 }
 
-func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, log *slog.Logger) (*webgpuRenderer, error) {
+func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) (*webgpuRenderer, error) {
 	fontProvider, err := fontatlas.New(manifest)
 	if err != nil {
 		return nil, err
@@ -215,6 +224,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
 		particleScale:   particleScale,
 		sampleCPUTiming: wantGPUTiming,
+		msaaSamples:     msaaSampleCount(msaa, log),
 		log:             log,
 	}
 	r.dev = newJSDevice(r.device, r.queue)
@@ -544,14 +554,27 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		r.encodeParticleOffscreen(encoder, groupCmds, frame.Camera, w, h, sampleTiming)
 	}
 
+	// With multi-sampling the pass draws into the sampled target and resolves
+	// into the surface, so the sampled texture itself is discarded. Without
+	// it there is no resolve target to carry the result, so the pass draws
+	// straight into the surface and keeps it.
+	attachment := map[string]any{
+		"view":          r.msaaView,
+		"resolveTarget": textureView,
+		"loadOp":        "clear",
+		"storeOp":       "discard",
+		"clearValue":    clearValue(r.clear),
+	}
+	if r.msaaSamples <= 1 {
+		attachment = map[string]any{
+			"view":       textureView,
+			"loadOp":     "clear",
+			"storeOp":    "store",
+			"clearValue": clearValue(r.clear),
+		}
+	}
 	renderPassDesc := map[string]any{
-		"colorAttachments": []any{map[string]any{
-			"view":          r.msaaView,
-			"resolveTarget": textureView,
-			"loadOp":        "clear",
-			"storeOp":       "discard",
-			"clearValue":    clearValue(r.clear),
-		}},
+		"colorAttachments": []any{attachment},
 	}
 	if sampleTiming {
 		// With offscreen compositing the draw interval opens at the first
@@ -798,7 +821,7 @@ func (r *webgpuRenderer) createCompositePipeline() js.Value {
 			"targets":    []any{map[string]any{"format": r.format, "blend": gpu.PremultipliedBlend()}},
 		},
 		"primitive":   map[string]any{"topology": "triangle-list"},
-		"multisample": map[string]any{"count": msaaSampleCount},
+		"multisample": map[string]any{"count": r.msaaSamples},
 	})
 }
 
@@ -880,27 +903,27 @@ type particleTarget struct {
 
 func (r *webgpuRenderer) createSolidPipeline() js.Value {
 	module := r.dev.CreateShaderModule(shaders.SolidWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), msaaSampleCount)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples)))
 }
 
 func (r *webgpuRenderer) createTextGlyphPipeline() js.Value {
 	module := r.dev.CreateShaderModule(shaders.TextGlyphWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), msaaSampleCount)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples)))
 }
 
 func (r *webgpuRenderer) createTexturedPipeline() js.Value {
 	module := r.dev.CreateShaderModule(shaders.TexturedWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), msaaSampleCount)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples)))
 }
 
 func (r *webgpuRenderer) createSpritePipeline() js.Value {
 	module := r.dev.CreateShaderModule(shaders.SpriteWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples)))
 }
 
 func (r *webgpuRenderer) createSpriteArrayPipeline() js.Value {
 	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), msaaSampleCount)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples)))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a
@@ -981,8 +1004,18 @@ func (r *webgpuRenderer) createSpriteBuffer(size int) (js.Value, int) {
 }
 
 // ensureMSAATarget (re)creates the multisampled color target when the canvas
-// dimensions change.
+// dimensions change. With multi-sampling off there is no target at all: the
+// pass renders straight into the surface texture.
 func (r *webgpuRenderer) ensureMSAATarget(w, h int) {
+	if r.msaaSamples <= 1 {
+		if !r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
+			r.msaaTexture.Call("destroy")
+			r.msaaTexture = js.Undefined()
+			r.msaaView = js.Undefined()
+		}
+		r.msaaWidth, r.msaaHeight = 0, 0
+		return
+	}
 	if r.msaaWidth == w && r.msaaHeight == h &&
 		!r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
 		return
@@ -990,7 +1023,7 @@ func (r *webgpuRenderer) ensureMSAATarget(w, h int) {
 	if !r.msaaTexture.IsUndefined() && !r.msaaTexture.IsNull() {
 		r.msaaTexture.Call("destroy")
 	}
-	r.msaaTexture = jsHandle(r.dev.CreateTexture(gpu.MSAATextureDesc(w, h, r.format.String(), msaaSampleCount)))
+	r.msaaTexture = jsHandle(r.dev.CreateTexture(gpu.MSAATextureDesc(w, h, r.format.String(), r.msaaSamples)))
 	r.msaaView = r.msaaTexture.Call("createView")
 	r.msaaWidth, r.msaaHeight = w, h
 }

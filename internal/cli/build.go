@@ -21,6 +21,7 @@ var (
 	buildOutput        string
 	buildTitle         string
 	buildNoDefaultFont bool
+	buildDevTools      bool
 	buildBoot          webBootFlags
 )
 
@@ -44,6 +45,7 @@ var buildCmd = &cobra.Command{
 		return buildWASM(pkg, buildOutput, title, wasmBuildOptions{
 			Release:       true,
 			NoDefaultFont: buildNoDefaultFont,
+			DevTools:      buildDevTools,
 			Boot:          boot,
 		}, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	},
@@ -54,6 +56,7 @@ func init() {
 	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "dist/wasm", "output directory")
 	buildCmd.Flags().StringVar(&buildTitle, "title", "", "HTML page title")
 	buildCmd.Flags().BoolVar(&buildNoDefaultFont, "no-default-font", false, "exclude the embedded default font (~140 KB); FontID 0 falls back to the built-in 7x13 bitmap")
+	buildCmd.Flags().BoolVar(&buildDevTools, "devtools", false, "include the dev panel (arr_dev tag); release builds leave it off")
 	buildBoot.bind(buildCmd)
 	rootCmd.AddCommand(buildCmd)
 }
@@ -88,7 +91,11 @@ func defaultTitle(pkg string) string {
 type wasmBuildOptions struct {
 	Release       bool
 	NoDefaultFont bool
-	Boot          wasmserve.BootOptions
+	// DevTools compiles the dev panel in (the arr_dev tag): the development
+	// server always sets it, and arasy build sets it with --devtools. A
+	// default build is the release build and does not carry the panel.
+	DevTools bool
+	Boot     wasmserve.BootOptions
 }
 
 func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr io.Writer) error {
@@ -109,7 +116,7 @@ func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr 
 	}
 	defer func() { _ = os.Remove(tmpPath) }() // no-op after a successful swap
 
-	cmd := exec.Command("go", wasmBuildArgs(pkg, tmpPath, opts.Release, opts.NoDefaultFont)...)
+	cmd := exec.Command("go", wasmBuildArgs(pkg, tmpPath, opts.Release, opts.NoDefaultFont, opts.DevTools)...)
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
@@ -146,13 +153,20 @@ func buildWASM(pkg, outDir, title string, opts wasmBuildOptions, stdout, stderr 
 }
 
 // wasmBuildArgs assembles the go build command line for a WASM artifact.
-func wasmBuildArgs(pkg, out string, release, noDefaultFont bool) []string {
+func wasmBuildArgs(pkg, out string, release, noDefaultFont, devTools bool) []string {
 	args := []string{"build", "-o", out, "-trimpath", "-buildvcs=false"}
 	if release {
 		args = append(args, "-ldflags", "-s -w")
 	}
+	var tags []string
 	if noDefaultFont {
-		args = append(args, "-tags", "arr_no_default_font")
+		tags = append(tags, "arr_no_default_font")
+	}
+	if devTools {
+		tags = append(tags, "arr_dev")
+	}
+	if len(tags) > 0 {
+		args = append(args, "-tags", strings.Join(tags, ","))
 	}
 	return append(args, pkg)
 }
@@ -198,7 +212,7 @@ func sameFileContent(candidate, current string) (bool, error) {
 
 func rebuildWASM(pkg, outDir, title string, boot wasmserve.BootOptions) error {
 	var output strings.Builder
-	if err := buildWASM(pkg, outDir, title, wasmBuildOptions{Boot: boot}, &output, &output); err != nil {
+	if err := buildWASM(pkg, outDir, title, wasmBuildOptions{Boot: boot, DevTools: true}, &output, &output); err != nil {
 		if output.Len() > 0 {
 			return fmt.Errorf("%s", output.String())
 		}

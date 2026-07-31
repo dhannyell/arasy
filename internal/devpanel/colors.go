@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import "github.com/dhannyell/arasy/render"
@@ -12,4 +14,7 @@ var (
 	// colorDanger marks a broken invariant. It is used for exactly one thing,
 	// and that thing should be impossible to miss.
 	colorDanger = render.RGBA(0.90, 0.25, 0.25, 1)
+	// colorAction marks something a click can act on, against rows that are
+	// only read.
+	colorAction = render.RGBA(0.45, 0.75, 0.95, 1)
 )

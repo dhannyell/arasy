@@ -2,6 +2,11 @@ version: "2"
 
 run:
   timeout: 5m
+  # Analyze the development build variant: the dev panel mounts only under
+  # the arr_dev tag, and linting without it would flag its support code as
+  # unused. Compile coverage of the release variant comes from go build/test.
+  build-tags:
+    - arr_dev
 
 linters:
   default: none

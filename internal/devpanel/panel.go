@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import (
@@ -12,16 +14,17 @@ import (
 )
 
 // Tab indices. Layers is last because it only exists in dev mode, so the
-// four that are always there keep the same position either way.
+// others keep the same position either way.
 const (
 	tabSim = iota
 	tabTimeline
 	tabReplay
 	tabPerf
+	tabInspect
 	tabLayers
 )
 
-var tabLabels = [...]string{"Sim", "Timeline", "Replay", "Perf", "Layers"}
+var tabLabels = [...]string{"Sim", "Timeline", "Replay", "Perf", "Inspect", "Layers"}
 
 // Stats is the per-frame host telemetry the panel cannot measure for itself.
 // Frame pacing is not here: the panel is handed the elapsed time of every
@@ -53,6 +56,35 @@ type Stats struct {
 	HeapInUse uint64
 	HeapTotal uint64
 	HeapSet   bool
+
+	// Process and system memory come from OS probes only the native host can
+	// run — a browser sandbox cannot see past its own JS heap. The group is
+	// opt-in through MemSet: a host that cannot measure leaves the row out,
+	// which is also the state every future non-Windows probe starts in.
+	MemProcessBytes     uint64
+	MemSystemUsedBytes  uint64
+	MemSystemTotalBytes uint64
+	MemSet              bool
+
+	// VRAMProcessBytes is this process's video memory on the render adapter,
+	// against the budget the OS grants it. Same opt-in discipline as MemSet.
+	VRAMProcessBytes uint64
+	VRAMBudgetBytes  uint64
+	VRAMSet          bool
+
+	// GPU utilization, 0-100: this process's engines versus every engine on
+	// the system, so a saturated GPU caused by *another* process reads
+	// differently from one the game itself is causing.
+	GPUProcessPercent float64
+	GPUSystemPercent  float64
+	GPUSet            bool
+
+	// PresentWait is how long the last frame blocked on the presentation
+	// queue (acquire + present). With vsync that is the vblank wait — idle
+	// time that must not be read as CPU render work, so hosts that measure
+	// it report it apart.
+	PresentWait time.Duration
+	PresentSet  bool
 }
 
 // Options configures a panel. Every field is optional; the zero value gives a
@@ -121,6 +153,16 @@ type Panel struct {
 	scrubActive bool
 	tickText    string
 
+	inspect   inspectState
+	pickArmed bool
+	// pickAwaitRelease consumes the button-up paired with a consumed pick
+	// click: forwarding a release whose press the game never saw would be
+	// worse than dropping both.
+	pickAwaitRelease bool
+	// frameCam is the camera the last Render was handed, cached so the pick
+	// gesture can map a screen click back into game world space.
+	frameCam render.Camera
+
 	rec recorder
 
 	wantMouse    bool
@@ -144,6 +186,9 @@ func New(driver *runtime.Driver, opts Options) *Panel {
 		router:  newEventRouter(),
 		speed:   1,
 	}
+	// The max uint forces the first inspector refresh: tick 0 is a real tick,
+	// so "same as last refresh" cannot be the zero value.
+	p.inspect.tick = ^uint64(0)
 	p.rec = recorder{port: opts.Recording, log: log}
 	return p
 }
@@ -170,6 +215,8 @@ func (p *Panel) SetVisible(visible bool) {
 		p.wantMouse = false
 		p.wantKeyboard = false
 		p.scrubActive = false
+		p.pickArmed = false
+		p.inspect.edit = inspectEdit{}
 	}
 }
 
@@ -213,7 +260,74 @@ func (p *Panel) HandleInput(events []input.Event, viewport math2d.Rect) []input.
 
 	p.wantMouse = in.Hovered(lay.panel) || p.state.ActiveID() != 0
 	p.wantKeyboard = p.state.FocusID() != 0
+	if p.handlePick(events, viewport, lay) {
+		// The pick click landed on the world, not on a widget, so nothing
+		// above claimed it — claim it here, or the game would also get the
+		// click that was meant as an inspection.
+		p.wantMouse = true
+	}
 	return p.forward(events)
+}
+
+// handlePick resolves the pick gesture while it is armed: a left click
+// outside the panel selects the topmost entity under it (in game world
+// space, through the frame camera), a right click cancels. Escape only
+// disarms — it still goes to the game, since the keyboard is the game's
+// unless a widget holds focus. Returns whether the gesture consumed the
+// pointer this frame.
+func (p *Panel) handlePick(events []input.Event, viewport math2d.Rect, lay layout) bool {
+	consumed := false
+	if p.pickAwaitRelease {
+		for _, event := range events {
+			if event.Source.Code == input.MouseLeft && event.Kind == input.EventButtonUp {
+				p.pickAwaitRelease = false
+				consumed = true
+			}
+		}
+	}
+	if !p.pickArmed {
+		return consumed
+	}
+	for _, event := range events {
+		switch event.Source.Code {
+		case input.MouseLeft:
+			if event.Kind != input.EventButtonDown {
+				continue
+			}
+			pos := math2d.Vec2{X: event.X, Y: event.Y}
+			if p.panelContainsScreen(viewport, lay, pos) {
+				continue // clicks on the panel itself stay widget business
+			}
+			worldPos := p.frameCam.ScreenToWorld(pos)
+			if id, ok := pickEntity(p.driver.WorldView(), p.inspect.entities, worldPos); ok {
+				p.inspect.mode = inspectModeWorld
+				p.inspect.entity = id
+				p.inspect.hasEntity = true
+				p.inspect.edit = inspectEdit{}
+			}
+			p.pickArmed = false
+			p.pickAwaitRelease = true
+			consumed = true
+		case input.MouseRight:
+			if event.Kind == input.EventButtonDown {
+				p.pickArmed = false
+				consumed = true
+			}
+		case input.KeyEscape:
+			if event.Kind == input.EventButtonDown {
+				p.pickArmed = false
+			}
+		}
+	}
+	return consumed
+}
+
+// panelContainsScreen tests a screen-space point against the panel rect,
+// which is laid out in panel units — the same conversion the ui does for
+// its own hit-tests.
+func (p *Panel) panelContainsScreen(viewport math2d.Rect, lay layout, pos math2d.Vec2) bool {
+	scale := panelScale(viewport)
+	return lay.panel.Contains(math2d.Vec2{X: pos.X / scale, Y: pos.Y / scale})
 }
 
 // forward drops the events the panel captured and passes the rest along.
@@ -246,6 +360,7 @@ func (p *Panel) Render(cam render.Camera, elapsed time.Duration, stats Stats) []
 	if p.driver == nil {
 		return nil
 	}
+	p.frameCam = cam
 	state := p.driver.State()
 	// The deferred start of a recording is resolved every frame, open or
 	// closed: hiding the panel must not strand a recording waiting for the
@@ -293,6 +408,8 @@ func (p *Panel) update(in ui.InteractScope, lay layout) {
 		p.updateTimeline(in, lay.body, state)
 	case tabReplay:
 		p.updateReplay(in, lay.body, state)
+	case tabInspect:
+		p.updateInspect(in, lay.body, state)
 	case tabLayers:
 		p.updateLayers(in, lay.body, state)
 	}
@@ -322,6 +439,11 @@ func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 }
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {
+	// Pick targets come first: the panel chrome is drawn over them, so an
+	// entity under the panel stays hidden instead of glowing through.
+	if p.pickArmed {
+		p.drawPickTargets(draw)
+	}
 	draw.TitledPanel(lay.panel, "Arasy dev")
 	p.drawDivergedBadge(draw, lay.panel, state)
 	draw.TabsAt(lay.headers, p.tabs(), p.activeTab)
@@ -335,6 +457,8 @@ func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, st
 		p.drawReplay(draw, lay.body, state)
 	case tabPerf:
 		p.drawPerf(draw, lay.body)
+	case tabInspect:
+		p.drawInspect(draw, lay.body, state)
 	case tabLayers:
 		p.drawLayers(draw, lay.body, state)
 	}
@@ -392,6 +516,51 @@ func (p *Panel) text(draw ui.DrawScope, s string, pos math2d.Vec2, color render.
 
 func (p *Panel) control(cmd runtime.ControlCommand) {
 	p.driver.Control(cmd)
+}
+
+// drawPickTargets outlines every pickable entity in the game world: while
+// the pick gesture is armed, the user should not have to guess which things
+// on screen are world components and which are backdrop or cosmetics. The
+// outline is the collider — the same shape the click will see.
+func (p *Panel) drawPickTargets(draw ui.DrawScope) {
+	cam := p.frameCam
+	if cam.Viewport.Width() <= 0 || cam.Viewport.Height() <= 0 {
+		return
+	}
+	view := p.driver.WorldView()
+	scale := panelScale(cam.Viewport)
+
+	// The panel draws in panel units; the pick shapes live in game world
+	// space. screenPerWorld converts lengths, measured from the camera's
+	// own mapping so aspect resolution cannot disagree with it.
+	origin := cam.WorldToScreen(math2d.Vec2{})
+	unit := cam.WorldToScreen(math2d.Vec2{X: 1})
+	screenPerWorld := unit.X - origin.X
+
+	for _, id := range p.inspect.entities {
+		transform, ok := view.Transform(id)
+		if !ok {
+			continue
+		}
+		center := cam.WorldToScreen(transform.Position)
+		center = math2d.Vec2{X: center.X / scale, Y: center.Y / scale}
+
+		if circle, ok := view.CircleCollider(id); ok {
+			draw.DrawCircle(center, circle.Radius*screenPerWorld/scale,
+				render.Color{}, colorAction, 1.5)
+			continue
+		}
+		if rect, ok := view.RectCollider(id); ok {
+			hx := rect.HalfExtends.X * screenPerWorld / scale
+			hy := rect.HalfExtends.Y * screenPerWorld / scale
+			draw.DrawPoly(render.Color{}, colorAction, 1.5,
+				math2d.Vec2{X: center.X - hx, Y: center.Y - hy},
+				math2d.Vec2{X: center.X + hx, Y: center.Y - hy},
+				math2d.Vec2{X: center.X + hx, Y: center.Y + hy},
+				math2d.Vec2{X: center.X - hx, Y: center.Y + hy},
+			)
+		}
+	}
 }
 
 // screenCamera is the identity camera for hit-testing: with World equal to

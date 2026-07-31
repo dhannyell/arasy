@@ -365,6 +365,9 @@ func (d *Driver) warnManualStepOnce() {
 	d.log.Warn("game called World.Step inside Update; auto-step skipped; migrate to PostStep (AD-1)")
 }
 
+// The development-only accessors the dev panel's inspector needs live in
+// devaccess_dev.go, behind the arr_dev build tag.
+
 func (d *Driver) State() DriveState {
 	state := DriveState{
 		Tick:                d.tick,

@@ -56,3 +56,16 @@ func frameBudget(fps int) time.Duration {
 	}
 	return time.Second / time.Duration(fps)
 }
+
+// pacerBudget is the budget for the software pacer given the presentation
+// mode. With VSync on it is zero — the swapchain is already the clock, and a
+// second pacer at the same nominal rate only fights it: the real refresh
+// never equals the nominal budget exactly (59.94Hz, 60.03Hz), so whichever
+// is slower periodically forces a frame to wait a full extra interval.
+// Only with VSync off does the pacer become the clock.
+func pacerBudget(fps int, vsync VSyncMode) time.Duration {
+	if vsync == VSyncOn {
+		return 0
+	}
+	return frameBudget(fps)
+}

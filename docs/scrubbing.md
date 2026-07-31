@@ -136,10 +136,16 @@ mesmos controles.
 | Sim | play/pause, +1 tick, reset, velocidade |
 | Timeline | barra de scrub (busca ao soltar), campo de tick + Go, back 1 tick / 1 s |
 | Replay | record/stop, save, load, grupo assistir (play/pause/step) e **Take control** |
+| Perf | grafo de frame-time com linha de budget, p99, heap e latencia de input |
+| Inspect | estado do jogo (via `StateSlot`) e entidades do mundo com seus componentes; **Pick** seleciona a entidade sob o clique no mundo, e campos escalares/booleanos de componentes podem ser editados ao vivo (edicoes nao entram na gravacao) |
 | Layers | camadas de debug; so existe em dev mode |
 
 Ligue com `DevTools` (e `RecordReplay` + `GameFactory` para a aba Replay) em
-`wasm.Options` ou `native.Options`. **Load** verifica a gravacao, adota um
+`wasm.Options` ou `native.Options`. O painel so existe em builds com a tag
+`arr_dev`: `arasy dev` ja compila com ela, `arasy build --devtools` produz um
+build de dev com o painel, e demos nativos pedem `go run -tags arr_dev`.
+Num build sem a tag as opcoes sao inertes -- o codigo do painel nem entra no
+binario. **Load** verifica a gravacao, adota um
 driver de `ReplayForViewing` e rebobina para o tick 0: a gravacao carregada
 chega pausada, pronta para assistir do inicio. **Take control** e o unico
 botao que sai do modo assistir.

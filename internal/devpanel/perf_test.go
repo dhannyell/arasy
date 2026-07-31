@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import (
@@ -118,6 +120,55 @@ func TestPerfDrawsWithAndWithoutHostExtras(t *testing.T) {
 
 // Frames over budget are marked, because "some frames are late" is the whole
 // question the tab answers and an average will not show it.
+func TestPerfSystemRowsFollowTheirSetFlags(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	bare := p.Render(frameCamera(), 16*time.Millisecond, Stats{Commands: 10})
+	if containsText(bare, "gpu 12%   sys 47%") {
+		t.Fatal("system rows drew without their Set flags")
+	}
+
+	full := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:           10,
+		MemProcessBytes:    142 << 20,
+		MemSystemUsedBytes:  9 << 30,
+		MemSystemTotalBytes: 16 << 30,
+		MemSet:             true,
+		VRAMProcessBytes:   320 << 20,
+		VRAMBudgetBytes:    12 << 30,
+		VRAMSet:            true,
+		GPUProcessPercent:  12,
+		GPUSystemPercent:   47,
+		GPUSet:             true,
+	})
+	requireText(t, full, "mem 142.0MB   sys 9.0GB / 16.0GB")
+	requireText(t, full, "vram 320.0MB / 12.0GB")
+	requireText(t, full, "gpu 12%   sys 47%")
+}
+
+func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:    17,
+		CPUTick:     300 * time.Microsecond,
+		CPURender:   16400 * time.Microsecond,
+		CPUSet:      true,
+		PresentWait: 16100 * time.Microsecond,
+		PresentSet:  true,
+	})
+	requireText(t, cmds, "cpu tick 0.3ms   render 0.3ms   present 16.1ms")
+
+	// Without the probe the line keeps the old shape, render unadjusted.
+	bare := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:  17,
+		CPUTick:   300 * time.Microsecond,
+		CPURender:  16400 * time.Microsecond,
+		CPUSet:    true,
+	})
+	requireText(t, bare, "cpu tick 0.3ms   render 16.4ms")
+}
+
 func TestPerfMarksFramesOverBudget(t *testing.T) {
 	p := openPanel(t, Options{}, tabPerf)
 

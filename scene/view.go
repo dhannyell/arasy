@@ -42,5 +42,6 @@ func (v WorldView) Spin(id EntityID) (Spin, bool)                     { return v
 func (v WorldView) Ballistics(id EntityID) (Ballistics, bool)         { return v.w.Ballistics(id) }
 func (v WorldView) Locomotion(id EntityID) (Locomotion, bool)         { return v.w.Locomotion(id) }
 func (v WorldView) MoveIntent(id EntityID) (MoveIntent, bool)         { return v.w.MoveIntent(id) }
-func (v WorldView) Contacts() []Contact                               { return v.w.Contacts() }
-func (v WorldView) StepTick() uint64                                  { return v.w.StepTick() }
+func (v WorldView) Contacts() []Contact  { return v.w.Contacts() }
+func (v WorldView) Entities() []EntityID { return v.w.Entities() }
+func (v WorldView) StepTick() uint64     { return v.w.StepTick() }

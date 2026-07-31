@@ -20,9 +20,19 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-const (
-	msaaSampleCount = 4
-)
+// msaaSampleCount resolves the requested level, logging a fallback when the
+// mode is outside the enum rather than failing device creation.
+func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) uint32 {
+	samples, ok := mode.Samples()
+	if !ok {
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("unknown MSAA mode, using the default",
+			"requested", uint8(mode), "fallback", samples)
+	}
+	return uint32(samples)
+}
 
 // Renderer is the provisional streaming renderer for a native GLFW window.
 // A later host API may wrap this constructor with lifecycle and input options.
@@ -62,6 +72,7 @@ type Renderer struct {
 	msaaView    *wgpu.TextureView
 	msaaWidth   int
 	msaaHeight  int
+	msaaSamples uint32
 
 	diagnostics diagnostic.Once
 	err         error
@@ -72,6 +83,11 @@ type Renderer struct {
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
 	cpuPhasesSet       bool
+	// presentWait is how long the last frame blocked on presentation
+	// (surface acquire plus present). With vsync this is the vblank wait —
+	// idle time, not work — so it must be reported apart from the CPU
+	// phases or "render time" reads like saturation.
+	presentWait time.Duration
 }
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
@@ -83,6 +99,7 @@ func NewRenderer(
 	clear render.Color,
 	manifest asset.Manifest,
 	vsync VSyncMode,
+	msaa render.MSAAMode,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -102,6 +119,7 @@ func NewRenderer(
 		log:          log,
 		fontProvider: provider,
 		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
+		msaaSamples:  msaaSampleCount(msaa, log),
 	}
 	defer func() {
 		if err != nil {
@@ -124,7 +142,7 @@ func NewRenderer(
 	if err = renderer.rebuildSpriteBindGroups(); err != nil {
 		return nil, err
 	}
-	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format)
+	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples)
 	if err != nil {
 		// Particle effects are optional presentation. Keep the native host usable
 		// when a driver rejects the compute/indirect pipeline, matching the WASM
@@ -192,7 +210,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.recordErr(err)
 		return
 	}
+	var acquireStart time.Time
+	if r.timeCPU {
+		acquireStart = time.Now()
+	}
 	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
+	if r.timeCPU {
+		r.presentWait = time.Since(acquireStart)
+	}
 	if err != nil {
 		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
 		return
@@ -232,7 +257,13 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuEncode = time.Since(phaseStart)
 		r.cpuPhasesSet = true
 	}
+	if r.timeCPU {
+		phaseStart = time.Now()
+	}
 	r.device.surface.Present()
+	if r.timeCPU {
+		r.presentWait += time.Since(phaseStart)
+	}
 	r.presentedFrame = true
 	if r.particles != nil {
 		r.particles.endFrame()
@@ -253,6 +284,26 @@ func (r *Renderer) SetCPUTiming(enabled bool) {
 // SetGPUTiming is retained for option compatibility. The current binding's
 // C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
 func (r *Renderer) SetGPUTiming(bool) {}
+
+// presentWaitDuration reports how long the last frame blocked on the
+// presentation queue: surface acquire plus present. With vsync that is the
+// vblank wait — idle time, not CPU work. ok is false while CPU timing is
+// disabled, meaning no measurement was taken.
+func (r *Renderer) presentWaitDuration() (time.Duration, bool) {
+	if r == nil {
+		return 0, false
+	}
+	return r.presentWait, r.timeCPU
+}
+
+// adapterIDs returns the PCI vendor and device IDs of the adapter the
+// renderer selected, for the OS probes that need to find the same GPU.
+func (r *Renderer) adapterIDs() (vendor, device uint32) {
+	if r == nil || r.device == nil {
+		return 0, 0
+	}
+	return r.device.vendorID, r.device.deviceID
+}
 
 // renderCPUTimings reports CPU-side wall times for tessellation, upload and
 // command encoding. These values exclude GPU execution time.
@@ -332,7 +383,7 @@ func (r *Renderer) createPipelines() error {
 		"solid",
 		shaders.SolidWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		solidVertexLayout(),
 		alphaBlend(),
 	); err != nil {
@@ -343,7 +394,7 @@ func (r *Renderer) createPipelines() error {
 		"textured",
 		shaders.TexturedWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		texturedVertexLayout(),
 		premultipliedBlend(),
 	); err != nil {
@@ -354,7 +405,7 @@ func (r *Renderer) createPipelines() error {
 		"sprite",
 		shaders.SpriteWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		nil,
 		premultipliedBlend(),
 	); err != nil {
@@ -365,7 +416,7 @@ func (r *Renderer) createPipelines() error {
 		"text glyph",
 		shaders.TextGlyphWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		nil,
 		alphaBlend(),
 	); err != nil {
@@ -656,6 +707,14 @@ func (r *Renderer) rebuildTextGlyphBindGroups() error {
 }
 
 func (r *Renderer) ensureMSAATarget(width, height int) error {
+	if r.msaaSamples <= 1 {
+		// No multi-sampling: the pass renders straight to the surface, so
+		// free any target a previous configuration allocated.
+		releaseTextureView(&r.msaaView)
+		releaseTexture(&r.msaaTexture)
+		r.msaaWidth, r.msaaHeight = 0, 0
+		return nil
+	}
 	if r.msaaTexture != nil && r.msaaWidth == width && r.msaaHeight == height {
 		return nil
 	}
@@ -668,7 +727,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
 		Format:        r.device.config.Format,
 		MipLevelCount: 1,
-		SampleCount:   msaaSampleCount,
+		SampleCount:   r.msaaSamples,
 	})
 	if err != nil {
 		return fmt.Errorf("create MSAA target: %w", err)
@@ -707,17 +766,23 @@ func (r *Renderer) encodeFrame(
 			return fmt.Errorf("encode particle simulation: %w", err)
 		}
 	}
+	attachment := wgpu.RenderPassColorAttachment{
+		View:          r.msaaView,
+		ResolveTarget: surfaceView,
+		LoadOp:        wgpu.LoadOpClear,
+		StoreOp:       wgpu.StoreOpDiscard,
+		ClearValue:    clearColor(r.clear),
+	}
+	if r.msaaSamples <= 1 {
+		// No multi-sampling: draw straight into the surface and keep the
+		// result — there is no resolve target to carry it for us.
+		attachment.View = surfaceView
+		attachment.ResolveTarget = nil
+		attachment.StoreOp = wgpu.StoreOpStore
+	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label: "Arasy render pass",
-		ColorAttachments: []wgpu.RenderPassColorAttachment{
-			{
-				View:          r.msaaView,
-				ResolveTarget: surfaceView,
-				LoadOp:        wgpu.LoadOpClear,
-				StoreOp:       wgpu.StoreOpDiscard,
-				ClearValue:    clearColor(r.clear),
-			},
-		},
+		Label:            "Arasy render pass",
+		ColorAttachments: []wgpu.RenderPassColorAttachment{attachment},
 	})
 	if err != nil {
 		return fmt.Errorf("begin render pass: %w", err)

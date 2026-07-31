@@ -9,6 +9,7 @@ import (
 	goruntime "runtime"
 	"time"
 
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
@@ -72,8 +73,13 @@ type Options struct {
 	Height int
 	// Fullscreen starts in borderless fullscreen mode.
 	Fullscreen bool
-	// VSync selects the surface presentation mode. The zero value is VSyncOn.
+	// VSync selects the surface presentation mode. The zero value is VSyncOn;
+	// with it the swapchain paces the loop and the software frame limiter
+	// stays off, so it only caps frames when VSync is off.
 	VSync VSyncMode
+	// MSAA selects the antialiasing level. The zero value is
+	// render.MSAADefault (4x); render.MSAAOff turns antialiasing off.
+	MSAA render.MSAAMode
 	// Icon is an optional window icon.
 	Icon image.Image
 	// Log receives host diagnostics. The default is slog.Default().
@@ -86,7 +92,9 @@ type Options struct {
 	FrameMetrics func(FrameMetrics)
 
 	// DevTools enables the in-window dev panel. Default false; the panel
-	// starts hidden and is toggled with the Backquote/~ key.
+	// starts hidden and is toggled with the Backquote/~ key. The panel only
+	// exists in builds tagged arr_dev; in any other build this option is
+	// inert.
 	DevTools bool
 	// RecordReplay enables the panel's recording controls: start/stop
 	// recording, write the .arrp next to the game, and load one back to
@@ -153,7 +161,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer window.Destroy()
 
 	cfg := driver.Config()
-	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.Log)
+	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, opts.Log)
 	if err != nil {
 		return err
 	}

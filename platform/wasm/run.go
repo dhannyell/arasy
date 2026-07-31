@@ -9,7 +9,6 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -25,7 +24,9 @@ type Options struct {
 	// ForceCanvas2D skips WebGPU initialization and uses the Canvas2D fallback.
 	ForceCanvas2D bool
 	// DevTools enables the in-browser debug control panel. Default false; the
-	// panel starts hidden and is toggled with the Backquote/~ key.
+	// panel starts hidden and is toggled with the Backquote/~ key. The panel
+	// only exists in builds tagged arr_dev (arasy dev adds it); in any other
+	// build this option is inert.
 	DevTools bool
 	// RecordReplay enables an in-browser recording/replay panel: start/stop
 	// recording, download the .arrp binary, and load a .arrp to verify+replay.
@@ -36,6 +37,10 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
+	// MSAA selects the antialiasing level of the WebGPU renderer. The zero
+	// value is render.MSAADefault (4x); render.MSAAOff turns antialiasing
+	// off. The Canvas2D fallback ignores it.
+	MSAA render.MSAAMode
 	// FrameMetrics receives lightweight browser frame telemetry. The callback
 	// runs at most four times per second after a frame has been submitted.
 	// InputToSubmit measures browser-event arrival to render submission; it is
@@ -60,11 +65,12 @@ type host struct {
 	// can lay itself out in the same pixels the frame is drawn in.
 	viewport math2d.Rect
 
-	// panel is the optional runtime tooling UI; nil when no overlay is
-	// enabled. It draws inside the canvas like everything else, so there is
-	// no DOM overlay to keep in sync with the frame.
-	panel      *devpanel.Panel
-	panelStats devpanel.Stats
+	// panel is the optional tooling overlay; nil in builds without the
+	// arr_dev tag, where the panel is not compiled at all. It draws inside
+	// the canvas like everything else, so there is no DOM overlay to keep
+	// in sync with the frame.
+	panel      devOverlay
+	panelStats overlayStats
 	audio      *audioSink
 
 	loopCb   js.Func
@@ -120,7 +126,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if len(cfg.Assets.AudioClips()) > 0 {
 		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, log)
 	}
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, opts.MSAA, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -134,27 +140,6 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	}
 	h.startLoop()
 	select {}
-}
-
-// mountDevPanel builds the tooling overlay. The whole browser-specific part
-// of it is the file I/O and the key that opens it; everything else is the
-// same panel the native host mounts.
-func (h *host) mountDevPanel(devMode bool, newGame func() runtime.Game, log *slog.Logger) {
-	opts := devpanel.Options{
-		DevMode: devMode,
-		NewGame: newGame,
-		Log:     log,
-		Adopt: func(driver *runtime.Driver) {
-			h.driver = driver
-			h.resize()
-		},
-	}
-	if newGame != nil {
-		opts.Recording = newRecordingPort(log, func(data []byte, name string) {
-			h.panel.ApplyRecording(data, name)
-		})
-	}
-	h.panel = devpanel.New(h.driver, opts)
 }
 
 func applyBrowserSplashPolicy(driver *runtime.Driver) {
@@ -179,13 +164,13 @@ func applyBrowserSplashPolicy(driver *runtime.Driver) {
 	}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, log *slog.Logger) runtime.FrameRenderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, log)
+	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, msaa, log)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r

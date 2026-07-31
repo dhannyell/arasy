@@ -9,6 +9,11 @@ import (
 	"github.com/dhannyell/arasy/ui"
 )
 
+// FPSUncapped removes the host frame cap: the loop runs as fast as the host
+// allows. Use it for Config.FPS -- the zero value there means the engine
+// default, not "no cap", so turning the cap off has to be said explicitly.
+const FPSUncapped = -1
+
 type Config struct {
 	Camera       render.Camera
 	Clear        render.Color
@@ -22,8 +27,11 @@ type Config struct {
 	// FPS caps the host frame rate. Only works in native hosts.
 	// In WASM host vsync is forced by the browser, the rate is limited by user monitor rate.
 	//
-	// Zero (the zero value) uses the engine default(60); a positive value caps
-	// at that many frames per second; a negative value runs the host loop uncapped.
+	// Zero (the zero value) uses the engine default of 60; a positive value
+	// caps at that many frames per second; FPSUncapped removes the cap. Note
+	// that the zero value means "the default", not "no cap" -- FPSUncapped is
+	// how you ask for no cap.
+	//
 	// The fixed simulation rate is SimulationHz and is independent of this cap.
 	FPS int
 

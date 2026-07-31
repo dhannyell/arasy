@@ -2,6 +2,12 @@ package runtime
 
 type GameState interface {
 	isGameState()
+	// debugValue exposes the boxed value to DebugStateValue, the tooling
+	// accessor that only exists in arr_dev builds. Unexported, like
+	// isGameState, so only this package can implement GameState — and kept
+	// untagged, because an interface that changed shape between build
+	// variants would be far worse than one unused method in release.
+	debugValue() any
 }
 
 type StatefulGame interface {
@@ -25,6 +31,8 @@ type stateSnapshot[T any] struct {
 }
 
 func (stateSnapshot[T]) isGameState() {}
+
+func (s stateSnapshot[T]) debugValue() any { return s.value }
 
 type StateSlot[T any] struct {
 	State T

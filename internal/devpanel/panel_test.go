@@ -1,3 +1,5 @@
+//go:build arr_dev
+
 package devpanel
 
 import (
@@ -360,7 +362,7 @@ func TestTabSelectionFollowsHeaderClicks(t *testing.T) {
 
 func TestRenderStaysAboveGameLayers(t *testing.T) {
 	p := openPanel(t, Options{DevMode: true}, tabSim)
-	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabPerf, tabLayers} {
+	for _, tab := range []int{tabSim, tabTimeline, tabReplay, tabPerf, tabInspect, tabLayers} {
 		p.activeTab = tab
 		cmds := p.Render(frameCamera(), 16*time.Millisecond, Stats{Commands: 12})
 		if len(cmds) == 0 {

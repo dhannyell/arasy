@@ -51,6 +51,7 @@ func newGpuParticles(
 	manifest asset.Manifest,
 	textures []gpuTexture,
 	format wgpu.TextureFormat,
+	sampleCount uint32,
 ) (*gpuParticles, error) {
 	g := &gpuParticles{
 		device:   device,
@@ -185,7 +186,7 @@ func newGpuParticles(
 				Layout:      renderLayout,
 				Vertex:      wgpu.VertexState{Module: rm, EntryPoint: "vs_main"},
 				Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
-				Multisample: wgpu.MultisampleState{Count: msaaSampleCount, Mask: ^uint32(0)},
+				Multisample: wgpu.MultisampleState{Count: sampleCount, Mask: ^uint32(0)},
 				Fragment: &wgpu.FragmentState{
 					Module:     rm,
 					EntryPoint: entry,
