@@ -48,7 +48,7 @@ func (p *fakePort) Load() ([]byte, string, bool, error) {
 // buttons and returns the bytes the host was handed.
 func recordRun(t *testing.T, p *Panel, port *fakePort, ticks int) []byte {
 	t.Helper()
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 
 	// Record queues a reset first, so the recording starts from tick 0 rather
 	// than from the middle of a run Replay could never reconstruct. The reset
@@ -96,7 +96,7 @@ func TestRecordStopSaveWritesThroughThePort(t *testing.T) {
 func TestSaveWithoutARecordingReportsIt(t *testing.T) {
 	port := &fakePort{}
 	p := openPanel(t, Options{Recording: port}, tabReplay)
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 
 	clickPanel(p, lay.record[1].Center())
 
@@ -120,7 +120,7 @@ func TestLoadLeavesThePanelPausedAtTickZeroInWatchMode(t *testing.T) {
 	p.adopt = func(d *runtime.Driver) { adopted = d }
 	before := p.driver
 
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 	clickPanel(p, lay.record[2].Center())
 
 	if p.driver == before {
@@ -163,7 +163,7 @@ func TestAsyncLoadAppliesLater(t *testing.T) {
 	port.async = true
 	before := p.driver
 
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 	clickPanel(p, lay.record[2].Center())
 	if p.driver != before {
 		t.Fatal("an async port swapped the driver synchronously")
@@ -184,7 +184,7 @@ func TestLoadFailureLeavesTheDriverAlone(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: func() runtime.Game { return testGame{} }}, tabReplay)
 	before := p.driver
 
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 	clickPanel(p, lay.record[2].Center())
 
 	if p.driver != before {
@@ -212,7 +212,7 @@ func TestWatchPlayAndTakeControl(t *testing.T) {
 	p := openPanel(t, Options{Recording: port, NewGame: factory}, tabReplay)
 
 	port.pending = recordRun(t, p, port, 6)
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 	clickPanel(p, lay.record[2].Center())
 
 	clickPanel(p, lay.watch[0].Center())
@@ -237,7 +237,7 @@ func TestWatchPlayAndTakeControl(t *testing.T) {
 // must not fake a mode over a run that was never recorded.
 func TestWatchControlsInertWithoutARecordedTimeline(t *testing.T) {
 	p := openPanel(t, Options{}, tabReplay)
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 
 	clickPanel(p, lay.watch[0].Center())
 
@@ -248,7 +248,7 @@ func TestWatchControlsInertWithoutARecordedTimeline(t *testing.T) {
 
 func TestLoadWithoutAGameFactoryReportsIt(t *testing.T) {
 	p := openPanel(t, Options{Recording: &fakePort{pending: []byte("x")}}, tabReplay)
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 
 	clickPanel(p, lay.record[2].Center())
 
@@ -262,7 +262,7 @@ func TestLoadWithoutAGameFactoryReportsIt(t *testing.T) {
 func TestHiddenPanelStillCompletesADeferredStart(t *testing.T) {
 	port := &fakePort{}
 	p := openPanel(t, Options{Recording: port}, tabReplay)
-	lay := replayRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := replayRects(p.frameLayout(testViewport()).body)
 
 	clickPanel(p, lay.record[0].Center())
 	p.SetVisible(false)

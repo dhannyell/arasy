@@ -92,7 +92,7 @@ func clickPanel(p *Panel, pos math2d.Vec2) {
 
 // center of the i-th button of the current tab's first row.
 func rowButton(p *Panel, index, count int) math2d.Vec2 {
-	lay := p.layout(testViewport(), len(p.tabs()))
+	lay := p.frameLayout(testViewport())
 	return ui.Column(newRows(lay.body).next(), index, count, rowGap).Center()
 }
 
@@ -144,7 +144,7 @@ func TestPlayButtonResumesAPausedDriver(t *testing.T) {
 
 func TestSpeedSliderSetsDriverSpeed(t *testing.T) {
 	p := openPanel(t, Options{}, tabSim)
-	lay := simRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := simRects(p.frameLayout(testViewport()).body)
 
 	// Press at the far right of the track: the maximum of the interval.
 	target := math2d.Vec2{X: lay.speed.Max.X - 1, Y: lay.speed.Center().Y}
@@ -160,7 +160,7 @@ func TestSpeedSliderSetsDriverSpeed(t *testing.T) {
 // a pointer that is over the tooling.
 func TestHoverOverPanelCapturesTheMouse(t *testing.T) {
 	p := openPanel(t, Options{}, tabSim)
-	lay := p.layout(testViewport(), len(p.tabs()))
+	lay := p.frameLayout(testViewport())
 	inside := lay.panel.Center()
 
 	left := p.HandleInput([]input.Event{moveTo(inside)}, testViewport())
@@ -192,7 +192,7 @@ func TestPointerOutsideThePanelIsForwarded(t *testing.T) {
 // steer the player mid-gesture.
 func TestDragKeepsCaptureOutsideThePanel(t *testing.T) {
 	p := openPanel(t, Options{}, tabSim)
-	lay := simRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := simRects(p.frameLayout(testViewport()).body)
 	start := lay.speed.Center()
 
 	p.HandleInput([]input.Event{moveTo(start), pressAt(start)}, testViewport())
@@ -212,7 +212,7 @@ func TestDragKeepsCaptureOutsideThePanel(t *testing.T) {
 // focus, and still count as a click for the game underneath.
 func TestClickOnEmptySpaceBlursAndPassesThrough(t *testing.T) {
 	p := openPanel(t, Options{}, tabTimeline)
-	lay := timelineRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := timelineRects(p.frameLayout(testViewport()).body)
 
 	field := lay.tick.Center()
 	p.HandleInput([]input.Event{moveTo(field), pressAt(field)}, testViewport())
@@ -249,7 +249,7 @@ func TestKeyboardPassesThroughWithoutFocus(t *testing.T) {
 
 func TestFocusedFieldCapturesTypedText(t *testing.T) {
 	p := openPanel(t, Options{}, tabTimeline)
-	lay := timelineRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := timelineRects(p.frameLayout(testViewport()).body)
 	field := lay.tick.Center()
 
 	p.HandleInput([]input.Event{moveTo(field), pressAt(field)}, testViewport())
@@ -273,7 +273,7 @@ func TestGoToTickSeeksTheDriver(t *testing.T) {
 	p := openPanel(t, Options{}, tabTimeline)
 	advance(p, 10)
 
-	lay := timelineRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := timelineRects(p.frameLayout(testViewport()).body)
 	field := lay.tick.Center()
 	p.HandleInput([]input.Event{moveTo(field), pressAt(field)}, testViewport())
 	p.HandleInput([]input.Event{releaseAt(field)}, testViewport())
@@ -296,7 +296,7 @@ func TestScrubSeeksOnReleaseOnly(t *testing.T) {
 	p := openPanel(t, Options{}, tabTimeline)
 	advance(p, 20)
 
-	lay := timelineRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := timelineRects(p.frameLayout(testViewport()).body)
 	start := lay.scrub.Center()
 
 	p.HandleInput([]input.Event{moveTo(start), pressAt(start)}, testViewport())
@@ -327,7 +327,7 @@ func TestLayersTabIsHiddenOutsideDevMode(t *testing.T) {
 
 func TestLayerCheckboxComposesTheMask(t *testing.T) {
 	p := openPanel(t, Options{DevMode: true}, tabLayers)
-	cells := layerRects(p.layout(testViewport(), len(p.tabs())).body)
+	cells := layerRects(p.frameLayout(testViewport()).body)
 
 	clickPanel(p, cells[0].Center())
 	first := debugLayerSpec[0].flag
@@ -349,7 +349,7 @@ func TestLayerCheckboxComposesTheMask(t *testing.T) {
 
 func TestTabSelectionFollowsHeaderClicks(t *testing.T) {
 	p := openPanel(t, Options{DevMode: true}, tabSim)
-	lay := p.layout(testViewport(), len(p.tabs()))
+	lay := p.frameLayout(testViewport())
 
 	clickPanel(p, lay.headers[tabReplay].Center())
 
@@ -378,7 +378,7 @@ func TestRenderStaysAboveGameLayers(t *testing.T) {
 // Hiding the panel gives the input back immediately, mid-drag included.
 func TestHidingReleasesCapture(t *testing.T) {
 	p := openPanel(t, Options{}, tabSim)
-	lay := simRects(p.layout(testViewport(), len(p.tabs())).body)
+	lay := simRects(p.frameLayout(testViewport()).body)
 	start := lay.speed.Center()
 	p.HandleInput([]input.Event{moveTo(start), pressAt(start)}, testViewport())
 
@@ -387,6 +387,79 @@ func TestHidingReleasesCapture(t *testing.T) {
 	left := p.HandleInput([]input.Event{moveTo(math2d.Vec2{X: 100, Y: 100})}, testViewport())
 	if p.WantCaptureMouse() || len(left) != 1 {
 		t.Fatal("hidden panel kept the mouse")
+	}
+}
+
+// A panel authored at one size must keep its share of the window at any
+// other: on a 4K screen a fixed-pixel card is a stamp in the corner.
+func TestPanelKeepsItsShareOfTheWindow(t *testing.T) {
+	p := newTestPanel(t, Options{})
+
+	share := func(viewport math2d.Rect) (w, h float64) {
+		lay := p.frameLayout(viewport)
+		space := panelSpace(viewport)
+		return lay.panel.Width() / space.Width(), lay.panel.Height() / space.Height()
+	}
+
+	hd := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1920, Y: 1080})
+	uhd := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 3840, Y: 2160})
+
+	hdW, hdH := share(hd)
+	uhdW, uhdH := share(uhd)
+	if hdW != uhdW || hdH != uhdH {
+		t.Fatalf("panel share = (%.4f, %.4f) at 1080p and (%.4f, %.4f) at 4K, want the same",
+			hdW, hdH, uhdW, uhdH)
+	}
+	if panelScale(uhd) <= panelScale(hd) {
+		t.Fatalf("scale at 4K (%v) is not above 1080p (%v)", panelScale(uhd), panelScale(hd))
+	}
+}
+
+// Below the authored size the panel holds still rather than shrinking: text
+// that small is worse than a panel that takes more of a small window.
+func TestPanelDoesNotShrinkBelowItsAuthoredSize(t *testing.T) {
+	small := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 600})
+	if got := panelScale(small); got != 1 {
+		t.Fatalf("scale on a small window = %v, want 1", got)
+	}
+}
+
+// The panel space keeps the window's aspect ratio, so ui's fit resolves to a
+// pure scale and the card still hugs the corner on an ultrawide.
+func TestPanelHugsTheCornerOnAnUltrawide(t *testing.T) {
+	p := newTestPanel(t, Options{})
+	ultrawide := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 3440, Y: 1440})
+
+	space := panelSpace(ultrawide)
+	if got := space.Width() / space.Height(); got != ultrawide.Width()/ultrawide.Height() {
+		t.Fatalf("panel space aspect = %v, want the window's %v", got, ultrawide.Width()/ultrawide.Height())
+	}
+
+	lay := p.frameLayout(ultrawide)
+	if gap := space.Max.X - lay.panel.Max.X; gap != panelMargin {
+		t.Fatalf("panel sits %v from the right edge, want the %v margin", gap, panelMargin)
+	}
+}
+
+// Drawing and hit-testing have to agree under scaling, or the buttons stop
+// being where they look.
+func TestClicksLandOnScaledWidgets(t *testing.T) {
+	p := newTestPanel(t, Options{})
+	p.SetVisible(true)
+	p.activeTab = tabSim
+
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 3840, Y: 2160})
+	scale := panelScale(viewport)
+	lay := simRects(p.frameLayout(viewport).body)
+	// Panel space to screen pixels: the click a user makes is on the pixel,
+	// not on the unit.
+	target := lay.buttons[0].Center().Mul(scale)
+
+	p.HandleInput([]input.Event{moveTo(target), pressAt(target)}, viewport)
+	p.HandleInput([]input.Event{releaseAt(target)}, viewport)
+
+	if !p.driver.State().Paused {
+		t.Fatal("clicking Pause on a 4K window missed the button")
 	}
 }
 

@@ -170,10 +170,10 @@ func (p *Panel) HandleInput(events []input.Event, viewport math2d.Rect) []input.
 
 	frame, keys, actions := p.router.frame(events)
 	cam := screenCamera(viewport)
-	u := ui.NewUpdateWithKeys(&p.state, frame, keys, actions, cam, p.theme, viewport)
-	in := u.Interact().In(ui.SpaceScreen)
+	u := ui.NewUpdateWithKeys(&p.state, frame, keys, actions, cam, p.theme, panelSpace(viewport))
+	in := u.Interact().In(ui.SpaceRef)
 
-	lay := p.layout(viewport, len(p.tabs()))
+	lay := p.frameLayout(viewport)
 	p.update(in, lay)
 	u.EndFrame()
 	p.router.endFrame()
@@ -227,10 +227,10 @@ func (p *Panel) Render(cam render.Camera, elapsed time.Duration, stats Stats) []
 	p.anim.AdvanceFrame()
 
 	pointer := p.router.pointer
-	u := ui.New(&p.state, pointer.Pos(), pointer.Inside(), cam, p.theme, cam.Viewport, &p.anim, dt, p.time)
-	draw := u.Draw().In(ui.SpaceScreen)
+	u := ui.New(&p.state, pointer.Pos(), pointer.Inside(), cam, p.theme, panelSpace(cam.Viewport), &p.anim, dt, p.time)
+	draw := u.Draw().In(ui.SpaceRef)
 
-	lay := p.layout(cam.Viewport, len(p.tabs()))
+	lay := p.frameLayout(cam.Viewport)
 	p.draw(draw, lay, state, stats)
 	return raiseLayer(u.Commands())
 }
