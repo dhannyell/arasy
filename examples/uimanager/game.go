@@ -60,8 +60,10 @@ func (g *Manager) Init(ctx *runtime.UpdateContext) {
 		Clubs:          clubs,
 		Fixtures:       fixtures,
 		SelectedPlayer: -1,
+		ScoutSelected:  -1,
 	}
 	initSquadOrder(g.State.Clubs[0].Squad)
+	g.State.ScoutPool = buildScoutPool(initialSeasonSeed, clubs)
 }
 
 func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
@@ -104,6 +106,9 @@ func (g *Manager) Update(ctx *runtime.UpdateContext, _ float64) {
 	if g.State.Screen == ScreenCalendar {
 		g.updateCalendar(ctx)
 	}
+	if g.State.Screen == ScreenScout {
+		g.updateScout(ctx)
+	}
 
 	g.checkPressedButtons(ctx)
 }
@@ -124,8 +129,10 @@ func (g *Manager) startNewSeason() {
 		Clubs:          clubs,
 		Fixtures:       fixtures,
 		SelectedPlayer: -1,
+		ScoutSelected:  -1,
 	}
 	initSquadOrder(g.State.Clubs[0].Squad)
+	g.State.ScoutPool = buildScoutPool(nextSeed, clubs)
 }
 
 func (g *Manager) checkPressedButtons(ctx *runtime.UpdateContext) {
@@ -196,6 +203,8 @@ func (g *Manager) drawScreenUIForScreen(ctx *runtime.RenderContext, screen Scree
 		cmds = append(cmds, g.drawSquad(ctx)...)
 	case ScreenCalendar:
 		cmds = append(cmds, g.drawCalendar(ctx)...)
+	case ScreenScout:
+		cmds = append(cmds, g.drawScout(ctx)...)
 	}
 	return cmds
 }
@@ -214,6 +223,8 @@ func screenStateToName(screen Screen) string {
 		return "CALENDAR"
 	case ScreenSquad:
 		return "SQUAD"
+	case ScreenScout:
+		return "SCOUT"
 	default:
 		return ""
 	}
@@ -393,6 +404,7 @@ var navItems = buildNavItems([]struct {
 	{"nav_table", "TABLE", 120},
 	{"nav_squad", "SQUAD", 120},
 	{"nav_calendar", "CALENDAR", 150},
+	{"nav_scout", "SCOUT", 120},
 })
 
 // navHeaderRects is the nav row as the tab widget sees it: one rect per

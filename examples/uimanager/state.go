@@ -13,6 +13,7 @@ const (
 	ScreenTable
 	ScreenSquad
 	ScreenCalendar
+	ScreenScout
 )
 
 type ManagerState struct {
@@ -25,6 +26,17 @@ type ManagerState struct {
 	Fixtures       []Fixture
 	Results        []Result
 	SelectedPlayer int
+
+	// The scout screen's query, ordering, filters and selection are game
+	// state, not widget state: they are what the player asked to see. Keeping
+	// them here is what lets the screen rewind with the simulation and a
+	// recorded session replay the typing.
+	ScoutPool     []ScoutEntry
+	ScoutQuery    string
+	ScoutSortBy   ScoutSort
+	ScoutFilter   int
+	ScoutOnlyU23  bool
+	ScoutSelected int
 }
 
 type ManagerUIState struct {
@@ -39,6 +51,7 @@ func (s ManagerState) Clone() ManagerState {
 	}
 	s.Fixtures = slices.Clone(s.Fixtures)
 	s.Results = slices.Clone(s.Results)
+	s.ScoutPool = slices.Clone(s.ScoutPool)
 	return s
 }
 
