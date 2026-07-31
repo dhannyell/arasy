@@ -1,6 +1,10 @@
 package scene
 
-import "github.com/dhannyell/arasy/render"
+import (
+	"slices"
+
+	"github.com/dhannyell/arasy/render"
+)
 
 const defaultCellSize = 64
 
@@ -555,11 +559,35 @@ func (w *World) Contacts() []Contact {
 	return w.contacts
 }
 
+// Entities returns every entity holding at least one simulation component,
+// ordered by EntityID. Presentation-only stores (SpriteTransform, the render
+// caches) do not make an entity exist, matching entityCount. Tooling uses it
+// to enumerate the world; the slice is freshly allocated on each call.
+func (w *World) Entities() []EntityID {
+	seen := w.collectEntityIDs()
+	ids := make([]EntityID, 0, len(seen))
+	for id := range seen {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 func (w *World) entityCount() int {
 	if !w.entityCountDirty {
 		return w.entityCountCache
 	}
 
+	w.entityCountCache = len(w.collectEntityIDs())
+	w.entityCountDirty = false
+
+	return w.entityCountCache
+}
+
+// collectEntityIDs unions the ids of every simulation component store. The
+// presentation stores stay out: a sprite transform or a render cache entry
+// must not make an entity exist.
+func (w *World) collectEntityIDs() map[EntityID]struct{} {
 	ids := make(map[EntityID]struct{})
 
 	for _, id := range w.transforms.ids {
@@ -611,10 +639,7 @@ func (w *World) entityCount() int {
 		ids[id] = struct{}{}
 	}
 
-	w.entityCountCache = len(ids)
-	w.entityCountDirty = false
-
-	return w.entityCountCache
+	return ids
 }
 
 // Projection returns the current 2.5D projection configuration.
