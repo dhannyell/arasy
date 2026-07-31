@@ -29,6 +29,15 @@ jobs:
         with:
           version: v2.12
 
+      # The config analyzes the development variant, where the dev panel
+      # exists. This pass covers the other side of every tag-gated seam --
+      # the release stubs -- which the first pass compiles out.
+      - name: golangci-lint (release variant)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          args: --build-tags= ./...
+
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
@@ -67,6 +76,10 @@ jobs:
           go-version-file: go.mod
       - name: test -race
         run: go test -race ./...
+      # The dev panel and the accessors it needs compile out of the release
+      # variant above, so the race net has to reach them under the tag.
+      - name: test -race (arr_dev variant)
+        run: go test -race -tags arr_dev ./internal/devpanel/... ./runtime/...
 
   windows:
     runs-on: windows-latest
@@ -78,7 +91,7 @@ jobs:
       - name: test
         run: go test ./...
       - name: test (arr_dev variant)
-        run: go test -tags arr_dev ./platform/native/... ./internal/devpanel/...
+        run: go test -tags arr_dev ./platform/native/... ./internal/devpanel/... ./runtime/...
 
   wasm:
     runs-on: ubuntu-latest
