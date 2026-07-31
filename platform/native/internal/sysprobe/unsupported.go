@@ -15,3 +15,6 @@ func NewProber(vendorID, deviceID uint32) *Prober { return &Prober{} }
 
 // Sample reports an empty reading: no group OK.
 func (p *Prober) Sample(now time.Time) Sample { return Sample{} }
+
+// Close releases nothing; the zero prober holds no handles.
+func (p *Prober) Close() {}

@@ -28,6 +28,7 @@ var (
 	procPdhAddCounter     = pdh.NewProc("PdhAddEnglishCounterW")
 	procPdhCollect        = pdh.NewProc("PdhCollectQueryData")
 	procPdhFormatArray    = pdh.NewProc("PdhGetFormattedCounterArrayW")
+	procPdhCloseQuery     = pdh.NewProc("PdhCloseQuery")
 )
 
 // Prober samples process and system metrics for the dev panel. Create it
@@ -40,6 +41,13 @@ type Prober struct {
 	pdhQuery   uintptr
 	pdhCounter uintptr
 	pdhOK      bool
+
+	// factory is the DXGI factory the VRAM walk enumerates from. It is kept
+	// across samples: adapters do not come and go, and creating one per
+	// sample means a COM object built and torn down every second for a
+	// reading that never changes shape. nil until the first successful
+	// creation, and left nil when DXGI is unavailable.
+	factory unsafe.Pointer
 
 	last   time.Time
 	cached Sample
@@ -68,8 +76,30 @@ func NewProber(vendor, device uint32) *Prober {
 				_, _, _ = procPdhCollect.Call(query)
 			}
 		}
+		if !p.pdhOK {
+			// The counter did not attach — a machine with no GPU engine
+			// counters, or a PDH that refused the path. The query is of no
+			// further use, and holding it open would leak a kernel handle
+			// for the life of the process.
+			_, _, _ = procPdhCloseQuery.Call(query)
+		}
 	}
 	return p
+}
+
+// Close releases the probe's OS handles. The host keeps one Prober for the
+// life of the process and the OS reclaims everything at exit, so calling it
+// is optional — it exists so a test can open and drop probes without
+// accumulating handles.
+func (p *Prober) Close() {
+	if p.pdhOK {
+		_, _, _ = procPdhCloseQuery.Call(p.pdhQuery)
+		p.pdhQuery, p.pdhCounter, p.pdhOK = 0, 0, false
+	}
+	if p.factory != nil {
+		comRelease(p.factory)
+		p.factory = nil
+	}
 }
 
 // Sample returns the latest readings, querying the OS at most once per
@@ -202,18 +232,20 @@ func comRelease(obj unsafe.Pointer) {
 // kernel's video memory manager for this process's usage there — API
 // agnostic, so it counts D3D12 and Vulkan allocations alike.
 func (p *Prober) videoMemory() (process, budget uint64, ok bool) {
-	var factory unsafe.Pointer
-	if hr, _, _ := procCreateDXGIFactory.Call(
-		uintptr(unsafe.Pointer(&iidIDXGIFactory4)),
-		uintptr(unsafe.Pointer(&factory))); hr != 0 || factory == nil {
+	factory := p.dxgiFactory()
+	if factory == nil {
 		return 0, 0, false
 	}
-	defer comRelease(factory)
 
 	for index := uintptr(0); ; index++ {
 		var adapter unsafe.Pointer
 		if hr := comCall(factory, slotEnumAdapters1, index, uintptr(unsafe.Pointer(&adapter))); hr != 0 {
-			return 0, 0, false // DXGI_ERROR_NOT_FOUND: no adapter matched
+			// DXGI_ERROR_NOT_FOUND: no adapter matched. A cached factory
+			// never sees an adapter added after it was created, so drop it
+			// and let the next sample walk a fresh one.
+			p.factory = nil
+			comRelease(factory)
+			return 0, 0, false
 		}
 		matched, usage, budget := p.adapterVideoMemory(adapter)
 		comRelease(adapter)
@@ -221,6 +253,23 @@ func (p *Prober) videoMemory() (process, budget uint64, ok bool) {
 			return usage, budget, true
 		}
 	}
+}
+
+// dxgiFactory returns the cached factory, creating it on first use. A nil
+// return means DXGI is unavailable, and every later sample retries — the
+// probe is allowed to fail, never to break the frame.
+func (p *Prober) dxgiFactory() unsafe.Pointer {
+	if p.factory != nil {
+		return p.factory
+	}
+	var factory unsafe.Pointer
+	if hr, _, _ := procCreateDXGIFactory.Call(
+		uintptr(unsafe.Pointer(&iidIDXGIFactory4)),
+		uintptr(unsafe.Pointer(&factory))); hr != 0 || factory == nil {
+		return nil
+	}
+	p.factory = factory
+	return factory
 }
 
 // adapterVideoMemory reports whether adapter is the render adapter, and if
