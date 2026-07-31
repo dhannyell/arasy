@@ -13,10 +13,11 @@ import (
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := native.Run(&uimanager.Manager{}, native.Options{
-		Title:  "UI Manager Example",
-		Width:  1920,
-		Height: 1080,
-		Log:    log,
+		Title:    "UI Manager Example",
+		Width:    1920,
+		Height:   1080,
+		Log:      log,
+		DevTools: true,
 	}); err != nil {
 		log.Error("Error running uimanager.Manager", "error", err)
 		os.Exit(1)

@@ -18,11 +18,12 @@ func main() {
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := native.Run(game, native.Options{
-		Title:  "Particles Demo",
-		Width:  1920,
-		Height: 1080,
-		VSync:  native.VSyncOff,
-		Log:    log,
+		Title:    "Particles Demo",
+		Width:    1920,
+		Height:   1080,
+		VSync:    native.VSyncOff,
+		Log:      log,
+		DevTools: true,
 	}); err != nil {
 		log.Error("native host error", "err", err)
 		os.Exit(1)

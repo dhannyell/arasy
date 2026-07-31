@@ -15,6 +15,7 @@ func main() {
 	if err := native.Run(&vectoranim.Game{}, native.Options{
 		Title: "Vector Animation", Width: 1280, Height: 720,
 		VSync: native.VSyncOn, Log: log,
+		DevTools: true,
 	}); err != nil {
 		log.Error("native host failed", "err", err)
 		os.Exit(1)

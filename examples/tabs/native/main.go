@@ -15,6 +15,7 @@ func main() {
 	if err := native.Run(&tabs.Game{}, native.Options{
 		Title: "Tabs", Width: 960, Height: 540,
 		VSync: native.VSyncOn, Log: log,
+		DevTools: true,
 	}); err != nil {
 		log.Error("native host failed", "err", err)
 		os.Exit(1)

@@ -10,6 +10,7 @@ import (
 	metrics "runtime/metrics"
 
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/runtime"
@@ -48,6 +49,12 @@ type host struct {
 	savedWindowed windowRect
 	altEnter      bool
 
+	// panel is the optional dev tooling overlay; nil unless the app asked for
+	// it. It draws through the ordinary renderer, so there is no second
+	// window and nothing platform-specific about it beyond the file I/O.
+	panel *devpanel.Panel
+	fps   fpsCounter
+
 	spinMargin time.Duration
 }
 
@@ -78,6 +85,34 @@ func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, op
 		h.spinMargin = time.Millisecond
 	}
 	return h
+}
+
+// mountDevPanel builds the tooling overlay when the app asked for it. The
+// panel itself is shared with the browser host; what is native about it is
+// the directory it writes recordings into.
+func (h *host) mountDevPanel(opts Options) {
+	var newGame func() runtime.Game
+	if opts.RecordReplay {
+		if opts.GameFactory == nil {
+			opts.Log.Error("RecordReplay enabled without GameFactory; recording controls disabled")
+		} else {
+			newGame = opts.GameFactory
+		}
+	}
+	if !opts.DevTools && newGame == nil {
+		return
+	}
+
+	panelOpts := devpanel.Options{
+		DevMode: opts.DevTools,
+		NewGame: newGame,
+		Log:     opts.Log,
+		Adopt:   func(driver *runtime.Driver) { h.driver = driver },
+	}
+	if newGame != nil {
+		panelOpts.Recording = newRecordingPort()
+	}
+	h.panel = devpanel.New(h.driver, panelOpts)
 }
 
 func (h *host) noteInput() {
@@ -116,6 +151,13 @@ func (h *host) registerCallbacks() {
 		if action == glfw.Repeat {
 			return
 		}
+		// The overlay key is host chrome, like Alt+Enter above it: it never
+		// reaches the input vocabulary, so no game can bind it and no
+		// recording can contain it.
+		if key == glfw.KeyGraveAccent && action == glfw.Press && h.panel != nil {
+			h.panel.Toggle()
+			return
+		}
 		code, ok := translateKey(key)
 		if !ok {
 			return
@@ -127,6 +169,11 @@ func (h *host) registerCallbacks() {
 	// codepoints here, repeats included — the same characters the browser
 	// path derives from KeyboardEvent.key.
 	h.window.SetCharCallback(func(_ *glfw.Window, char rune) {
+		// GLFW reports the overlay key as a character too. Dropping it keeps
+		// the key from being typed into the panel it just opened.
+		if h.panel != nil && (char == '`' || char == '~') {
+			return
+		}
 		event, ok := input.TextEvent(char)
 		if !ok {
 			return
@@ -219,9 +266,16 @@ func (h *host) run() error {
 		if h.metrics != nil {
 			tickStart = time.Now()
 		}
+		// The panel sees every event first and returns the ones the game
+		// should still receive; what it kept never reaches the driver, and so
+		// never enters a recording.
+		events := h.pending
+		if h.panel != nil {
+			events = h.panel.HandleInput(events, h.viewport)
+		}
 		_, audioOut := h.driver.RunTick(runtime.TickBatch{
 			Viewport: &h.viewport,
-			Events:   h.pending,
+			Events:   events,
 		}, elapsed)
 		h.pending = h.pending[:0]
 
@@ -234,7 +288,7 @@ func (h *host) run() error {
 		if h.metrics != nil {
 			tickEnd = time.Now()
 		}
-		h.driver.RenderFrame(elapsed, h.renderer)
+		h.renderFrame(elapsed)
 		renderEnd := time.Now()
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
@@ -271,6 +325,43 @@ func (h *host) run() error {
 		pacer.wait()
 	}
 	return nil
+}
+
+// renderFrame is runtime.RenderFrame with the dev panel spliced in: its
+// commands go after the game's, in a layer band above every game layer. With
+// the panel closed or absent this is the frame the driver would have rendered
+// on its own, command for command.
+func (h *host) renderFrame(elapsed time.Duration) {
+	if h.panel == nil {
+		h.driver.RenderFrame(elapsed, h.renderer)
+		return
+	}
+
+	frame := h.driver.Frame(elapsed)
+	stats := devpanel.Stats{FPS: h.fps.observe(elapsed), Commands: len(frame.Commands)}
+	frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, stats)...)
+	h.renderer.UpdateResources(h.driver.ConsumeFrameUpdates())
+	h.renderer.Render(frame)
+}
+
+// fpsCounter is a one-second frame count for the panel footer. The host's
+// FrameStatsTracker would do the same and more, but it only exists when the
+// app asked for metrics, and the panel should report a rate either way.
+type fpsCounter struct {
+	frames  int
+	elapsed time.Duration
+	rate    float64
+}
+
+func (c *fpsCounter) observe(elapsed time.Duration) float64 {
+	c.frames++
+	c.elapsed += elapsed
+	if c.elapsed >= time.Second {
+		c.rate = float64(c.frames) / c.elapsed.Seconds()
+		c.frames = 0
+		c.elapsed = 0
+	}
+	return c.rate
 }
 
 func (h *host) pollGamepad() []input.Event {
