@@ -16,6 +16,9 @@ type Config struct {
 	Bounce       scene.BounceConfig
 	Physics      scene.PhysicsConfig
 	SimulationHz int
+	// GamepadDeadzone is applied to gamepad stick axes in the deterministic
+	// input mapper. Zero selects input.DefaultGamepadDeadzone.
+	GamepadDeadzone float64
 	// FPS caps the host frame rate. Only works in native hosts.
 	// In WASM host vsync is forced by the browser, the rate is limited by user monitor rate.
 	//

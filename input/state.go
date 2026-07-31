@@ -7,6 +7,7 @@ type State struct {
 	pressed      map[Action]bool
 	justPressed  map[Action]bool
 	justReleased map[Action]bool
+	lastDevice   DeviceKind
 }
 
 func NewState() State {
@@ -34,12 +35,22 @@ func (s *State) JustReleased(action Action) bool {
 	return s.justReleased[action]
 }
 
+// LastInputDevice reports the last device that produced meaningful
+// deterministic input. Button presses, stick movement outside the configured
+// deadzone, non-zero trigger/wheel axes, and pointer movement are meaningful;
+// releases, neutral axes, and pointer leave are not. The value is snapshotted
+// and replayed with the rest of the input state.
+func (s *State) LastInputDevice() DeviceKind {
+	return s.lastDevice
+}
+
 func (s *State) Clone() State {
 	return s.clone()
 }
 
 func (s *State) clone() State {
 	clone := NewState()
+	clone.lastDevice = s.lastDevice
 
 	maps.Copy(clone.values, s.values)
 

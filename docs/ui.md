@@ -458,13 +458,16 @@ scroll, tabela e foco.
 
 ## Plataforma wasm
 
-No canvas web, o browser envia eventos de mouse em backing pixels:
+No canvas web, o browser envia eventos de ponteiro em backing pixels:
 
 ```text
-mousemove  -> EventPointerMove
-mousedown  -> EventButtonDown
-mouseup    -> EventButtonUp
-mouseleave -> EventPointerLeave
+pointermove  -> EventPointerMove
+pointerdown  -> EventButtonDown
+pointerup    -> EventButtonUp
+pointerleave/pointercancel -> EventPointerLeave
+
+O host WASM usa Pointer Events para mouse, toque e caneta. O canvas recebe
+`touch-action: none`; multitouch continua fora do modelo de ponteiro unico.
 ```
 
 O servidor traduz esses eventos para `input.Event`, o `runtime.Driver` acumula

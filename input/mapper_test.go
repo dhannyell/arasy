@@ -1,6 +1,7 @@
 package input_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/input"
@@ -165,12 +166,138 @@ func TestMapperMapsAxisChangedEvent(t *testing.T) {
 	mapper.Apply(input.Event{
 		Source: gamepad(input.GamepadLeftStickX),
 		Kind:   input.EventAxisChanged,
-		Value:  0.5,
+		Value:  1,
 	})
 
 	state := mapper.State()
-	if got := state.Value(input.ActionMoveX); got != 0.5 {
-		t.Fatalf("move x = %v, want 0.5", got)
+	if got := state.Value(input.ActionMoveX); got != 1 {
+		t.Fatalf("move x = %v, want 1", got)
+	}
+}
+
+func TestMapperAppliesGamepadDeadzoneBeforeScale(t *testing.T) {
+	mapper := input.NewMapperWithDeadzone([]input.Binding{
+		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: .5},
+	}, .2)
+
+	mapper.Apply(input.Event{Source: gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .1})
+	if state := mapper.State(); state.Pressed(input.ActionMoveX) {
+		t.Fatal("axis below the deadzone should not press the action")
+	}
+
+	mapper.Apply(input.Event{Source: gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .2})
+	if state := mapper.State(); state.Pressed(input.ActionMoveX) {
+		t.Fatal("axis exactly at the deadzone should not press the action")
+	}
+
+	mapper.Apply(input.Event{Source: gamepad(input.GamepadLeftStickX), Kind: input.EventAxisChanged, Value: .6})
+	state := mapper.State()
+	if got := state.Value(input.ActionMoveX); math.Abs(got-.25) > 1e-12 {
+		t.Fatalf("axis above deadzone with scale = %v, want .25", got)
+	}
+}
+
+func TestMapperPreservesTriggerRangeWithoutStickDeadzone(t *testing.T) {
+	for _, value := range []float64{.5, 1} {
+		mapper := input.NewMapperWithDeadzone([]input.Binding{
+			{Source: gamepad(input.GamepadLeftTrigger), Action: input.ActionConfirm, Scale: 1},
+		}, .8)
+		mapper.Apply(input.Event{
+			Source: gamepad(input.GamepadLeftTrigger),
+			Kind:   input.EventAxisChanged,
+			Value:  value,
+		})
+
+		state := mapper.State()
+		if got := state.Value(input.ActionConfirm); got != value {
+			t.Fatalf("trigger value = %v, want %v without stick deadzone", got, value)
+		}
+	}
+}
+
+func TestMapperAppliesDeadzoneToStickAxesInReservedSlots(t *testing.T) {
+	code, ok := input.GamepadSlotCode(3, input.GamepadRightStickY)
+	if !ok {
+		t.Fatal("expected valid gamepad slot code")
+	}
+	source := input.Source{Device: input.DeviceGamepad, Code: code}
+	mapper := input.NewMapperWithDeadzone([]input.Binding{
+		{Source: source, Action: input.ActionMoveY, Scale: 1},
+	}, .2)
+	mapper.Apply(input.Event{Source: source, Kind: input.EventAxisChanged, Value: .6})
+
+	state := mapper.State()
+	if got := state.Value(input.ActionMoveY); math.Abs(got-.5) > 1e-12 {
+		t.Fatalf("slotted stick value = %v, want .5 after deadzone", got)
+	}
+}
+
+func TestMapperConstructorsUseDefaultGamepadDeadzoneForZero(t *testing.T) {
+	bindings := []input.Binding{
+		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+	}
+	constructors := map[string]func() *input.Mapper{
+		"NewMapper": func() *input.Mapper {
+			return input.NewMapper(bindings)
+		},
+		"NewMapperWithDeadzone": func() *input.Mapper {
+			return input.NewMapperWithDeadzone(bindings, 0)
+		},
+	}
+	for name, construct := range constructors {
+		t.Run(name, func(t *testing.T) {
+			mapper := construct()
+			mapper.Apply(input.Event{
+				Source: gamepad(input.GamepadLeftStickX),
+				Kind:   input.EventAxisChanged,
+				Value:  .1,
+			})
+			if state := mapper.State(); state.Pressed(input.ActionMoveX) {
+				t.Fatalf("axis inside default deadzone pressed action: value %v", state.Value(input.ActionMoveX))
+			}
+		})
+	}
+}
+
+func TestMapperSetGamepadDeadzoneNormalizesInput(t *testing.T) {
+	bindings := []input.Binding{
+		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+	}
+	for _, deadzone := range []float64{0, -1, 1, math.NaN()} {
+		mapper := input.NewMapperWithDeadzone(bindings, .2)
+		mapper.SetGamepadDeadzone(deadzone)
+		mapper.Apply(input.Event{
+			Source: gamepad(input.GamepadLeftStickX),
+			Kind:   input.EventAxisChanged,
+			Value:  .1,
+		})
+		if state := mapper.State(); state.Pressed(input.ActionMoveX) {
+			t.Fatalf("SetGamepadDeadzone(%v) left invalid effective deadzone", deadzone)
+		}
+	}
+}
+
+func TestMapperClonePreservesEffectiveGamepadDeadzoneByBehavior(t *testing.T) {
+	bindings := []input.Binding{
+		{Source: gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+	}
+	original := input.NewMapperWithDeadzone(bindings, .2)
+	clone := original.Clone()
+	original.SetGamepadDeadzone(.8)
+
+	event := input.Event{
+		Source: gamepad(input.GamepadLeftStickX),
+		Kind:   input.EventAxisChanged,
+		Value:  .6,
+	}
+	clone.Apply(event)
+	cloneState := clone.State()
+	if got := cloneState.Value(input.ActionMoveX); math.Abs(got-.5) > 1e-12 {
+		t.Fatalf("clone axis = %v, want .5 from cloned .2 deadzone", got)
+	}
+	original.Apply(event)
+	if state := original.State(); state.Pressed(input.ActionMoveX) {
+		t.Fatalf("original axis = %v, want zero from updated .8 deadzone", state.Value(input.ActionMoveX))
 	}
 }
 

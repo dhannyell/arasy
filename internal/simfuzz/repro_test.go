@@ -112,6 +112,9 @@ func verifyCommittedReplay(t *testing.T, replayPath string, script Script) {
 	if err != nil {
 		t.Fatalf("decode committed replay: %v", err)
 	}
+	if len(rec.Anchors) == 0 {
+		t.Fatalf("committed replay %s has no checksum anchors", replayPath)
+	}
 	if err := runtime.VerifyRecording(NewGame(script), quietLog, rec); err != nil {
 		t.Fatalf("verify committed replay: %v", err)
 	}

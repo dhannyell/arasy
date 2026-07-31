@@ -1,8 +1,14 @@
 package input
 
+import (
+	"maps"
+	"math"
+)
+
 type Mapper struct {
-	bindings     []Binding
-	sourceValues map[Source]float64
+	bindings        []Binding
+	sourceValues    map[Source]float64
+	gamepadDeadzone float64
 	// latched holds button sources that reported a down event during the
 	// current tick's input batch, even if a later event in that same batch
 	// brought the raw value back to zero. Hosts collect OS/browser events
@@ -11,12 +17,22 @@ type Mapper struct {
 	// otherwise collapse to "never pressed" and silently drop the tap.
 	// The latch guarantees the tap is reported as pressed for exactly one
 	// tick; EndFrame clears it so the release surfaces on the next tick.
-	latched  map[Source]bool
-	previous State
-	current  State
+	latched    map[Source]bool
+	previous   State
+	current    State
+	lastDevice DeviceKind
 }
 
 func NewMapper(bindings []Binding) *Mapper {
+	return NewMapperWithDeadzone(bindings, 0)
+}
+
+// NewMapperWithDeadzone constructs a mapper that transforms gamepad stick-axis
+// values before applying Binding.Scale. Triggers are left in their [0, 1]
+// range. Zero or an invalid deadzone selects DefaultGamepadDeadzone.
+// abs(value) <= deadzone becomes zero; values above it are rescaled to the
+// remaining range.
+func NewMapperWithDeadzone(bindings []Binding, deadzone float64) *Mapper {
 	validBindings := make([]Binding, 0, len(bindings))
 	for _, binding := range bindings {
 		if binding.Valid() {
@@ -25,17 +41,22 @@ func NewMapper(bindings []Binding) *Mapper {
 	}
 
 	return &Mapper{
-		bindings:     validBindings,
-		sourceValues: make(map[Source]float64),
-		latched:      make(map[Source]bool),
-		previous:     NewState(),
-		current:      NewState(),
+		bindings:        validBindings,
+		sourceValues:    make(map[Source]float64),
+		gamepadDeadzone: EffectiveGamepadDeadzone(deadzone),
+		latched:         make(map[Source]bool),
+		previous:        NewState(),
+		current:         NewState(),
 	}
 }
 
 func (m *Mapper) Apply(event Event) {
 	if !event.Valid() {
 		return
+	}
+
+	if device, ok := m.meaningfulEventDevice(event); ok {
+		m.lastDevice = device
 	}
 
 	if m.sourceValues == nil {
@@ -69,6 +90,9 @@ func (m *Mapper) State() State {
 			raw = 1
 		}
 
+		if binding.Source.Device == DeviceGamepad && isGamepadStickAxis(binding.Source.Code) {
+			raw = applyEffectiveGamepadDeadzone(raw, m.gamepadDeadzone)
+		}
 		value := raw * binding.Scale
 		if value == 0 {
 			continue
@@ -100,6 +124,7 @@ func (m *Mapper) State() State {
 		}
 	}
 
+	next.lastDevice = m.lastDevice
 	m.current = next.clone()
 
 	return next
@@ -116,28 +141,48 @@ func (m *Mapper) Reset() {
 	m.latched = make(map[Source]bool)
 	m.previous = NewState()
 	m.current = NewState()
+	m.lastDevice = DeviceUnknown
 }
 
 func (m *Mapper) Clone() *Mapper {
 	clone := &Mapper{
-		bindings:     append([]Binding(nil), m.bindings...),
-		sourceValues: make(map[Source]float64, len(m.sourceValues)),
-		latched:      make(map[Source]bool, len(m.latched)),
-		previous:     m.previous.clone(),
-		current:      m.current.clone(),
+		bindings:        append([]Binding(nil), m.bindings...),
+		sourceValues:    make(map[Source]float64, len(m.sourceValues)),
+		gamepadDeadzone: m.gamepadDeadzone,
+		latched:         make(map[Source]bool, len(m.latched)),
+		previous:        m.previous.clone(),
+		current:         m.current.clone(),
+		lastDevice:      m.lastDevice,
 	}
 
-	for source, value := range m.sourceValues {
-		clone.sourceValues[source] = value
-	}
+	maps.Copy(clone.sourceValues, m.sourceValues)
 
-	for source, value := range m.latched {
-		clone.latched[source] = value
-	}
+	maps.Copy(clone.latched, m.latched)
 
 	return clone
 }
 
+// SetGamepadDeadzone updates the deterministic gamepad stick-axis transform,
+// resolving zero or an invalid value to DefaultGamepadDeadzone.
+func (m *Mapper) SetGamepadDeadzone(deadzone float64) {
+	m.gamepadDeadzone = EffectiveGamepadDeadzone(deadzone)
+}
+
 func (m *Mapper) Bindings() []Binding {
 	return append([]Binding(nil), m.bindings...)
+}
+
+func (m *Mapper) meaningfulEventDevice(event Event) (DeviceKind, bool) {
+	switch event.Kind {
+	case EventButtonDown, EventPointerMove:
+		return event.Source.Device, true
+	case EventAxisChanged:
+		value := event.Value
+		if event.Source.Device == DeviceGamepad && isGamepadStickAxis(event.Source.Code) {
+			value = applyEffectiveGamepadDeadzone(value, m.gamepadDeadzone)
+		}
+		return event.Source.Device, value != 0 && !math.IsNaN(value)
+	default:
+		return DeviceUnknown, false
+	}
 }

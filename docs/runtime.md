@@ -154,11 +154,11 @@ type UpdateContext struct {
 type RenderContext struct {
     World scene.WorldView
     UI    ui.Drawer
-    Debug scene.DebugLayers
     Time  float64
     Dt    float64
     Log   *slog.Logger
     Tick  uint64
+    GamepadConnected bool
 }
 ```
 
@@ -196,9 +196,19 @@ O jogo le acoes:
 ```go
 ctx.Input.Value(input.ActionMoveX)
 ctx.Input.Pressed(input.ActionJump)
+lastDevice := ctx.Input.LastInputDevice()
 ```
 
-Ele nao precisa saber se a acao veio de teclado, gamepad, mouse ou outra fonte futura.
+`LastInputDevice` permite escolher prompts de teclado/mouse/gamepad sem perder
+determinismo: somente pressionamentos, sticks fora da deadzone, triggers/wheel
+nao-zero e movimento do ponteiro alteram o valor. Releases (inclusive os
+sintetizados por desconexao), eixos neutros e pointer-leave nao trocam o
+prompt. O valor faz parte dos snapshots e e reproduzido por rewind, scrub e
+replay.
+
+Para apresentacao que depende apenas da presenca fisica atual, Render expoe
+`ctx.GamepadConnected`. Esse hint e atualizado pelo host e deliberadamente nao
+faz parte de Update, snapshots, recordings ou checksums.
 
 ### Log
 
