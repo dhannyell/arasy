@@ -285,3 +285,60 @@ func TestWithDebugOverlayConfigOverridesOnlyProvidedFields(t *testing.T) {
 		t.Fatalf("got style %+v, want unchanged default %+v", cfg.Style, wantStyle)
 	}
 }
+
+// The grid is static geometry, so asking for it twice must not build it
+// twice — and must not answer differently the second time.
+func TestDebugGridIsCachedBetweenFrames(t *testing.T) {
+	world := scene.NewWorld()
+	bounds := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 60, Y: 40})
+
+	first := world.DebugCommands(scene.DebugGrid,
+		scene.WithDebugBounds(bounds), scene.WithDebugCellSize(4))
+	second := world.DebugCommands(scene.DebugGrid,
+		scene.WithDebugBounds(bounds), scene.WithDebugCellSize(4))
+
+	if len(first) == 0 {
+		t.Fatal("grid produced no commands")
+	}
+	if len(first) != len(second) {
+		t.Fatalf("grid produced %d commands then %d, want the same", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Fatalf("grid command %d changed between frames", i)
+		}
+	}
+
+	allocs := testing.AllocsPerRun(20, func() {
+		world.DebugCommands(scene.DebugGrid,
+			scene.WithDebugBounds(bounds), scene.WithDebugCellSize(4))
+	})
+	// One allocation for the frame's own slice; the dashes come from the
+	// cache. Before caching this was one allocation per dash.
+	if allocs > 4 {
+		t.Fatalf("cached grid still allocates %v times per frame", allocs)
+	}
+}
+
+// Changing what the grid is drawn over has to rebuild it, or a resized world
+// would keep showing the old one.
+func TestDebugGridRebuildsWhenTheConfigurationChanges(t *testing.T) {
+	world := scene.NewWorld()
+	small := world.DebugCommands(scene.DebugGrid,
+		scene.WithDebugBounds(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 20, Y: 20})),
+		scene.WithDebugCellSize(4))
+	large := world.DebugCommands(scene.DebugGrid,
+		scene.WithDebugBounds(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 80, Y: 80})),
+		scene.WithDebugCellSize(4))
+
+	if len(large) <= len(small) {
+		t.Fatalf("grid over a larger area produced %d commands, not more than %d", len(large), len(small))
+	}
+
+	finer := world.DebugCommands(scene.DebugGrid,
+		scene.WithDebugBounds(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 80, Y: 80})),
+		scene.WithDebugCellSize(2))
+	if len(finer) <= len(large) {
+		t.Fatalf("a finer cell size produced %d commands, not more than %d", len(finer), len(large))
+	}
+}

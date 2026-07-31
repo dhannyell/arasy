@@ -120,7 +120,7 @@ func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
 		fmt.Sprintf("paused: %v", state.Paused),
 		fmt.Sprintf("speed: %.2fx", state.Speed),
 		fmt.Sprintf("history: %d", state.HistoryLen),
-		fmt.Sprintf("checksum: %016x", d.world.Checksum()),
+		fmt.Sprintf("checksum: %016x", d.debugChecksumForFrame()),
 	}
 
 	if state.HistoryLen > 0 {
@@ -131,6 +131,18 @@ func debugRuntimeStatsLines(r debugRenderer, _ debugContext) []string {
 	}
 
 	return lines
+}
+
+// debugChecksumForFrame returns the world checksum for the current tick,
+// hashing at most once per tick rather than once per frame.
+func (d *Driver) debugChecksumForFrame() uint64 {
+	if d.debugChecksumValid && d.debugChecksumTick == d.tick {
+		return d.debugChecksum
+	}
+	d.debugChecksum = d.world.Checksum()
+	d.debugChecksumTick = d.tick
+	d.debugChecksumValid = true
+	return d.debugChecksum
 }
 
 func debugRenderLayerLines(_ debugRenderer, ctx debugContext) []string {

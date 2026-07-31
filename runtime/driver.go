@@ -45,6 +45,13 @@ type Driver struct {
 	// It deliberately stays outside deterministic snapshots and recordings.
 	gamepadConnected bool
 
+	// debugChecksum memoizes World.Checksum for the runtime-stats overlay.
+	// The checksum walks every component store, and the overlay asks for it
+	// once per rendered frame while it can only change once per tick.
+	debugChecksum      uint64
+	debugChecksumTick  uint64
+	debugChecksumValid bool
+
 	splash *splashPlayer
 
 	pendingReset bool
@@ -493,6 +500,8 @@ func (d *Driver) doReset() {
 	d.world = scene.NewWorld()
 	d.tick = 0
 	d.timeline.reset()
+	// A reset is the one way the world changes without the tick changing.
+	d.debugChecksumValid = false
 	if d.recordingEnabled {
 		// Ticks restart at 0: keeping the pre-reset events would collide
 		// with the new run's ticks and Replay would apply both. Restart the

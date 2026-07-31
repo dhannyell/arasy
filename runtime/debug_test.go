@@ -201,3 +201,47 @@ func TestDriverCommandsAppendsRuntimeStatsOverlayWhenLayerEnabled(t *testing.T) 
 		}
 	}
 }
+
+// The checksum walks every component store, and the overlay asks for it once
+// per frame while it can only change once per tick.
+func TestDebugChecksumIsComputedOncePerTick(t *testing.T) {
+	driver := NewDriver(debugStatsGame{}, slog.Default())
+	driver.Step()
+
+	first := driver.debugChecksumForFrame()
+	if !driver.debugChecksumValid || driver.debugChecksumTick != driver.tick {
+		t.Fatal("the first call did not memoize the checksum")
+	}
+
+	// A frame that follows without a tick must reuse it. Poisoning the cached
+	// value is how the test can tell reuse from recomputation.
+	driver.debugChecksum = 0xdeadbeef
+	if got := driver.debugChecksumForFrame(); got != 0xdeadbeef {
+		t.Fatalf("checksum recomputed within the same tick (got %x)", got)
+	}
+
+	driver.Step()
+	if got := driver.debugChecksumForFrame(); got != driver.world.Checksum() {
+		t.Fatalf("checksum after a tick = %x, want the live %x", got, driver.world.Checksum())
+	}
+	if first == 0 {
+		t.Fatal("checksum never produced a value")
+	}
+}
+
+// A reset is the one way the world changes without the tick changing, so it
+// has to drop the memo or the overlay would report the pre-reset world.
+func TestDebugChecksumInvalidatedByReset(t *testing.T) {
+	driver := NewDriver(&statefulGame{}, slog.Default())
+	driver.debugChecksumForFrame()
+
+	driver.Control(ControlCommand{Kind: ControlReset})
+	driver.Step()
+
+	if driver.debugChecksumValid {
+		t.Fatal("reset left a stale checksum memo behind")
+	}
+	if got := driver.debugChecksumForFrame(); got != driver.world.Checksum() {
+		t.Fatalf("checksum after reset = %x, want the rebuilt world's %x", got, driver.world.Checksum())
+	}
+}
