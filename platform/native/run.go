@@ -86,7 +86,9 @@ type Options struct {
 	FrameMetrics func(FrameMetrics)
 
 	// DevTools enables the in-window dev panel. Default false; the panel
-	// starts hidden and is toggled with the Backquote/~ key.
+	// starts hidden and is toggled with the Backquote/~ key. The panel only
+	// exists in builds tagged arr_dev; in any other build this option is
+	// inert.
 	DevTools bool
 	// RecordReplay enables the panel's recording controls: start/stop
 	// recording, write the .arrp next to the game, and load one back to

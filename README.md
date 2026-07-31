@@ -175,6 +175,8 @@ import (
 func main() {
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
+		// DevTools needs the arr_dev build tag: arasy dev adds it, arasy
+		// build --devtools produces a dev build with the panel.
 		DevTools:      true,
 		Log:           log,
 		RecordReplay:  true,

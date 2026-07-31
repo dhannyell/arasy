@@ -10,9 +10,9 @@ import (
 	metrics "runtime/metrics"
 
 	"github.com/dhannyell/arasy/input"
-	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/platform/native/internal/sysprobe"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
@@ -49,11 +49,17 @@ type host struct {
 	savedWindowed windowRect
 	altEnter      bool
 
-	// panel is the optional dev tooling overlay; nil unless the app asked for
-	// it. It draws through the ordinary renderer, so there is no second
-	// window and nothing platform-specific about it beyond the file I/O.
-	panel      *devpanel.Panel
-	panelStats devpanel.Stats
+	// panel is the optional tooling overlay; nil in builds without the
+	// arr_dev tag, where the panel is not compiled at all. It draws through
+	// the ordinary renderer, so there is no second window and nothing
+	// platform-specific about it beyond the file I/O.
+	panel      devOverlay
+	panelStats overlayStats
+
+	// sysprobe feeds the panel's system rows (process vs system RAM, VRAM,
+	// GPU). Cheap to keep always: it samples once a second and only when the
+	// panel asks.
+	sysprobe *sysprobe.Prober
 
 	spinMargin time.Duration
 }
@@ -84,46 +90,13 @@ func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, op
 	if opts.SmoothPacing {
 		h.spinMargin = time.Millisecond
 	}
+	vendor, device := renderer.adapterIDs()
+	h.sysprobe = sysprobe.NewProber(vendor, device)
 	return h
 }
 
-// mountDevPanel builds the tooling overlay when the app asked for it. The
-// panel itself is shared with the browser host; what is native about it is
-// the directory it writes recordings into.
-func (h *host) mountDevPanel(opts Options) {
-	var newGame func() runtime.Game
-	if opts.RecordReplay {
-		if opts.GameFactory == nil {
-			opts.Log.Error("RecordReplay enabled without GameFactory; recording controls disabled")
-		} else {
-			newGame = opts.GameFactory
-		}
-	}
-	if !opts.DevTools && newGame == nil {
-		return
-	}
-
-	panelOpts := devpanel.Options{
-		DevMode: opts.DevTools,
-		NewGame: newGame,
-		Log:     opts.Log,
-		Adopt:   func(driver *runtime.Driver) { h.driver = driver },
-	}
-	if newGame != nil {
-		panelOpts.Recording = newRecordingPort()
-	}
-	h.panel = devpanel.New(h.driver, panelOpts)
-
-	// The panel reports heap use, which is what a collector pause looks like
-	// before it becomes a frame spike. Sampling it needs the same probes the
-	// metrics reporter uses.
-	if h.heapSamples == nil {
-		h.heapSamples = []metrics.Sample{
-			{Name: "/memory/classes/heap/objects:bytes"},
-			{Name: "/memory/classes/total:bytes"},
-		}
-	}
-}
+// mountDevPanel lives in devtools_dev.go (arr_dev builds) and
+// devtools_release.go (every other build, where it only warns).
 
 func (h *host) noteInput() {
 	if h.lastInputAt.IsZero() {
@@ -381,6 +354,18 @@ func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt
 	}
 
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+
+	probe := h.sysprobe.Sample(time.Now())
+	h.panelStats.MemProcessBytes = probe.MemProcessBytes
+	h.panelStats.MemSystemUsedBytes = probe.MemSystemUsedBytes
+	h.panelStats.MemSystemTotalBytes = probe.MemSystemTotalBytes
+	h.panelStats.MemSet = probe.MemOK
+	h.panelStats.VRAMProcessBytes = probe.VRAMProcessBytes
+	h.panelStats.VRAMBudgetBytes = probe.VRAMBudgetBytes
+	h.panelStats.VRAMSet = probe.VRAMOK
+	h.panelStats.GPUProcessPercent = probe.GPUProcessPercent
+	h.panelStats.GPUSystemPercent = probe.GPUSystemPercent
+	h.panelStats.GPUSet = probe.GPUOK
 }
 
 func (h *host) pollGamepad() []input.Event {

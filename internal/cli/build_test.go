@@ -11,13 +11,28 @@ import (
 )
 
 func TestWasmBuildArgsNoDefaultFont(t *testing.T) {
-	withFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, true), " ")
+	withFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, true, false), " ")
 	if !strings.Contains(withFlag, "-tags arr_no_default_font") {
 		t.Fatalf("args = %q, want -tags arr_no_default_font", withFlag)
 	}
-	withoutFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, false), " ")
+	withoutFlag := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, false, false), " ")
 	if strings.Contains(withoutFlag, "-tags") {
 		t.Fatalf("args = %q, want no -tags when the flag is off", withoutFlag)
+	}
+}
+
+func TestWasmBuildArgsDevTools(t *testing.T) {
+	dev := strings.Join(wasmBuildArgs("pkg/wasm", "dist", false, false, true), " ")
+	if !strings.Contains(dev, "-tags arr_dev") {
+		t.Fatalf("dev args = %q, want -tags arr_dev", dev)
+	}
+	combined := strings.Join(wasmBuildArgs("pkg/wasm", "dist", false, true, true), " ")
+	if !strings.Contains(combined, "-tags arr_no_default_font,arr_dev") {
+		t.Fatalf("combined args = %q, want both tags in one -tags flag", combined)
+	}
+	release := strings.Join(wasmBuildArgs("pkg/wasm", "dist", true, false, false), " ")
+	if strings.Contains(release, "arr_dev") {
+		t.Fatalf("release args = %q, must never carry the dev panel tag", release)
 	}
 }
 

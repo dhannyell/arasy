@@ -8,15 +8,20 @@ import (
 
 	"github.com/dhannyell/arasy/examples/football"
 	"github.com/dhannyell/arasy/platform/native"
+	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := native.Run(&football.Football{}, native.Options{
-		Title:  "Football Demo",
-		Width:  1920,
-		Height: 1080,
-		Log:    log,
+		Title:    "Football Demo",
+		Width:    1920,
+		Height:   1080,
+		DevTools: true,
+		GameFactory: func() runtime.Game {
+			return &football.Football{}
+		},
+		Log: log,
 	}); err != nil {
 		os.Exit(1)
 	}
