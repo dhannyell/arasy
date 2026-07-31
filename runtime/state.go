@@ -2,6 +2,10 @@ package runtime
 
 type GameState interface {
 	isGameState()
+	// debugValue exposes the boxed value to development tooling through
+	// DebugStateValue. Unexported, like isGameState, so only this package can
+	// implement GameState.
+	debugValue() any
 }
 
 type StatefulGame interface {
@@ -25,6 +29,18 @@ type stateSnapshot[T any] struct {
 }
 
 func (stateSnapshot[T]) isGameState() {}
+
+func (s stateSnapshot[T]) debugValue() any { return s.value }
+
+// DebugStateValue unwraps the value a GameState boxes, for development
+// tooling (the dev panel's inspector). The value shares the snapshot's
+// ownership: read it, never mutate it. Nil state yields nil.
+func DebugStateValue(state GameState) any {
+	if state == nil {
+		return nil
+	}
+	return state.debugValue()
+}
 
 type StateSlot[T any] struct {
 	State T
