@@ -381,6 +381,35 @@ PageUp/PageDown tambem — os dois caminhos escrevem o mesmo indice, que e do
 jogo. A linha selecionada pelo teclado e trazida para dentro da janela visivel
 automaticamente.
 
+## Layout
+
+Todo widget recebe um `math2d.Rect` pronto — o pacote nao decide onde nada
+fica. O que ele oferece sao funcoes puras para *produzir* esses rects, em
+`ui/layout.go`: elas recebem um rect e devolvem rects, sem guardar nada entre
+frames e sem tocar em `ui.State`.
+
+O modelo e o de corte: `CutTop`, `CutBottom`, `CutLeft` e `CutRight` devolvem
+duas coisas — a fatia pedida e o que sobrou — entao empilhar e encadear cortes
+sobre o resto:
+
+```go
+header, rest := ui.CutTop(panel, 48)
+footer, body := ui.CutBottom(rest, 32)
+draw.Label("title", ui.Inset(header, 12), s.Title)
+draw.Table("rows", ui.Inset(body, 12), cols, len(rows), sel, cell)
+```
+
+`Inset`/`InsetXY` encolhem um rect (valor negativo cresce, que e como o anel de
+foco e desenhado por fora do widget). `Columns`/`Rows` dividem um rect em
+partes iguais com folga, `Column`/`Row` devolvem uma celula sem alocar o slice,
+e `Grid` combina as duas em ordem row-major (`indice = y*cols+x`).
+
+**Nao ha sizing por conteudo, por desenho.** Uma caixa que cresce para caber o
+proprio texto exige um segundo passe ou a memoria do frame anterior, e o `ui` e
+imediato e deterministico: o estado inteiro dele cabe nos poucos campos que o
+driver clona a cada tick. Quem precisa de uma largura medida chama
+`render.MeasureText` e passa o numero.
+
 ## Animacao de UI
 
 Animacao de UI e cosmetica: roda em `Render`, usa o clock de
