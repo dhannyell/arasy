@@ -77,8 +77,8 @@ type Options struct {
 	// with it the swapchain paces the loop and the software frame limiter
 	// stays off, so it only caps frames when VSync is off.
 	VSync VSyncMode
-	// MSAA selects the anti-aliasing level. The zero value is
-	// render.MSAADefault (4x); render.MSAAOff turns anti-aliasing off.
+	// MSAA selects the antialiasing level. The zero value is
+	// render.MSAADefault (4x); render.MSAAOff turns antialiasing off.
 	MSAA render.MSAAMode
 	// Icon is an optional window icon.
 	Icon image.Image

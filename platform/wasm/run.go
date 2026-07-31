@@ -37,8 +37,8 @@ type Options struct {
 	// RecordReplay is true; ignored otherwise. The engine never clones
 	// arbitrary user types — the app owns construction.
 	GameFactory func() runtime.Game
-	// MSAA selects the anti-aliasing level of the WebGPU renderer. The zero
-	// value is render.MSAADefault (4x); render.MSAAOff turns anti-aliasing
+	// MSAA selects the antialiasing level of the WebGPU renderer. The zero
+	// value is render.MSAADefault (4x); render.MSAAOff turns antialiasing
 	// off. The Canvas2D fallback ignores it.
 	MSAA render.MSAAMode
 	// FrameMetrics receives lightweight browser frame telemetry. The callback
