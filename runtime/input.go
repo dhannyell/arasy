@@ -12,6 +12,10 @@ type driverInput struct {
 	frame     input.PointerFrame
 	keys      input.KeyFrame
 	lastInput input.State
+	// held is every source currently pressed, rebuilt from the same events
+	// the journal replays. It rewinds with the rest of the input state, so it
+	// always describes the presses of the tick the driver is actually on.
+	held []heldInput
 }
 
 type driverInputSnapshot struct {
@@ -19,6 +23,7 @@ type driverInputSnapshot struct {
 	lastInput input.State
 	pointer   input.PointerState
 	keyboard  input.KeyboardState
+	held      []heldInput
 }
 
 func newDriverInput(bindings []input.Binding) *driverInput {
@@ -52,6 +57,7 @@ func (i *driverInput) Apply(events []input.Event, tick uint64) {
 		event.Tick = tick
 
 		i.mapper.Apply(event)
+		i.track(event)
 
 		switch event.Source.Device {
 		case input.DeviceMouse:
@@ -101,6 +107,7 @@ func (i *driverInput) Snapshot() driverInputSnapshot {
 		lastInput: i.lastInput.Clone(),
 		pointer:   i.pointer.Clone(),
 		keyboard:  i.keyboard.Clone(),
+		held:      append([]heldInput(nil), i.held...),
 	}
 }
 
@@ -109,6 +116,7 @@ func (i *driverInput) Restore(snapshot driverInputSnapshot) {
 	i.lastInput = snapshot.lastInput
 	i.pointer = snapshot.pointer
 	i.keyboard = snapshot.keyboard
+	i.held = append([]heldInput(nil), snapshot.held...)
 	i.resetFrame()
 }
 
@@ -116,6 +124,7 @@ func (i *driverInput) Reset() {
 	i.mapper.Reset()
 	i.lastInput = input.NewState()
 	i.keyboard = input.KeyboardState{}
+	i.held = nil
 	i.resetFrame()
 }
 
