@@ -31,6 +31,11 @@ type UI struct {
 	input     input.State
 	activated ID
 	focusable []ID
+	// The repeat clock is resolved at most once per frame and shared by every
+	// widget that reads a held key, so two of them do not advance it twice.
+	repeatResolved bool
+	repeatCode     input.SourceCode
+	repeatFired    bool
 	commands  []render.Command
 	store     *AnimStore
 	groups    []groupFrame
@@ -94,6 +99,11 @@ func NewUpdateWithKeys(state *State, frame input.PointerFrame, keys input.KeyFra
 	return u
 }
 
+// EndFrame closes the tick's UI: it cycles focus on Tab and drops it on
+// Escape. Both run here rather than inside a widget because they are about the
+// frame as a whole — the cycle needs every focusable already declared. Tab is
+// only claimed when the frame declared at least one, so a game with no UI up
+// keeps the key for itself.
 func (u *UI) EndFrame() {
 	if u.state == nil {
 		return

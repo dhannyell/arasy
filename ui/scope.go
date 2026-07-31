@@ -57,6 +57,20 @@ func (s InteractScope) ListHit(id string, rect math2d.Rect, rowH float64, rowCou
 	return s.u.listHitIn(id, rect, rowH, rowCount, s.space)
 }
 
+// ListInputValue is the caller-owned selection of a row list: pass the index
+// you hold, store the one returned. Clicks select, and so do the arrows, Home,
+// End and the page keys while the list holds focus — both paths write the same
+// index, which is why it belongs to the caller.
+func (s InteractScope) ListInputValue(id string, rect math2d.Rect, rowH float64, rowCount, selected int) (next int, changed bool) {
+	return s.u.listInputValueIn(id, rect, rowH, rowCount, selected, s.space)
+}
+
+// TableInputValue is ListInputValue for a table, measuring rows against the
+// body below the header.
+func (s InteractScope) TableInputValue(id string, rect math2d.Rect, cols []TableColumn, rowCount, selected int) (next int, changed bool) {
+	return s.u.tableInputValueIn(id, rect, cols, rowCount, selected, s.space)
+}
+
 // CheckboxInput toggles the flag the caller holds: pass the one you own, store
 // the one returned. Clicking anywhere in rect toggles, and so does activating
 // the widget from the keyboard while it holds focus.

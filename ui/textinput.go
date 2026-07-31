@@ -110,16 +110,7 @@ func (u *UI) editText(runes []rune, caret int, opts TextInputOptions) ([]rune, i
 		caret++
 	}
 
-	repeated, repeating := u.advanceKeyRepeat()
-	acts := func(code input.SourceCode) bool {
-		if u.keys.JustPressed(code) {
-			u.state.repeatCode = code
-			u.state.repeatTicks = 0
-			return true
-		}
-		return repeating && repeated == code
-	}
-
+	acts := u.keyActs
 	if acts(input.KeyBackspace) && caret > 0 {
 		runes = append(runes[:caret-1], runes[caret:]...)
 		caret--
@@ -141,28 +132,6 @@ func (u *UI) editText(runes []rune, caret int, opts TextInputOptions) ([]rune, i
 	}
 
 	return runes, clampInt(caret, 0, len(runes)), u.keys.JustPressed(input.KeyEnter)
-}
-
-// advanceKeyRepeat ticks the repeat clock of the key currently held and
-// reports whether it fires this tick. Releasing the key drops the clock, so a
-// key held across a rewind resumes from the restored count rather than from
-// however long the player's finger has actually been down.
-func (u *UI) advanceKeyRepeat() (input.SourceCode, bool) {
-	code := u.state.repeatCode
-	if code == input.KeyUnknown {
-		return input.KeyUnknown, false
-	}
-	if !u.keys.Down(code) {
-		u.state.repeatCode = input.KeyUnknown
-		u.state.repeatTicks = 0
-		return input.KeyUnknown, false
-	}
-
-	u.state.repeatTicks++
-	if u.state.repeatTicks < textRepeatDelay {
-		return code, false
-	}
-	return code, (u.state.repeatTicks-textRepeatDelay)%textRepeatRate == 0
 }
 
 // textInputDrawIn draws the field, its text and — while focused — the caret.
