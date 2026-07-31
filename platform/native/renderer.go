@@ -21,8 +21,30 @@ import (
 )
 
 const (
-	msaaSampleCount = 4
+	// defaultMSAASamples is the anti-aliasing level used unless the app asks
+	// otherwise: 4x, the quality/cost sweet spot for 2D geometry.
+	defaultMSAASamples = 4
 )
+
+// normalizeMSAASamples validates an Options.MSAA request: 0 means the
+// default, 1 disables multi-sampling, 2/4/8 pass through, anything else
+// warns and falls back to the default rather than failing device creation
+// on an unsupported count.
+func normalizeMSAASamples(requested int, log *slog.Logger) uint32 {
+	switch requested {
+	case 0:
+		return defaultMSAASamples
+	case 1, 2, 4, 8:
+		return uint32(requested)
+	default:
+		if log == nil {
+			log = slog.Default()
+		}
+		log.Warn("unsupported MSAA sample count, using the default",
+			"requested", requested, "fallback", defaultMSAASamples)
+		return defaultMSAASamples
+	}
+}
 
 // Renderer is the provisional streaming renderer for a native GLFW window.
 // A later host API may wrap this constructor with lifecycle and input options.
@@ -62,6 +84,7 @@ type Renderer struct {
 	msaaView    *wgpu.TextureView
 	msaaWidth   int
 	msaaHeight  int
+	msaaSamples uint32
 
 	diagnostics diagnostic.Once
 	err         error
@@ -88,6 +111,7 @@ func NewRenderer(
 	clear render.Color,
 	manifest asset.Manifest,
 	vsync VSyncMode,
+	msaaSamples int,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -107,6 +131,7 @@ func NewRenderer(
 		log:          log,
 		fontProvider: provider,
 		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
+		msaaSamples:  normalizeMSAASamples(msaaSamples, log),
 	}
 	defer func() {
 		if err != nil {
@@ -129,7 +154,7 @@ func NewRenderer(
 	if err = renderer.rebuildSpriteBindGroups(); err != nil {
 		return nil, err
 	}
-	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format)
+	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples)
 	if err != nil {
 		// Particle effects are optional presentation. Keep the native host usable
 		// when a driver rejects the compute/indirect pipeline, matching the WASM
@@ -370,7 +395,7 @@ func (r *Renderer) createPipelines() error {
 		"solid",
 		shaders.SolidWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		solidVertexLayout(),
 		alphaBlend(),
 	); err != nil {
@@ -381,7 +406,7 @@ func (r *Renderer) createPipelines() error {
 		"textured",
 		shaders.TexturedWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		texturedVertexLayout(),
 		premultipliedBlend(),
 	); err != nil {
@@ -392,7 +417,7 @@ func (r *Renderer) createPipelines() error {
 		"sprite",
 		shaders.SpriteWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		nil,
 		premultipliedBlend(),
 	); err != nil {
@@ -403,7 +428,7 @@ func (r *Renderer) createPipelines() error {
 		"text glyph",
 		shaders.TextGlyphWGSL,
 		r.device.config.Format,
-		msaaSampleCount,
+		r.msaaSamples,
 		nil,
 		alphaBlend(),
 	); err != nil {
@@ -694,6 +719,14 @@ func (r *Renderer) rebuildTextGlyphBindGroups() error {
 }
 
 func (r *Renderer) ensureMSAATarget(width, height int) error {
+	if r.msaaSamples <= 1 {
+		// No multi-sampling: the pass renders straight to the surface, so
+		// free any target a previous configuration allocated.
+		releaseTextureView(&r.msaaView)
+		releaseTexture(&r.msaaTexture)
+		r.msaaWidth, r.msaaHeight = 0, 0
+		return nil
+	}
 	if r.msaaTexture != nil && r.msaaWidth == width && r.msaaHeight == height {
 		return nil
 	}
@@ -706,7 +739,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
 		Format:        r.device.config.Format,
 		MipLevelCount: 1,
-		SampleCount:   msaaSampleCount,
+		SampleCount:   r.msaaSamples,
 	})
 	if err != nil {
 		return fmt.Errorf("create MSAA target: %w", err)
@@ -745,17 +778,23 @@ func (r *Renderer) encodeFrame(
 			return fmt.Errorf("encode particle simulation: %w", err)
 		}
 	}
+	attachment := wgpu.RenderPassColorAttachment{
+		View:          r.msaaView,
+		ResolveTarget: surfaceView,
+		LoadOp:        wgpu.LoadOpClear,
+		StoreOp:       wgpu.StoreOpDiscard,
+		ClearValue:    clearColor(r.clear),
+	}
+	if r.msaaSamples <= 1 {
+		// No multi-sampling: draw straight into the surface and keep the
+		// result — there is no resolve target to carry it for us.
+		attachment.View = surfaceView
+		attachment.ResolveTarget = nil
+		attachment.StoreOp = wgpu.StoreOpStore
+	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label: "Arasy render pass",
-		ColorAttachments: []wgpu.RenderPassColorAttachment{
-			{
-				View:          r.msaaView,
-				ResolveTarget: surfaceView,
-				LoadOp:        wgpu.LoadOpClear,
-				StoreOp:       wgpu.StoreOpDiscard,
-				ClearValue:    clearColor(r.clear),
-			},
-		},
+		Label:            "Arasy render pass",
+		ColorAttachments: []wgpu.RenderPassColorAttachment{attachment},
 	})
 	if err != nil {
 		return fmt.Errorf("begin render pass: %w", err)

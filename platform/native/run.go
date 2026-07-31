@@ -76,6 +76,11 @@ type Options struct {
 	// with it the swapchain paces the loop and the software frame limiter
 	// stays off, so it only caps frames when VSync is off.
 	VSync VSyncMode
+	// MSAA is the anti-aliasing sample count: 0 keeps the engine default of
+	// 4x, 1 disables multi-sampling entirely (cheapest fill rate and no MSAA
+	// surface, which at 4K frees over a hundred MB of VRAM), 2/4/8 request an
+	// explicit level.
+	MSAA int
 	// Icon is an optional window icon.
 	Icon image.Image
 	// Log receives host diagnostics. The default is slog.Default().
@@ -157,7 +162,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer window.Destroy()
 
 	cfg := driver.Config()
-	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.Log)
+	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, opts.Log)
 	if err != nil {
 		return err
 	}
