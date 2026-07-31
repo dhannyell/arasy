@@ -59,7 +59,8 @@ func drawNextMatchCard(s ManagerState, ctx *runtime.RenderContext) []render.Comm
 	fx, ok := NextFixture(s, 0)
 	if !ok {
 		cmds = append(cmds, text("SEASON ENDED", panel.Center().Add(v(0, -34)), muted, 20, render.AlignCenter, render.BaselineMiddle, 12)...)
-		cmds = append(cmds, drawSeasonEndedButton("table", tableNewSeasonButtonRect(), ctx)...)
+		cmds = append(cmds, drawSeasonEndedButton("table",
+			callToAction{id: "btn_new_season_table", rect: tableNewSeasonButtonRect()}, ctx)...)
 		return cmds
 	}
 

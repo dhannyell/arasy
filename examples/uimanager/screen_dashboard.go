@@ -25,26 +25,29 @@ func (g *Manager) drawDashboard(ctx *runtime.RenderContext) []render.Command {
 }
 
 func drawVersusCard(s ManagerState, fx Fixture, ok bool, ctx *runtime.RenderContext) []render.Command {
-	return drawVersusPanel("dash", rect(190, 170, 820, 360), s, fx, ok, ctx, simButtonRect())
+	return drawVersusPanel("dash", rect(190, 170, 820, 360), s, fx, ok, ctx,
+		callToAction{id: "btn_sim_dashboard", rect: simButtonRect()},
+		callToAction{id: "btn_new_season_dash", rect: simButtonRect()})
 }
 
 // drawVersusPanel draws the split-diagonal "NEXT MATCH" panel + SIMULATE
 // ROUND button shared by the dashboard and the calendar screen. idPrefix
 // keys the panel's own animation state (pulse/hover spring) so two panels
 // drawn in the same frame (e.g. mid screen-transition) don't fight over the
-// same spring entry. simBtnRect only drives the visual hover/scale here —
-// each screen wires its own CTA id to SimulateRound in Update.
+// same spring entry. sim and newSeason carry the ids each screen wired in
+// Update, which is what lets the button react to keyboard focus and not only
+// to the pointer.
 //
 // Internal vertical spacing (split, badges, arena line) is expressed as
 // fractions of panel.Height() rather than pixels from the dashboard's
 // original 360-tall panel, so the layout still fits — without overlapping —
 // when reused at the calendar screen's shorter panel height.
-func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixture, ok bool, ctx *runtime.RenderContext, simBtnRect math2d.Rect) []render.Command {
+func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixture, ok bool, ctx *runtime.RenderContext, sim, newSeason callToAction) []render.Command {
 	cmds := slantedPanel(panel, bgPanel, line, 1, 20, 8)
 	cmds = append(cmds, titleTab("NEXT MATCH", panel.Min.X+28, panel.Min.Y-16, 280, grass)...)
 	if !ok {
 		cmds = append(cmds, text("SEASON ENDED", panel.Center().Add(v(0, -28)), textColor, 34, render.AlignCenter, render.BaselineMiddle, 12)...)
-		cmds = append(cmds, drawSeasonEndedButton(idPrefix, simBtnRect, ctx)...)
+		cmds = append(cmds, drawSeasonEndedButton(idPrefix, newSeason, ctx)...)
 		return cmds
 	}
 
@@ -89,14 +92,12 @@ func drawVersusPanel(idPrefix string, panel math2d.Rect, s ManagerState, fx Fixt
 	cmds = append(cmds, badge(homeAway, v(panel.Min.X+285, badgeY), bgRaised, 12)...)
 	cmds = append(cmds, text(arena, v(panel.Min.X+56, panel.Max.Y-panel.Height()*0.128), muted, 16, render.AlignLeft, render.BaselineMiddle, 12)...)
 
-	btnTarget := 1.0
-	if ctx.UI.In(ui.SpaceRef).Hovered(simBtnRect) {
-		btnTarget = 1.08
-	}
-	scaledBtnRect := ctx.UI.SpringScale(idPrefix+"_btn_sim", btnTarget, ui.SpringConfig{Stiffness: 200, Damping: 12}, simBtnRect)
-
+	scaledBtnRect, focused := ctaScale(sim, ctx, idPrefix+"_btn_sim")
 	cmds = append(cmds, slantedPanel(scaledBtnRect, gold, render.RGBA(0, 0, 0, 0), 0, 16, 12)...)
 	cmds = append(cmds, text("SIMULATE ROUND", scaledBtnRect.Center(), bgDeep, 18, render.AlignCenter, render.BaselineMiddle, 13)...)
+	if focused {
+		cmds = append(cmds, focusOutline(scaledBtnRect)...)
+	}
 	return cmds
 }
 

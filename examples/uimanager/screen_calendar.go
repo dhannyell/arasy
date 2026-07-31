@@ -57,10 +57,10 @@ func (g *Manager) updateCalendar(ctx *runtime.UpdateContext) {
 	in := ctx.UI.In(ui.SpaceRef)
 	in.ScrollOffset("lst_calendar", calendarRoundsBodyRect(), calendarRowH*float64(rounds))
 
-	if in.Clicked("btn_sim_cal", calendarSimButtonRect()) {
+	if in.Activated("btn_sim_cal", calendarSimButtonRect()) {
 		SimulateRound(&g.State)
 	}
-	if seasonEnded(g.State) && in.Clicked("btn_new_season_cal", calendarSimButtonRect()) {
+	if seasonEnded(g.State) && in.Activated("btn_new_season_cal", calendarSimButtonRect()) {
 		g.startNewSeason()
 	}
 }
@@ -124,7 +124,9 @@ func drawCalendarRounds(s ManagerState, ctx *runtime.RenderContext) []render.Com
 
 func drawCalendarNext(s ManagerState, ctx *runtime.RenderContext) []render.Command {
 	next, hasNext := NextFixture(s, 0)
-	cmds := drawVersusPanel("cal", calendarNextPanel(), s, next, hasNext, ctx, calendarSimButtonRect())
+	cmds := drawVersusPanel("cal", calendarNextPanel(), s, next, hasNext, ctx,
+		callToAction{id: "btn_sim_cal", rect: calendarSimButtonRect()},
+		callToAction{id: "btn_new_season_cal", rect: calendarSimButtonRect()})
 
 	detail := calendarDetailPanel()
 	cmds = append(cmds, slantedPanel(detail, bgPanel, line, 1, 20, 8)...)
