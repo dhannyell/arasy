@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -47,7 +48,14 @@ func (h *host) startLoop() {
 		if sampleCPU {
 			tickStart = performanceNowMillis()
 		}
-		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: h.pending}, elapsed)
+		// The panel sees every event first and answers with the ones the game
+		// should still get. Whatever it kept never reaches the driver, so
+		// clicking Pause is not part of the session being recorded.
+		events := h.pending
+		if h.panel != nil {
+			events = h.panel.HandleInput(events, h.viewport)
+		}
+		_, audioOut := h.driver.RunTick(runtime.TickBatch{Events: events}, elapsed)
 		h.pending = h.pending[:0]
 		if h.audio != nil {
 			h.audio.setAudioContextState(h.driver.State().Paused)
@@ -58,7 +66,7 @@ func (h *host) startLoop() {
 			tickEnd = performanceNowMillis()
 		}
 
-		frame := h.driver.RenderFrame(elapsed, h.renderer)
+		h.renderFrame(elapsed, fps)
 		signalFirstFramePresented(&firstFramePresented)
 
 		if h.onFrameMetrics != nil {
@@ -94,16 +102,25 @@ func (h *host) startLoop() {
 			fpsElapsed = 0
 		}
 
-		state := h.driver.State()
-		if h.debugPanel != nil {
-			h.debugPanel.sync(state, fps, len(frame.Commands))
-		}
-
 		js.Global().Call("requestAnimationFrame", cb)
 		return nil
 	})
 	h.loopCb = cb
 	js.Global().Call("requestAnimationFrame", cb)
+}
+
+// renderFrame is runtime.RenderFrame with the dev panel spliced in: the
+// panel's commands are appended after the game's, in a layer band above every
+// game layer. With the panel closed this is command-for-command the frame the
+// driver would have rendered on its own.
+func (h *host) renderFrame(elapsed time.Duration, fps int) {
+	frame := h.driver.Frame(elapsed)
+	if h.panel != nil {
+		stats := devpanel.Stats{FPS: float64(fps), Commands: len(frame.Commands)}
+		frame.Commands = append(frame.Commands, h.panel.Render(frame.Camera, elapsed, stats)...)
+	}
+	h.renderer.UpdateResources(h.driver.ConsumeFrameUpdates())
+	h.renderer.Render(frame)
 }
 
 func (h *host) pollGamepad() []input.Event {

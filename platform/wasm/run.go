@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/devpanel"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -55,10 +56,15 @@ type host struct {
 	onFrameMetrics       func(FrameMetrics)
 
 	renderer runtime.FrameRenderer
+	// viewport mirrors the canvas size the driver was given, so the dev panel
+	// can lay itself out in the same pixels the frame is drawn in.
+	viewport math2d.Rect
 
-	// debugPanel is the optional runtime tooling UI; nil when no overlay is enabled.
-	debugPanel *debugPanel
-	audio      *audioSink
+	// panel is the optional runtime tooling UI; nil when no overlay is
+	// enabled. It draws inside the canvas like everything else, so there is
+	// no DOM overlay to keep in sync with the frame.
+	panel *devpanel.Panel
+	audio *audioSink
 
 	loopCb   js.Func
 	resizeCb js.Func
@@ -123,10 +129,31 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 		}
 	}
 	if opts.DevTools || replayFactory != nil {
-		h.debugPanel = newDebugPanel(h, opts.DevTools, replayFactory)
+		h.mountDevPanel(opts.DevTools, replayFactory, log)
 	}
 	h.startLoop()
 	select {}
+}
+
+// mountDevPanel builds the tooling overlay. The whole browser-specific part
+// of it is the file I/O and the key that opens it; everything else is the
+// same panel the native host mounts.
+func (h *host) mountDevPanel(devMode bool, newGame func() runtime.Game, log *slog.Logger) {
+	opts := devpanel.Options{
+		DevMode: devMode,
+		NewGame: newGame,
+		Log:     log,
+		Adopt: func(driver *runtime.Driver) {
+			h.driver = driver
+			h.resize()
+		},
+	}
+	if newGame != nil {
+		opts.Recording = newRecordingPort(log, func(data []byte, name string) {
+			h.panel.ApplyRecording(data, name)
+		})
+	}
+	h.panel = devpanel.New(h.driver, opts)
 }
 
 func applyBrowserSplashPolicy(driver *runtime.Driver) {
@@ -180,7 +207,8 @@ func (h *host) resize() {
 	h_ := rect.Get("height").Float() * dpr
 	h.canvas.Set("width", w)
 	h.canvas.Set("height", h_)
-	h.driver.SetViewport(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: w, Y: h_}))
+	h.viewport = math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: w, Y: h_})
+	h.driver.SetViewport(h.viewport)
 }
 
 func (h *host) registerResizeListener() {
