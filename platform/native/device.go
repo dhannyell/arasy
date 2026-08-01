@@ -65,11 +65,28 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 	)
 
 	// This binding panics when DeviceLostCallback crosses the cgo boundary, so
-	// device loss is observed through surface and submission errors instead.
-	d.device, err = d.adapter.RequestDevice(nil)
+	// device loss is observed through surface and submission errors instead
+	// (DeviceLostCallback is deliberately left unset below).
+	//
+	// The browser caps WebGPU limits well below what desktop hardware and
+	// drivers actually support; requesting the adapter's own limits removes
+	// that browser-shaped ceiling (e.g. max storage buffer binding size).
+	// Still falls back to RequestDevice(nil) on any error, so the host is never left
+	// without a device.
+	limits := d.adapter.GetLimits()
+	d.device, err = d.adapter.RequestDevice(&wgpu.DeviceDescriptor{RequiredLimits: &limits})
+	if err != nil {
+		log.Warn("request WebGPU device with adapter limits failed, falling back to defaults", "err", err)
+		d.device, err = d.adapter.RequestDevice(nil)
+	}
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU device: %w", err)
 	}
+	log.Info("native WebGPU device limits requested",
+		"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
+		"max_buffer_size", limits.MaxBufferSize,
+		"max_compute_workgroups_per_dimension", limits.MaxComputeWorkgroupsPerDimension,
+	)
 
 	d.queue = d.device.GetQueue()
 

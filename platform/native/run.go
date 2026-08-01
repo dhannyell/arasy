@@ -161,7 +161,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer window.Destroy()
 
 	cfg := driver.Config()
-	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, opts.Log)
+	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, opts.Log)
 	if err != nil {
 		return err
 	}
