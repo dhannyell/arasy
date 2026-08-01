@@ -45,7 +45,7 @@ type overlayStats struct {
 	GPURenderTime   time.Duration
 	GPUTimeSet      bool
 
-	// Garbage collection since the previous frame. Cheap counters read through
+	// Garbage collection since the previous sample. Counters are read through
 	// runtime/metrics, never ReadMemStats: stopping the world to look for
 	// pauses would be self-defeating.
 	GCCycles     uint64
@@ -54,4 +54,5 @@ type overlayStats struct {
 	GCHeapLive   uint64
 	GCHeapGoal   uint64
 	GCSet        bool
+	GCFresh      bool
 }

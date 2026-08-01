@@ -124,6 +124,7 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 		desc.RequiredFeatures = append(desc.RequiredFeatures, wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
 	}
 	d.device, err = d.adapter.RequestDevice(desc)
+	requestedAdapterLimits := err == nil
 	if err != nil {
 		log.Warn("request WebGPU device with adapter limits failed, falling back to defaults", "err", err)
 		wantTimestamps = false
@@ -135,11 +136,13 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 	}
 	d.timestampQuery = wantTimestamps
 	d.formatFeatures = wantFormatFeatures
-	log.Info("native WebGPU device limits requested",
-		"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
-		"max_buffer_size", limits.MaxBufferSize,
-		"max_compute_workgroups_per_dimension", limits.MaxComputeWorkgroupsPerDimension,
-	)
+	if requestedAdapterLimits {
+		log.Info("native WebGPU device limits requested",
+			"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
+			"max_buffer_size", limits.MaxBufferSize,
+			"max_compute_workgroups_per_dimension", limits.MaxComputeWorkgroupsPerDimension,
+		)
+	}
 
 	d.queue = d.device.GetQueue()
 

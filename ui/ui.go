@@ -36,11 +36,11 @@ type UI struct {
 	repeatResolved bool
 	repeatCode     input.SourceCode
 	repeatFired    bool
-	commands  []render.Command
-	store     *AnimStore
-	groups    []groupFrame
-	dt        float64
-	time      float64
+	commands       []render.Command
+	store          *AnimStore
+	groups         []groupFrame
+	dt             float64
+	time           float64
 }
 
 // New constructs the render face used by the runtime driver each Render/Init.

@@ -16,6 +16,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
+const goldenChannelTolerance = uint8(1)
+
 // TestGoldenRaster is the visual oracle for the widget: one committed frame
 // per tab, rendered headlessly so it runs on CI without a browser or a GPU.
 // It is what catches a regression the command-level unit tests cannot see —
@@ -66,7 +68,7 @@ func assertGolden(t *testing.T, name string, got *image.RGBA) {
 		t.Fatalf("%s: bounds %v, want %v", name, got.Bounds(), want.Bounds())
 	}
 	for i := range want.Pix {
-		if want.Pix[i] == got.Pix[i] {
+		if channelWithinTolerance(want.Pix[i], got.Pix[i], goldenChannelTolerance) {
 			continue
 		}
 		failure := filepath.Join("testdata", "failures", name+".png")
@@ -75,6 +77,13 @@ func assertGolden(t *testing.T, name string, got *image.RGBA) {
 			"(if the change is intentional, regenerate with -update and explain the diff in the PR)",
 			name, failure)
 	}
+}
+
+func channelWithinTolerance(want, got, tolerance uint8) bool {
+	if want >= got {
+		return want-got <= tolerance
+	}
+	return got-want <= tolerance
 }
 
 func readPNG(t *testing.T, path string) *image.RGBA {

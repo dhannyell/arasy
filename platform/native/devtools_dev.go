@@ -19,6 +19,8 @@ type panelOverlay struct {
 	panel *devpanel.Panel
 }
 
+func devToolsWantGPUTiming(enabled bool) bool { return enabled }
+
 func (o *panelOverlay) HandleInput(events []input.Event, viewport math2d.Rect) []input.Event {
 	return o.panel.HandleInput(events, viewport)
 }
@@ -55,6 +57,7 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		GCHeapLive:          stats.GCHeapLive,
 		GCHeapGoal:          stats.GCHeapGoal,
 		GCSet:               stats.GCSet,
+		GCFresh:             stats.GCFresh,
 		PresentWait:         stats.PresentWait,
 		PresentSet:          stats.PresentSet,
 	})

@@ -89,9 +89,8 @@ type Stats struct {
 	GPURenderTime   time.Duration
 	GPUTimeSet      bool
 
-	// Garbage collection since the previous frame. GCCycles above zero marks
-	// the frame in the graph, which is the whole point: it turns "it stutters
-	// sometimes" into a bar you can point at.
+	// Garbage collection since the previous sample. GCFresh marks the sampled
+	// window once in the frame graph.
 	//
 	// GCAllocBytes is deliberately the only attribution offered. No function
 	// forces a collection — a cycle starts when the heap reaches its goal, and
@@ -104,6 +103,7 @@ type Stats struct {
 	GCHeapLive   uint64
 	GCHeapGoal   uint64
 	GCSet        bool
+	GCFresh      bool
 
 	// PresentWait is how long the last frame blocked on the presentation
 	// queue (acquire + present). With vsync that is the vblank wait — idle
@@ -169,6 +169,7 @@ type Panel struct {
 	frames     runtime.FrameStatsTracker
 	frameStats runtime.FrameStats
 	history    frameHistory
+	perfBars   [3]perfBarMesh
 	stats      Stats
 
 	// Caller-owned widget values. Every value widget in ui hands its value
@@ -461,7 +462,7 @@ func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 	if frame, ready := p.frames.Observe(elapsed); ready {
 		p.frameStats = frame
 	}
-	p.history.push(elapsed, stats.GCSet && stats.GCCycles > 0)
+	p.history.push(elapsed, stats.GCFresh && stats.GCCycles > 0)
 }
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {
