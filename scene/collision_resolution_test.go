@@ -1,6 +1,7 @@
 package scene_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -362,5 +363,45 @@ func TestWorldResolveCircleOverlapsSkipsTwoStaticBodies(t *testing.T) {
 
 	if secondTransform.Position != (math2d.Vec2{X: 3, Y: 0}) {
 		t.Fatalf("second position got %v, want {3 0}", secondTransform.Position)
+	}
+}
+
+// A body may carry an inverse mass that is not zero but is small enough that
+// the impulse division overflows. The infinity that results does not stay
+// contained: multiplied by an immovable body's zero inverse mass it turns
+// into NaN, which then rides both velocities for the rest of the run. Nothing
+// about that pair may leave a non-finite number behind.
+func TestWorldResolveCircleOverlapsSkipsImpulseThatOverflows(t *testing.T) {
+	world := scene.NewWorld()
+
+	static := spawnCollidableCircle(world, math2d.Vec2{X: 0, Y: 0}, 2)
+	nearWeightless := spawnCollidableCircle(world, math2d.Vec2{X: 3, Y: 0}, 2)
+
+	world.SetBody(static, scene.Body{InvMass: 0, Restitution: 1})
+	// Subnormal: not zero, so the "both bodies are immovable" guard lets the
+	// pair through, and 1/it is +Inf.
+	world.SetBody(nearWeightless, scene.Body{InvMass: 5e-324, Restitution: 1})
+	world.SetVelocity(static, scene.Velocity{Linear: math2d.Vec2{X: 0, Y: 0}})
+	world.SetVelocity(nearWeightless, scene.Velocity{Linear: math2d.Vec2{X: -10, Y: 0}})
+
+	world.ResolveCircleOverlaps()
+
+	for name, id := range map[string]scene.EntityID{"static": static, "near-weightless": nearWeightless} {
+		velocity, ok := world.Velocity(id)
+		if !ok {
+			t.Fatalf("%s: expected velocity to exist", name)
+		}
+		if math.IsNaN(velocity.Linear.X) || math.IsInf(velocity.Linear.X, 0) ||
+			math.IsNaN(velocity.Linear.Y) || math.IsInf(velocity.Linear.Y, 0) {
+			t.Fatalf("%s velocity got %v, want a finite vector", name, velocity.Linear)
+		}
+		transform, ok := world.Transform(id)
+		if !ok {
+			t.Fatalf("%s: expected transform to exist", name)
+		}
+		if math.IsNaN(transform.Position.X) || math.IsInf(transform.Position.X, 0) ||
+			math.IsNaN(transform.Position.Y) || math.IsInf(transform.Position.Y, 0) {
+			t.Fatalf("%s position got %v, want a finite vector", name, transform.Position)
+		}
 	}
 }
