@@ -20,7 +20,7 @@ type FrameStats struct {
 	P99FrameTime  time.Duration
 }
 
-// FrameStatsTracker aggregates positive frame deltas into a rolling window and
+// FrameStatsTracker aggregates frame deltas into a rolling window and
 // periodically produces summary statistics.
 type FrameStatsTracker struct {
 	samples       [frameStatsWindow]time.Duration
@@ -28,12 +28,19 @@ type FrameStatsTracker struct {
 	next          int
 	count         int
 	reportElapsed time.Duration
+	reportFrames  int
 }
 
-// Observe records frameTime and returns a report roughly every 250ms. Non-
-// positive durations are ignored and never trigger a report.
+// Observe records frameTime and returns a report roughly every 250ms. Only
+// negative durations are ignored, and they never trigger a report.
+//
+// A zero delta is a frame, not a non-event. Above roughly a thousand frames a
+// second two consecutive host timestamps can land in the same clock tick, and
+// discarding those frames would drop the fastest ones from the window while
+// keeping the time they took — which reads as a frame rate a fifth lower than
+// the one the machine is actually delivering.
 func (t *FrameStatsTracker) Observe(frameTime time.Duration) (FrameStats, bool) {
-	if frameTime <= 0 {
+	if frameTime < 0 {
 		return FrameStats{}, false
 	}
 	t.samples[t.next] = frameTime
@@ -42,10 +49,18 @@ func (t *FrameStatsTracker) Observe(frameTime time.Duration) (FrameStats, bool) 
 		t.count++
 	}
 	t.reportElapsed += frameTime
+	t.reportFrames++
 	if t.reportElapsed < frameStatsReportInterval {
 		return FrameStats{}, false
 	}
+	// The frame rate is frames over wall time, the same quantity an external
+	// overlay counts. Deriving it from the window's mean instead would measure
+	// only the 240 frames before the report, and reports land at fixed time
+	// intervals rather than fixed frame counts -- so the window preferentially
+	// covers whatever the machine was doing slowly.
+	fps := float64(t.reportFrames) * float64(time.Second) / float64(t.reportElapsed)
 	t.reportElapsed = 0
+	t.reportFrames = 0
 
 	var total time.Duration
 	for i := 0; i < t.count; i++ {
@@ -58,7 +73,7 @@ func (t *FrameStatsTracker) Observe(frameTime time.Duration) (FrameStats, bool) 
 	mean := total / time.Duration(t.count)
 	rank := (99*t.count + 99) / 100
 	return FrameStats{
-		FPS:           float64(time.Second) / float64(mean),
+		FPS:           fps,
 		FrameTime:     frameTime,
 		MeanFrameTime: mean,
 		P99FrameTime:  t.scratch[rank-1],
