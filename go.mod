@@ -28,4 +28,4 @@ require (
 	golang.org/x/text v0.38.0 // indirect
 )
 
-replace github.com/oliverbestmann/webgpu => github.com/dhannyell/webgpu v1.34.2-0.20260801043351-e982b6b43ca3
+replace github.com/oliverbestmann/webgpu => github.com/dhannyell/webgpu v1.34.2-0.20260801045743-25df6406d483
