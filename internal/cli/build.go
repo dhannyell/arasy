@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/dhannyell/arasy/internal/wasmserve"
@@ -22,16 +23,21 @@ var (
 	buildTitle         string
 	buildNoDefaultFont bool
 	buildDevTools      bool
+	buildMode          string
+	buildAssets        string
 	buildBoot          webBootFlags
 )
 
 var buildCmd = &cobra.Command{
 	Use:   "build [package]",
-	Short: "build a WASM game for static hosting",
+	Short: "build a game for distribution: a WASM directory for static hosting, or a native executable",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := supportedPlatform(buildPlatform); err != nil {
 			return err
+		}
+		if buildPlatform == platformNative {
+			return runBuildNative(cmd, args)
 		}
 		pkg := packageArg(args)
 		title := buildTitle
@@ -51,19 +57,75 @@ var buildCmd = &cobra.Command{
 	},
 }
 
+func runBuildNative(cmd *cobra.Command, args []string) error {
+	if err := rejectWebOnlyFlags(cmd, "build"); err != nil {
+		return err
+	}
+	pkg := nativePackageArg(args)
+	outDir := buildOutput
+	if !cmd.Flags().Changed("output") {
+		outDir = filepath.Join("dist", platformNative)
+	}
+	if err := buildNative(pkg, outDir, nativeBuildOptions{
+		Release:       true,
+		NoDefaultFont: buildNoDefaultFont,
+		DevTools:      buildDevTools,
+		Mode:          buildMode,
+		AssetsDir:     buildAssets,
+	}, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "built %s into %s\n", pkg, outDir)
+	return err
+}
+
 func init() {
-	buildCmd.Flags().StringVarP(&buildPlatform, "platform", "p", "wasm", "target platform")
-	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "dist/wasm", "output directory")
+	buildCmd.Flags().StringVarP(&buildPlatform, "platform", "p", platformWASM, "target platform (wasm or native)")
+	buildCmd.Flags().StringVarP(&buildOutput, "output", "o", "dist/wasm", "output directory (native builds default to dist/native)")
 	buildCmd.Flags().StringVar(&buildTitle, "title", "", "HTML page title")
 	buildCmd.Flags().BoolVar(&buildNoDefaultFont, "no-default-font", false, "exclude the embedded default font (~140 KB); FontID 0 falls back to the built-in 7x13 bitmap")
 	buildCmd.Flags().BoolVar(&buildDevTools, "devtools", false, "include the dev panel (arr_dev tag); release builds leave it off")
+	buildCmd.Flags().StringVar(&buildMode, "mode", nativeModePortable, "native layout: portable (single executable) or bundle (executable plus an assets directory)")
+	buildCmd.Flags().StringVar(&buildAssets, "assets", "", "native bundle mode: directory copied next to the executable as assets/")
 	buildBoot.bind(buildCmd)
+	registerPlatformCompletion(buildCmd)
 	rootCmd.AddCommand(buildCmd)
 }
 
+const (
+	platformWASM   = "wasm"
+	platformNative = "native"
+)
+
 func supportedPlatform(platform string) error {
-	if platform != "wasm" {
+	switch platform {
+	case platformWASM, platformNative:
+		return nil
+	default:
 		return fmt.Errorf("platform %q not supported yet", platform)
+	}
+}
+
+// registerPlatformCompletion offers the platforms a command actually accepts.
+func registerPlatformCompletion(cmd *cobra.Command) {
+	err := cmd.RegisterFlagCompletionFunc("platform", func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+		return []string{platformWASM, platformNative}, cobra.ShellCompDirectiveDefault
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+// webOnlyFlags shape the HTML shell and its boot sequence; a native build has
+// neither, so passing one is a mistake worth reporting rather than ignoring.
+var webOnlyFlags = []string{"title", "no-loading", "no-splash", "no-engine-splash", "streaming-compile", "boot-background"}
+
+func rejectWebOnlyFlags(cmd *cobra.Command, command string) error {
+	for _, name := range webOnlyFlags {
+		flag := cmd.Flags().Lookup(name)
+		if flag != nil && flag.Changed {
+			return fmt.Errorf("%s -p native: --%s is a wasm-only flag", command, name)
+		}
 	}
 	return nil
 }
@@ -74,6 +136,18 @@ func packageArg(args []string) string {
 	}
 	if info, err := os.Stat("wasm"); err == nil && info.IsDir() {
 		return "./wasm"
+	}
+	return "."
+}
+
+// nativePackageArg mirrors packageArg for the native entry point, which
+// conventionally lives in a native/ subdirectory of the game.
+func nativePackageArg(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	if info, err := os.Stat(platformNative); err == nil && info.IsDir() {
+		return "./native"
 	}
 	return "."
 }
@@ -169,6 +243,149 @@ func wasmBuildArgs(pkg, out string, release, noDefaultFont, devTools bool) []str
 		args = append(args, "-tags", strings.Join(tags, ","))
 	}
 	return append(args, pkg)
+}
+
+const (
+	// nativeModePortable ships one executable with the assets compiled into
+	// it: the right shape for a jam entry, a demo or a bug-report attachment.
+	nativeModePortable = "portable"
+	// nativeModeBundle ships the executable with an assets directory beside
+	// it. It does not make the executable smaller — the game decides whether
+	// it still embeds a copy. What it buys is cheap patching (a store's delta
+	// updates only ship the files that changed) and mods.
+	nativeModeBundle = "bundle"
+)
+
+type nativeBuildOptions struct {
+	Release       bool
+	NoDefaultFont bool
+	// DevTools compiles the dev panel in (the arr_dev tag), matching the
+	// wasm build. A default build is the release build and leaves it out.
+	DevTools bool
+	// Mode is nativeModePortable or nativeModeBundle.
+	Mode string
+	// AssetsDir is copied next to the executable as assets/ in bundle mode.
+	AssetsDir string
+}
+
+func (o nativeBuildOptions) validate() error {
+	switch o.Mode {
+	case nativeModePortable:
+		if o.AssetsDir != "" {
+			return fmt.Errorf("--assets applies to --mode bundle; portable builds carry their assets inside the executable")
+		}
+	case nativeModeBundle:
+		if o.AssetsDir == "" {
+			return fmt.Errorf("--mode bundle needs --assets <dir>: the directory to copy next to the executable")
+		}
+	default:
+		return fmt.Errorf("mode %q not supported: use %s or %s", o.Mode, nativeModePortable, nativeModeBundle)
+	}
+	return nil
+}
+
+// buildNative compiles a native game into outDir. It always targets the host:
+// the native host needs cgo, and cross-compiling cgo needs the target's C
+// toolchain, so the release matrix is a matrix of runners, not of GOOS values.
+func buildNative(pkg, outDir string, opts nativeBuildOptions, stdout, stderr io.Writer) error {
+	if err := opts.validate(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+	binary := filepath.Join(outDir, nativeBinaryName(pkg))
+	cmd := exec.Command("go", nativeBuildArgs(pkg, binary, opts)...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("build %s: %w", pkg, err)
+	}
+	if opts.Mode == nativeModeBundle {
+		if err := copyDir(filepath.Join(outDir, "assets"), opts.AssetsDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// nativeBuildArgs assembles the go build command line for a native artifact.
+func nativeBuildArgs(pkg, out string, opts nativeBuildOptions) []string {
+	args := []string{"build", "-o", out, "-trimpath", "-buildvcs=false"}
+	if opts.Release {
+		args = append(args, "-ldflags", "-s -w")
+	}
+	var tags []string
+	if opts.NoDefaultFont {
+		tags = append(tags, "arr_no_default_font")
+	}
+	if opts.DevTools {
+		tags = append(tags, "arr_dev")
+	}
+	if len(tags) > 0 {
+		args = append(args, "-tags", strings.Join(tags, ","))
+	}
+	return append(args, pkg)
+}
+
+// nativeName derives the product name from the package path. A native entry
+// point conventionally lives in a native/ subdirectory of the game, so the
+// directory above it — not the literal "native" — is the name a player sees.
+func nativeName(pkg string) string {
+	clean := filepath.Clean(pkg)
+	// Resolve against the working directory so "." and "./native" name the
+	// game rather than themselves.
+	if !filepath.IsAbs(clean) {
+		if cwd, err := os.Getwd(); err == nil {
+			clean = filepath.Join(cwd, clean)
+		}
+	}
+	name := filepath.Base(clean)
+	if name != platformNative {
+		return name
+	}
+	if parent := filepath.Base(filepath.Dir(clean)); parent != "." && parent != string(filepath.Separator) {
+		return parent
+	}
+	return name
+}
+
+func nativeBinaryName(pkg string) string {
+	name := nativeName(pkg)
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
+
+// copyDir copies src onto dst recursively, preserving the tree shape. The
+// bundle layout is loose files by design: that is what keeps delta patching
+// cheap and mods possible.
+func copyDir(dst, src string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("read assets directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("assets path %s is not a directory", src)
+	}
+	return filepath.WalkDir(src, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		return copyFile(target, path)
+	})
 }
 
 // sameFileContent reports whether two files hold identical bytes. A missing
