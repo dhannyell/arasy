@@ -18,6 +18,8 @@ type panelOverlay struct {
 	panel *devpanel.Panel
 }
 
+func devToolsWantGPUTiming(enabled bool) bool { return enabled }
+
 func (o *panelOverlay) HandleInput(events []input.Event, viewport math2d.Rect) []input.Event {
 	return o.panel.HandleInput(events, viewport)
 }
@@ -33,6 +35,17 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		HeapInUse:       stats.HeapInUse,
 		HeapTotal:       stats.HeapTotal,
 		HeapSet:         stats.HeapSet,
+		GPUEmitTime:     stats.GPUEmitTime,
+		GPUSimulateTime: stats.GPUSimulateTime,
+		GPURenderTime:   stats.GPURenderTime,
+		GPUTimeSet:      stats.GPUTimeSet,
+		GCCycles:        stats.GCCycles,
+		GCPause:         stats.GCPause,
+		GCAllocBytes:    stats.GCAllocBytes,
+		GCHeapLive:      stats.GCHeapLive,
+		GCHeapGoal:      stats.GCHeapGoal,
+		GCSet:           stats.GCSet,
+		GCFresh:         stats.GCFresh,
 	})
 }
 

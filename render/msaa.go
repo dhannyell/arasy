@@ -16,11 +16,15 @@ const (
 	// rate, and at high resolutions it frees a substantial amount of video
 	// memory, at the cost of hard edges on circles and polygon silhouettes.
 	MSAAOff
-	// MSAA2x is half the default's samples: cheaper, visibly coarser.
+	// MSAA2x is half the default's samples: cheaper, visibly coarser. WebGPU
+	// guarantees only 1 and 4 samples, so this level depends on the adapter and
+	// is never available in a browser; a host that cannot provide it falls back
+	// to the default and says so in the log.
 	MSAA2x
 	// MSAA4x is the default stated explicitly.
 	MSAA4x
-	// MSAA8x is the highest level; support is not guaranteed on every adapter.
+	// MSAA8x is the highest level. Like MSAA2x it is adapter-specific rather
+	// than guaranteed, and falls back to the default where it is unavailable.
 	MSAA8x
 )
 

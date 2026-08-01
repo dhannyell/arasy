@@ -21,6 +21,7 @@ type FrameMetrics struct {
 	MeanFrameTime time.Duration
 	P99FrameTime  time.Duration
 
+	// InputToSubmit ends at queue submission, before Present.
 	InputToSubmit    time.Duration
 	InputToSubmitSet bool
 
@@ -33,10 +34,21 @@ type FrameMetrics struct {
 	GPUBufferSet   bool
 
 	// GPUFrameTime is asynchronous submit-to-completion latency, not GPU
-	// execution time. Timestamp queries are unavailable in the current binding.
+	// execution time.
 	GPUFrameTime    time.Duration
 	GPUFrameTimeSet bool
 
+	// GPUPrepareTime, GPUSimulateTime and GPURenderTime are the most recent
+	// timestamp-query sample: the particle emit pass, the simulate pass and the
+	// render interval. Set only when Options.GPUTiming is on and the adapter
+	// grants "timestamp-query", and the sample lags the frame that produced it
+	// because the readback is asynchronous.
+	GPUPrepareTime  time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimingSet    bool
+
+	// CPURenderTime excludes surface acquisition and Present waits.
 	CPUTickTime   time.Duration
 	CPURenderTime time.Duration
 	CPUTimingSet  bool
@@ -86,7 +98,7 @@ type Options struct {
 	Log *slog.Logger
 	// Metrics emits periodic frame-pacing reports through Log.
 	Metrics bool
-	// GPUTiming enables the asynchronous GPU completion probe for metric reports.
+	// GPUTiming enables per-pass GPU timestamp queries for metric reports.
 	GPUTiming bool
 	// FrameMetrics receives periodic frame-pacing reports. Nil disables delivery.
 	FrameMetrics func(FrameMetrics)
@@ -161,12 +173,16 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer window.Destroy()
 
 	cfg := driver.Config()
-	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, opts.Log)
+	// The dev panel's Perf tab reads GPU timings too, so mounting it counts as
+	// asking for them. The feature has to be requested at device creation,
+	// which is why this is decided here rather than when the panel opens.
+	wantGPUTiming := opts.GPUTiming || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
+	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, wantGPUTiming, opts.Log)
 	if err != nil {
 		return err
 	}
 	renderer.SetCPUTiming(opts.Metrics || opts.FrameMetrics != nil)
-	renderer.SetGPUTiming(opts.GPUTiming)
+	renderer.SetGPUTiming(wantGPUTiming)
 	defer renderer.Close()
 
 	h := newHost(driver, renderer, window, opts)

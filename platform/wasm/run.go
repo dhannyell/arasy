@@ -73,6 +73,9 @@ type host struct {
 	panelStats overlayStats
 	audio      *audioSink
 
+	gc       runtime.GCStatsTracker
+	gcFrames uint8
+
 	loopCb   js.Func
 	resizeCb js.Func
 	inputCbs []js.Func
@@ -126,7 +129,11 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	if len(cfg.Assets.AudioClips()) > 0 {
 		h.audio = newAudioSink(cfg.Assets.AudioClips(), cfg.Assets.FS(), cfg.SimulationHz, log)
 	}
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.FrameMetrics != nil, cfg.ParticleOffscreenScale, opts.MSAA, log)
+	// The dev panel's Perf tab reads GPU timings too, so mounting it counts as
+	// asking for them: the adapter feature has to be requested when the device
+	// is created, well before the panel is ever opened.
+	wantGPUTiming := opts.FrameMetrics != nil || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {

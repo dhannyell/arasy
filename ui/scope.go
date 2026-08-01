@@ -238,6 +238,10 @@ func (s DrawScope) FillRect(rect math2d.Rect, fill render.Color) {
 	s.u.fillRectIn(rect, fill, s.space)
 }
 
+func (s DrawScope) DrawTriangles(vertices []math2d.Vec2, indices []uint32, color render.Color) {
+	s.u.drawTrianglesIn(vertices, indices, color, s.space)
+}
+
 func (s DrawScope) DrawText(text string, pos math2d.Vec2, color render.Color, size float64, align render.TextAlign, baseline render.TextBaseline) {
 	s.u.drawTextIn(text, pos, color, size, align, baseline, s.space)
 }

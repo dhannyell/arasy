@@ -43,12 +43,37 @@ func TestFrameStatsTrackerUsesWindowAndP99(t *testing.T) {
 	}
 }
 
-func TestFrameStatsTrackerIgnoresNonPositiveFrames(t *testing.T) {
+func TestFrameStatsTrackerIgnoresNegativeFrames(t *testing.T) {
 	var tracker FrameStatsTracker
-	if _, ok := tracker.Observe(0); ok {
-		t.Fatal("zero frame time should not report")
-	}
 	if _, ok := tracker.Observe(-time.Millisecond); ok {
 		t.Fatal("negative frame time should not report")
+	}
+}
+
+// A host clock coarse enough to report zero for the quickest frames must not
+// cost those frames their place in the count: they are the reason the rate is
+// high in the first place.
+func TestFrameStatsTrackerCountsSubTickFrames(t *testing.T) {
+	var tracker FrameStatsTracker
+	// Four frames per tick, three of which the clock cannot resolve.
+	const tick = 400 * time.Microsecond
+	var stats FrameStats
+	var ok bool
+	for i := range 4000 {
+		sample := time.Duration(0)
+		if i%4 == 3 {
+			sample = tick
+		}
+		if report, reported := tracker.Observe(sample); reported {
+			stats, ok = report, true
+		}
+	}
+	if !ok {
+		t.Fatal("expected a report")
+	}
+	// 4 frames every 400us is 10000 FPS. Averaging only the resolvable frames
+	// would report a quarter of that.
+	if math.Abs(stats.FPS-10000) > 1 {
+		t.Fatalf("FPS=%v, want 10000", stats.FPS)
 	}
 }

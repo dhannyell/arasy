@@ -8,6 +8,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
+func devToolsWantGPUTiming(bool) bool { return false }
+
 // mountDevPanel is the release-build stub: the dev panel compiles in only
 // under the arr_dev tag, so a shipped game cannot open it — the code is not
 // in the binary at all. Asking for it here means a release build kept the

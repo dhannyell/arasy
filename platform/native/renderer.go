@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
@@ -20,16 +21,37 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// msaaSampleCount resolves the requested level, logging a fallback when the
-// mode is outside the enum rather than failing device creation.
-func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) uint32 {
+// msaaSampleCount falls back when the mode is invalid or the selected surface
+// format rejects an optional sample count.
+func msaaSampleCount(
+	mode render.MSAAMode,
+	formatFeatures bool,
+	validate func(uint32) error,
+	log *slog.Logger,
+) uint32 {
+	if log == nil {
+		log = slog.Default()
+	}
 	samples, ok := mode.Samples()
 	if !ok {
-		if log == nil {
-			log = slog.Default()
-		}
 		log.Warn("unknown MSAA mode, using the default",
 			"requested", uint8(mode), "fallback", samples)
+	}
+	if samples != 1 && samples != 4 {
+		var err error
+		switch {
+		case !formatFeatures:
+			err = fmt.Errorf("adapter-specific format features unavailable")
+		case validate == nil:
+			err = fmt.Errorf("surface format capability probe unavailable")
+		default:
+			err = validate(uint32(samples))
+		}
+		if err != nil {
+			log.Warn("MSAA level unsupported by this surface format, using the default",
+				"requested", samples, "fallback", 4, "err", err)
+			samples = 4
+		}
 	}
 	return uint32(samples)
 }
@@ -74,6 +96,23 @@ type Renderer struct {
 	msaaHeight  int
 	msaaSamples uint32
 
+	// Offscreen particle compositing, active when particleScale > 0: each
+	// contiguous run of particle commands renders into one pooled
+	// single-sample target and is composited back at its painter-order
+	// position by a fullscreen triangle.
+	particleScale     float64
+	compositeLayout   *wgpu.BindGroupLayout
+	compositePipeline *wgpu.RenderPipeline
+	compositeSampler  *wgpu.Sampler
+	particleTargets   []particleTarget
+	particleTargetW   int
+	particleTargetH   int
+
+	// timing is nil unless the device granted timestamp-query, and sampling is
+	// additionally gated by timeGPU so the option can be toggled at runtime.
+	timing  *gpuTiming
+	timeGPU bool
+
 	diagnostics diagnostic.Once
 	err         error
 	// presentedFrame stays false for skipped/reconfigured surfaces and flips
@@ -83,6 +122,8 @@ type Renderer struct {
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
 	cpuPhasesSet       bool
+	// cpuFrame separates queue submission, CPU work and surface acquisition.
+	cpuFrame cpuFrameTiming
 	// presentWait is how long the last frame blocked on presentation
 	// (surface acquire plus present). With vsync this is the vblank wait —
 	// idle time, not work — so it must be reported apart from the CPU
@@ -100,6 +141,8 @@ func NewRenderer(
 	manifest asset.Manifest,
 	vsync VSyncMode,
 	msaa render.MSAAMode,
+	particleScale float64,
+	wantGPUTiming bool,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -109,17 +152,18 @@ func NewRenderer(
 	if err != nil {
 		return nil, fmt.Errorf("create font atlas provider: %w", err)
 	}
-	d, err := newDevice(window, vsync, log)
+	d, err := newDevice(window, vsync, wantGPUTiming, log)
 	if err != nil {
 		return nil, err
 	}
 	renderer = &Renderer{
-		device:       d,
-		clear:        clear,
-		log:          log,
-		fontProvider: provider,
-		textAtlases:  make(map[tess.AtlasKey]gpuTextAtlas),
-		msaaSamples:  msaaSampleCount(msaa, log),
+		device:        d,
+		clear:         clear,
+		log:           log,
+		fontProvider:  provider,
+		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
+		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, d.validateMSAASampleCount, log),
+		particleScale: particleScale,
 	}
 	defer func() {
 		if err != nil {
@@ -142,7 +186,16 @@ func NewRenderer(
 	if err = renderer.rebuildSpriteBindGroups(); err != nil {
 		return nil, err
 	}
-	renderer.particles, err = newGpuParticles(d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples)
+	renderer.particles, err = newGpuParticles(
+		d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, particleScale > 0,
+	)
+	if err != nil && renderer.particleScale > 0 {
+		log.Warn("native particle offscreen pipelines unavailable, using direct rendering", "err", err)
+		renderer.particleScale = 0
+		renderer.particles, err = newGpuParticles(
+			d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, false,
+		)
+	}
 	if err != nil {
 		// Particle effects are optional presentation. Keep the native host usable
 		// when a driver rejects the compute/indirect pipeline, matching the WASM
@@ -150,7 +203,165 @@ func NewRenderer(
 		log.Warn("native particle renderer disabled", "err", err)
 		renderer.particles = nil
 	}
+	if renderer.particles != nil && renderer.particleScale > 0 {
+		if err = renderer.createCompositePipeline(); err != nil {
+			renderer.disableParticleOffscreen(err)
+			err = nil
+		}
+	}
+	if renderer.timing, err = newGPUTiming(d); err != nil {
+		// The adapter granted the feature but its query resources would not
+		// build. Telemetry is not worth failing a window over.
+		log.Warn("native GPU timing disabled", "err", err)
+		renderer.timing = nil
+		err = nil
+	}
 	return renderer, nil
+}
+
+// createCompositePipeline builds the fullscreen-triangle pipeline that blends
+// one particle offscreen target into the MSAA main pass with premultiplied
+// source-over, plus the bind group layout and sampler its pooled targets use.
+func (r *Renderer) createCompositePipeline() error {
+	var err error
+	if r.compositeLayout, err = r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{
+				Binding:    0,
+				Visibility: wgpu.ShaderStageFragment,
+				Texture: wgpu.TextureBindingLayout{
+					SampleType:    wgpu.TextureSampleTypeFloat,
+					ViewDimension: wgpu.TextureViewDimension2D,
+				},
+			},
+			{
+				Binding:    1,
+				Visibility: wgpu.ShaderStageFragment,
+				Sampler:    wgpu.SamplerBindingLayout{Type: wgpu.SamplerBindingTypeFiltering},
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("create bind group layout: %w", err)
+	}
+	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(
+		&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{r.compositeLayout}},
+	)
+	if err != nil {
+		return fmt.Errorf("create pipeline layout: %w", err)
+	}
+	defer pipelineLayout.Release()
+	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+		Label:      "Arasy particle composite shader",
+		WGSLSource: &wgpu.ShaderSourceWGSL{Code: shaders.ParticlesCompositeWGSL},
+	})
+	if err != nil {
+		return fmt.Errorf("create shader: %w", err)
+	}
+	defer module.Release()
+	r.compositePipeline, err = r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label:       "Arasy particle composite pipeline",
+		Layout:      pipelineLayout,
+		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main"},
+		Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
+		Multisample: wgpu.MultisampleState{Count: r.msaaSamples, Mask: ^uint32(0)},
+		Fragment: &wgpu.FragmentState{
+			Module:     module,
+			EntryPoint: "fs_main",
+			Targets: []wgpu.ColorTargetState{{
+				Format: r.device.config.Format, Blend: premultipliedBlend(), WriteMask: wgpu.ColorWriteMaskAll,
+			}},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create pipeline: %w", err)
+	}
+	r.compositeSampler, err = r.device.device.TryCreateSampler(
+		&wgpu.SamplerDescriptor{MagFilter: wgpu.FilterModeLinear, MinFilter: wgpu.FilterModeLinear, MaxAnisotropy: 1},
+	)
+	if err != nil {
+		return fmt.Errorf("create sampler: %w", err)
+	}
+	return nil
+}
+
+func (r *Renderer) disableParticleOffscreen(err error) {
+	r.log.Warn("native particle offscreen compositing disabled", "err", err)
+	r.particleScale = 0
+	r.releaseParticleTargets()
+	releasePipeline(&r.compositePipeline)
+	releaseSampler(&r.compositeSampler)
+	if r.compositeLayout != nil {
+		r.compositeLayout.Release()
+		r.compositeLayout = nil
+	}
+}
+
+// particleTarget is one pooled offscreen target plus its composite bind group.
+type particleTarget struct {
+	texture   *wgpu.Texture
+	view      *wgpu.TextureView
+	bindGroup *wgpu.BindGroup
+}
+
+// particleTargetDims returns the offscreen target size for the given surface
+// dimensions and Config.ParticleOffscreenScale.
+func particleTargetDims(w, h int, scale float64) (int, int) {
+	return max(1, int(math.Ceil(float64(w)*scale))), max(1, int(math.Ceil(float64(h)*scale)))
+}
+
+// ensureParticleTargets grows the pooled offscreen targets to n and rebuilds
+// the pool when the composite dimensions change. The pool never shrinks: its
+// high-water mark is the largest number of interleaved particle groups a
+// frame has produced.
+func (r *Renderer) ensureParticleTargets(n, ow, oh int) error {
+	if ow != r.particleTargetW || oh != r.particleTargetH {
+		r.releaseParticleTargets()
+		r.particleTargetW, r.particleTargetH = ow, oh
+	}
+	for len(r.particleTargets) < n {
+		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+			Label:         "Arasy particle offscreen target",
+			Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageTextureBinding,
+			Dimension:     wgpu.TextureDimension2D,
+			Size:          wgpu.Extent3D{Width: uint32(ow), Height: uint32(oh), DepthOrArrayLayers: 1},
+			Format:        r.device.config.Format,
+			MipLevelCount: 1,
+			SampleCount:   1,
+		})
+		if err != nil {
+			return fmt.Errorf("create particle offscreen target: %w", err)
+		}
+		view, err := texture.TryCreateView(nil)
+		if err != nil {
+			texture.Release()
+			return fmt.Errorf("create particle offscreen view: %w", err)
+		}
+		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+			Layout: r.compositeLayout,
+			Entries: []wgpu.BindGroupEntry{
+				{Binding: 0, TextureView: view},
+				{Binding: 1, Sampler: r.compositeSampler},
+			},
+		})
+		if err != nil {
+			view.Release()
+			texture.Release()
+			return fmt.Errorf("create particle composite bind group: %w", err)
+		}
+		r.particleTargets = append(r.particleTargets, particleTarget{texture: texture, view: view, bindGroup: bindGroup})
+	}
+	return nil
+}
+
+func (r *Renderer) releaseParticleTargets() {
+	for _, t := range r.particleTargets {
+		if t.bindGroup != nil {
+			t.bindGroup.Release()
+		}
+		releaseTextureView(&t.view)
+		releaseTexture(&t.texture)
+	}
+	r.particleTargets = nil
 }
 
 // UpdateResources applies dynamic texture updates. Retained batches are not
@@ -178,7 +389,15 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 // Render draws one frame. Errors are retained for Err because FrameRenderer
 // cannot return them to the host loop.
 func (r *Renderer) Render(frame runtime.Frame) {
-	if r == nil || r.err != nil || r.device == nil || r.device.config == nil {
+	if r == nil {
+		return
+	}
+	if r.timeCPU {
+		r.cpuFrame = cpuFrameTiming{}
+		r.cpuPhasesSet = false
+		r.presentWait = 0
+	}
+	if r.err != nil || r.device == nil || r.device.config == nil {
 		return
 	}
 	width, height := int(r.device.config.Width), int(r.device.config.Height)
@@ -216,7 +435,8 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	}
 	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
 	if r.timeCPU {
-		r.presentWait = time.Since(acquireStart)
+		r.cpuFrame.acquireWait = time.Since(acquireStart)
+		r.presentWait = r.cpuFrame.acquireWait
 	}
 	if err != nil {
 		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
@@ -254,11 +474,13 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	if r.timeCPU {
-		r.cpuEncode = time.Since(phaseStart)
+		r.cpuFrame.cpuEndAt = time.Now()
+		r.cpuEncode = r.cpuFrame.cpuEndAt.Sub(phaseStart)
 		r.cpuPhasesSet = true
+		r.cpuFrame.valid = !r.cpuFrame.submittedAt.IsZero()
 	}
 	if r.timeCPU {
-		phaseStart = time.Now()
+		phaseStart = r.cpuFrame.cpuEndAt
 	}
 	r.device.surface.Present()
 	if r.timeCPU {
@@ -281,9 +503,27 @@ func (r *Renderer) SetCPUTiming(enabled bool) {
 	}
 }
 
-// SetGPUTiming is retained for option compatibility. The current binding's
-// C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
-func (r *Renderer) SetGPUTiming(bool) {}
+// SetGPUTiming enables per-pass timestamp sampling. It only has an effect when
+// the device was created with the timestamp-query feature, which NewRenderer
+// requests from its own wantGPUTiming argument — the feature has to be asked
+// for at device creation, so this cannot turn timing on after the fact.
+func (r *Renderer) SetGPUTiming(enabled bool) {
+	if r != nil {
+		r.timeGPU = enabled && r.timing != nil
+	}
+}
+
+// particleGPUTimings reports the most recent timestamp-query sample: the
+// particle emit pass, the simulate pass (including the pass boundary before
+// it) and the render interval. Frames without particle commands still sample
+// the render pass and report zero for the compute stages. ok is false until
+// the first sample resolves, and always on devices without timestamp-query.
+func (r *Renderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
+	if r == nil || !r.timeGPU {
+		return 0, 0, 0, false
+	}
+	return r.timing.timings()
+}
 
 // presentWaitDuration reports how long the last frame blocked on the
 // presentation queue: surface acquire plus present. With vsync that is the
@@ -293,7 +533,17 @@ func (r *Renderer) presentWaitDuration() (time.Duration, bool) {
 	if r == nil {
 		return 0, false
 	}
-	return r.presentWait, r.timeCPU
+	return r.presentWait, r.timeCPU && r.cpuFrame.valid
+}
+
+// frameCPUTiming reports the boundaries of the most recently submitted frame.
+// It stays invalid for a skipped/reconfigured surface so callers never reuse a
+// previous frame's submission timestamp.
+func (r *Renderer) frameCPUTiming() cpuFrameTiming {
+	if r == nil || !r.timeCPU {
+		return cpuFrameTiming{}
+	}
+	return r.cpuFrame
 }
 
 // adapterIDs returns the PCI vendor and device IDs of the adapter the
@@ -356,6 +606,17 @@ func (r *Renderer) Close() {
 		texture.release()
 	}
 	r.textures = nil
+	if r.timing != nil {
+		r.timing.release()
+		r.timing = nil
+	}
+	r.releaseParticleTargets()
+	if r.compositeLayout != nil {
+		r.compositeLayout.Release()
+		r.compositeLayout = nil
+	}
+	releasePipeline(&r.compositePipeline)
+	releaseSampler(&r.compositeSampler)
 	releaseTextureView(&r.msaaView)
 	releaseTexture(&r.msaaTexture)
 	releaseBuffer(&r.solidBuffer)
@@ -752,6 +1013,14 @@ func (r *Renderer) encodeFrame(
 		return fmt.Errorf("create render command encoder: %w", err)
 	}
 	defer encoder.Release()
+	var groupOf []int
+	offscreenParticles := false
+	// timedCompute records whether the particle compute passes ran, which
+	// decides how much of the query set is safe to resolve: a pass that never
+	// ran wrote no timestamp, and resolving one that was never written loses
+	// the device on Vulkan.
+	sampling := r.timeGPU && r.timing.sampleFrame()
+	timedCompute := false
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
@@ -762,8 +1031,37 @@ func (r *Renderer) encodeFrame(
 				sims = append(sims, sim)
 			}
 		}
-		if err := r.particles.encode(encoder, sims); err != nil {
+		var emitWrites, simulateWrites *wgpu.PassTimestampWrites
+		if sampling && len(sims) > 0 {
+			emitWrites = r.timing.prepareWrites()
+			simulateWrites = r.timing.simulateWrites()
+			timedCompute = true
+		}
+		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return fmt.Errorf("encode particle simulation: %w", err)
+		}
+
+		// Contiguous particle runs form composite groups: with offscreen
+		// compositing enabled, each group renders into one pooled target and
+		// is composited once, at the painter-order position of its first run.
+		var groups [][]render.DrawParticles
+		groups, groupOf = groupParticleRuns(runs)
+		offscreenParticles = r.particleScale > 0 && len(groups) > 0
+		if offscreenParticles {
+			ow, oh := particleTargetDims(width, height, r.particleScale)
+			if err := r.ensureParticleTargets(len(groups), ow, oh); err != nil {
+				r.disableParticleOffscreen(err)
+				offscreenParticles = false
+				groupOf = nil
+			} else {
+				var beginWrites *wgpu.PassTimestampWrites
+				if sampling {
+					beginWrites = r.timing.renderBeginWrites()
+				}
+				if err := r.encodeParticleOffscreen(encoder, groups, camera, ow, oh, beginWrites); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	attachment := wgpu.RenderPassColorAttachment{
@@ -780,21 +1078,41 @@ func (r *Renderer) encodeFrame(
 		attachment.ResolveTarget = nil
 		attachment.StoreOp = wgpu.StoreOpStore
 	}
+	// With offscreen compositing the interval already opened on the first
+	// offscreen pass, so the main pass only closes it.
+	var mainWrites *wgpu.PassTimestampWrites
+	if sampling {
+		if offscreenParticles {
+			mainWrites = r.timing.renderEndWrites()
+		} else {
+			mainWrites = r.timing.renderWrites()
+		}
+	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
 		Label:            "Arasy render pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{attachment},
+		TimestampWrites:  mainWrites,
 	})
 	if err != nil {
 		return fmt.Errorf("begin render pass: %w", err)
 	}
 	defer pass.Release()
-	for _, run := range runs {
-		if err := r.drawRun(pass, run, camera, width, height); err != nil {
+	lastComposited := -1
+	for i, run := range runs {
+		group := -1
+		if groupOf != nil {
+			group = groupOf[i]
+		}
+		if err := r.drawRun(pass, run, camera, width, height, group, offscreenParticles, &lastComposited); err != nil {
 			return err
 		}
 	}
 	if err := pass.TryEnd(); err != nil {
 		return fmt.Errorf("end render pass: %w", err)
+	}
+	slot := -1
+	if sampling {
+		slot = r.timing.encodeResolve(encoder, timedCompute)
 	}
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {
@@ -802,10 +1120,98 @@ func (r *Renderer) encodeFrame(
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
+	if r.timeCPU {
+		r.cpuFrame.submittedAt = time.Now()
+	}
+	if r.timeGPU {
+		// Map after submit, pump whatever completed since the last frame, then
+		// read the slots those callbacks marked. None of it blocks: the sample
+		// lands a frame or more later — which is why the pumping runs on every
+		// frame and not only on the ones that sampled.
+		r.timing.readback(slot)
+		r.timing.poll()
+		r.timing.drain()
+	}
 	return nil
 }
 
-func (r *Renderer) drawRun(pass *wgpu.RenderPassEncoder, run tess.StreamRun, camera render.Camera, width, height int) error {
+// groupParticleRuns assigns each contiguous run of tess.DrawRunParticles
+// entries in runs to one composite group, mirroring the WASM backend's
+// grouping (platform/wasm/webgpu.go). groupOf[i] is -1 for non-particle runs.
+func groupParticleRuns(runs []tess.StreamRun) (groups [][]render.DrawParticles, groupOf []int) {
+	groupOf = make([]int, len(runs))
+	inGroup := false
+	for i, run := range runs {
+		if run.Kind != tess.DrawRunParticles {
+			groupOf[i] = -1
+			inGroup = false
+			continue
+		}
+		if !inGroup {
+			groups = append(groups, nil)
+			inGroup = true
+		}
+		idx := len(groups) - 1
+		groupOf[i] = idx
+		groups[idx] = append(groups[idx], run.Particles)
+	}
+	return groups, groupOf
+}
+
+// encodeParticleOffscreen records one single-sample render pass per composite
+// group, drawing its particle runs into a pooled target cleared to
+// transparent black. Painter order inside the group is preserved; ordering
+// against the rest of the scene is restored by compositing at the group's
+// position in the main pass.
+// beginWrites, when non-nil, opens the render timing interval on the first
+// offscreen pass so the measurement covers the composites and the gaps between
+// passes, not just the main pass.
+func (r *Renderer) encodeParticleOffscreen(
+	encoder *wgpu.CommandEncoder,
+	groups [][]render.DrawParticles,
+	camera render.Camera,
+	ow, oh int,
+	beginWrites *wgpu.PassTimestampWrites,
+) error {
+	for gi, cmds := range groups {
+		var writes *wgpu.PassTimestampWrites
+		if gi == 0 {
+			writes = beginWrites
+		}
+		pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
+			Label: "Arasy particle offscreen pass",
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View:       r.particleTargets[gi].view,
+				LoadOp:     wgpu.LoadOpClear,
+				StoreOp:    wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{},
+			}},
+			TimestampWrites: writes,
+		})
+		if err != nil {
+			return fmt.Errorf("begin particle offscreen pass: %w", err)
+		}
+		for _, cmd := range cmds {
+			r.particles.drawTo(pass, cmd, camera, r.particleScale, ow, oh, true)
+		}
+		if err := pass.TryEnd(); err != nil {
+			pass.Release()
+			return fmt.Errorf("end particle offscreen pass: %w", err)
+		}
+		pass.Release()
+	}
+	return nil
+}
+
+func (r *Renderer) drawRun(
+	pass *wgpu.RenderPassEncoder,
+	run tess.StreamRun,
+	camera render.Camera,
+	width, height int,
+	group int,
+	offscreenParticles bool,
+	lastComposited *int,
+) error {
 	switch run.Kind {
 	case tess.DrawRunSolid:
 		pass.SetPipeline(r.solidPipeline)
@@ -840,9 +1246,20 @@ func (r *Renderer) drawRun(pass *wgpu.RenderPassEncoder, run tess.StreamRun, cam
 		pass.SetBindGroup(0, atlas.glyphBindGroup, nil)
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.TextGlyphStride*6), 0)
 	case tess.DrawRunParticles:
-		if r.particles != nil {
-			r.particles.draw(pass, run.Particles, camera, width, height)
+		if r.particles == nil {
+			return nil
 		}
+		if !offscreenParticles {
+			r.particles.draw(pass, run.Particles, camera, width, height)
+			return nil
+		}
+		if group == *lastComposited {
+			return nil
+		}
+		*lastComposited = group
+		pass.SetPipeline(r.compositePipeline)
+		pass.SetBindGroup(0, r.particleTargets[group].bindGroup, nil)
+		pass.Draw(3, 1, 0, 0)
 	case tess.DrawRunSpriteBatch:
 		r.warnSkipped("sprite batches")
 	case tess.DrawRunTextBatch:

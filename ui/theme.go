@@ -8,16 +8,16 @@ type Theme struct {
 	// Zero keeps the built-in engine font, so an unset theme renders exactly
 	// as before. Games resolve the id from their manifest (ctx.Assets.Font)
 	// and set it once here.
-	Font     render.FontID
-	Button   ButtonTheme
-	Label    LabelTheme
-	Panel    PanelTheme
-	Progress ProgressBarTheme
-	Slider   SliderTheme
-	Card     CardTheme
-	Row      RowTheme
-	Header   HeaderTheme
-	Badge    BadgeTheme
+	Font      render.FontID
+	Button    ButtonTheme
+	Label     LabelTheme
+	Panel     PanelTheme
+	Progress  ProgressBarTheme
+	Slider    SliderTheme
+	Card      CardTheme
+	Row       RowTheme
+	Header    HeaderTheme
+	Badge     BadgeTheme
 	Text      TextTheme
 	Focus     FocusTheme
 	Tabs      TabsTheme

@@ -43,6 +43,12 @@ type gpuParticles struct {
 	sampler                                    *wgpu.Sampler
 	emitters                                   map[particlegpu.EmitterKey]*gpuEmitter
 	frame                                      uint64
+
+	// Single-sample variants for the particle offscreen target, built only
+	// when the renderer's particle compositing is enabled. The additive
+	// variant keeps destination alpha untouched so the source-over composite
+	// of the offscreen stays mathematically exact for both blends.
+	drawAlphaOff, drawAdditiveOff, drawMissingOff *wgpu.RenderPipeline
 }
 
 func newGpuParticles(
@@ -52,6 +58,7 @@ func newGpuParticles(
 	textures []gpuTexture,
 	format wgpu.TextureFormat,
 	sampleCount uint32,
+	withOffscreen bool,
 ) (*gpuParticles, error) {
 	g := &gpuParticles{
 		device:   device,
@@ -180,13 +187,13 @@ func newGpuParticles(
 		return nil, err
 	}
 	defer rm.Release()
-	makePipe := func(entry string, blend *wgpu.BlendState) (*wgpu.RenderPipeline, error) {
+	makePipe := func(entry string, blend *wgpu.BlendState, samples uint32) (*wgpu.RenderPipeline, error) {
 		return device.TryCreateRenderPipeline(
 			&wgpu.RenderPipelineDescriptor{
 				Layout:      renderLayout,
 				Vertex:      wgpu.VertexState{Module: rm, EntryPoint: "vs_main"},
 				Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
-				Multisample: wgpu.MultisampleState{Count: sampleCount, Mask: ^uint32(0)},
+				Multisample: wgpu.MultisampleState{Count: samples, Mask: ^uint32(0)},
 				Fragment: &wgpu.FragmentState{
 					Module:     rm,
 					EntryPoint: entry,
@@ -195,19 +202,52 @@ func newGpuParticles(
 			},
 		)
 	}
-	if g.drawAlpha, err = makePipe("fs_main", premultipliedBlend()); err != nil {
+	if g.drawAlpha, err = makePipe("fs_main", premultipliedBlend(), sampleCount); err != nil {
 		g.close()
 		return nil, err
 	}
-	if g.drawAdditive, err = makePipe("fs_main", additiveBlend()); err != nil {
+	if g.drawAdditive, err = makePipe("fs_main", additiveBlend(), sampleCount); err != nil {
 		g.close()
 		return nil, err
 	}
-	if g.drawMissing, err = makePipe("fs_missing", premultipliedBlend()); err != nil {
+	if g.drawMissing, err = makePipe("fs_missing", premultipliedBlend(), sampleCount); err != nil {
 		g.close()
 		return nil, err
+	}
+	if withOffscreen {
+		if g.drawAlphaOff, err = makePipe("fs_main", premultipliedBlend(), 1); err != nil {
+			g.close()
+			return nil, err
+		}
+		if g.drawAdditiveOff, err = makePipe("fs_main", additiveOffscreenBlend(), 1); err != nil {
+			g.close()
+			return nil, err
+		}
+		if g.drawMissingOff, err = makePipe("fs_missing", premultipliedBlend(), 1); err != nil {
+			g.close()
+			return nil, err
+		}
 	}
 	return g, nil
+}
+
+// additiveOffscreenBlend accumulates additive color into the offscreen while
+// leaving its alpha untouched. The composite is source-over — dst*(1-a) + rgb
+// — so additive light must carry zero coverage, or it would wrongly attenuate
+// whatever is behind the composite.
+func additiveOffscreenBlend() *wgpu.BlendState {
+	return &wgpu.BlendState{
+		Color: wgpu.BlendComponent{
+			Operation: wgpu.BlendOperationAdd,
+			SrcFactor: wgpu.BlendFactorOne,
+			DstFactor: wgpu.BlendFactorOne,
+		},
+		Alpha: wgpu.BlendComponent{
+			Operation: wgpu.BlendOperationAdd,
+			SrcFactor: wgpu.BlendFactorZero,
+			DstFactor: wgpu.BlendFactorOne,
+		},
+	}
 }
 
 func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureView, error) {
@@ -402,11 +442,18 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 	return particleSim{e, n}, true
 }
 
-func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) error {
+// encode records the emit and simulate compute passes. emitWrites/simulateWrites
+// are nil unless GPU timing is sampling this frame, in which case they carry the
+// timestamp boundaries the timing pool expects.
+func (g *gpuParticles) encode(
+	encoder *wgpu.CommandEncoder,
+	s []particleSim,
+	emitWrites, simulateWrites *wgpu.PassTimestampWrites,
+) error {
 	if len(s) == 0 {
 		return nil
 	}
-	p := encoder.BeginComputePass(nil)
+	p := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: emitWrites})
 	defer p.Release()
 	p.SetPipeline(g.emitPipeline)
 	for _, v := range s {
@@ -418,7 +465,7 @@ func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) err
 	if e := p.TryEnd(); e != nil {
 		return e
 	}
-	p = encoder.BeginComputePass(nil)
+	p = encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: simulateWrites})
 	defer p.Release()
 	p.SetPipeline(g.simulatePipeline)
 	for _, v := range s {
@@ -428,13 +475,38 @@ func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) err
 	return p.TryEnd()
 }
 
+// draw submits one emitter at its exact painter-order position in the main
+// MSAA pass.
 func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, w, h int) {
+	g.drawTo(p, cmd, c, 1, w, h, false)
+}
+
+// drawTo submits one emitter into either the main MSAA pass (offscreen
+// false, clipScale 1, target dims = surface dims) or a single-sample
+// particle offscreen target whose dimensions are the surface dims times
+// clipScale. The world-to-clip transform is resolution-independent, so only
+// the scissor needs the scale.
+func (g *gpuParticles) drawTo(
+	p *wgpu.RenderPassEncoder,
+	cmd render.DrawParticles,
+	c render.Camera,
+	clipScale float64,
+	targetW, targetH int,
+	offscreen bool,
+) {
 	e := g.emitters[particlegpu.EmitterKey{Effect: cmd.Effect, Emitter: cmd.Emitter}]
 	if e == nil || e.seed != cmd.Seed || e.lastSeen != g.frame {
 		return
 	}
 	pipe := g.drawAlpha
-	if e.missingTexture {
+	if offscreen {
+		pipe = g.drawAlphaOff
+		if e.missingTexture {
+			pipe = g.drawMissingOff
+		} else if e.decl.Blend == particle.BlendAdditive {
+			pipe = g.drawAdditiveOff
+		}
+	} else if e.missingTexture {
 		pipe = g.drawMissing
 	} else if e.decl.Blend == particle.BlendAdditive {
 		pipe = g.drawAdditive
@@ -442,13 +514,13 @@ func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles,
 	p.SetPipeline(pipe)
 	p.SetBindGroup(0, e.renderBind, nil)
 	p.SetBindGroup(1, e.textureBind, nil)
-	x, y, sw, sh, ok := particlegpu.ScissorRect(cmd.Clip, c, 1, w, h)
+	x, y, sw, sh, ok := particlegpu.ScissorRect(cmd.Clip, c, clipScale, targetW, targetH)
 	p.SetScissorRect(uint32(x), uint32(y), uint32(sw), uint32(sh))
 	if ok {
 		p.DrawIndirect(e.drawIndirect, 0)
 	}
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-		p.SetScissorRect(0, 0, uint32(w), uint32(h))
+		p.SetScissorRect(0, 0, uint32(targetW), uint32(targetH))
 	}
 }
 
@@ -485,7 +557,10 @@ func (g *gpuParticles) close() {
 			p.Release()
 		}
 	}
-	for _, p := range []*wgpu.RenderPipeline{g.drawAlpha, g.drawAdditive, g.drawMissing} {
+	for _, p := range []*wgpu.RenderPipeline{
+		g.drawAlpha, g.drawAdditive, g.drawMissing,
+		g.drawAlphaOff, g.drawAdditiveOff, g.drawMissingOff,
+	} {
 		releasePipeline(&p)
 	}
 	for _, l := range []*wgpu.BindGroupLayout{g.computeLayout, g.renderLayout, g.textureLayout} {

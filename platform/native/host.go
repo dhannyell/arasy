@@ -25,6 +25,10 @@ type gpuBufferReporter interface {
 	particleGPUBufferBytes() (bytes uint64, ok bool)
 }
 
+type gpuTimingReporter interface {
+	particleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
+}
+
 // presentWaitReporter exposes the presentation-queue block time of the last
 // frame (acquire + present), which with vsync is the vblank wait and must
 // not be read as CPU render work.
@@ -32,7 +36,39 @@ type presentWaitReporter interface {
 	presentWaitDuration() (time.Duration, bool)
 }
 
+// cpuFrameTiming separates CPU work, surface acquisition and queue submission.
+type cpuFrameTiming struct {
+	submittedAt time.Time
+	cpuEndAt    time.Time
+	acquireWait time.Duration
+	valid       bool
+}
+
+func (t cpuFrameTiming) renderDurationSince(start time.Time) time.Duration {
+	if !t.valid || start.IsZero() {
+		return 0
+	}
+	duration := t.cpuEndAt.Sub(start) - t.acquireWait
+	if duration < 0 {
+		return 0
+	}
+	return duration
+}
+
+func (t cpuFrameTiming) inputToSubmit(inputAt time.Time) (time.Duration, bool) {
+	if !t.valid || inputAt.IsZero() {
+		return 0, false
+	}
+	duration := t.submittedAt.Sub(inputAt)
+	if duration < 0 {
+		return 0, false
+	}
+	return duration, true
+}
+
 const noGamepadJoystick glfw.Joystick = -1
+
+const panelGCSampleFrames = 8 // Per-frame runtime metrics materially slow the panel.
 
 type host struct {
 	driver      *runtime.Driver
@@ -46,9 +82,12 @@ type host struct {
 	lastInputAt time.Time
 	heapSamples []metrics.Sample
 
-	pending  []input.Event
-	viewport math2d.Rect
-	fbDirty  bool
+	pending     []input.Event
+	viewport    math2d.Rect
+	fbDirty     bool
+	cursorX     float64
+	cursorY     float64
+	cursorDirty bool
 
 	gamepadJoystick glfw.Joystick
 	gamepadTracker  platforminput.GamepadTracker
@@ -68,6 +107,9 @@ type host struct {
 	// GPU). Cheap to keep always: it samples once a second and only when the
 	// panel asks.
 	sysprobe *sysprobe.Prober
+
+	gc       runtime.GCStatsTracker
+	gcFrames uint8
 
 	spinMargin time.Duration
 }
@@ -113,6 +155,25 @@ func (h *host) noteInput() {
 	}
 }
 
+func (h *host) queuePointerMove(x, y float64) {
+	event := pointerMoveEvent(x, y)
+	if last := len(h.pending) - 1; last >= 0 &&
+		h.pending[last].Kind == input.EventPointerMove && h.pending[last].Source == event.Source {
+		h.pending[last] = event
+		return
+	}
+	h.pending = append(h.pending, event)
+}
+
+func (h *host) flushCursorMove() {
+	if !h.cursorDirty {
+		return
+	}
+	h.cursorDirty = false
+	x, y := h.scaleCursor(h.cursorX, h.cursorY)
+	h.queuePointerMove(x, y)
+}
+
 func (h *host) readHeap() (uint64, uint64, bool) {
 	if len(h.heapSamples) == 0 {
 		return 0, 0, false
@@ -154,6 +215,7 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		h.noteInput()
 		h.pending = append(h.pending, keyEvent(code, action == glfw.Press))
 	})
@@ -170,6 +232,7 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		h.noteInput()
 		h.pending = append(h.pending, event)
 	})
@@ -181,16 +244,18 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		x, y := h.scaledCursor()
 		h.noteInput()
 		h.pending = append(h.pending, mouseButtonEvent(code, action == glfw.Press, x, y))
 	})
 	h.window.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
-		x, y = h.scaleCursor(x, y)
+		h.cursorX, h.cursorY = x, y
+		h.cursorDirty = true
 		h.noteInput()
-		h.pending = append(h.pending, pointerMoveEvent(x, y))
 	})
 	h.window.SetScrollCallback(func(_ *glfw.Window, dx, dy float64) {
+		h.flushCursorMove()
 		x, y := h.scaledCursor()
 		events := wheelEvents(dx, dy, x, y)
 		if len(events) > 0 {
@@ -200,6 +265,7 @@ func (h *host) registerCallbacks() {
 	})
 	h.window.SetCursorEnterCallback(func(_ *glfw.Window, entered bool) {
 		if !entered {
+			h.flushCursorMove()
 			h.noteInput()
 			h.pending = append(h.pending, pointerLeaveEvent())
 		}
@@ -229,6 +295,7 @@ func (h *host) run() error {
 	}
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
+		h.flushCursorMove()
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
@@ -283,10 +350,13 @@ func (h *host) run() error {
 		if sampleCPU {
 			tickEnd = time.Now()
 		}
+		if h.panel != nil {
+			h.samplePanelGC()
+		}
 		h.renderFrame(elapsed)
-		renderEnd := time.Now()
+		cpuFrame := h.renderer.frameCPUTiming()
 		if h.panelWantsStats() {
-			h.samplePanelStats(tickStart, tickEnd, renderEnd, inputAt)
+			h.samplePanelStats(tickStart, tickEnd, inputAt, cpuFrame)
 		}
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
@@ -297,10 +367,14 @@ func (h *host) run() error {
 				m := FrameMetrics{
 					FPS: stats.FPS, FrameTime: stats.FrameTime,
 					MeanFrameTime: stats.MeanFrameTime, P99FrameTime: stats.P99FrameTime,
-					CPUTickTime: tickEnd.Sub(tickStart), CPURenderTime: renderEnd.Sub(tickEnd), CPUTimingSet: true,
 				}
-				if !inputAt.IsZero() {
-					m.InputToSubmit = renderEnd.Sub(inputAt)
+				if cpuFrame.valid {
+					m.CPUTickTime = tickEnd.Sub(tickStart)
+					m.CPURenderTime = cpuFrame.renderDurationSince(tickEnd)
+					m.CPUTimingSet = true
+				}
+				if latency, ok := cpuFrame.inputToSubmit(inputAt); ok {
+					m.InputToSubmit = latency
 					m.InputToSubmitSet = true
 				}
 				m.HeapInUse, m.HeapSys, m.HeapSet = h.readHeap()
@@ -309,6 +383,9 @@ func (h *host) run() error {
 				}
 				if reporter, ok := any(h.renderer).(gpuBufferReporter); ok {
 					m.GPUBufferBytes, m.GPUBufferSet = reporter.particleGPUBufferBytes()
+				}
+				if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
+					m.GPUPrepareTime, m.GPUSimulateTime, m.GPURenderTime, m.GPUTimingSet = reporter.particleGPUTimings()
 				}
 				if h.logMetrics {
 					attrs := []any{"fps", m.FPS, "frame_ms", m.FrameTime.Seconds() * 1000, "mean_ms", m.MeanFrameTime.Seconds() * 1000, "p99_ms", m.P99FrameTime.Seconds() * 1000}
@@ -352,17 +429,22 @@ func (h *host) panelWantsStats() bool {
 // They describe the frame just submitted, so the panel shows them one frame
 // late: the render time of the frame the panel is being drawn into is not
 // known until after it has been drawn.
-func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt time.Time) {
-	h.panelStats.CPUTick = tickEnd.Sub(tickStart)
-	h.panelStats.CPURender = renderEnd.Sub(tickEnd)
-	h.panelStats.CPUSet = true
-
-	h.panelStats.InputLatencySet = !inputAt.IsZero()
-	if h.panelStats.InputLatencySet {
-		h.panelStats.InputLatency = renderEnd.Sub(inputAt)
+func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame cpuFrameTiming) {
+	h.panelStats.CPUSet = cpuFrame.valid
+	if h.panelStats.CPUSet {
+		h.panelStats.CPUTick = tickEnd.Sub(tickStart)
+		h.panelStats.CPURender = cpuFrame.renderDurationSince(tickEnd)
 	}
 
-	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+	h.panelStats.InputLatency, h.panelStats.InputLatencySet = cpuFrame.inputToSubmit(inputAt)
+	if !h.panelStats.InputLatencySet {
+		h.panelStats.InputLatency = 0
+	}
+
+	if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
+		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
+			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
+	}
 
 	if reporter, ok := any(h.renderer).(presentWaitReporter); ok {
 		h.panelStats.PresentWait, h.panelStats.PresentSet = reporter.presentWaitDuration()
@@ -379,6 +461,33 @@ func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt
 	h.panelStats.GPUProcessPercent = probe.GPUProcessPercent
 	h.panelStats.GPUSystemPercent = probe.GPUSystemPercent
 	h.panelStats.GPUSet = probe.GPUOK
+}
+
+func (h *host) samplePanelGC() {
+	h.panelStats.GCFresh = false
+	h.gcFrames++
+	if h.gcFrames < panelGCSampleFrames {
+		return
+	}
+	h.gcFrames = 0
+	if h.panelWantsStats() {
+		h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+	}
+
+	gc, ok := h.gc.Sample()
+	h.panelStats.GCSet = ok
+	if !ok {
+		h.panelStats.GCCycles = 0
+		h.panelStats.GCPause = 0
+		h.panelStats.GCAllocBytes = 0
+		h.panelStats.GCHeapLive = 0
+		h.panelStats.GCHeapGoal = 0
+		return
+	}
+	h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
+	h.panelStats.GCAllocBytes = gc.AllocBytes
+	h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
+	h.panelStats.GCFresh = true
 }
 
 func (h *host) pollGamepad() []input.Event {

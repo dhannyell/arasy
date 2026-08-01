@@ -131,6 +131,11 @@ func TestPickRightClickCancels(t *testing.T) {
 	if p.inspect.hasEntity {
 		t.Fatal("a cancelled pick selected something")
 	}
+
+	release := input.Event{Source: input.Source{Device: input.DeviceMouse, Code: input.MouseRight}, Kind: input.EventButtonUp, X: 3, Y: 4}
+	if left := p.HandleInput([]input.Event{release}, testViewport()); len(left) != 0 {
+		t.Fatalf("paired right-button release forwarded %d events, want none", len(left))
+	}
 }
 
 func TestPickEscapeDisarmsButPassesThrough(t *testing.T) {

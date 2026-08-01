@@ -3,6 +3,8 @@ github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794/go.mod h1:7e
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/dhannyell/webgpu v1.34.2-0.20260801070821-6221e36b5f84 h1:994rEnmZYGHQtNGklEr7TKOG7cPbd5Oig/RBCVnKxoU=
+github.com/dhannyell/webgpu v1.34.2-0.20260801070821-6221e36b5f84/go.mod h1:GQectz+JGhriyME9VEChIZvHupghM2Y/lj5sfo53brI=
 github.com/ebitengine/oto/v3 v3.4.0 h1:br0PgASsEWaoWn38b2Goe7m1GKFYfNgnsjSd5Gg+/bQ=
 github.com/ebitengine/oto/v3 v3.4.0/go.mod h1:IOleLVD0m+CMak3mRVwsYY8vTctQgOM0iiL6S7Ar7eI=
 github.com/ebitengine/purego v0.9.0 h1:mh0zpKBIXDceC63hpvPuGLiJ8ZAa3DfrFTudmfi8A4k=
@@ -18,8 +20,6 @@ github.com/jfreymuth/oggvorbis v1.0.5 h1:u+Ck+R0eLSRhgq8WTmffYnrVtSztJcYrl588DM4
 github.com/jfreymuth/oggvorbis v1.0.5/go.mod h1:1U4pqWmghcoVsCJJ4fRBKv9peUJMBHixthRlBeD6uII=
 github.com/jfreymuth/vorbis v1.0.2 h1:m1xH6+ZI4thH927pgKD8JOH4eaGRm18rEE9/0WKjvNE=
 github.com/jfreymuth/vorbis v1.0.2/go.mod h1:DoftRo4AznKnShRl1GxiTFCseHr4zR9BN3TWXyuzrqQ=
-github.com/oliverbestmann/webgpu v1.34.1 h1:nh2ydYrYNz9W6SjUlVLa/n7IfBkjH1Z0Sg7Rxievpxo=
-github.com/oliverbestmann/webgpu v1.34.1/go.mod h1:GQectz+JGhriyME9VEChIZvHupghM2Y/lj5sfo53brI=
 github.com/oliverbestmann/webgpu/libs-android v0.0.0-20260628152806-6b27e30a172e h1:FX62Djj//RQiIrjnyo7oxhQJ4rdNlbzvLiICxTbE4z4=
 github.com/oliverbestmann/webgpu/libs-android v0.0.0-20260628152806-6b27e30a172e/go.mod h1:tczQXCdsoFy+FTJVsZSve/vF8cmWEkxhvjcyY2Rujp8=
 github.com/oliverbestmann/webgpu/libs-darwin v0.0.0-20260628152755-66a5dfa57f8d h1:DX7hw4Pmr73MNVEtOmEq4+nKH+rd8fSdL1a5PLHrqrE=

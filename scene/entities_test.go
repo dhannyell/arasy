@@ -30,6 +30,17 @@ func TestEntitiesUnionsEveryComponentStoreInOrder(t *testing.T) {
 	}
 }
 
+func TestEntitiesIncludesTransformTweenWithoutTransform(t *testing.T) {
+	world := scene.NewWorld()
+	id := world.Spawn()
+	world.SetTransformTween(id, scene.TransformTween{})
+
+	got := world.Entities()
+	if len(got) != 1 || got[0] != id {
+		t.Fatalf("Entities() = %v, want transform-tween entity %d", got, id)
+	}
+}
+
 func TestEntitiesDropsDespawnedAndIgnoresPresentationStores(t *testing.T) {
 	world := scene.NewWorld()
 

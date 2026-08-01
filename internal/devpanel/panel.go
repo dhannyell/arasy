@@ -79,6 +79,32 @@ type Stats struct {
 	GPUSystemPercent  float64
 	GPUSet            bool
 
+	// GPU execution time per pass, from timestamp queries: the particle emit
+	// and simulate compute passes and the render interval. This is what the
+	// GPU actually spent, not the utilization percentage above and not the
+	// CPU's view of submission. The sample lags its frame, because reading
+	// timestamps back without stalling the pipeline means reading them late.
+	GPUEmitTime     time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimeSet      bool
+
+	// Garbage collection since the previous sample. GCFresh marks the sampled
+	// window once in the frame graph.
+	//
+	// GCAllocBytes is deliberately the only attribution offered. No function
+	// forces a collection — a cycle starts when the heap reaches its goal, and
+	// the allocation that crosses the line is arbitrary — so naming a culprit
+	// call site would be naming the wrong one most of the time. The allocation
+	// rate is what actually sets how often the collector runs.
+	GCCycles     uint64
+	GCPause      time.Duration
+	GCAllocBytes uint64
+	GCHeapLive   uint64
+	GCHeapGoal   uint64
+	GCSet        bool
+	GCFresh      bool
+
 	// PresentWait is how long the last frame blocked on the presentation
 	// queue (acquire + present). With vsync that is the vblank wait — idle
 	// time that must not be read as CPU render work, so hosts that measure
@@ -143,6 +169,7 @@ type Panel struct {
 	frames     runtime.FrameStatsTracker
 	frameStats runtime.FrameStats
 	history    frameHistory
+	perfBars   [3]perfBarMesh
 	stats      Stats
 
 	// Caller-owned widget values. Every value widget in ui hands its value
@@ -155,10 +182,8 @@ type Panel struct {
 
 	inspect   inspectState
 	pickArmed bool
-	// pickAwaitRelease consumes the button-up paired with a consumed pick
-	// click: forwarding a release whose press the game never saw would be
-	// worse than dropping both.
-	pickAwaitRelease bool
+	// pickReleaseButton pairs the release with a consumed pick or cancel press.
+	pickReleaseButton input.SourceCode
 	// frameCam is the camera the last Render was handed, cached so the pick
 	// gesture can map a screen click back into game world space.
 	frameCam render.Camera
@@ -216,6 +241,7 @@ func (p *Panel) SetVisible(visible bool) {
 		p.wantKeyboard = false
 		p.scrubActive = false
 		p.pickArmed = false
+		p.pickReleaseButton = 0
 		p.inspect.edit = inspectEdit{}
 	}
 }
@@ -277,18 +303,18 @@ func (p *Panel) HandleInput(events []input.Event, viewport math2d.Rect) []input.
 // pointer this frame.
 func (p *Panel) handlePick(events []input.Event, viewport math2d.Rect, lay layout) bool {
 	consumed := false
-	if p.pickAwaitRelease {
-		for _, event := range events {
-			if event.Source.Code == input.MouseLeft && event.Kind == input.EventButtonUp {
-				p.pickAwaitRelease = false
-				consumed = true
-			}
-		}
-	}
-	if !p.pickArmed {
-		return consumed
-	}
 	for _, event := range events {
+		if p.pickReleaseButton != 0 &&
+			event.Source.Device == input.DeviceMouse &&
+			event.Source.Code == p.pickReleaseButton &&
+			event.Kind == input.EventButtonUp {
+			p.pickReleaseButton = 0
+			consumed = true
+			continue
+		}
+		if !p.pickArmed {
+			continue
+		}
 		switch event.Source.Code {
 		case input.MouseLeft:
 			if event.Kind != input.EventButtonDown {
@@ -306,11 +332,12 @@ func (p *Panel) handlePick(events []input.Event, viewport math2d.Rect, lay layou
 				p.inspect.edit = inspectEdit{}
 			}
 			p.pickArmed = false
-			p.pickAwaitRelease = true
+			p.pickReleaseButton = input.MouseLeft
 			consumed = true
 		case input.MouseRight:
 			if event.Kind == input.EventButtonDown {
 				p.pickArmed = false
+				p.pickReleaseButton = input.MouseRight
 				consumed = true
 			}
 		case input.KeyEscape:
@@ -435,7 +462,7 @@ func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 	if frame, ready := p.frames.Observe(elapsed); ready {
 		p.frameStats = frame
 	}
-	p.history.push(elapsed)
+	p.history.push(elapsed, stats.GCFresh && stats.GCCycles > 0)
 }
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {

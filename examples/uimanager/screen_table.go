@@ -25,7 +25,7 @@ func (g *Manager) drawLeagueTable(ctx *runtime.RenderContext) []render.Command {
 // the league table screen, shared by Update (standingsBodyRect in game.go)
 // and both Render helpers below — duplicating these rects per function let
 // them silently drift out of sync with each other.
-func standingsPanel() math2d.Rect { return rect(190, 170, 740, 690) }
+func standingsPanel() math2d.Rect     { return rect(190, 170, 740, 690) }
 func standingsTableRect() math2d.Rect { return panelBodyRect(standingsPanel()) }
 
 // Right column: three stacked cards (RODADA, PRÓXIMO JOGO, legenda

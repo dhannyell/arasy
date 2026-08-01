@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/ui"
 )
 
@@ -30,18 +31,22 @@ const (
 	perfLineHeight    = 18
 )
 
-// frameHistory is a ring of recent frame durations.
+// frameHistory is a ring of recent frame durations, each flagged with whether
+// the collector ran during it. The flag rides along with the sample so a bar
+// and its cause cannot drift apart as the ring wraps.
 type frameHistory struct {
-	samples [frameHistoryLen]time.Duration
-	next    int
-	filled  bool
+	samples   [frameHistoryLen]time.Duration
+	collected [frameHistoryLen]bool
+	next      int
+	filled    bool
 }
 
-func (h *frameHistory) push(frame time.Duration) {
+func (h *frameHistory) push(frame time.Duration, collected bool) {
 	if frame <= 0 {
 		return
 	}
 	h.samples[h.next] = frame
+	h.collected[h.next] = collected
 	h.next = (h.next + 1) % len(h.samples)
 	if h.next == 0 {
 		h.filled = true
@@ -50,7 +55,7 @@ func (h *frameHistory) push(frame time.Duration) {
 
 // each walks the samples oldest to newest, so the graph scrolls left to right
 // regardless of where the ring's cursor happens to sit.
-func (h *frameHistory) each(visit func(index int, frame time.Duration)) {
+func (h *frameHistory) each(visit func(index int, frame time.Duration, collected bool)) {
 	count := h.next
 	start := 0
 	if h.filled {
@@ -58,7 +63,8 @@ func (h *frameHistory) each(visit func(index int, frame time.Duration)) {
 		start = h.next
 	}
 	for i := range count {
-		visit(i, h.samples[(start+i)%len(h.samples)])
+		slot := (start + i) % len(h.samples)
+		visit(i, h.samples[slot], h.collected[slot])
 	}
 }
 
@@ -72,6 +78,32 @@ func (h *frameHistory) count() int {
 type perfLayout struct {
 	graph math2d.Rect
 	lines math2d.Rect
+}
+
+type perfBarMesh struct {
+	vertices []math2d.Vec2
+	indices  []uint32
+	color    render.Color
+}
+
+func (m *perfBarMesh) reset(color render.Color) {
+	m.vertices = m.vertices[:0]
+	m.indices = m.indices[:0]
+	m.color = color
+}
+
+func (m *perfBarMesh) appendRect(rect math2d.Rect) {
+	base := uint32(len(m.vertices))
+	m.vertices = append(m.vertices,
+		rect.Min,
+		math2d.Vec2{X: rect.Max.X, Y: rect.Min.Y},
+		rect.Max,
+		math2d.Vec2{X: rect.Min.X, Y: rect.Max.Y},
+	)
+	m.indices = append(m.indices,
+		base, base+1, base+2,
+		base, base+2, base+3,
+	)
 }
 
 func perfRects(rect math2d.Rect) perfLayout {
@@ -120,21 +152,36 @@ func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.
 		return
 	}
 	width := rect.Width() / float64(len(p.history.samples))
+	p.perfBars[0].reset(p.theme.Progress.Fill)
+	p.perfBars[1].reset(colorWarning)
+	p.perfBars[2].reset(colorCollected)
 
-	p.history.each(func(index int, frame time.Duration) {
+	p.history.each(func(index int, frame time.Duration, collected bool) {
 		height := math.Min(float64(frame)/ceiling, 1) * rect.Height()
 		if height <= 0 {
 			return
 		}
-		fill := p.theme.Progress.Fill
+		mesh := &p.perfBars[0]
 		if frame > budget {
-			fill = colorWarning
+			mesh = &p.perfBars[1]
 		}
-		draw.FillRect(math2d.NewRect(
+		// A collection outranks "late": a late frame asks why, and this is the
+		// answer whenever it applies. An on-time frame that collected is worth
+		// marking too — it is the same cost landing inside the budget.
+		if collected {
+			mesh = &p.perfBars[2]
+		}
+		mesh.appendRect(math2d.NewRect(
 			math2d.Vec2{X: rect.Min.X + float64(index)*width, Y: rect.Max.Y - height},
 			math2d.Vec2{X: math.Max(width-1, 1), Y: height},
-		), fill)
+		))
 	})
+	for i := range p.perfBars {
+		mesh := &p.perfBars[i]
+		if len(mesh.indices) > 0 {
+			draw.DrawTriangles(mesh.vertices, mesh.indices, mesh.color)
+		}
+	}
 }
 
 func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.Duration) {
@@ -153,12 +200,8 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 	// look saturated.
 	timings := ""
 	if p.stats.CPUSet {
-		renderCPU := p.stats.CPURender
-		if p.stats.PresentSet {
-			renderCPU = max(p.stats.CPURender-p.stats.PresentWait, 0)
-		}
 		timings = "cpu tick " + formatMillis(p.stats.CPUTick) +
-			"   render " + formatMillis(renderCPU)
+			"   render " + formatMillis(p.stats.CPURender)
 		if p.stats.PresentSet {
 			timings += "   present " + formatMillis(p.stats.PresentWait)
 		}
@@ -196,6 +239,26 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 	if p.stats.GPUSet {
 		lines = append(lines, "gpu "+formatPercent(p.stats.GPUProcessPercent)+
 			"   sys "+formatPercent(p.stats.GPUSystemPercent))
+	}
+	// What the GPU spent, per pass. Kept apart from the utilization row above:
+	// a busy percentage says the GPU had work, these say where the work went.
+	if p.stats.GPUTimeSet {
+		lines = append(lines, "gpu emit "+formatGPUTime(p.stats.GPUEmitTime)+
+			"   sim "+formatGPUTime(p.stats.GPUSimulateTime)+
+			"   draw "+formatGPUTime(p.stats.GPURenderTime))
+	}
+	// The allocation rate is the actionable half of this row: it is what sets
+	// how often the collector has to run, and unlike the cycle count it is
+	// something the game's code can change.
+	if p.stats.GCSet {
+		gc := "alloc " + formatMegabytes(p.stats.GCAllocBytes) +
+			"   heap " + formatMegabytes(p.stats.GCHeapLive) +
+			" / " + formatMegabytes(p.stats.GCHeapGoal)
+		if p.stats.GCCycles > 0 {
+			gc += "   gc " + formatInt(int(p.stats.GCCycles)) +
+				" " + formatGPUTime(p.stats.GCPause)
+		}
+		lines = append(lines, gc)
 	}
 
 	for i, line := range lines {

@@ -11,7 +11,7 @@ import (
 
 const calendarRowH = 44.0
 
-func calendarRoundsPanel() math2d.Rect { return rect(190, 170, 820, 700) }
+func calendarRoundsPanel() math2d.Rect    { return rect(190, 170, 820, 700) }
 func calendarRoundsBodyRect() math2d.Rect { return panelBodyRect(calendarRoundsPanel()) }
 
 func calendarNextPanel() math2d.Rect   { return rect(1050, 170, 680, 300) }

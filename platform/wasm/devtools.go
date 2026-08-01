@@ -37,4 +37,22 @@ type overlayStats struct {
 	HeapInUse uint64
 	HeapTotal uint64
 	HeapSet   bool
+
+	// GPU execution time per pass, from timestamp queries. Unset on adapters
+	// that do not grant "timestamp-query", and on the Canvas2D fallback.
+	GPUEmitTime     time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimeSet      bool
+
+	// Garbage collection since the previous sample. Counters are read through
+	// runtime/metrics, never ReadMemStats: stopping the world to look for
+	// pauses would be self-defeating.
+	GCCycles     uint64
+	GCPause      time.Duration
+	GCAllocBytes uint64
+	GCHeapLive   uint64
+	GCHeapGoal   uint64
+	GCSet        bool
+	GCFresh      bool
 }
