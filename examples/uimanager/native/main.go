@@ -1,19 +1,21 @@
-//go:build windows && amd64
+//go:build (windows || linux || darwin) && (amd64 || arm64)
 
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/uimanager"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("UI Manager Example")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&uimanager.Manager{}, native.Options{
 		Title:    "UI Manager Example",
+		Icon:     brand.AppIcon(),
 		Width:    1920,
 		Height:   1080,
 		Log:      log,

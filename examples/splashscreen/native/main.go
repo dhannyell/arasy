@@ -1,12 +1,12 @@
-//go:build windows && amd64
+//go:build (windows || linux || darwin) && (amd64 || arm64)
 
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/splashscreen"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -17,9 +17,11 @@ func main() {
 		panic(err)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Splash Screen Example")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:        "Splash Screen Example",
+		Icon:         brand.AppIcon(),
 		Width:        1280,
 		Height:       960,
 		Log:          log,

@@ -1,19 +1,22 @@
-//go:build windows && amd64
+//go:build (windows || linux || darwin) && (amd64 || arm64)
 
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/tabs"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Tabs")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&tabs.Game{}, native.Options{
-		Title: "Tabs", Width: 960, Height: 540,
+		Title: "Tabs",
+		Icon:  brand.AppIcon(),
+		Width: 960, Height: 540,
 		VSync: native.VSyncOn, Log: log,
 		DevTools: true,
 	}); err != nil {

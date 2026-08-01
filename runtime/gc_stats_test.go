@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"runtime"
+	"runtime/debug"
 	"testing"
 	"time"
 )
@@ -23,6 +24,14 @@ func TestGCStatsTrackerPrimesBeforeReporting(t *testing.T) {
 // A quiet interval must read as quiet. If idle frames reported cycles the
 // marking would be permanent and mean nothing.
 func TestGCStatsTrackerReportsNothingWhileIdle(t *testing.T) {
+	// This test allocates nothing, but it shares one heap with every other
+	// test in the binary. Left on, automatic collection can fire between the
+	// two samples below because unrelated work pushed the heap past the goal,
+	// and the assertion fails for a reason that has nothing to do with the
+	// tracker. Turning it off is what makes "idle" actually idle; the
+	// deferred call restores the previous setting.
+	defer debug.SetGCPercent(debug.SetGCPercent(-1))
+
 	var tracker GCStatsTracker
 	tracker.Sample()
 

@@ -1,20 +1,22 @@
-//go:build windows && amd64
+//go:build (windows || linux || darwin) && (amd64 || arm64)
 
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/breakout"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Breakout")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&breakout.Breakout{}, native.Options{
 		Title:        "Breakout",
+		Icon:         brand.AppIcon(),
 		Log:          log,
 		DevTools:     true,
 		RecordReplay: true,

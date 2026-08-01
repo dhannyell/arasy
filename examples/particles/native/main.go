@@ -1,12 +1,12 @@
-//go:build windows && amd64
+//go:build (windows || linux || darwin) && (amd64 || arm64)
 
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/particles"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
@@ -16,9 +16,11 @@ func main() {
 		panic(err)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Particles Demo")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:    "Particles Demo",
+		Icon:     brand.AppIcon(),
 		Width:    1920,
 		Height:   1080,
 		VSync:    native.VSyncOff,

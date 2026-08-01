@@ -11,8 +11,6 @@
 // absence of a probe is never an error worth logging.
 package sysprobe
 
-import "time"
-
 // Sample is one reading of every probe the OS could provide. Each group is
 // valid only when its OK flag is set; the rest stay zero.
 type Sample struct {
@@ -36,7 +34,7 @@ type Sample struct {
 	GPUOK             bool
 }
 
-// proberInterval is the minimum time between two real samples. OS probes are
-// called once per frame by the host, and none of these numbers moves fast
-// enough to justify more than one reading a second.
-const proberInterval = time.Second
+// The sampling cadence is each implementation's own business, but they all
+// answer the same question: the host calls Sample once per frame, and none of
+// these numbers moves fast enough to justify more than one real reading a
+// second. See proberInterval in the OS files.

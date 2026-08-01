@@ -15,6 +15,11 @@ import (
 // fails soft — an HRESULT or a missing counter turns into an unset OK flag,
 // never an error the host has to react to.
 
+// proberInterval is the minimum time between two real samples. It lives here
+// rather than in the shared file because it is this implementation's choice:
+// a port that reads a cheaper source is free to pick its own.
+const proberInterval = time.Second
+
 var (
 	psapi                 = syscall.NewLazyDLL("psapi.dll")
 	procGetProcessMemory  = psapi.NewProc("GetProcessMemoryInfo")
