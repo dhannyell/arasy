@@ -75,8 +75,11 @@ func TestSupportedPlatformRejectsUnknownPlatform(t *testing.T) {
 
 func TestNativeBuildArgsCarryTags(t *testing.T) {
 	release := strings.Join(nativeBuildArgs("./native", "out", nativeBuildOptions{Release: true, Mode: nativeModePortable}), " ")
-	if !strings.Contains(release, "-ldflags -s -w") {
+	if !strings.Contains(release, "-ldflags "+nativeLDFlags(false)) {
 		t.Fatalf("release args = %q, want stripped ldflags", release)
+	}
+	if !strings.HasSuffix(nativeLDFlags(true), "-s -w") || strings.Contains(nativeLDFlags(true), "windowsgui") {
+		t.Fatalf("--console ldflags = %q, want no GUI subsystem", nativeLDFlags(true))
 	}
 	if strings.Contains(release, "-tags") {
 		t.Fatalf("release args = %q, want no build tags", release)

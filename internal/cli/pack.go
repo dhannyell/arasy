@@ -22,6 +22,7 @@ var (
 	packDevTools      bool
 	packMode          string
 	packAssets        string
+	packConsole       bool
 	packBoot          webBootFlags
 )
 
@@ -92,6 +93,7 @@ func runPackNative(cmd *cobra.Command, args []string) error {
 		DevTools:      packDevTools,
 		Mode:          packMode,
 		AssetsDir:     packAssets,
+		Console:       packConsole,
 	}, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return err
 	}
@@ -116,6 +118,7 @@ func init() {
 	packCmd.Flags().BoolVar(&packDevTools, "devtools", false, "include the dev panel (arr_dev tag); release builds leave it off")
 	packCmd.Flags().StringVar(&packMode, "mode", nativeModePortable, "native layout: portable (single executable) or bundle (executable plus an assets directory)")
 	packCmd.Flags().StringVar(&packAssets, "assets", "", "native bundle mode: directory copied next to the executable as assets/")
+	packCmd.Flags().BoolVar(&packConsole, "console", false, "native Windows release: keep the console window (releases link into the GUI subsystem)")
 	packBoot.bind(packCmd)
 	registerPlatformCompletion(packCmd)
 	rootCmd.AddCommand(packCmd)

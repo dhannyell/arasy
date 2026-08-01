@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/uimanager"
@@ -11,7 +10,8 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("UI Manager Example")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&uimanager.Manager{}, native.Options{
 		Title:    "UI Manager Example",
 		Width:    1920,

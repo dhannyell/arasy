@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"image"
 	"log/slog"
+	"os"
 	goruntime "runtime"
 	"time"
 
@@ -82,6 +83,12 @@ type Options struct {
 	DevTools     bool
 	RecordReplay bool
 	GameFactory  func() runtime.Game
+}
+
+// NewLogger falls back to stderr: there is no released build to keep
+// telemetry for on a platform the host does not reach.
+func NewLogger(string) (*slog.Logger, func() error) {
+	return slog.New(slog.NewTextHandler(os.Stderr, nil)), func() error { return nil }
 }
 
 // Run reports that this platform is out of the native host's reach.

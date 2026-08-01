@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	twenty48 "github.com/dhannyell/arasy/examples/2048"
@@ -12,7 +11,8 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("2048")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&twenty48.Game2048{}, native.Options{
 		Title:        "2048",
 		Width:        1920,

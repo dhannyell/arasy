@@ -25,6 +25,7 @@ var (
 	buildDevTools      bool
 	buildMode          string
 	buildAssets        string
+	buildConsole       bool
 	buildBoot          webBootFlags
 )
 
@@ -72,6 +73,7 @@ func runBuildNative(cmd *cobra.Command, args []string) error {
 		DevTools:      buildDevTools,
 		Mode:          buildMode,
 		AssetsDir:     buildAssets,
+		Console:       buildConsole,
 	}, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 		return err
 	}
@@ -87,6 +89,7 @@ func init() {
 	buildCmd.Flags().BoolVar(&buildDevTools, "devtools", false, "include the dev panel (arr_dev tag); release builds leave it off")
 	buildCmd.Flags().StringVar(&buildMode, "mode", nativeModePortable, "native layout: portable (single executable) or bundle (executable plus an assets directory)")
 	buildCmd.Flags().StringVar(&buildAssets, "assets", "", "native bundle mode: directory copied next to the executable as assets/")
+	buildCmd.Flags().BoolVar(&buildConsole, "console", false, "native Windows release: keep the console window (releases link into the GUI subsystem)")
 	buildBoot.bind(buildCmd)
 	registerPlatformCompletion(buildCmd)
 	rootCmd.AddCommand(buildCmd)
@@ -266,6 +269,11 @@ type nativeBuildOptions struct {
 	Mode string
 	// AssetsDir is copied next to the executable as assets/ in bundle mode.
 	AssetsDir string
+	// Console keeps the console window on a Windows release build. Releases
+	// link into the GUI subsystem by default so a double-click does not flash
+	// a black console; the game's log file is what keeps that debuggable
+	// (see native.NewLogger).
+	Console bool
 }
 
 func (o nativeBuildOptions) validate() error {
@@ -313,7 +321,7 @@ func buildNative(pkg, outDir string, opts nativeBuildOptions, stdout, stderr io.
 func nativeBuildArgs(pkg, out string, opts nativeBuildOptions) []string {
 	args := []string{"build", "-o", out, "-trimpath", "-buildvcs=false"}
 	if opts.Release {
-		args = append(args, "-ldflags", "-s -w")
+		args = append(args, "-ldflags", nativeLDFlags(opts.Console))
 	}
 	var tags []string
 	if opts.NoDefaultFont {
@@ -326,6 +334,17 @@ func nativeBuildArgs(pkg, out string, opts nativeBuildOptions) []string {
 		args = append(args, "-tags", strings.Join(tags, ","))
 	}
 	return append(args, pkg)
+}
+
+// nativeLDFlags picks the linker flags for a release build. On Windows the
+// default is the GUI subsystem, so double-clicking the game does not flash a
+// console window; -H=windowsgui also discards stdout and stderr, which is why
+// a released game logs to a file (native.NewLogger).
+func nativeLDFlags(console bool) string {
+	if runtime.GOOS == "windows" && !console {
+		return "-H=windowsgui -s -w"
+	}
+	return "-s -w"
 }
 
 // nativeName derives the product name from the package path. A native entry

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/splashscreen"
@@ -17,7 +16,8 @@ func main() {
 		panic(err)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Splash Screen Example")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:        "Splash Screen Example",
 		Width:        1280,

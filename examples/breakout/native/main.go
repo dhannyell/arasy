@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/breakout"
@@ -12,7 +11,8 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Breakout")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&breakout.Breakout{}, native.Options{
 		Title:        "Breakout",
 		Log:          log,

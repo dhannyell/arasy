@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/rhythm"
@@ -17,7 +16,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Rhythm")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:        "Rhythm",
 		Width:        1920,

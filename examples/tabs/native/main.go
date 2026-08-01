@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/tabs"
@@ -11,7 +10,8 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Tabs")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&tabs.Game{}, native.Options{
 		Title: "Tabs", Width: 960, Height: 540,
 		VSync: native.VSyncOn, Log: log,

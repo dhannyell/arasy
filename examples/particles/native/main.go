@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/particles"
@@ -16,7 +15,8 @@ func main() {
 		panic(err)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Particles Demo")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:    "Particles Demo",
 		Width:    1920,

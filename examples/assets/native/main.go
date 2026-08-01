@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/assets"
@@ -17,7 +16,8 @@ func main() {
 		panic(err)
 	}
 
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Assets Example")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:        "Assets Example",
 		Width:        1920,

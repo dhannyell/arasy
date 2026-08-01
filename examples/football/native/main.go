@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 
 	"github.com/dhannyell/arasy/examples/football"
@@ -12,7 +11,8 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	log, closeLog := native.NewLogger("Football Demo")
+	defer func() { _ = closeLog() }()
 	if err := native.Run(&football.Football{}, native.Options{
 		Title:    "Football Demo",
 		Width:    1920,
