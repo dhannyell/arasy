@@ -33,6 +33,10 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		HeapInUse:       stats.HeapInUse,
 		HeapTotal:       stats.HeapTotal,
 		HeapSet:         stats.HeapSet,
+		GPUEmitTime:     stats.GPUEmitTime,
+		GPUSimulateTime: stats.GPUSimulateTime,
+		GPURenderTime:   stats.GPURenderTime,
+		GPUTimeSet:      stats.GPUTimeSet,
 	})
 }
 

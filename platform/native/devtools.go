@@ -52,6 +52,13 @@ type overlayStats struct {
 	GPUSystemPercent  float64
 	GPUSet            bool
 
+	// GPU execution time per pass, from timestamp queries. Unset unless
+	// Options.GPUTiming asked for it and the adapter granted the feature.
+	GPUEmitTime     time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimeSet      bool
+
 	// PresentWait is the presentation-queue block of the last frame — the
 	// vblank wait under vsync, reported apart from CPU render time.
 	PresentWait time.Duration

@@ -370,6 +370,10 @@ func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt
 	}
 
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+	if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
+		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
+			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
+	}
 
 	if reporter, ok := any(h.renderer).(presentWaitReporter); ok {
 		h.panelStats.PresentWait, h.panelStats.PresentSet = reporter.presentWaitDuration()

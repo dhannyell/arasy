@@ -140,6 +140,11 @@ func (h *host) samplePanelStats(tickStart, tickEnd, inputAtMillis float64) {
 
 	used, limit, ok := browserHeapMetrics()
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = used, limit, ok
+
+	if reporter, ok := h.renderer.(gpuTimingReporter); ok {
+		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
+			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
+	}
 }
 
 func (h *host) pollGamepad() []input.Event {

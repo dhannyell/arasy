@@ -197,6 +197,13 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 		lines = append(lines, "gpu "+formatPercent(p.stats.GPUProcessPercent)+
 			"   sys "+formatPercent(p.stats.GPUSystemPercent))
 	}
+	// What the GPU spent, per pass. Kept apart from the utilization row above:
+	// a busy percentage says the GPU had work, these say where the work went.
+	if p.stats.GPUTimeSet {
+		lines = append(lines, "gpu emit "+formatGPUTime(p.stats.GPUEmitTime)+
+			"   sim "+formatGPUTime(p.stats.GPUSimulateTime)+
+			"   draw "+formatGPUTime(p.stats.GPURenderTime))
+	}
 
 	for i, line := range lines {
 		p.text(draw, line, math2d.Vec2{

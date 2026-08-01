@@ -171,7 +171,10 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	defer window.Destroy()
 
 	cfg := driver.Config()
-	wantGPUTiming := opts.GPUTiming
+	// The dev panel's Perf tab reads GPU timings too, so mounting it counts as
+	// asking for them. The feature has to be requested at device creation,
+	// which is why this is decided here rather than when the panel opens.
+	wantGPUTiming := opts.GPUTiming || opts.DevTools
 	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, wantGPUTiming, opts.Log)
 	if err != nil {
 		return err

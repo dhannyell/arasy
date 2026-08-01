@@ -45,6 +45,10 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		GPUProcessPercent:   stats.GPUProcessPercent,
 		GPUSystemPercent:    stats.GPUSystemPercent,
 		GPUSet:              stats.GPUSet,
+		GPUEmitTime:         stats.GPUEmitTime,
+		GPUSimulateTime:     stats.GPUSimulateTime,
+		GPURenderTime:       stats.GPURenderTime,
+		GPUTimeSet:          stats.GPUTimeSet,
 		PresentWait:         stats.PresentWait,
 		PresentSet:          stats.PresentSet,
 	})

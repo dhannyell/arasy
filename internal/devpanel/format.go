@@ -11,6 +11,16 @@ func formatMillis(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds()*1000, 'f', 1, 64) + "ms"
 }
 
+// formatGPUTime keeps sub-millisecond passes legible. GPU pass costs span
+// three orders of magnitude, and at one decimal in milliseconds a 40us pass
+// reads as "0.0ms", which says nothing at all.
+func formatGPUTime(d time.Duration) string {
+	if d < time.Millisecond {
+		return strconv.FormatInt(d.Microseconds(), 10) + "us"
+	}
+	return formatMillis(d)
+}
+
 func formatMegabytes(bytes uint64) string {
 	return strconv.FormatFloat(float64(bytes)/(1024*1024), 'f', 1, 64) + "MB"
 }

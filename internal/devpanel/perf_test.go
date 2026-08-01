@@ -129,21 +129,50 @@ func TestPerfSystemRowsFollowTheirSetFlags(t *testing.T) {
 	}
 
 	full := p.Render(frameCamera(), 16*time.Millisecond, Stats{
-		Commands:           10,
-		MemProcessBytes:    142 << 20,
+		Commands:            10,
+		MemProcessBytes:     142 << 20,
 		MemSystemUsedBytes:  9 << 30,
 		MemSystemTotalBytes: 16 << 30,
-		MemSet:             true,
-		VRAMProcessBytes:   320 << 20,
-		VRAMBudgetBytes:    12 << 30,
-		VRAMSet:            true,
-		GPUProcessPercent:  12,
-		GPUSystemPercent:   47,
-		GPUSet:             true,
+		MemSet:              true,
+		VRAMProcessBytes:    320 << 20,
+		VRAMBudgetBytes:     12 << 30,
+		VRAMSet:             true,
+		GPUProcessPercent:   12,
+		GPUSystemPercent:    47,
+		GPUSet:              true,
 	})
 	requireText(t, full, "mem 142.0MB   sys 9.0GB / 16.0GB")
 	requireText(t, full, "vram 320.0MB / 12.0GB")
 	requireText(t, full, "gpu 12%   sys 47%")
+}
+
+// GPU pass times are their own row and their own flag: a host that reports
+// utilization may still have no timestamp queries, and one that has timestamps
+// may run where utilization cannot be probed.
+func TestPerfGPUTimeRowFollowsItsOwnFlag(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	utilizationOnly := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:          10,
+		GPUProcessPercent: 12,
+		GPUSystemPercent:  47,
+		GPUSet:            true,
+	})
+	requireText(t, utilizationOnly, "gpu 12%   sys 47%")
+	if containsText(utilizationOnly, "gpu emit") {
+		t.Fatal("GPU time row drew without GPUTimeSet")
+	}
+
+	// Sub-millisecond passes must not all collapse to "0.0ms": at that
+	// resolution the row would report nothing on a healthy frame.
+	timed := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		Commands:        10,
+		GPUEmitTime:     3 * time.Microsecond,
+		GPUSimulateTime: 210 * time.Microsecond,
+		GPURenderTime:   4200 * time.Microsecond,
+		GPUTimeSet:      true,
+	})
+	requireText(t, timed, "gpu emit 3us   sim 210us   draw 4.2ms")
 }
 
 func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {
@@ -163,7 +192,7 @@ func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {
 	bare := p.Render(frameCamera(), 16*time.Millisecond, Stats{
 		Commands:  17,
 		CPUTick:   300 * time.Microsecond,
-		CPURender:  16400 * time.Microsecond,
+		CPURender: 16400 * time.Microsecond,
 		CPUSet:    true,
 	})
 	requireText(t, bare, "cpu tick 0.3ms   render 16.4ms")

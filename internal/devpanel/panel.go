@@ -79,6 +79,16 @@ type Stats struct {
 	GPUSystemPercent  float64
 	GPUSet            bool
 
+	// GPU execution time per pass, from timestamp queries: the particle emit
+	// and simulate compute passes and the render interval. This is what the
+	// GPU actually spent, not the utilization percentage above and not the
+	// CPU's view of submission. The sample lags its frame, because reading
+	// timestamps back without stalling the pipeline means reading them late.
+	GPUEmitTime     time.Duration
+	GPUSimulateTime time.Duration
+	GPURenderTime   time.Duration
+	GPUTimeSet      bool
+
 	// PresentWait is how long the last frame blocked on the presentation
 	// queue (acquire + present). With vsync that is the vblank wait — idle
 	// time that must not be read as CPU render work, so hosts that measure
