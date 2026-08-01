@@ -23,9 +23,13 @@ type device struct {
 	// panel's VRAM reading lands on the same GPU the game renders to.
 	vendorID uint32
 	deviceID uint32
+
+	// timestampQuery reports whether the device was created with the
+	// timestamp-query feature, which is what gates per-pass GPU timing.
+	timestampQuery bool
 }
 
-func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *device, err error) {
+func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *device, err error) {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -73,15 +77,26 @@ func newDevice(window *glfw.Window, vsync VSyncMode, log *slog.Logger) (d *devic
 	// that browser-shaped ceiling (e.g. max storage buffer binding size).
 	// Still falls back to RequestDevice(nil) on any error, so the host is never left
 	// without a device.
+	//
+	// Timestamp queries power the per-pass GPU telemetry, so the feature is
+	// only requested when a metrics consumer asked for it; without one,
+	// sampling every frame would be pure overhead for every game.
 	limits := d.adapter.GetLimits()
-	d.device, err = d.adapter.RequestDevice(&wgpu.DeviceDescriptor{RequiredLimits: &limits})
+	desc := &wgpu.DeviceDescriptor{RequiredLimits: &limits}
+	wantTimestamps := wantGPUTiming && d.adapter.HasFeature(wgpu.FeatureNameTimestampQuery)
+	if wantTimestamps {
+		desc.RequiredFeatures = []wgpu.FeatureName{wgpu.FeatureNameTimestampQuery}
+	}
+	d.device, err = d.adapter.RequestDevice(desc)
 	if err != nil {
 		log.Warn("request WebGPU device with adapter limits failed, falling back to defaults", "err", err)
+		wantTimestamps = false
 		d.device, err = d.adapter.RequestDevice(nil)
 	}
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU device: %w", err)
 	}
+	d.timestampQuery = wantTimestamps
 	log.Info("native WebGPU device limits requested",
 		"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
 		"max_buffer_size", limits.MaxBufferSize,

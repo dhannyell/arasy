@@ -442,11 +442,23 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 	return particleSim{e, n}, true
 }
 
-func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) error {
-	if len(s) == 0 {
+// encode records the emit and simulate compute passes. emitWrites/simulateWrites
+// are nil unless GPU timing is sampling this frame, in which case they carry the
+// timestamp boundaries the timing pool expects.
+//
+// With timestamp writes attached the passes are recorded even when there is
+// nothing to dispatch: resolving a query that was never written is undefined
+// behaviour, and on Vulkan it loses the device outright. An empty timed pass
+// costs almost nothing and keeps every query in the set written every frame.
+func (g *gpuParticles) encode(
+	encoder *wgpu.CommandEncoder,
+	s []particleSim,
+	emitWrites, simulateWrites *wgpu.PassTimestampWrites,
+) error {
+	if len(s) == 0 && emitWrites == nil && simulateWrites == nil {
 		return nil
 	}
-	p := encoder.BeginComputePass(nil)
+	p := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: emitWrites})
 	defer p.Release()
 	p.SetPipeline(g.emitPipeline)
 	for _, v := range s {
@@ -458,7 +470,7 @@ func (g *gpuParticles) encode(encoder *wgpu.CommandEncoder, s []particleSim) err
 	if e := p.TryEnd(); e != nil {
 		return e
 	}
-	p = encoder.BeginComputePass(nil)
+	p = encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: simulateWrites})
 	defer p.Release()
 	p.SetPipeline(g.simulatePipeline)
 	for _, v := range s {

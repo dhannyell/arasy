@@ -87,6 +87,11 @@ type Renderer struct {
 	particleTargetW   int
 	particleTargetH   int
 
+	// timing is nil unless the device granted timestamp-query, and sampling is
+	// additionally gated by timeGPU so the option can be toggled at runtime.
+	timing  *gpuTiming
+	timeGPU bool
+
 	diagnostics diagnostic.Once
 	err         error
 	// presentedFrame stays false for skipped/reconfigured surfaces and flips
@@ -114,6 +119,7 @@ func NewRenderer(
 	vsync VSyncMode,
 	msaa render.MSAAMode,
 	particleScale float64,
+	wantGPUTiming bool,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -123,7 +129,7 @@ func NewRenderer(
 	if err != nil {
 		return nil, fmt.Errorf("create font atlas provider: %w", err)
 	}
-	d, err := newDevice(window, vsync, log)
+	d, err := newDevice(window, vsync, wantGPUTiming, log)
 	if err != nil {
 		return nil, err
 	}
@@ -171,6 +177,13 @@ func NewRenderer(
 		if err = renderer.createCompositePipeline(); err != nil {
 			return nil, fmt.Errorf("create particle composite pipeline: %w", err)
 		}
+	}
+	if renderer.timing, err = newGPUTiming(d); err != nil {
+		// The adapter granted the feature but its query resources would not
+		// build. Telemetry is not worth failing a window over.
+		log.Warn("native GPU timing disabled", "err", err)
+		renderer.timing = nil
+		err = nil
 	}
 	return renderer, nil
 }
@@ -436,9 +449,27 @@ func (r *Renderer) SetCPUTiming(enabled bool) {
 	}
 }
 
-// SetGPUTiming is retained for option compatibility. The current binding's
-// C-to-Go completion callback is unsafe, so native GPU timing stays unavailable.
-func (r *Renderer) SetGPUTiming(bool) {}
+// SetGPUTiming enables per-pass timestamp sampling. It only has an effect when
+// the device was created with the timestamp-query feature, which NewRenderer
+// requests from its own wantGPUTiming argument — the feature has to be asked
+// for at device creation, so this cannot turn timing on after the fact.
+func (r *Renderer) SetGPUTiming(enabled bool) {
+	if r != nil {
+		r.timeGPU = enabled && r.timing != nil
+	}
+}
+
+// particleGPUTimings reports the most recent timestamp-query sample: the
+// particle emit pass, the simulate pass (including the pass boundary before
+// it) and the render interval. Frames without particle commands still sample
+// the render pass and report zero for the compute stages. ok is false until
+// the first sample resolves, and always on devices without timestamp-query.
+func (r *Renderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
+	if r == nil || !r.timeGPU {
+		return 0, 0, 0, false
+	}
+	return r.timing.timings()
+}
 
 // presentWaitDuration reports how long the last frame blocked on the
 // presentation queue: surface acquire plus present. With vsync that is the
@@ -511,6 +542,10 @@ func (r *Renderer) Close() {
 		texture.release()
 	}
 	r.textures = nil
+	if r.timing != nil {
+		r.timing.release()
+		r.timing = nil
+	}
 	r.releaseParticleTargets()
 	if r.compositeLayout != nil {
 		r.compositeLayout.Release()
@@ -916,6 +951,10 @@ func (r *Renderer) encodeFrame(
 	defer encoder.Release()
 	var groupOf []int
 	offscreenParticles := false
+	// A sampled frame must write every query in the set before resolving it, so
+	// the compute boundaries are recorded even with no particle work — see
+	// gpuParticles.encode and encodeEmptyComputeTimestamps.
+	sampling := r.timeGPU
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
@@ -926,7 +965,12 @@ func (r *Renderer) encodeFrame(
 				sims = append(sims, sim)
 			}
 		}
-		if err := r.particles.encode(encoder, sims); err != nil {
+		var emitWrites, simulateWrites *wgpu.PassTimestampWrites
+		if sampling {
+			emitWrites = r.timing.prepareWrites()
+			simulateWrites = r.timing.simulateWrites()
+		}
+		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return fmt.Errorf("encode particle simulation: %w", err)
 		}
 
@@ -937,9 +981,17 @@ func (r *Renderer) encodeFrame(
 		groups, groupOf = groupParticleRuns(runs)
 		offscreenParticles = r.particleScale > 0 && len(groups) > 0
 		if offscreenParticles {
-			if err := r.encodeParticleOffscreen(encoder, groups, camera, width, height); err != nil {
+			var beginWrites *wgpu.PassTimestampWrites
+			if sampling {
+				beginWrites = r.timing.renderBeginWrites()
+			}
+			if err := r.encodeParticleOffscreen(encoder, groups, camera, width, height, beginWrites); err != nil {
 				return err
 			}
+		}
+	} else if sampling {
+		if err := r.timing.encodeEmptyComputeTimestamps(encoder); err != nil {
+			return fmt.Errorf("encode timestamp compute passes: %w", err)
 		}
 	}
 	attachment := wgpu.RenderPassColorAttachment{
@@ -956,9 +1008,20 @@ func (r *Renderer) encodeFrame(
 		attachment.ResolveTarget = nil
 		attachment.StoreOp = wgpu.StoreOpStore
 	}
+	// With offscreen compositing the interval already opened on the first
+	// offscreen pass, so the main pass only closes it.
+	var mainWrites *wgpu.PassTimestampWrites
+	if sampling {
+		if offscreenParticles {
+			mainWrites = r.timing.renderEndWrites()
+		} else {
+			mainWrites = r.timing.renderWrites()
+		}
+	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
 		Label:            "Arasy render pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{attachment},
+		TimestampWrites:  mainWrites,
 	})
 	if err != nil {
 		return fmt.Errorf("begin render pass: %w", err)
@@ -977,12 +1040,24 @@ func (r *Renderer) encodeFrame(
 	if err := pass.TryEnd(); err != nil {
 		return fmt.Errorf("end render pass: %w", err)
 	}
+	slot := -1
+	if sampling {
+		slot = r.timing.encodeResolve(encoder)
+	}
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {
 		return fmt.Errorf("finish render command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
+	if sampling {
+		// Map after submit, pump whatever completed since the last frame, then
+		// read the slots those callbacks marked. None of it blocks: the sample
+		// lands a frame or more later.
+		r.timing.readback(slot)
+		r.timing.poll()
+		r.timing.drain()
+	}
 	return nil
 }
 
@@ -1014,17 +1089,25 @@ func groupParticleRuns(runs []tess.StreamRun) (groups [][]render.DrawParticles, 
 // transparent black. Painter order inside the group is preserved; ordering
 // against the rest of the scene is restored by compositing at the group's
 // position in the main pass.
+// beginWrites, when non-nil, opens the render timing interval on the first
+// offscreen pass so the measurement covers the composites and the gaps between
+// passes, not just the main pass.
 func (r *Renderer) encodeParticleOffscreen(
 	encoder *wgpu.CommandEncoder,
 	groups [][]render.DrawParticles,
 	camera render.Camera,
 	w, h int,
+	beginWrites *wgpu.PassTimestampWrites,
 ) error {
 	ow, oh := particleTargetDims(w, h, r.particleScale)
 	if err := r.ensureParticleTargets(len(groups), ow, oh); err != nil {
 		return err
 	}
 	for gi, cmds := range groups {
+		var writes *wgpu.PassTimestampWrites
+		if gi == 0 {
+			writes = beginWrites
+		}
 		pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
 			Label: "Arasy particle offscreen pass",
 			ColorAttachments: []wgpu.RenderPassColorAttachment{{
@@ -1033,6 +1116,7 @@ func (r *Renderer) encodeParticleOffscreen(
 				StoreOp:    wgpu.StoreOpStore,
 				ClearValue: wgpu.Color{},
 			}},
+			TimestampWrites: writes,
 		})
 		if err != nil {
 			return fmt.Errorf("begin particle offscreen pass: %w", err)

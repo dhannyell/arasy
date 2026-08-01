@@ -18,7 +18,7 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	if err := native.Run(game, native.Options{
 		Title: "Particle Benchmark", Width: 1980, Height: 1080, Log: log,
-		Metrics: false,
+		Metrics: false, GPUTiming: true,
 		FrameMetrics: func(m native.FrameMetrics) {
 			game.ObserveFrame(
 				m.FPS,
@@ -31,10 +31,10 @@ func main() {
 				m.HeapSet,
 				m.GPUBufferBytes,
 				m.GPUBufferSet,
-				0,
-				0,
-				0,
-				false,
+				m.GPUPrepareTime,
+				m.GPUSimulateTime,
+				m.GPURenderTime,
+				m.GPUTimingSet,
 			)
 		},
 		VSync: native.VSyncOff,

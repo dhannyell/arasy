@@ -25,6 +25,10 @@ type gpuBufferReporter interface {
 	particleGPUBufferBytes() (bytes uint64, ok bool)
 }
 
+type gpuTimingReporter interface {
+	particleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
+}
+
 // presentWaitReporter exposes the presentation-queue block time of the last
 // frame (acquire + present), which with vsync is the vblank wait and must
 // not be read as CPU render work.
@@ -309,6 +313,9 @@ func (h *host) run() error {
 				}
 				if reporter, ok := any(h.renderer).(gpuBufferReporter); ok {
 					m.GPUBufferBytes, m.GPUBufferSet = reporter.particleGPUBufferBytes()
+				}
+				if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
+					m.GPUPrepareTime, m.GPUSimulateTime, m.GPURenderTime, m.GPUTimingSet = reporter.particleGPUTimings()
 				}
 				if h.logMetrics {
 					attrs := []any{"fps", m.FPS, "frame_ms", m.FrameTime.Seconds() * 1000, "mean_ms", m.MeanFrameTime.Seconds() * 1000, "p99_ms", m.P99FrameTime.Seconds() * 1000}
