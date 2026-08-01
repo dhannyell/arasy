@@ -27,6 +27,11 @@ type device struct {
 	// timestampQuery reports whether the device was created with the
 	// timestamp-query feature, which is what gates per-pass GPU timing.
 	timestampQuery bool
+
+	// formatFeatures reports whether the device was created with wgpu's
+	// adapter-specific format features, which is what makes 2x and 8x MSAA
+	// available. WebGPU itself only guarantees 1 and 4.
+	formatFeatures bool
 }
 
 func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *device, err error) {
@@ -81,22 +86,33 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 	// Timestamp queries power the per-pass GPU telemetry, so the feature is
 	// only requested when a metrics consumer asked for it; without one,
 	// sampling every frame would be pure overhead for every game.
+	//
+	// Adapter-specific format features are asked for unconditionally: they cost
+	// nothing to hold and they are what makes 2x and 8x MSAA reachable at all.
+	// WebGPU guarantees only 1 and 4 samples per format, so without the feature
+	// a game asking for 8x has its pipelines rejected by the driver.
 	limits := d.adapter.GetLimits()
 	desc := &wgpu.DeviceDescriptor{RequiredLimits: &limits}
 	wantTimestamps := wantGPUTiming && d.adapter.HasFeature(wgpu.FeatureNameTimestampQuery)
 	if wantTimestamps {
-		desc.RequiredFeatures = []wgpu.FeatureName{wgpu.FeatureNameTimestampQuery}
+		desc.RequiredFeatures = append(desc.RequiredFeatures, wgpu.FeatureNameTimestampQuery)
+	}
+	wantFormatFeatures := d.adapter.HasFeature(wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
+	if wantFormatFeatures {
+		desc.RequiredFeatures = append(desc.RequiredFeatures, wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
 	}
 	d.device, err = d.adapter.RequestDevice(desc)
 	if err != nil {
 		log.Warn("request WebGPU device with adapter limits failed, falling back to defaults", "err", err)
 		wantTimestamps = false
+		wantFormatFeatures = false
 		d.device, err = d.adapter.RequestDevice(nil)
 	}
 	if err != nil {
 		return d, fmt.Errorf("request WebGPU device: %w", err)
 	}
 	d.timestampQuery = wantTimestamps
+	d.formatFeatures = wantFormatFeatures
 	log.Info("native WebGPU device limits requested",
 		"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
 		"max_buffer_size", limits.MaxBufferSize,

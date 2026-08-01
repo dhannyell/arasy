@@ -23,14 +23,25 @@ import (
 
 // msaaSampleCount resolves the requested level, logging a fallback when the
 // mode is outside the enum rather than failing device creation.
-func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) uint32 {
+//
+// formatFeatures says whether the device holds wgpu's adapter-specific format
+// features. WebGPU guarantees only 1 and 4 samples per format; 2 and 8 need
+// that feature, and without it the driver rejects every pipeline built at those
+// counts. Falling back to the default keeps an unsupported level from taking
+// the window down on startup.
+func msaaSampleCount(mode render.MSAAMode, formatFeatures bool, log *slog.Logger) uint32 {
+	if log == nil {
+		log = slog.Default()
+	}
 	samples, ok := mode.Samples()
 	if !ok {
-		if log == nil {
-			log = slog.Default()
-		}
 		log.Warn("unknown MSAA mode, using the default",
 			"requested", uint8(mode), "fallback", samples)
+	}
+	if !formatFeatures && samples != 1 && samples != 4 {
+		log.Warn("MSAA level unsupported by this adapter, using the default",
+			"requested", samples, "fallback", 4)
+		samples = 4
 	}
 	return uint32(samples)
 }
@@ -139,7 +150,7 @@ func NewRenderer(
 		log:           log,
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
-		msaaSamples:   msaaSampleCount(msaa, log),
+		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, log),
 		particleScale: particleScale,
 	}
 	defer func() {

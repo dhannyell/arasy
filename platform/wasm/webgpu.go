@@ -27,14 +27,25 @@ var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
 // msaaSampleCount resolves the requested level, logging a fallback when the
 // mode is outside the enum rather than failing renderer creation.
+//
+// The browser guarantees 1 and 4 samples per format and nothing else. Native
+// wgpu can unlock 2 and 8 through an adapter-specific feature, but the WebGPU
+// spec has no equivalent, so on the web those levels are simply not reachable
+// and a pipeline built at one is rejected. The fallback is what keeps a game
+// that picked 8x from failing to start in a browser.
 func msaaSampleCount(mode render.MSAAMode, log *slog.Logger) int {
+	if log == nil {
+		log = slog.Default()
+	}
 	samples, ok := mode.Samples()
 	if !ok {
-		if log == nil {
-			log = slog.Default()
-		}
 		log.Warn("unknown MSAA mode, using the default",
 			"requested", uint8(mode), "fallback", samples)
+	}
+	if samples != 1 && samples != 4 {
+		log.Warn("MSAA level unavailable in the browser, using the default",
+			"requested", samples, "fallback", 4)
+		samples = 4
 	}
 	return samples
 }
