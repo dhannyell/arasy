@@ -21,6 +21,7 @@ type FrameMetrics struct {
 	MeanFrameTime time.Duration
 	P99FrameTime  time.Duration
 
+	// InputToSubmit ends at queue submission, before Present.
 	InputToSubmit    time.Duration
 	InputToSubmitSet bool
 
@@ -47,6 +48,7 @@ type FrameMetrics struct {
 	GPURenderTime   time.Duration
 	GPUTimingSet    bool
 
+	// CPURenderTime excludes surface acquisition and Present waits.
 	CPUTickTime   time.Duration
 	CPURenderTime time.Duration
 	CPUTimingSet  bool

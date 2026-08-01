@@ -36,6 +36,36 @@ type presentWaitReporter interface {
 	presentWaitDuration() (time.Duration, bool)
 }
 
+// cpuFrameTiming separates CPU work, surface acquisition and queue submission.
+type cpuFrameTiming struct {
+	submittedAt time.Time
+	cpuEndAt    time.Time
+	acquireWait time.Duration
+	valid       bool
+}
+
+func (t cpuFrameTiming) renderDurationSince(start time.Time) time.Duration {
+	if !t.valid || start.IsZero() {
+		return 0
+	}
+	duration := t.cpuEndAt.Sub(start) - t.acquireWait
+	if duration < 0 {
+		return 0
+	}
+	return duration
+}
+
+func (t cpuFrameTiming) inputToSubmit(inputAt time.Time) (time.Duration, bool) {
+	if !t.valid || inputAt.IsZero() {
+		return 0, false
+	}
+	duration := t.submittedAt.Sub(inputAt)
+	if duration < 0 {
+		return 0, false
+	}
+	return duration, true
+}
+
 const noGamepadJoystick glfw.Joystick = -1
 
 type host struct {
@@ -292,9 +322,9 @@ func (h *host) run() error {
 			tickEnd = time.Now()
 		}
 		h.renderFrame(elapsed)
-		renderEnd := time.Now()
+		cpuFrame := h.renderer.frameCPUTiming()
 		if h.panelWantsStats() {
-			h.samplePanelStats(tickStart, tickEnd, renderEnd, inputAt)
+			h.samplePanelStats(tickStart, tickEnd, inputAt, cpuFrame)
 		}
 		if err := h.renderer.Err(); err != nil {
 			return fmt.Errorf("native renderer failed: %w", err)
@@ -305,10 +335,14 @@ func (h *host) run() error {
 				m := FrameMetrics{
 					FPS: stats.FPS, FrameTime: stats.FrameTime,
 					MeanFrameTime: stats.MeanFrameTime, P99FrameTime: stats.P99FrameTime,
-					CPUTickTime: tickEnd.Sub(tickStart), CPURenderTime: renderEnd.Sub(tickEnd), CPUTimingSet: true,
 				}
-				if !inputAt.IsZero() {
-					m.InputToSubmit = renderEnd.Sub(inputAt)
+				if cpuFrame.valid {
+					m.CPUTickTime = tickEnd.Sub(tickStart)
+					m.CPURenderTime = cpuFrame.renderDurationSince(tickEnd)
+					m.CPUTimingSet = true
+				}
+				if latency, ok := cpuFrame.inputToSubmit(inputAt); ok {
+					m.InputToSubmit = latency
 					m.InputToSubmitSet = true
 				}
 				m.HeapInUse, m.HeapSys, m.HeapSet = h.readHeap()
@@ -363,14 +397,16 @@ func (h *host) panelWantsStats() bool {
 // They describe the frame just submitted, so the panel shows them one frame
 // late: the render time of the frame the panel is being drawn into is not
 // known until after it has been drawn.
-func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt time.Time) {
-	h.panelStats.CPUTick = tickEnd.Sub(tickStart)
-	h.panelStats.CPURender = renderEnd.Sub(tickEnd)
-	h.panelStats.CPUSet = true
+func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame cpuFrameTiming) {
+	h.panelStats.CPUSet = cpuFrame.valid
+	if h.panelStats.CPUSet {
+		h.panelStats.CPUTick = tickEnd.Sub(tickStart)
+		h.panelStats.CPURender = cpuFrame.renderDurationSince(tickEnd)
+	}
 
-	h.panelStats.InputLatencySet = !inputAt.IsZero()
-	if h.panelStats.InputLatencySet {
-		h.panelStats.InputLatency = renderEnd.Sub(inputAt)
+	h.panelStats.InputLatency, h.panelStats.InputLatencySet = cpuFrame.inputToSubmit(inputAt)
+	if !h.panelStats.InputLatencySet {
+		h.panelStats.InputLatency = 0
 	}
 
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()

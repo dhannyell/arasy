@@ -21,15 +21,14 @@ import (
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
-// msaaSampleCount resolves the requested level, logging a fallback when the
-// mode is outside the enum rather than failing device creation.
-//
-// formatFeatures says whether the device holds wgpu's adapter-specific format
-// features. WebGPU guarantees only 1 and 4 samples per format; 2 and 8 need
-// that feature, and without it the driver rejects every pipeline built at those
-// counts. Falling back to the default keeps an unsupported level from taking
-// the window down on startup.
-func msaaSampleCount(mode render.MSAAMode, formatFeatures bool, log *slog.Logger) uint32 {
+// msaaSampleCount falls back when the mode is invalid or the selected surface
+// format rejects an optional sample count.
+func msaaSampleCount(
+	mode render.MSAAMode,
+	formatFeatures bool,
+	validate func(uint32) error,
+	log *slog.Logger,
+) uint32 {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -38,10 +37,21 @@ func msaaSampleCount(mode render.MSAAMode, formatFeatures bool, log *slog.Logger
 		log.Warn("unknown MSAA mode, using the default",
 			"requested", uint8(mode), "fallback", samples)
 	}
-	if !formatFeatures && samples != 1 && samples != 4 {
-		log.Warn("MSAA level unsupported by this adapter, using the default",
-			"requested", samples, "fallback", 4)
-		samples = 4
+	if samples != 1 && samples != 4 {
+		var err error
+		switch {
+		case !formatFeatures:
+			err = fmt.Errorf("adapter-specific format features unavailable")
+		case validate == nil:
+			err = fmt.Errorf("surface format capability probe unavailable")
+		default:
+			err = validate(uint32(samples))
+		}
+		if err != nil {
+			log.Warn("MSAA level unsupported by this surface format, using the default",
+				"requested", samples, "fallback", 4, "err", err)
+			samples = 4
+		}
 	}
 	return uint32(samples)
 }
@@ -112,6 +122,8 @@ type Renderer struct {
 	cpuTess, cpuUpload time.Duration
 	cpuEncode          time.Duration
 	cpuPhasesSet       bool
+	// cpuFrame separates queue submission, CPU work and surface acquisition.
+	cpuFrame cpuFrameTiming
 	// presentWait is how long the last frame blocked on presentation
 	// (surface acquire plus present). With vsync this is the vblank wait —
 	// idle time, not work — so it must be reported apart from the CPU
@@ -150,7 +162,7 @@ func NewRenderer(
 		log:           log,
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
-		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, log),
+		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
 	}
 	defer func() {
@@ -357,7 +369,15 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 // Render draws one frame. Errors are retained for Err because FrameRenderer
 // cannot return them to the host loop.
 func (r *Renderer) Render(frame runtime.Frame) {
-	if r == nil || r.err != nil || r.device == nil || r.device.config == nil {
+	if r == nil {
+		return
+	}
+	if r.timeCPU {
+		r.cpuFrame = cpuFrameTiming{}
+		r.cpuPhasesSet = false
+		r.presentWait = 0
+	}
+	if r.err != nil || r.device == nil || r.device.config == nil {
 		return
 	}
 	width, height := int(r.device.config.Width), int(r.device.config.Height)
@@ -395,7 +415,8 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	}
 	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
 	if r.timeCPU {
-		r.presentWait = time.Since(acquireStart)
+		r.cpuFrame.acquireWait = time.Since(acquireStart)
+		r.presentWait = r.cpuFrame.acquireWait
 	}
 	if err != nil {
 		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
@@ -433,11 +454,13 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	if r.timeCPU {
-		r.cpuEncode = time.Since(phaseStart)
+		r.cpuFrame.cpuEndAt = time.Now()
+		r.cpuEncode = r.cpuFrame.cpuEndAt.Sub(phaseStart)
 		r.cpuPhasesSet = true
+		r.cpuFrame.valid = !r.cpuFrame.submittedAt.IsZero()
 	}
 	if r.timeCPU {
-		phaseStart = time.Now()
+		phaseStart = r.cpuFrame.cpuEndAt
 	}
 	r.device.surface.Present()
 	if r.timeCPU {
@@ -490,7 +513,17 @@ func (r *Renderer) presentWaitDuration() (time.Duration, bool) {
 	if r == nil {
 		return 0, false
 	}
-	return r.presentWait, r.timeCPU
+	return r.presentWait, r.timeCPU && r.cpuFrame.valid
+}
+
+// frameCPUTiming reports the boundaries of the most recently submitted frame.
+// It stays invalid for a skipped/reconfigured surface so callers never reuse a
+// previous frame's submission timestamp.
+func (r *Renderer) frameCPUTiming() cpuFrameTiming {
+	if r == nil || !r.timeCPU {
+		return cpuFrameTiming{}
+	}
+	return r.cpuFrame
 }
 
 // adapterIDs returns the PCI vendor and device IDs of the adapter the
@@ -1060,6 +1093,9 @@ func (r *Renderer) encodeFrame(
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
+	if r.timeCPU {
+		r.cpuFrame.submittedAt = time.Now()
+	}
 	if r.timeGPU {
 		// Map after submit, pump whatever completed since the last frame, then
 		// read the slots those callbacks marked. None of it blocks: the sample

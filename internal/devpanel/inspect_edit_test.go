@@ -142,6 +142,34 @@ func TestApplyEditRejectsGarbage(t *testing.T) {
 	}
 }
 
+func TestApplyEditWritesUnsignedFieldWithItsActualBitWidth(t *testing.T) {
+	p := newInspectPanel(t)
+	entities := p.driver.WorldView().Entities()
+	if len(entities) < 2 {
+		t.Fatalf("world holds %v, want the keeper entity", entities)
+	}
+	p.inspect.entity = entities[1]
+	p.inspect.hasEntity = true
+
+	if err := p.writeComponentField("TransformTween", "Loop", "2"); err != nil {
+		t.Fatalf("write unsigned field: %v", err)
+	}
+	tween, ok := p.driver.WorldView().TransformTween(entities[1])
+	if !ok {
+		t.Fatal("keeper lost its transform tween")
+	}
+	if tween.Loop != scene.LoopMode(2) {
+		t.Fatalf("TransformTween.Loop = %d, want 2", tween.Loop)
+	}
+
+	if err := p.writeComponentField("TransformTween", "Loop", "256"); err == nil {
+		t.Fatal("uint8 field accepted a value outside its bit width")
+	}
+	if err := p.writeComponentField("TransformTween", "Loop", "-1"); err == nil {
+		t.Fatal("unsigned field accepted a negative value")
+	}
+}
+
 func TestBoolRowTogglesInPlace(t *testing.T) {
 	p := newInspectPanel(t)
 	renderTab(p)

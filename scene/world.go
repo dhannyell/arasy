@@ -593,6 +593,9 @@ func (w *World) collectEntityIDs() map[EntityID]struct{} {
 	for _, id := range w.transforms.ids {
 		ids[id] = struct{}{}
 	}
+	for _, id := range w.transformTweens.ids {
+		ids[id] = struct{}{}
+	}
 	for _, id := range w.circleSprites.ids {
 		ids[id] = struct{}{}
 	}

@@ -213,7 +213,7 @@ func (p *Panel) currentFieldText(comp, path string) (string, bool) {
 	case reflect.Float32, reflect.Float64:
 		return strconv.FormatFloat(field.Float(), 'g', -1, 64), true
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		return fmt.Sprintf("%v", field.Interface()), true
 	}
 	return "", false
@@ -455,7 +455,7 @@ func walkComponentRows(rows *[]inspectRow, v reflect.Value, comp, prefix string,
 			kind: rowFloat, comp: comp, path: prefix,
 		})
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		*rows = append(*rows, inspectRow{
 			text: indent(depth) + fmt.Sprintf("%s: %v", prefix, v.Interface()),
 			kind: rowInt, comp: comp, path: prefix,
@@ -558,13 +558,18 @@ func (p *Panel) writeComponentField(comp, path, text string) error {
 			return fmt.Errorf("%q is not a number", text)
 		}
 		field.SetFloat(value)
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		value, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		value, err := strconv.ParseInt(strings.TrimSpace(text), 10, field.Type().Bits())
 		if err != nil {
 			return fmt.Errorf("%q is not an integer", text)
 		}
 		field.SetInt(value)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		value, err := strconv.ParseUint(strings.TrimSpace(text), 10, field.Type().Bits())
+		if err != nil {
+			return fmt.Errorf("%q is not an unsigned integer", text)
+		}
+		field.SetUint(value)
 	case reflect.Bool:
 		if text != "toggle" {
 			return fmt.Errorf("bool fields toggle, they do not parse")

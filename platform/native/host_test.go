@@ -36,3 +36,26 @@ func TestPacerBudgetStaysOffWhenVSyncPaces(t *testing.T) {
 		t.Fatalf("pacerBudget(0, VSyncOff) = %v, want uncapped", got)
 	}
 }
+
+func TestCPUFrameTimingUsesSubmitBoundaryAndExcludesAcquireWait(t *testing.T) {
+	base := time.Unix(100, 0)
+	tickEnd := base.Add(2 * time.Millisecond)
+	inputAt := base.Add(-3 * time.Millisecond)
+	timing := cpuFrameTiming{
+		submittedAt: base.Add(8 * time.Millisecond),
+		cpuEndAt:    base.Add(10 * time.Millisecond),
+		acquireWait: 4 * time.Millisecond,
+		valid:       true,
+	}
+
+	if got, want := timing.renderDurationSince(tickEnd), 4*time.Millisecond; got != want {
+		t.Fatalf("CPU render duration = %v, want %v", got, want)
+	}
+	latency, ok := timing.inputToSubmit(inputAt)
+	if !ok {
+		t.Fatal("input-to-submit timing unavailable")
+	}
+	if want := 11 * time.Millisecond; latency != want {
+		t.Fatalf("input-to-submit = %v, want %v", latency, want)
+	}
+}

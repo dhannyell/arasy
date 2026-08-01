@@ -34,6 +34,28 @@ type device struct {
 	formatFeatures bool
 }
 
+// validateMSAASampleCount probes the selected surface format with the real
+// multisample target descriptor.
+func (d *device) validateMSAASampleCount(samples uint32) error {
+	if d == nil || d.device == nil || d.config == nil {
+		return fmt.Errorf("native WebGPU device is not configured")
+	}
+	texture, err := d.device.TryCreateTexture(&wgpu.TextureDescriptor{
+		Label:         "Arasy MSAA capability probe",
+		Usage:         wgpu.TextureUsageRenderAttachment,
+		Dimension:     wgpu.TextureDimension2D,
+		Size:          wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
+		Format:        d.config.Format,
+		MipLevelCount: 1,
+		SampleCount:   samples,
+	})
+	if err != nil {
+		return err
+	}
+	texture.Release()
+	return nil
+}
+
 func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *device, err error) {
 	if log == nil {
 		log = slog.Default()

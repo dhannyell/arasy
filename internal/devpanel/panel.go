@@ -181,10 +181,8 @@ type Panel struct {
 
 	inspect   inspectState
 	pickArmed bool
-	// pickAwaitRelease consumes the button-up paired with a consumed pick
-	// click: forwarding a release whose press the game never saw would be
-	// worse than dropping both.
-	pickAwaitRelease bool
+	// pickReleaseButton pairs the release with a consumed pick or cancel press.
+	pickReleaseButton input.SourceCode
 	// frameCam is the camera the last Render was handed, cached so the pick
 	// gesture can map a screen click back into game world space.
 	frameCam render.Camera
@@ -242,6 +240,7 @@ func (p *Panel) SetVisible(visible bool) {
 		p.wantKeyboard = false
 		p.scrubActive = false
 		p.pickArmed = false
+		p.pickReleaseButton = 0
 		p.inspect.edit = inspectEdit{}
 	}
 }
@@ -303,18 +302,18 @@ func (p *Panel) HandleInput(events []input.Event, viewport math2d.Rect) []input.
 // pointer this frame.
 func (p *Panel) handlePick(events []input.Event, viewport math2d.Rect, lay layout) bool {
 	consumed := false
-	if p.pickAwaitRelease {
-		for _, event := range events {
-			if event.Source.Code == input.MouseLeft && event.Kind == input.EventButtonUp {
-				p.pickAwaitRelease = false
-				consumed = true
-			}
-		}
-	}
-	if !p.pickArmed {
-		return consumed
-	}
 	for _, event := range events {
+		if p.pickReleaseButton != 0 &&
+			event.Source.Device == input.DeviceMouse &&
+			event.Source.Code == p.pickReleaseButton &&
+			event.Kind == input.EventButtonUp {
+			p.pickReleaseButton = 0
+			consumed = true
+			continue
+		}
+		if !p.pickArmed {
+			continue
+		}
 		switch event.Source.Code {
 		case input.MouseLeft:
 			if event.Kind != input.EventButtonDown {
@@ -332,11 +331,12 @@ func (p *Panel) handlePick(events []input.Event, viewport math2d.Rect, lay layou
 				p.inspect.edit = inspectEdit{}
 			}
 			p.pickArmed = false
-			p.pickAwaitRelease = true
+			p.pickReleaseButton = input.MouseLeft
 			consumed = true
 		case input.MouseRight:
 			if event.Kind == input.EventButtonDown {
 				p.pickArmed = false
+				p.pickReleaseButton = input.MouseRight
 				consumed = true
 			}
 		case input.KeyEscape:
