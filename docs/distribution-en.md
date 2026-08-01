@@ -103,8 +103,26 @@ go-winres make                        # or, from a winres/ directory
 ```
 
 Run those in the directory of the native entry point, then build as usual.
+
 The window icon is the engine's half: fill `Options.Icon` with any
-`image.Image` and the host applies it.
+`image.Image` and the host hands it to GLFW.
+
+```go
+//go:embed icon.png
+var iconPNG []byte
+
+icon, err := png.Decode(bytes.NewReader(iconPNG))
+if err != nil {
+	return err
+}
+err = native.Run(game, native.Options{Title: "My Game", Icon: icon})
+```
+
+A window icon is drawn small — a title bar, a task switcher entry — so a
+64-pixel source is a better choice than the largest art you have: the window
+system scales whatever it is given, and scaling down from 1024 costs sharpness
+at 16 pixels. The demos in this repository use the engine's own icon, which is
+why they all wear the same one; a game ships its own.
 
 Generated `.syso` files are build artifacts of a specific game, not of the
 engine; keep them out of version control unless you commit the icon pipeline

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/dhannyell/arasy/examples/splashscreen"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -20,6 +21,7 @@ func main() {
 	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:        "Splash Screen Example",
+		Icon:         brand.AppIcon(),
 		Width:        1280,
 		Height:       960,
 		Log:          log,

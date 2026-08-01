@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/dhannyell/arasy/examples/tabs"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
@@ -13,7 +14,9 @@ func main() {
 	log, closeLog := native.NewLogger("Tabs")
 	defer func() { _ = closeLog() }()
 	if err := native.Run(&tabs.Game{}, native.Options{
-		Title: "Tabs", Width: 960, Height: 540,
+		Title: "Tabs",
+		Icon:  brand.AppIcon(),
+		Width: 960, Height: 540,
 		VSync: native.VSyncOn, Log: log,
 		DevTools: true,
 	}); err != nil {

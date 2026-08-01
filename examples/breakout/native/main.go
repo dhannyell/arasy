@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/dhannyell/arasy/examples/breakout"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -15,6 +16,7 @@ func main() {
 	defer func() { _ = closeLog() }()
 	if err := native.Run(&breakout.Breakout{}, native.Options{
 		Title:        "Breakout",
+		Icon:         brand.AppIcon(),
 		Log:          log,
 		DevTools:     true,
 		RecordReplay: true,

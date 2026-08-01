@@ -6,6 +6,7 @@ import (
 	"os"
 
 	twenty48 "github.com/dhannyell/arasy/examples/2048"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -15,6 +16,7 @@ func main() {
 	defer func() { _ = closeLog() }()
 	if err := native.Run(&twenty48.Game2048{}, native.Options{
 		Title:        "2048",
+		Icon:         brand.AppIcon(),
 		Width:        1920,
 		Height:       1080,
 		VSync:        native.VSyncOff,

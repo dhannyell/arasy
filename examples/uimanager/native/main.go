@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/dhannyell/arasy/examples/uimanager"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
@@ -14,6 +15,7 @@ func main() {
 	defer func() { _ = closeLog() }()
 	if err := native.Run(&uimanager.Manager{}, native.Options{
 		Title:    "UI Manager Example",
+		Icon:     brand.AppIcon(),
 		Width:    1920,
 		Height:   1080,
 		Log:      log,

@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/dhannyell/arasy/examples/particles"
+	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
 )
 
@@ -19,6 +20,7 @@ func main() {
 	defer func() { _ = closeLog() }()
 	if err := native.Run(game, native.Options{
 		Title:    "Particles Demo",
+		Icon:     brand.AppIcon(),
 		Width:    1920,
 		Height:   1080,
 		VSync:    native.VSyncOff,
