@@ -98,7 +98,7 @@ type Options struct {
 	Log *slog.Logger
 	// Metrics emits periodic frame-pacing reports through Log.
 	Metrics bool
-	// GPUTiming enables the asynchronous GPU completion probe for metric reports.
+	// GPUTiming enables per-pass GPU timestamp queries for metric reports.
 	GPUTiming bool
 	// FrameMetrics receives periodic frame-pacing reports. Nil disables delivery.
 	FrameMetrics func(FrameMetrics)
@@ -176,7 +176,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	// The dev panel's Perf tab reads GPU timings too, so mounting it counts as
 	// asking for them. The feature has to be requested at device creation,
 	// which is why this is decided here rather than when the panel opens.
-	wantGPUTiming := opts.GPUTiming || opts.DevTools
+	wantGPUTiming := opts.GPUTiming || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
 	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, wantGPUTiming, opts.Log)
 	if err != nil {
 		return err

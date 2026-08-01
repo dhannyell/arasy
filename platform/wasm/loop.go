@@ -10,6 +10,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
+const panelGCSampleFrames = 8 // Per-frame runtime metrics materially slow the panel.
+
 func (h *host) startLoop() {
 	var frameTimer runtime.FrameTimer
 	var firstFramePresented bool
@@ -64,6 +66,9 @@ func (h *host) startLoop() {
 			tickEnd = performanceNowMillis()
 		}
 
+		if h.panel != nil {
+			h.samplePanelGC()
+		}
 		h.renderFrame(elapsed)
 		signalFirstFramePresented(&firstFramePresented)
 		if h.panelWantsStats() {
@@ -141,19 +146,34 @@ func (h *host) samplePanelStats(tickStart, tickEnd, inputAtMillis float64) {
 	used, limit, ok := browserHeapMetrics()
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = used, limit, ok
 
-	// Go's collector runs in the browser too, and browserHeapMetrics reports
-	// the JS heap rather than the Go one, so this is the only view of it.
-	if gc, ok := h.gc.Sample(); ok {
-		h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
-		h.panelStats.GCAllocBytes = gc.AllocBytes
-		h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
-		h.panelStats.GCSet = true
-	}
-
 	if reporter, ok := h.renderer.(gpuTimingReporter); ok {
 		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
 			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
 	}
+}
+
+func (h *host) samplePanelGC() {
+	h.panelStats.GCFresh = false
+	h.gcFrames++
+	if h.gcFrames < panelGCSampleFrames {
+		return
+	}
+	h.gcFrames = 0
+
+	gc, ok := h.gc.Sample()
+	h.panelStats.GCSet = ok
+	if !ok {
+		h.panelStats.GCCycles = 0
+		h.panelStats.GCPause = 0
+		h.panelStats.GCAllocBytes = 0
+		h.panelStats.GCHeapLive = 0
+		h.panelStats.GCHeapGoal = 0
+		return
+	}
+	h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
+	h.panelStats.GCAllocBytes = gc.AllocBytes
+	h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
+	h.panelStats.GCFresh = true
 }
 
 func (h *host) pollGamepad() []input.Event {

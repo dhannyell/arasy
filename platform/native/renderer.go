@@ -189,6 +189,13 @@ func NewRenderer(
 	renderer.particles, err = newGpuParticles(
 		d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, particleScale > 0,
 	)
+	if err != nil && renderer.particleScale > 0 {
+		log.Warn("native particle offscreen pipelines unavailable, using direct rendering", "err", err)
+		renderer.particleScale = 0
+		renderer.particles, err = newGpuParticles(
+			d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, false,
+		)
+	}
 	if err != nil {
 		// Particle effects are optional presentation. Keep the native host usable
 		// when a driver rejects the compute/indirect pipeline, matching the WASM
@@ -196,9 +203,10 @@ func NewRenderer(
 		log.Warn("native particle renderer disabled", "err", err)
 		renderer.particles = nil
 	}
-	if particleScale > 0 {
+	if renderer.particles != nil && renderer.particleScale > 0 {
 		if err = renderer.createCompositePipeline(); err != nil {
-			return nil, fmt.Errorf("create particle composite pipeline: %w", err)
+			renderer.disableParticleOffscreen(err)
+			err = nil
 		}
 	}
 	if renderer.timing, err = newGPUTiming(d); err != nil {
@@ -274,6 +282,18 @@ func (r *Renderer) createCompositePipeline() error {
 		return fmt.Errorf("create sampler: %w", err)
 	}
 	return nil
+}
+
+func (r *Renderer) disableParticleOffscreen(err error) {
+	r.log.Warn("native particle offscreen compositing disabled", "err", err)
+	r.particleScale = 0
+	r.releaseParticleTargets()
+	releasePipeline(&r.compositePipeline)
+	releaseSampler(&r.compositeSampler)
+	if r.compositeLayout != nil {
+		r.compositeLayout.Release()
+		r.compositeLayout = nil
+	}
 }
 
 // particleTarget is one pooled offscreen target plus its composite bind group.
@@ -1028,12 +1048,19 @@ func (r *Renderer) encodeFrame(
 		groups, groupOf = groupParticleRuns(runs)
 		offscreenParticles = r.particleScale > 0 && len(groups) > 0
 		if offscreenParticles {
-			var beginWrites *wgpu.PassTimestampWrites
-			if sampling {
-				beginWrites = r.timing.renderBeginWrites()
-			}
-			if err := r.encodeParticleOffscreen(encoder, groups, camera, width, height, beginWrites); err != nil {
-				return err
+			ow, oh := particleTargetDims(width, height, r.particleScale)
+			if err := r.ensureParticleTargets(len(groups), ow, oh); err != nil {
+				r.disableParticleOffscreen(err)
+				offscreenParticles = false
+				groupOf = nil
+			} else {
+				var beginWrites *wgpu.PassTimestampWrites
+				if sampling {
+					beginWrites = r.timing.renderBeginWrites()
+				}
+				if err := r.encodeParticleOffscreen(encoder, groups, camera, ow, oh, beginWrites); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -1143,13 +1170,9 @@ func (r *Renderer) encodeParticleOffscreen(
 	encoder *wgpu.CommandEncoder,
 	groups [][]render.DrawParticles,
 	camera render.Camera,
-	w, h int,
+	ow, oh int,
 	beginWrites *wgpu.PassTimestampWrites,
 ) error {
-	ow, oh := particleTargetDims(w, h, r.particleScale)
-	if err := r.ensureParticleTargets(len(groups), ow, oh); err != nil {
-		return err
-	}
 	for gi, cmds := range groups {
 		var writes *wgpu.PassTimestampWrites
 		if gi == 0 {

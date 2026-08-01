@@ -20,6 +20,19 @@ func (u *UI) fillRectIn(rect math2d.Rect, fill render.Color, space Space) {
 	})
 }
 
+func (u *UI) drawTrianglesIn(vertices []math2d.Vec2, indices []uint32, color render.Color, space Space) {
+	worldVertices := make([]math2d.Vec2, len(vertices))
+	for i, vertex := range vertices {
+		worldVertices[i] = u.toWorld(vertex, space)
+	}
+	u.commands = append(u.commands, render.DrawTriangles{
+		BaseCommand: render.BaseCommand{LayerValue: u.nextLayer()},
+		Vertices:    worldVertices,
+		Indices:     append([]uint32(nil), indices...),
+		Color:       color,
+	})
+}
+
 // drawTextIn draws unrotated text at pos with an explicit color/size.
 func (u *UI) drawTextIn(text string, pos math2d.Vec2, color render.Color, size float64, align render.TextAlign, baseline render.TextBaseline, space Space) {
 	u.drawTextRotIn(text, pos, color, size, 0, align, baseline, space)

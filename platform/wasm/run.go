@@ -73,9 +73,8 @@ type host struct {
 	panelStats overlayStats
 	audio      *audioSink
 
-	// gc turns the runtime's cumulative collector counters into per-frame
-	// deltas, so the frame graph can mark the frames a collection ran during.
-	gc runtime.GCStatsTracker
+	gc       runtime.GCStatsTracker
+	gcFrames uint8
 
 	loopCb   js.Func
 	resizeCb js.Func
@@ -133,7 +132,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	// The dev panel's Perf tab reads GPU timings too, so mounting it counts as
 	// asking for them: the adapter feature has to be requested when the device
 	// is created, well before the panel is ever opened.
-	wantGPUTiming := opts.FrameMetrics != nil || opts.DevTools
+	wantGPUTiming := opts.FrameMetrics != nil || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
 	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {

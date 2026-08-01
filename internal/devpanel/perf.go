@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/ui"
 )
 
@@ -79,6 +80,32 @@ type perfLayout struct {
 	lines math2d.Rect
 }
 
+type perfBarMesh struct {
+	vertices []math2d.Vec2
+	indices  []uint32
+	color    render.Color
+}
+
+func (m *perfBarMesh) reset(color render.Color) {
+	m.vertices = m.vertices[:0]
+	m.indices = m.indices[:0]
+	m.color = color
+}
+
+func (m *perfBarMesh) appendRect(rect math2d.Rect) {
+	base := uint32(len(m.vertices))
+	m.vertices = append(m.vertices,
+		rect.Min,
+		math2d.Vec2{X: rect.Max.X, Y: rect.Min.Y},
+		rect.Max,
+		math2d.Vec2{X: rect.Min.X, Y: rect.Max.Y},
+	)
+	m.indices = append(m.indices,
+		base, base+1, base+2,
+		base, base+2, base+3,
+	)
+}
+
 func perfRects(rect math2d.Rect) perfLayout {
 	graph, rest := ui.CutTop(rect, perfGraphHeight)
 	_, lines := ui.CutTop(rest, rowGap)
@@ -125,27 +152,36 @@ func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.
 		return
 	}
 	width := rect.Width() / float64(len(p.history.samples))
+	p.perfBars[0].reset(p.theme.Progress.Fill)
+	p.perfBars[1].reset(colorWarning)
+	p.perfBars[2].reset(colorCollected)
 
 	p.history.each(func(index int, frame time.Duration, collected bool) {
 		height := math.Min(float64(frame)/ceiling, 1) * rect.Height()
 		if height <= 0 {
 			return
 		}
-		fill := p.theme.Progress.Fill
+		mesh := &p.perfBars[0]
 		if frame > budget {
-			fill = colorWarning
+			mesh = &p.perfBars[1]
 		}
 		// A collection outranks "late": a late frame asks why, and this is the
 		// answer whenever it applies. An on-time frame that collected is worth
 		// marking too — it is the same cost landing inside the budget.
 		if collected {
-			fill = colorCollected
+			mesh = &p.perfBars[2]
 		}
-		draw.FillRect(math2d.NewRect(
+		mesh.appendRect(math2d.NewRect(
 			math2d.Vec2{X: rect.Min.X + float64(index)*width, Y: rect.Max.Y - height},
 			math2d.Vec2{X: math.Max(width-1, 1), Y: height},
-		), fill)
+		))
 	})
+	for i := range p.perfBars {
+		mesh := &p.perfBars[i]
+		if len(mesh.indices) > 0 {
+			draw.DrawTriangles(mesh.vertices, mesh.indices, mesh.color)
+		}
+	}
 }
 
 func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.Duration) {
@@ -164,12 +200,8 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 	// look saturated.
 	timings := ""
 	if p.stats.CPUSet {
-		renderCPU := p.stats.CPURender
-		if p.stats.PresentSet {
-			renderCPU = max(p.stats.CPURender-p.stats.PresentWait, 0)
-		}
 		timings = "cpu tick " + formatMillis(p.stats.CPUTick) +
-			"   render " + formatMillis(renderCPU)
+			"   render " + formatMillis(p.stats.CPURender)
 		if p.stats.PresentSet {
 			timings += "   present " + formatMillis(p.stats.PresentWait)
 		}

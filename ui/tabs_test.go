@@ -124,8 +124,13 @@ func TestTabsAtDrawsOneHeaderPerRectWithoutABand(t *testing.T) {
 	if first.Rect.Width() != headers[0].Width() {
 		t.Fatalf("first header width = %v, want the caller's %v", first.Rect.Width(), headers[0].Width())
 	}
-	if active := commands[4].(render.DrawRect); active.Fill != theme.Tabs.TabActive {
+	if active := commands[2].(render.DrawRect); active.Fill != theme.Tabs.TabActive {
 		t.Fatalf("third header fill = %v, want active %v", active.Fill, theme.Tabs.TabActive)
+	}
+	for i := 1; i < len(commands); i++ {
+		if commands[i].Layer() < commands[i-1].Layer() {
+			t.Fatalf("command %d drops from layer %d to %d", i, commands[i-1].Layer(), commands[i].Layer())
+		}
 	}
 }
 
@@ -291,13 +296,13 @@ func TestTabsDrawEmitsBarAndOneHeaderPerLabel(t *testing.T) {
 	if activeRect.Fill != theme.Tabs.TabActive {
 		t.Fatalf("first header fill = %v, want active color %v", activeRect.Fill, theme.Tabs.TabActive)
 	}
-	inactiveRect := commands[3].(render.DrawRect)
+	inactiveRect := commands[2].(render.DrawRect)
 	if inactiveRect.Fill != theme.Tabs.TabInactive {
 		t.Fatalf("second header fill = %v, want inactive color %v", inactiveRect.Fill, theme.Tabs.TabInactive)
 	}
-	label, ok := commands[2].(render.DrawText)
+	label, ok := commands[4].(render.DrawText)
 	if !ok {
-		t.Fatalf("first label type = %T, want render.DrawText", commands[2])
+		t.Fatalf("first label type = %T, want render.DrawText", commands[4])
 	}
 	if label.Text != tabsLabels()[0] {
 		t.Fatalf("first label = %q, want %q", label.Text, tabsLabels()[0])

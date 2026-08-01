@@ -191,7 +191,7 @@ func TestPerfMarksCollectedFrames(t *testing.T) {
 		t.Fatalf("%d bars marked as collected while no cycle ran", clean)
 	}
 
-	p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true, GCCycles: 1})
+	p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true, GCFresh: true, GCCycles: 1})
 	marked := countFill(p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true}), colorCollected)
 	if marked != 1 {
 		t.Fatalf("%d bars marked as collected, want exactly the one frame that collected", marked)
@@ -203,7 +203,7 @@ func TestPerfMarksCollectedFrames(t *testing.T) {
 func TestPerfCollectionOutranksLateness(t *testing.T) {
 	p := openPanel(t, Options{}, tabPerf)
 
-	p.Render(frameCamera(), 40*time.Millisecond, Stats{GCSet: true, GCCycles: 1})
+	p.Render(frameCamera(), 40*time.Millisecond, Stats{GCSet: true, GCFresh: true, GCCycles: 1})
 	cmds := p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true})
 	if late := countFill(cmds, colorWarning); late != 0 {
 		t.Fatalf("%d bars kept the late colour on a frame that collected", late)
@@ -255,7 +255,7 @@ func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {
 		PresentWait: 16100 * time.Microsecond,
 		PresentSet:  true,
 	})
-	requireText(t, cmds, "cpu tick 0.3ms   render 0.3ms   present 16.1ms")
+	requireText(t, cmds, "cpu tick 0.3ms   render 16.4ms   present 16.1ms")
 
 	// Without the probe the line keeps the old shape, render unadjusted.
 	bare := p.Render(frameCamera(), 16*time.Millisecond, Stats{
@@ -279,17 +279,38 @@ func TestPerfMarksFramesOverBudget(t *testing.T) {
 	}
 
 	p.Render(frameCamera(), 40*time.Millisecond, Stats{})
-	late := countFill(p.Render(frameCamera(), 8*time.Millisecond, Stats{}), colorWarning)
+	cmds := p.Render(frameCamera(), 8*time.Millisecond, Stats{})
+	late := countFill(cmds, colorWarning)
 	if late == 0 {
 		t.Fatal("a 40ms frame was not marked as over budget")
 	}
+	if batches := countTriangleBatches(cmds, colorWarning); batches != 1 {
+		t.Fatalf("late bars used %d draw batches, want 1", batches)
+	}
+}
+
+func countTriangleBatches(commands []render.Command, color render.Color) int {
+	count := 0
+	for _, command := range commands {
+		if triangles, ok := command.(render.DrawTriangles); ok && triangles.Color == color {
+			count++
+		}
+	}
+	return count
 }
 
 func countFill(commands []render.Command, fill render.Color) int {
 	count := 0
 	for _, command := range commands {
-		if rect, ok := command.(render.DrawRect); ok && rect.Fill == fill {
-			count++
+		switch command := command.(type) {
+		case render.DrawRect:
+			if command.Fill == fill {
+				count++
+			}
+		case render.DrawTriangles:
+			if command.Color == fill {
+				count += len(command.Indices) / 6
+			}
 		}
 	}
 	return count

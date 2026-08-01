@@ -68,6 +68,8 @@ func (t cpuFrameTiming) inputToSubmit(inputAt time.Time) (time.Duration, bool) {
 
 const noGamepadJoystick glfw.Joystick = -1
 
+const panelGCSampleFrames = 8 // Per-frame runtime metrics materially slow the panel.
+
 type host struct {
 	driver      *runtime.Driver
 	renderer    *Renderer
@@ -80,9 +82,12 @@ type host struct {
 	lastInputAt time.Time
 	heapSamples []metrics.Sample
 
-	pending  []input.Event
-	viewport math2d.Rect
-	fbDirty  bool
+	pending     []input.Event
+	viewport    math2d.Rect
+	fbDirty     bool
+	cursorX     float64
+	cursorY     float64
+	cursorDirty bool
 
 	gamepadJoystick glfw.Joystick
 	gamepadTracker  platforminput.GamepadTracker
@@ -103,9 +108,8 @@ type host struct {
 	// panel asks.
 	sysprobe *sysprobe.Prober
 
-	// gc turns the runtime's cumulative collector counters into per-frame
-	// deltas, so the frame graph can mark the frames a collection ran during.
-	gc runtime.GCStatsTracker
+	gc       runtime.GCStatsTracker
+	gcFrames uint8
 
 	spinMargin time.Duration
 }
@@ -151,6 +155,25 @@ func (h *host) noteInput() {
 	}
 }
 
+func (h *host) queuePointerMove(x, y float64) {
+	event := pointerMoveEvent(x, y)
+	if last := len(h.pending) - 1; last >= 0 &&
+		h.pending[last].Kind == input.EventPointerMove && h.pending[last].Source == event.Source {
+		h.pending[last] = event
+		return
+	}
+	h.pending = append(h.pending, event)
+}
+
+func (h *host) flushCursorMove() {
+	if !h.cursorDirty {
+		return
+	}
+	h.cursorDirty = false
+	x, y := h.scaleCursor(h.cursorX, h.cursorY)
+	h.queuePointerMove(x, y)
+}
+
 func (h *host) readHeap() (uint64, uint64, bool) {
 	if len(h.heapSamples) == 0 {
 		return 0, 0, false
@@ -192,6 +215,7 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		h.noteInput()
 		h.pending = append(h.pending, keyEvent(code, action == glfw.Press))
 	})
@@ -208,6 +232,7 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		h.noteInput()
 		h.pending = append(h.pending, event)
 	})
@@ -219,16 +244,18 @@ func (h *host) registerCallbacks() {
 		if !ok {
 			return
 		}
+		h.flushCursorMove()
 		x, y := h.scaledCursor()
 		h.noteInput()
 		h.pending = append(h.pending, mouseButtonEvent(code, action == glfw.Press, x, y))
 	})
 	h.window.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
-		x, y = h.scaleCursor(x, y)
+		h.cursorX, h.cursorY = x, y
+		h.cursorDirty = true
 		h.noteInput()
-		h.pending = append(h.pending, pointerMoveEvent(x, y))
 	})
 	h.window.SetScrollCallback(func(_ *glfw.Window, dx, dy float64) {
+		h.flushCursorMove()
 		x, y := h.scaledCursor()
 		events := wheelEvents(dx, dy, x, y)
 		if len(events) > 0 {
@@ -238,6 +265,7 @@ func (h *host) registerCallbacks() {
 	})
 	h.window.SetCursorEnterCallback(func(_ *glfw.Window, entered bool) {
 		if !entered {
+			h.flushCursorMove()
 			h.noteInput()
 			h.pending = append(h.pending, pointerLeaveEvent())
 		}
@@ -267,6 +295,7 @@ func (h *host) run() error {
 	}
 	for !h.window.ShouldClose() {
 		glfw.PollEvents()
+		h.flushCursorMove()
 		h.resizeIfNeeded()
 
 		elapsed := frameTimer.Elapsed(time.Now())
@@ -320,6 +349,9 @@ func (h *host) run() error {
 		var tickEnd time.Time
 		if sampleCPU {
 			tickEnd = time.Now()
+		}
+		if h.panel != nil {
+			h.samplePanelGC()
 		}
 		h.renderFrame(elapsed)
 		cpuFrame := h.renderer.frameCPUTiming()
@@ -409,13 +441,6 @@ func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame 
 		h.panelStats.InputLatency = 0
 	}
 
-	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
-	if gc, ok := h.gc.Sample(); ok {
-		h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
-		h.panelStats.GCAllocBytes = gc.AllocBytes
-		h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
-		h.panelStats.GCSet = true
-	}
 	if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
 		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
 			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
@@ -436,6 +461,33 @@ func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame 
 	h.panelStats.GPUProcessPercent = probe.GPUProcessPercent
 	h.panelStats.GPUSystemPercent = probe.GPUSystemPercent
 	h.panelStats.GPUSet = probe.GPUOK
+}
+
+func (h *host) samplePanelGC() {
+	h.panelStats.GCFresh = false
+	h.gcFrames++
+	if h.gcFrames < panelGCSampleFrames {
+		return
+	}
+	h.gcFrames = 0
+	if h.panelWantsStats() {
+		h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+	}
+
+	gc, ok := h.gc.Sample()
+	h.panelStats.GCSet = ok
+	if !ok {
+		h.panelStats.GCCycles = 0
+		h.panelStats.GCPause = 0
+		h.panelStats.GCAllocBytes = 0
+		h.panelStats.GCHeapLive = 0
+		h.panelStats.GCHeapGoal = 0
+		return
+	}
+	h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
+	h.panelStats.GCAllocBytes = gc.AllocBytes
+	h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
+	h.panelStats.GCFresh = true
 }
 
 func (h *host) pollGamepad() []input.Event {

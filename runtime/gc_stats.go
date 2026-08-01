@@ -47,8 +47,8 @@ const (
 // runtime.ReadMemStats: ReadMemStats stops the world to answer, which is a
 // strange thing to do in a tool for finding pauses.
 //
-// The zero value is ready to use, and Sample is cheap enough to call every
-// frame. Both hosts share it, browser included.
+// The zero value is ready to use. Hosts choose a sampling cadence appropriate
+// for development telemetry; reading these metrics every frame is measurable.
 type GCStatsTracker struct {
 	samples []metrics.Sample
 	primed  bool

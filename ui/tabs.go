@@ -100,13 +100,10 @@ func (u *UI) tabsIn(id string, rect math2d.Rect, labels []string, space Space) i
 func (u *UI) tabsAtIn(headers []math2d.Rect, labels []string, active int, space Space) {
 	tabs := u.theme.Tabs
 	layer := u.nextLayer()
+	count := min(len(headers), len(labels))
 
 	cursor := u.cursorIn(space)
-	for i, header := range headers {
-		if i >= len(labels) {
-			break
-		}
-		label := labels[i]
+	for i, header := range headers[:count] {
 		fill := tabs.TabInactive
 		switch {
 		case i == active:
@@ -114,25 +111,26 @@ func (u *UI) tabsAtIn(headers []math2d.Rect, labels []string, active int, space 
 		case u.inside && header.Contains(cursor):
 			fill = tabs.TabHovered
 		}
-		u.commands = append(u.commands,
-			render.DrawRect{
-				BaseCommand:  render.BaseCommand{LayerValue: layer},
-				Rect:         u.rectToWorld(header, space),
-				Fill:         fill,
-				Stroke:       tabs.Border,
-				StrokeWidth:  u.sizeToWorld(tabs.BorderWidth, space),
-				CornerRadius: u.sizeToWorld(tabs.CornerRadius, space),
-			},
-			render.DrawText{
-				BaseCommand: render.BaseCommand{LayerValue: layer + 1},
-				Position:    u.toWorld(header.Center(), space),
-				Text:        label,
-				Color:       tabs.TextColor,
-				Size:        u.sizeToWorld(tabs.TextSize, space),
-				Font:        u.theme.Font,
-				Align:       render.AlignCenter,
-				Baseline:    render.BaselineMiddle,
-			})
+		u.commands = append(u.commands, render.DrawRect{
+			BaseCommand:  render.BaseCommand{LayerValue: layer},
+			Rect:         u.rectToWorld(header, space),
+			Fill:         fill,
+			Stroke:       tabs.Border,
+			StrokeWidth:  u.sizeToWorld(tabs.BorderWidth, space),
+			CornerRadius: u.sizeToWorld(tabs.CornerRadius, space),
+		})
+	}
+	for i, header := range headers[:count] {
+		u.commands = append(u.commands, render.DrawText{
+			BaseCommand: render.BaseCommand{LayerValue: layer + 1},
+			Position:    u.toWorld(header.Center(), space),
+			Text:        labels[i],
+			Color:       tabs.TextColor,
+			Size:        u.sizeToWorld(tabs.TextSize, space),
+			Font:        u.theme.Font,
+			Align:       render.AlignCenter,
+			Baseline:    render.BaselineMiddle,
+		})
 	}
 }
 
