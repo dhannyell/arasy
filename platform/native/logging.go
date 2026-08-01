@@ -45,7 +45,9 @@ func NewLogger(gameName string) (*slog.Logger, func() error) {
 	// must not stop the file from receiving the same line.
 	log := slog.New(slog.NewTextHandler(logWriter{file: file, console: os.Stderr}, nil))
 	log.Info("game log", "path", path)
-	fmt.Fprintf(os.Stdout, "logging to %s\n", path)
+	// A GUI-subsystem build has no stdout to print to, and that is the normal
+	// case for a released game rather than a failure.
+	_, _ = fmt.Fprintf(os.Stdout, "logging to %s\n", path)
 	return log, file.Close
 }
 
