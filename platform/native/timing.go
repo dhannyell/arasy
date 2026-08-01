@@ -313,38 +313,10 @@ func (t *gpuTiming) timings() (prepare, simulate, render time.Duration, ok bool)
 	return t.prepare, t.simulate, t.render, true
 }
 
-// settle waits for every readback still in flight and consumes it. Releasing a
-// buffer whose map has not completed makes wgpu-native invoke the map callback
-// from inside wgpuBufferRelease, and that call crosses back into Go from a
-// function the binding marks #cgo nocallback, which aborts the process. The
-// window closing mid-frame is exactly when a map is most likely to be pending,
-// which is why the crash only showed up on the close button and only sometimes.
-//
-// The bound is there so a device that has stopped making progress cannot hang
-// shutdown: giving up and leaking a mapped buffer is better than never exiting,
-// and the process is going away regardless.
-func (t *gpuTiming) settle() {
-	for range timingSlotCount * 2 {
-		busy := false
-		for i := range t.slots {
-			if t.slots[i].busy {
-				busy = true
-				break
-			}
-		}
-		if !busy {
-			return
-		}
-		t.device.Poll(true, nil)
-		t.drain()
-	}
-}
-
 func (t *gpuTiming) release() {
 	if t == nil {
 		return
 	}
-	t.settle()
 	for i := range t.slots {
 		if t.slots[i].buffer != nil {
 			t.slots[i].buffer.Release()
