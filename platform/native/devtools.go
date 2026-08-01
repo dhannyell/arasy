@@ -59,6 +59,16 @@ type overlayStats struct {
 	GPURenderTime   time.Duration
 	GPUTimeSet      bool
 
+	// Garbage collection since the previous frame. Cheap counters read through
+	// runtime/metrics, never ReadMemStats: stopping the world to look for
+	// pauses would be self-defeating.
+	GCCycles     uint64
+	GCPause      time.Duration
+	GCAllocBytes uint64
+	GCHeapLive   uint64
+	GCHeapGoal   uint64
+	GCSet        bool
+
 	// PresentWait is the presentation-queue block of the last frame — the
 	// vblank wait under vsync, reported apart from CPU render time.
 	PresentWait time.Duration

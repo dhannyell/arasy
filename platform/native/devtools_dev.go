@@ -49,6 +49,12 @@ func (o *panelOverlay) Render(cam render.Camera, elapsed time.Duration, stats ov
 		GPUSimulateTime:     stats.GPUSimulateTime,
 		GPURenderTime:       stats.GPURenderTime,
 		GPUTimeSet:          stats.GPUTimeSet,
+		GCCycles:            stats.GCCycles,
+		GCPause:             stats.GCPause,
+		GCAllocBytes:        stats.GCAllocBytes,
+		GCHeapLive:          stats.GCHeapLive,
+		GCHeapGoal:          stats.GCHeapGoal,
+		GCSet:               stats.GCSet,
 		PresentWait:         stats.PresentWait,
 		PresentSet:          stats.PresentSet,
 	})

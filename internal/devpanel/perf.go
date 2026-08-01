@@ -30,18 +30,22 @@ const (
 	perfLineHeight    = 18
 )
 
-// frameHistory is a ring of recent frame durations.
+// frameHistory is a ring of recent frame durations, each flagged with whether
+// the collector ran during it. The flag rides along with the sample so a bar
+// and its cause cannot drift apart as the ring wraps.
 type frameHistory struct {
-	samples [frameHistoryLen]time.Duration
-	next    int
-	filled  bool
+	samples   [frameHistoryLen]time.Duration
+	collected [frameHistoryLen]bool
+	next      int
+	filled    bool
 }
 
-func (h *frameHistory) push(frame time.Duration) {
+func (h *frameHistory) push(frame time.Duration, collected bool) {
 	if frame <= 0 {
 		return
 	}
 	h.samples[h.next] = frame
+	h.collected[h.next] = collected
 	h.next = (h.next + 1) % len(h.samples)
 	if h.next == 0 {
 		h.filled = true
@@ -50,7 +54,7 @@ func (h *frameHistory) push(frame time.Duration) {
 
 // each walks the samples oldest to newest, so the graph scrolls left to right
 // regardless of where the ring's cursor happens to sit.
-func (h *frameHistory) each(visit func(index int, frame time.Duration)) {
+func (h *frameHistory) each(visit func(index int, frame time.Duration, collected bool)) {
 	count := h.next
 	start := 0
 	if h.filled {
@@ -58,7 +62,8 @@ func (h *frameHistory) each(visit func(index int, frame time.Duration)) {
 		start = h.next
 	}
 	for i := range count {
-		visit(i, h.samples[(start+i)%len(h.samples)])
+		slot := (start + i) % len(h.samples)
+		visit(i, h.samples[slot], h.collected[slot])
 	}
 }
 
@@ -121,7 +126,7 @@ func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.
 	}
 	width := rect.Width() / float64(len(p.history.samples))
 
-	p.history.each(func(index int, frame time.Duration) {
+	p.history.each(func(index int, frame time.Duration, collected bool) {
 		height := math.Min(float64(frame)/ceiling, 1) * rect.Height()
 		if height <= 0 {
 			return
@@ -129,6 +134,12 @@ func (p *Panel) drawFrameGraph(draw ui.DrawScope, rect math2d.Rect, budget time.
 		fill := p.theme.Progress.Fill
 		if frame > budget {
 			fill = colorWarning
+		}
+		// A collection outranks "late": a late frame asks why, and this is the
+		// answer whenever it applies. An on-time frame that collected is worth
+		// marking too — it is the same cost landing inside the budget.
+		if collected {
+			fill = colorCollected
 		}
 		draw.FillRect(math2d.NewRect(
 			math2d.Vec2{X: rect.Min.X + float64(index)*width, Y: rect.Max.Y - height},
@@ -203,6 +214,19 @@ func (p *Panel) drawPerfLines(draw ui.DrawScope, rect math2d.Rect, budget time.D
 		lines = append(lines, "gpu emit "+formatGPUTime(p.stats.GPUEmitTime)+
 			"   sim "+formatGPUTime(p.stats.GPUSimulateTime)+
 			"   draw "+formatGPUTime(p.stats.GPURenderTime))
+	}
+	// The allocation rate is the actionable half of this row: it is what sets
+	// how often the collector has to run, and unlike the cycle count it is
+	// something the game's code can change.
+	if p.stats.GCSet {
+		gc := "alloc " + formatMegabytes(p.stats.GCAllocBytes) +
+			"   heap " + formatMegabytes(p.stats.GCHeapLive) +
+			" / " + formatMegabytes(p.stats.GCHeapGoal)
+		if p.stats.GCCycles > 0 {
+			gc += "   gc " + formatInt(int(p.stats.GCCycles)) +
+				" " + formatGPUTime(p.stats.GCPause)
+		}
+		lines = append(lines, gc)
 	}
 
 	for i, line := range lines {

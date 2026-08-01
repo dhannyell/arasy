@@ -89,6 +89,22 @@ type Stats struct {
 	GPURenderTime   time.Duration
 	GPUTimeSet      bool
 
+	// Garbage collection since the previous frame. GCCycles above zero marks
+	// the frame in the graph, which is the whole point: it turns "it stutters
+	// sometimes" into a bar you can point at.
+	//
+	// GCAllocBytes is deliberately the only attribution offered. No function
+	// forces a collection — a cycle starts when the heap reaches its goal, and
+	// the allocation that crosses the line is arbitrary — so naming a culprit
+	// call site would be naming the wrong one most of the time. The allocation
+	// rate is what actually sets how often the collector runs.
+	GCCycles     uint64
+	GCPause      time.Duration
+	GCAllocBytes uint64
+	GCHeapLive   uint64
+	GCHeapGoal   uint64
+	GCSet        bool
+
 	// PresentWait is how long the last frame blocked on the presentation
 	// queue (acquire + present). With vsync that is the vblank wait — idle
 	// time that must not be read as CPU render work, so hosts that measure
@@ -445,7 +461,7 @@ func (p *Panel) observeFrame(elapsed time.Duration, stats Stats) {
 	if frame, ready := p.frames.Observe(elapsed); ready {
 		p.frameStats = frame
 	}
-	p.history.push(elapsed)
+	p.history.push(elapsed, stats.GCSet && stats.GCCycles > 0)
 }
 
 func (p *Panel) draw(draw ui.DrawScope, lay layout, state runtime.DriveState, stats Stats) {

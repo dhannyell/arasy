@@ -73,6 +73,10 @@ type host struct {
 	// panel asks.
 	sysprobe *sysprobe.Prober
 
+	// gc turns the runtime's cumulative collector counters into per-frame
+	// deltas, so the frame graph can mark the frames a collection ran during.
+	gc runtime.GCStatsTracker
+
 	spinMargin time.Duration
 }
 
@@ -370,6 +374,12 @@ func (h *host) samplePanelStats(tickStart, tickEnd, renderEnd time.Time, inputAt
 	}
 
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = h.readHeap()
+	if gc, ok := h.gc.Sample(); ok {
+		h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
+		h.panelStats.GCAllocBytes = gc.AllocBytes
+		h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
+		h.panelStats.GCSet = true
+	}
 	if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
 		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
 			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()

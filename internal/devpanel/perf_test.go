@@ -46,7 +46,7 @@ func TestPerfKeepsSamplingWhileClosed(t *testing.T) {
 func TestFrameHistoryWrapsInOrder(t *testing.T) {
 	var history frameHistory
 	for i := range frameHistoryLen + 5 {
-		history.push(time.Duration(i+1) * time.Millisecond)
+		history.push(time.Duration(i+1)*time.Millisecond, false)
 	}
 
 	if got := history.count(); got != frameHistoryLen {
@@ -54,7 +54,7 @@ func TestFrameHistoryWrapsInOrder(t *testing.T) {
 	}
 
 	var seen []time.Duration
-	history.each(func(_ int, frame time.Duration) { seen = append(seen, frame) })
+	history.each(func(_ int, frame time.Duration, _ bool) { seen = append(seen, frame) })
 
 	if len(seen) != frameHistoryLen {
 		t.Fatalf("walked %d samples, want %d", len(seen), frameHistoryLen)
@@ -74,8 +74,8 @@ func TestFrameHistoryWrapsInOrder(t *testing.T) {
 // nothing in the graph and drag the average down.
 func TestFrameHistoryIgnoresEmptyFrames(t *testing.T) {
 	var history frameHistory
-	history.push(0)
-	history.push(-time.Millisecond)
+	history.push(0, false)
+	history.push(-time.Millisecond, false)
 
 	if got := history.count(); got != 0 {
 		t.Fatalf("history recorded %d non-frames, want none", got)
@@ -173,6 +173,75 @@ func TestPerfGPUTimeRowFollowsItsOwnFlag(t *testing.T) {
 		GPUTimeSet:      true,
 	})
 	requireText(t, timed, "gpu emit 3us   sim 210us   draw 4.2ms")
+}
+
+// The collector's bar has to be told apart from a late bar. "It stutters
+// sometimes" is the symptom this tab exists to name, and a collection is the
+// answer often enough that it deserves its own colour rather than sharing the
+// one that only says "late".
+func TestPerfMarksCollectedFrames(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	// Frames well inside the budget, so nothing can be marked as late.
+	for range 20 {
+		p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true})
+	}
+	clean := countFill(p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true}), colorCollected)
+	if clean != 0 {
+		t.Fatalf("%d bars marked as collected while no cycle ran", clean)
+	}
+
+	p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true, GCCycles: 1})
+	marked := countFill(p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true}), colorCollected)
+	if marked != 1 {
+		t.Fatalf("%d bars marked as collected, want exactly the one frame that collected", marked)
+	}
+}
+
+// A collection outranks "late": a late frame poses the question and the
+// collection answers it, so the bar must not stay orange and hide the cause.
+func TestPerfCollectionOutranksLateness(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	p.Render(frameCamera(), 40*time.Millisecond, Stats{GCSet: true, GCCycles: 1})
+	cmds := p.Render(frameCamera(), 4*time.Millisecond, Stats{GCSet: true})
+	if late := countFill(cmds, colorWarning); late != 0 {
+		t.Fatalf("%d bars kept the late colour on a frame that collected", late)
+	}
+	if collected := countFill(cmds, colorCollected); collected != 1 {
+		t.Fatalf("%d bars marked as collected, want 1", collected)
+	}
+}
+
+// The row leads with the allocation rate because that is the part the game's
+// code can change; the cycle count only joins it when a cycle actually ran.
+func TestPerfGCRowFollowsItsFlag(t *testing.T) {
+	p := openPanel(t, Options{}, tabPerf)
+
+	if containsText(p.Render(frameCamera(), 16*time.Millisecond, Stats{}), "alloc ") {
+		t.Fatal("GC row drew without GCSet")
+	}
+
+	quiet := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		GCAllocBytes: 2 << 20,
+		GCHeapLive:   8 << 20,
+		GCHeapGoal:   16 << 20,
+		GCSet:        true,
+	})
+	requireText(t, quiet, "alloc 2.0MB   heap 8.0MB / 16.0MB")
+	if containsText(quiet, "   gc ") {
+		t.Fatal("cycle count drew on a frame where no cycle ran")
+	}
+
+	collected := p.Render(frameCamera(), 16*time.Millisecond, Stats{
+		GCAllocBytes: 2 << 20,
+		GCHeapLive:   8 << 20,
+		GCHeapGoal:   16 << 20,
+		GCCycles:     1,
+		GCPause:      120 * time.Microsecond,
+		GCSet:        true,
+	})
+	requireText(t, collected, "alloc 2.0MB   heap 8.0MB / 16.0MB   gc 1 120us")
 }
 
 func TestPerfSplitsPresentWaitFromRenderWork(t *testing.T) {

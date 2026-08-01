@@ -141,6 +141,15 @@ func (h *host) samplePanelStats(tickStart, tickEnd, inputAtMillis float64) {
 	used, limit, ok := browserHeapMetrics()
 	h.panelStats.HeapInUse, h.panelStats.HeapTotal, h.panelStats.HeapSet = used, limit, ok
 
+	// Go's collector runs in the browser too, and browserHeapMetrics reports
+	// the JS heap rather than the Go one, so this is the only view of it.
+	if gc, ok := h.gc.Sample(); ok {
+		h.panelStats.GCCycles, h.panelStats.GCPause = gc.Cycles, gc.Pause
+		h.panelStats.GCAllocBytes = gc.AllocBytes
+		h.panelStats.GCHeapLive, h.panelStats.GCHeapGoal = gc.HeapLive, gc.HeapGoal
+		h.panelStats.GCSet = true
+	}
+
 	if reporter, ok := h.renderer.(gpuTimingReporter); ok {
 		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
 			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()

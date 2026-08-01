@@ -73,6 +73,10 @@ type host struct {
 	panelStats overlayStats
 	audio      *audioSink
 
+	// gc turns the runtime's cumulative collector counters into per-frame
+	// deltas, so the frame graph can mark the frames a collection ran during.
+	gc runtime.GCStatsTracker
+
 	loopCb   js.Func
 	resizeCb js.Func
 	inputCbs []js.Func
