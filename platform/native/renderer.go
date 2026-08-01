@@ -951,10 +951,12 @@ func (r *Renderer) encodeFrame(
 	defer encoder.Release()
 	var groupOf []int
 	offscreenParticles := false
-	// A sampled frame must write every query in the set before resolving it, so
-	// the compute boundaries are recorded even with no particle work — see
-	// gpuParticles.encode and encodeEmptyComputeTimestamps.
+	// timedCompute records whether the particle compute passes ran, which
+	// decides how much of the query set is safe to resolve: a pass that never
+	// ran wrote no timestamp, and resolving one that was never written loses
+	// the device on Vulkan.
 	sampling := r.timeGPU
+	timedCompute := false
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
@@ -966,9 +968,10 @@ func (r *Renderer) encodeFrame(
 			}
 		}
 		var emitWrites, simulateWrites *wgpu.PassTimestampWrites
-		if sampling {
+		if sampling && len(sims) > 0 {
 			emitWrites = r.timing.prepareWrites()
 			simulateWrites = r.timing.simulateWrites()
+			timedCompute = true
 		}
 		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return fmt.Errorf("encode particle simulation: %w", err)
@@ -988,10 +991,6 @@ func (r *Renderer) encodeFrame(
 			if err := r.encodeParticleOffscreen(encoder, groups, camera, width, height, beginWrites); err != nil {
 				return err
 			}
-		}
-	} else if sampling {
-		if err := r.timing.encodeEmptyComputeTimestamps(encoder); err != nil {
-			return fmt.Errorf("encode timestamp compute passes: %w", err)
 		}
 	}
 	attachment := wgpu.RenderPassColorAttachment{
@@ -1042,7 +1041,7 @@ func (r *Renderer) encodeFrame(
 	}
 	slot := -1
 	if sampling {
-		slot = r.timing.encodeResolve(encoder)
+		slot = r.timing.encodeResolve(encoder, timedCompute)
 	}
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {

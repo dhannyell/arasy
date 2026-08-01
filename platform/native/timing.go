@@ -16,8 +16,11 @@ const (
 	// that belongs to the simulation. Mirrors the WASM host's layout so the two
 	// backends' HUD rows mean the same thing.
 	timingQueryCount = 5
-	timingSlotCount  = 4 // readbacks in flight; a frame with no free slot skips sampling
-	timingSampleSize = timingQueryCount * 8
+	// timingRenderBegin is where the render pair starts in the set. A frame
+	// without particle work resolves from here instead of from zero.
+	timingRenderBegin = 3
+	timingSlotCount   = 4 // readbacks in flight; a frame with no free slot skips sampling
+	timingSampleSize  = timingQueryCount * 8
 )
 
 // gpuTiming samples GPU-side frame cost with timestamp queries. It is nil when
@@ -43,6 +46,10 @@ type gpuTiming struct {
 type timingSlot struct {
 	buffer *wgpu.Buffer // MapRead | CopyDst readback target
 	busy   bool
+	// hasCompute records whether the frame that filled this slot ran the
+	// particle compute passes, which decides how many queries were resolved
+	// into the buffer and therefore how to read it back.
+	hasCompute bool
 	// mapped and status are written by the map callback and consumed by drain.
 	mapped bool
 	status wgpu.MapAsyncStatus
@@ -139,27 +146,16 @@ func (t *gpuTiming) renderEndWrites() *wgpu.PassTimestampWrites {
 	}
 }
 
-// encodeEmptyComputeTimestamps records the two compute-pass boundaries when
-// there is no particle renderer to carry them. Every query in the set has to be
-// written before it is resolved, so the pair cannot simply be skipped.
-func (t *gpuTiming) encodeEmptyComputeTimestamps(encoder *wgpu.CommandEncoder) error {
-	if t == nil {
-		return nil
-	}
-	emit := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: t.prepareWrites()})
-	defer emit.Release()
-	if err := emit.TryEnd(); err != nil {
-		return err
-	}
-	sim := encoder.BeginComputePass(&wgpu.ComputePassDescriptor{TimestampWrites: t.simulateWrites()})
-	defer sim.Release()
-	return sim.TryEnd()
-}
-
 // encodeResolve records the query resolution and the copy into a free readback
 // slot. It returns the slot index, or -1 when every readback is still mapped,
 // in which case the frame simply goes unsampled.
-func (t *gpuTiming) encodeResolve(encoder *wgpu.CommandEncoder) int {
+//
+// hasCompute says whether the particle compute passes ran this frame. When
+// they did not, queries 0 to 2 were never written, and resolving a query that
+// was never written is undefined behaviour — on Vulkan it loses the device
+// outright. So a frame without particle work resolves only the render pair,
+// which lands at the front of the buffer and is read back as such.
+func (t *gpuTiming) encodeResolve(encoder *wgpu.CommandEncoder, hasCompute bool) int {
 	if t == nil {
 		return -1
 	}
@@ -173,13 +169,18 @@ func (t *gpuTiming) encodeResolve(encoder *wgpu.CommandEncoder) int {
 	if slot < 0 {
 		return -1
 	}
-	if err := encoder.TryResolveQuerySet(t.querySet, 0, timingQueryCount, t.resolve, 0); err != nil {
+	first, count := uint32(timingRenderBegin), uint32(2)
+	if hasCompute {
+		first, count = 0, timingQueryCount
+	}
+	if err := encoder.TryResolveQuerySet(t.querySet, first, count, t.resolve, 0); err != nil {
 		return -1
 	}
-	if err := encoder.TryCopyBufferToBuffer(t.resolve, 0, t.slots[slot].buffer, 0, timingSampleSize); err != nil {
+	if err := encoder.TryCopyBufferToBuffer(t.resolve, 0, t.slots[slot].buffer, 0, uint64(count)*8); err != nil {
 		return -1
 	}
 	t.slots[slot].busy = true
+	t.slots[slot].hasCompute = hasCompute
 	return slot
 }
 
@@ -218,12 +219,16 @@ func (t *gpuTiming) drain() {
 		}
 		s.mapped = false
 		if s.status == wgpu.MapAsyncStatusSuccess {
-			if data := s.buffer.GetMappedRange(0, timingSampleSize); len(data) >= timingSampleSize {
+			size := 2 * 8
+			if s.hasCompute {
+				size = timingSampleSize
+			}
+			if data := s.buffer.GetMappedRange(0, uint(size)); len(data) >= size {
 				var ticks [timingQueryCount]uint64
-				for j := range ticks {
+				for j := range size / 8 {
 					ticks[j] = binary.LittleEndian.Uint64(data[j*8:])
 				}
-				t.publish(ticks)
+				t.publish(ticks, s.hasCompute)
 			}
 			s.buffer.Unmap()
 		}
@@ -234,24 +239,37 @@ func (t *gpuTiming) drain() {
 // publish converts a resolved sample into durations, scaling driver ticks by
 // the queue's timestamp period. Timestamps may be non-monotonic across passes
 // on some drivers, so a sample that would yield a negative duration is
-// discarded rather than shown. Frames with no particle work still write the
-// compute boundaries, so those stages read as the near-zero cost of two empty
-// passes rather than as a stale value.
-func (t *gpuTiming) publish(ticks [timingQueryCount]uint64) {
+// discarded rather than shown.
+//
+// Without compute work only the render pair was resolved, so it sits at the
+// front of ticks and the compute stages report zero — which is what they cost.
+func (t *gpuTiming) publish(ticks [timingQueryCount]uint64, hasCompute bool) {
+	if !hasCompute {
+		if ticks[1] >= ticks[0] {
+			t.prepare, t.simulate = 0, 0
+			t.render = t.scale(ticks[0], ticks[1])
+			t.valid = true
+		}
+		return
+	}
 	if ticks[1] < ticks[0] || ticks[2] < ticks[1] || ticks[4] < ticks[3] {
 		return
 	}
+	t.prepare = t.scale(ticks[0], ticks[1])
+	t.simulate = t.scale(ticks[1], ticks[2])
+	t.render = t.scale(ticks[3], ticks[4])
+	t.valid = true
+}
+
+// scale turns a tick interval into a duration. wgpu-native resolves timestamps
+// in driver ticks rather than nanoseconds, so the queue's period is what makes
+// the number comparable across machines.
+func (t *gpuTiming) scale(from, to uint64) time.Duration {
 	period := float64(t.queue.GetTimestampPeriod())
 	if period <= 0 {
 		period = 1
 	}
-	dur := func(from, to uint64) time.Duration {
-		return time.Duration(float64(to-from) * period)
-	}
-	t.prepare = dur(ticks[0], ticks[1])
-	t.simulate = dur(ticks[1], ticks[2])
-	t.render = dur(ticks[3], ticks[4])
-	t.valid = true
+	return time.Duration(float64(to-from) * period)
 }
 
 // poll pumps pending map callbacks without blocking. Native mapping only
