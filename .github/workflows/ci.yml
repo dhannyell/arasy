@@ -8,11 +8,24 @@ on:
 permissions:
   contents: read
 
+env:
+  # Build dependencies of the native host on Linux: GLFW needs the X11 and
+  # Wayland development headers, oto needs ALSA, and the WebGPU binding needs
+  # EGL and a Vulkan loader. Every Linux job compiles ./... and therefore
+  # compiles the host, so all of them install these.
+  NATIVE_LINUX_DEPS: >-
+    libegl1-mesa-dev mesa-vulkan-drivers libasound2-dev
+    libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev libxxf86vm-dev
+    libxkbcommon-dev libwayland-dev
+
 jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y $NATIVE_LINUX_DEPS
 
       - name: actionlint
         uses: raven-actions/actionlint@v2
@@ -52,6 +65,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y $NATIVE_LINUX_DEPS
       - name: gofmt
         run: |
           out=$(gofmt -l .)
@@ -74,6 +89,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y $NATIVE_LINUX_DEPS
       - name: test -race
         run: go test -race ./...
       # The dev panel and the accessors it needs compile out of the release
@@ -141,5 +158,48 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y $NATIVE_LINUX_DEPS
       - name: test
         run: go test ./...
+
+  # Tier 2: CI compiles and tests the host here, and a human validates a real
+  # window on a Linux machine before a release tag. The tests below never open
+  # a window or touch a GPU, so a headless runner is enough.
+  native-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: native build dependencies
+        run: sudo apt-get update && sudo apt-get install -y $NATIVE_LINUX_DEPS
+      - name: build + test (native host)
+        run: |
+          go build ./platform/native/...
+          go test ./platform/native/...
+      - name: build + test (native host, arr_dev variant)
+        run: |
+          go build -tags arr_dev ./platform/native/...
+          go test -tags arr_dev ./platform/native/...
+      - name: build the native examples
+        run: go build ./examples/...
+
+  # Tier 3: this compiles, and nobody has played it. The job is advisory on
+  # purpose -- the project has no macOS hardware to validate a window, an
+  # event loop or an audio device on, so a red mark here must not read as a
+  # broken release. Read a green mark as "it still compiles", nothing more.
+  native-macos:
+    name: native-macos (tier 3, untested)
+    runs-on: macos-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: build (native host)
+        run: |
+          go build ./platform/native/...
+          go build -tags arr_dev ./platform/native/...
