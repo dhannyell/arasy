@@ -1,4 +1,4 @@
-//go:build windows && amd64 && !arr_dev
+//go:build (windows || linux || darwin) && (amd64 || arm64) && !arr_dev
 
 package native
 
