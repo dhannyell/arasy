@@ -955,7 +955,7 @@ func (r *Renderer) encodeFrame(
 	// decides how much of the query set is safe to resolve: a pass that never
 	// ran wrote no timestamp, and resolving one that was never written loses
 	// the device on Vulkan.
-	sampling := r.timeGPU
+	sampling := r.timeGPU && r.timing.sampleFrame()
 	timedCompute := false
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
@@ -1049,10 +1049,11 @@ func (r *Renderer) encodeFrame(
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
-	if sampling {
+	if r.timeGPU {
 		// Map after submit, pump whatever completed since the last frame, then
 		// read the slots those callbacks marked. None of it blocks: the sample
-		// lands a frame or more later.
+		// lands a frame or more later — which is why the pumping runs on every
+		// frame and not only on the ones that sampled.
 		r.timing.readback(slot)
 		r.timing.poll()
 		r.timing.drain()

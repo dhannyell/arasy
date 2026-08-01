@@ -21,6 +21,13 @@ const (
 	timingRenderBegin = 3
 	timingSlotCount   = 4 // readbacks in flight; a frame with no free slot skips sampling
 	timingSampleSize  = timingQueryCount * 8
+	// timingInterval is how many frames pass between samples. Timestamp writes
+	// are not free: they punctuate the pass boundaries the driver would
+	// otherwise be free to overlap, and on a frame that costs half a
+	// millisecond that punctuation is a measurable share of the frame. Sampling
+	// every frame buys a resolution the HUD cannot show — it redraws a handful
+	// of times a second — at a cost the frame rate can feel.
+	timingInterval = 8
 )
 
 // gpuTiming samples GPU-side frame cost with timestamp queries. It is nil when
@@ -41,6 +48,21 @@ type gpuTiming struct {
 	simulate time.Duration
 	render   time.Duration
 	valid    bool
+
+	frame int // counts frames to space samples timingInterval apart
+}
+
+// sampleFrame reports whether this frame should carry timestamp writes. Frames
+// in between are encoded exactly as they would be with timing off, which is the
+// whole point: the cost is paid once every timingInterval frames instead of
+// every frame.
+func (t *gpuTiming) sampleFrame() bool {
+	if t == nil {
+		return false
+	}
+	sample := t.frame == 0
+	t.frame = (t.frame + 1) % timingInterval
+	return sample
 }
 
 type timingSlot struct {
