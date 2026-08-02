@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestNativePackageArgPrefersTheNativeDirectory(t *testing.T) {
@@ -102,5 +104,48 @@ func TestPromptRebuildEndsCleanlyOnEOF(t *testing.T) {
 	}
 	if again, err := promptRebuild(in, io.Discard); err != nil || again {
 		t.Fatalf("the input ran out and gave (%v, %v), want a clean end", again, err)
+	}
+}
+
+// The whole loop, minus the window: build, run, prompt, and end at EOF. A
+// leaked goroutine or a blocking read here would hang CI rather than fail it.
+func TestRunDevNativeEndsAtEOF(t *testing.T) {
+	module := writeThrowawayModule(t, "game")
+	t.Chdir(module)
+
+	var out, errOut bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader(""))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+
+	if err := runDevNative(cmd, "./native", nativeBuildOptions{Mode: nativeModePortable}); err != nil {
+		t.Fatalf("runDevNative = %v, want a clean end at EOF", err)
+	}
+	if !strings.Contains(out.String(), "args:") {
+		t.Fatalf("stdout = %q, want the game's own output", out.String())
+	}
+	if !strings.Contains(out.String(), "press Enter to rebuild") {
+		t.Fatalf("stdout = %q, want the rebuild prompt", out.String())
+	}
+}
+
+// One newline is one more round: the game runs twice and the loop still ends
+// when the input runs out.
+func TestRunDevNativeRebuildsOnEnter(t *testing.T) {
+	module := writeThrowawayModule(t, "game")
+	t.Chdir(module)
+
+	var out, errOut bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetIn(strings.NewReader("\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+
+	if err := runDevNative(cmd, "./native", nativeBuildOptions{Mode: nativeModePortable}); err != nil {
+		t.Fatalf("runDevNative = %v, want a clean end", err)
+	}
+	if runs := strings.Count(out.String(), "args:"); runs != 2 {
+		t.Fatalf("the game ran %d times, want 2", runs)
 	}
 }
