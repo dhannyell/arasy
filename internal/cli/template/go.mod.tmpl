@@ -6,3 +6,8 @@ require {{.EngineModule}} {{.EngineVersion}}
 {{if .EngineReplace}}
 replace {{.EngineModule}} => {{.EngineReplace}}
 {{end}}
+// The engine builds the native host against a fork of the WebGPU binding. Go
+// ignores a replace directive that comes from a dependency, so this line has
+// to be repeated here: without it ./native fails to compile against the
+// upstream binding, while ./wasm and ./raster build either way.
+replace {{.WebGPUModule}} => {{.WebGPUReplace}}

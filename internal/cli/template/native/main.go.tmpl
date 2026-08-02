@@ -1,0 +1,31 @@
+// The cgo term matters: without a C toolchain installed this file drops out
+// of the build instead of failing it, so `go build ./...` still compiles the
+// wasm and raster entry points on a machine that cannot build the native host.
+//go:build cgo && (windows || linux || darwin) && (amd64 || arm64)
+
+package main
+
+import (
+	{{.Name}} "{{.Module}}"
+	"{{.EngineModule}}/platform/native"
+	"{{.EngineModule}}/runtime"
+)
+
+func main() {
+	// A released Windows build has no console, so diagnostics go to a file
+	// under the user's cache directory. The logger prints its path on the way
+	// out; that path is what a player attaches to a bug report.
+	log, closeLog := native.NewLogger("{{.Name}}")
+	defer func() { _ = closeLog() }()
+
+	if err := native.Run(&{{.Name}}.Game{}, native.Options{
+		Title:    "{{.Name}}",
+		Log:      log,
+		DevTools: true,
+		GameFactory: func() runtime.Game {
+			return &{{.Name}}.Game{}
+		},
+	}); err != nil {
+		log.Error("native host failed", "err", err)
+	}
+}

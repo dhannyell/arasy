@@ -23,7 +23,19 @@ type projectTemplateData struct {
 	EngineModule  string
 	EngineVersion string
 	EngineReplace string
+	WebGPUModule  string
+	WebGPUReplace string
 }
+
+// The engine's own go.mod replaces the WebGPU binding with a fork, and Go
+// ignores a replace that comes from a dependency rather than from the main
+// module. A generated project therefore has to carry the same line, or its
+// native entry point compiles against a binding the host does not match.
+// TestGeneratedGoModTracksTheEngineReplace fails when these drift.
+const (
+	webgpuModule  = "github.com/oliverbestmann/webgpu"
+	webgpuReplace = "github.com/dhannyell/webgpu v1.34.2-0.20260801070821-6221e36b5f84"
+)
 
 var (
 	newDir           string
@@ -58,7 +70,9 @@ var newCmd = &cobra.Command{
 		if err := renderProject(dir, data); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "created %s\nnext steps:\n  cd %s\n  go mod tidy\n  arasy dev ./wasm\n", module, dir)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(),
+			"created %s\nnext steps:\n  cd %s\n  go mod tidy\n  arasy dev ./wasm     # browser, rebuilds on reload\n  arasy run ./native   # native window\n",
+			module, dir)
 		return err
 	},
 }
@@ -92,10 +106,16 @@ func init() {
 }
 
 func renderProject(dir string, data projectTemplateData) error {
+	// A property of the engine, not of the caller: every generated project
+	// gets the same binding replace, so filling it here keeps a caller from
+	// producing a go.mod with a half-written directive.
+	data.WebGPUModule, data.WebGPUReplace = webgpuModule, webgpuReplace
+
 	files := map[string]string{
 		"go.mod.tmpl":               "go.mod",
 		"game.go.tmpl":              "game.go",
 		"wasm/main.go.tmpl":         "wasm/main.go",
+		"native/main.go.tmpl":       "native/main.go",
 		"raster/main.go.tmpl":       "raster/main.go",
 		"assets/manifest.json.tmpl": "assets/manifest.json",
 		"gitignore.tmpl":            ".gitignore",
