@@ -12,10 +12,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var doctorPlatform string
+
 var doctorCmd = &cobra.Command{
 	Use:   "doctor [package]",
 	Short: "check the arasy development environment",
-	Args:  cobra.MaximumNArgs(1),
+	Long: `Check that this machine can build arasy games.
+
+Both platforms are always checked. A package argument is a smoke build for
+the platform named by --platform; the other platform falls back to its
+conventional directory (./wasm, ./native) and is skipped when there is none.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		out := cmd.OutOrStdout()
 		failed := false
@@ -43,7 +50,7 @@ var doctorCmd = &cobra.Command{
 		}
 
 		pkg := ""
-		if len(args) == 1 {
+		if len(args) == 1 && doctorPlatform == platformWASM {
 			pkg = args[0]
 		} else if info, statErr := os.Stat("wasm"); statErr == nil && info.IsDir() {
 			pkg = "./wasm"
@@ -77,6 +84,16 @@ var doctorCmd = &cobra.Command{
 				}
 			}
 		}
+		nativeArgs := args
+		if doctorPlatform != platformNative {
+			nativeArgs = nil
+		}
+		nativeFailed, err := checkNativeEnvironment(out, nativeDoctorPackage(nativeArgs))
+		if err != nil {
+			return err
+		}
+		failed = failed || nativeFailed
+
 		if failed {
 			return fmt.Errorf("doctor found problems")
 		}
@@ -89,4 +106,8 @@ func doctorPrintf(out io.Writer, format string, args ...any) error {
 	return err
 }
 
-func init() { rootCmd.AddCommand(doctorCmd) }
+func init() {
+	doctorCmd.Flags().StringVarP(&doctorPlatform, "platform", "p", platformWASM, "platform the package argument belongs to (wasm or native)")
+	registerPlatformCompletion(doctorCmd)
+	rootCmd.AddCommand(doctorCmd)
+}
