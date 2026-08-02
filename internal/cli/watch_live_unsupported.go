@@ -1,4 +1,4 @@
-//go:build !(windows && amd64)
+//go:build !(cgo && (windows || linux || darwin) && (amd64 || arm64))
 
 package cli
 
