@@ -210,12 +210,16 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 // sprites landing on the same value is ordinary rather than rare, and without
 // a total order the same scene could paint two different ways.
 func (w *World) sortSprites(ids []EntityID) {
+	// One axis for the whole frame: whether a game declared one is not a
+	// question worth asking inside a comparator.
+	axis := w.depthAxis()
+
 	slices.SortFunc(ids, func(a, b EntityID) int {
 		layerA, layerB := w.spriteLayer(a), w.spriteLayer(b)
 		if layerA != layerB {
 			return layerA - layerB
 		}
-		keyA, keyB := w.sortKey(a), w.sortKey(b)
+		keyA, keyB := w.sortKey(a, axis), w.sortKey(b, axis)
 		if keyA < keyB {
 			return -1
 		}
@@ -226,13 +230,13 @@ func (w *World) sortSprites(ids []EntityID) {
 	})
 }
 
-// sortKey is how far along the scene's depth axis a sprite sits: lower sorts
+// sortKey is how far along the given depth axis a sprite sits: lower sorts
 // first, which is to say further away. Callers have already established that
 // the entity has a Transform.
-func (w *World) sortKey(id EntityID) float64 {
+func (w *World) sortKey(id EntityID, axis math2d.Vec2) float64 {
 	transform, _ := w.transforms.get(id)
 
-	return transform.Position.Y
+	return transform.Position.Dot(axis)
 }
 
 // spriteLayer returns the layer of the first sprite found for the entity.
