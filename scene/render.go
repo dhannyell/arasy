@@ -72,6 +72,14 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 	hasProjection := !w.projection.IsZero()
 
+	// One camera tilt for the whole frame. Without one this stays 1 and every
+	// plane correction below is skipped, so a game that never asks for 2.5D
+	// does not pay for it existing.
+	groundScaleY := 1.0
+	if hasProjection {
+		groundScaleY = w.projection.GroundScaleY()
+	}
+
 	for _, id := range ids {
 		transform, ok := w.transforms.get(id)
 		if !ok {
@@ -106,6 +114,9 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 					// Same layer, emitted adjacent to the body, so the depth
 					// sort keeps the composite entity's commands together.
 					if proj.ShadowAlpha > 0 && (proj.ShadowRadii.X > 0 || proj.ShadowRadii.Y > 0) {
+						// No plane correction: the shadow lies on the ground by
+						// definition, which is the one thing the camera already
+						// draws correctly on its own.
 						commands = append(commands, render.DrawEllipse{
 							Center:  ground.Add(proj.ShadowCenter),
 							RadiusX: proj.ShadowRadii.X,
@@ -130,6 +141,19 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		bodyTransform := math2d.Affine{}
 		if st, ok := w.spriteTransforms.get(id); ok && !st.M.IsIdentity() {
 			bodyTransform = st.M.About(pos)
+		}
+
+		// The plane correction is the outer one: the decorative affine deforms
+		// the sprite in its own frame, and only then is the result placed on
+		// the plane it declares. Composing them the other way round would tilt
+		// squash & stretch by the camera.
+		if correction := w.spritePlaneScaleY(id, groundScaleY); correction != 1 {
+			plane := math2d.Scale(math2d.Vec2{X: 1, Y: correction}).About(pos)
+			if bodyTransform.IsIdentity() {
+				bodyTransform = plane
+			} else {
+				bodyTransform = plane.Mul(bodyTransform)
+			}
 		}
 
 		if circle, hasCircle := w.circleSprites.get(id); hasCircle {
@@ -200,6 +224,35 @@ func (w *World) spriteLayer(id EntityID) int {
 		return s.Layer
 	}
 	return 0
+}
+
+// spritePlaneScaleY is the vertical scale a sprite's own geometry needs so that
+// it lands on the plane it declares. 1 means the command is already right and
+// carries no transform at all.
+//
+// The camera foreshortens every shape it draws, which is what a ground sprite
+// wants and leaves nothing to do. An upright sprite is the one that has to
+// stand back up, by exactly the reciprocal.
+func (w *World) spritePlaneScaleY(id EntityID, groundScaleY float64) float64 {
+	if groundScaleY == 1 || w.spritePlane(id) == PlaneGround {
+		return 1
+	}
+
+	return 1 / groundScaleY
+}
+
+// spritePlane returns the plane of the first sprite found for the entity.
+func (w *World) spritePlane(id EntityID) SpritePlane {
+	if s, ok := w.circleSprites.get(id); ok {
+		return s.Plane
+	}
+	if s, ok := w.rectSprites.get(id); ok {
+		return s.Plane
+	}
+	if s, ok := w.imageSprites.get(id); ok {
+		return s.Plane
+	}
+	return PlaneUpright
 }
 
 // spriteFootprint returns the half-extents of the entity's sprite footprint,

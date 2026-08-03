@@ -13,6 +13,9 @@ type Bundle struct {
 	Body           *Body
 	CircleCollider *CircleCollider
 	RectCollider   *RectCollider
+	Height         *Height
+	Ballistics     *Ballistics
+	Spin           *Spin
 }
 
 func (w *World) SpawnBundle(b Bundle) EntityID {
@@ -50,6 +53,15 @@ func (w *World) SpawnBundle(b Bundle) EntityID {
 	}
 	if b.RectCollider != nil {
 		w.SetRectCollider(id, *b.RectCollider)
+	}
+	if b.Height != nil {
+		w.SetHeight(id, *b.Height)
+	}
+	if b.Ballistics != nil {
+		w.SetBallistics(id, *b.Ballistics)
+	}
+	if b.Spin != nil {
+		w.SetSpin(id, *b.Spin)
 	}
 	return id
 }
