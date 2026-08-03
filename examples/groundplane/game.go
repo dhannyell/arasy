@@ -9,6 +9,11 @@
 // bounces off the bounds and settles in unforeshortened world units, because
 // foreshortening is a fact about the camera and never about the world.
 //
+// The third thing to watch is the one nobody writes a line for: the ball and
+// the posts share a layer, so which is drawn in front is decided by how deep
+// into the court each one stands. Watch the near post and the ball goes behind
+// it and comes back out again.
+//
 // For a full game built on the same foundation, see the dodgeball example.
 package groundplane
 
@@ -31,6 +36,15 @@ const (
 
 	ballRadius  = 4.0
 	serveHeight = 12.0
+
+	// The pitch and its marking are strata: one is painted over the other and
+	// no depth relation between them would mean anything, so they get a layer
+	// each. Everything that stands on the pitch shares one layer instead, and
+	// lets the depth sort decide -- which is the whole difference between the
+	// two ideas.
+	layerPitch    = 0
+	layerMarking  = 1
+	layerStanding = 2
 )
 
 var (
@@ -91,7 +105,7 @@ func (g *Game) spawnCourt(world *scene.World) {
 		Transform: &scene.Transform{Position: courtBounds.Center()},
 		RectSprite: &scene.RectSprite{
 			Rect:       courtBounds,
-			BaseSprite: scene.BaseSprite{Layer: 0, Color: courtColor, Plane: scene.PlaneGround},
+			BaseSprite: scene.BaseSprite{Layer: layerPitch, Color: courtColor, Plane: scene.PlaneGround},
 		},
 	})
 
@@ -99,7 +113,7 @@ func (g *Game) spawnCourt(world *scene.World) {
 		Transform: &scene.Transform{Position: courtBounds.Center()},
 		CircleSprite: &scene.CircleSprite{
 			Radius:     14,
-			BaseSprite: scene.BaseSprite{Layer: 1, Color: markColor, Plane: scene.PlaneGround},
+			BaseSprite: scene.BaseSprite{Layer: layerMarking, Color: markColor, Plane: scene.PlaneGround},
 		},
 	})
 }
@@ -108,9 +122,32 @@ func (g *Game) spawnCourt(world *scene.World) {
 // PlaneUpright, so the same tilt that flattens the court leaves them their
 // full height — the difference between something lying on the ground and
 // something standing on it.
+//
+// They share layerStanding with the ball, so which of them is drawn in front
+// is decided every frame by how deep into the court each one stands. A post is
+// four times taller than the ball is wide, and sorting by their centres would
+// put the post behind a ball that is level with it; sorting by their bases,
+// which is the default, gets it right. The posts carry no collider on purpose:
+// they are there to be sorted against, not bounced off.
+//
+// One stands near the back of the court and the other near the front, both set
+// in from the ends where the ball actually spends its time. The near post is
+// the one to watch: the ball passes behind it and comes back out in front as
+// it crosses, and nothing in this file says when. Against the far post the
+// ball is almost always in front, because almost all of the court is nearer
+// than that — which is the same rule giving a different answer, not a
+// different rule.
 func (g *Game) spawnPosts(world *scene.World) {
-	for _, x := range []float64{courtBounds.Min.X + 6, courtBounds.Max.X - 6} {
-		foot := math2d.Vec2{X: x, Y: courtBounds.Center().Y}
+	for _, foot := range []math2d.Vec2{
+		{
+			X: courtBounds.Min.X + courtBounds.Width()*0.3,
+			Y: courtBounds.Min.Y + courtBounds.Height()*0.28,
+		},
+		{
+			X: courtBounds.Min.X + courtBounds.Width()*0.7,
+			Y: courtBounds.Min.Y + courtBounds.Height()*0.72,
+		},
+	} {
 		world.SpawnBundle(scene.Bundle{
 			Transform: &scene.Transform{Position: foot},
 			RectSprite: &scene.RectSprite{
@@ -118,7 +155,7 @@ func (g *Game) spawnPosts(world *scene.World) {
 					foot.Sub(math2d.Vec2{X: 2, Y: 14}),
 					foot.Add(math2d.Vec2{X: 2, Y: 2}),
 				),
-				BaseSprite: scene.BaseSprite{Layer: 2, Color: postColor},
+				BaseSprite: scene.BaseSprite{Layer: layerStanding, Color: postColor},
 			},
 		})
 	}
@@ -128,13 +165,23 @@ func (g *Game) spawnPosts(world *scene.World) {
 // the altitude, Ballistics falls and bounces it. Both are simulation state,
 // hashed and replayed like any other -- it is only how they turn into pixels
 // that the projection decides.
+//
+// The collider is what keeps the ball on the court. Config.Bounds only acts on
+// entities that have one, so without it the ball rolls straight out of the
+// world -- the altitude bounce is Ballistics and needs nothing, but the four
+// walls are ordinary 2D collision and do.
+//
+// Height deliberately stays out of the depth key, and this is the entity that
+// shows why: a ball flying over a post passes behind it and comes out the
+// other side, instead of snapping in front the moment it leaves the ground.
 func (g *Game) spawnBall(world *scene.World) scene.EntityID {
 	return world.SpawnBundle(scene.Bundle{
 		CircleSprite: &scene.CircleSprite{
 			Radius:     ballRadius,
-			BaseSprite: scene.BaseSprite{Layer: 3, Color: ballColor},
+			BaseSprite: scene.BaseSprite{Layer: layerStanding, Color: ballColor},
 		},
-		Body: &scene.Body{InvMass: 1, Restitution: 1},
+		CircleCollider: &scene.CircleCollider{Radius: ballRadius},
+		Body:           &scene.Body{InvMass: 1, Restitution: 1},
 		Ballistics: &scene.Ballistics{
 			Gravity:        90,
 			BounceDamping:  0.62,
@@ -162,11 +209,22 @@ func (g *Game) serve(ctx *runtime.UpdateContext) {
 		Y: courtBounds.Min.Y + ctx.Rand.Float64()*courtBounds.Height(),
 	}
 
-	ctx.World.SetTransform(g.ball, scene.Transform{Position: position, Scale: math2d.Vec2{X: 1, Y: 1}})
-	ctx.World.SetVelocity(g.ball, scene.Velocity{Linear: math2d.Vec2{
+	// The serve goes in any direction, not just down and to the right. A ball
+	// that only ever travels one way meets the posts from one side and the
+	// depth order never gets to change its mind about anything.
+	velocity := math2d.Vec2{
 		X: 24 + ctx.Rand.Float64()*36,
 		Y: 16 + ctx.Rand.Float64()*24,
-	}})
+	}
+	if ctx.Rand.Float64() < 0.5 {
+		velocity.X = -velocity.X
+	}
+	if ctx.Rand.Float64() < 0.5 {
+		velocity.Y = -velocity.Y
+	}
+
+	ctx.World.SetTransform(g.ball, scene.Transform{Position: position, Scale: math2d.Vec2{X: 1, Y: 1}})
+	ctx.World.SetVelocity(g.ball, scene.Velocity{Linear: velocity})
 	ctx.World.SetHeight(g.ball, scene.Height{Z: serveHeight})
 }
 
