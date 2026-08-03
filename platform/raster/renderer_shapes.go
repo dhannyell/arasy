@@ -49,6 +49,21 @@ func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 		return
 	}
 
+	// A circle lies in the world, so a tilted camera draws it as an ellipse.
+	// One rasterizer over, same shape.
+	if r.Camera.Foreshortens() {
+		r.drawEllipse(img, render.DrawEllipse{
+			Center:      command.Center,
+			RadiusX:     command.Radius,
+			RadiusY:     command.Radius,
+			Fill:        command.Fill,
+			Stroke:      command.Stroke,
+			StrokeWidth: command.StrokeWidth,
+			BaseCommand: command.BaseCommand,
+		})
+		return
+	}
+
 	center := r.Camera.WorldToScreen(command.Center)
 
 	radius := r.Camera.WorldScalarToScreen(command.Radius)
@@ -72,8 +87,8 @@ func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
 
 	center := r.Camera.WorldToScreen(command.Center)
 
-	radiusX := r.Camera.WorldScalarToScreen(command.RadiusX)
-	radiusY := r.Camera.WorldScalarToScreen(command.RadiusY)
+	radii := r.Camera.WorldRadiiToScreen(math2d.Vec2{X: command.RadiusX, Y: command.RadiusY})
+	radiusX, radiusY := radii.X, radii.Y
 
 	if radiusX <= 0 || radiusY <= 0 {
 		return
@@ -96,6 +111,17 @@ func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
 		r.drawTransformedCircle(img, render.DrawCircle{
 			Center:      command.Center,
 			Radius:      command.Radius,
+			Fill:        command.Color,
+			BaseCommand: command.BaseCommand,
+		})
+		return
+	}
+
+	if r.Camera.Foreshortens() {
+		r.drawEllipse(img, render.DrawEllipse{
+			Center:      command.Center,
+			RadiusX:     command.Radius,
+			RadiusY:     command.Radius,
 			Fill:        command.Color,
 			BaseCommand: command.BaseCommand,
 		})
@@ -125,7 +151,10 @@ func (r *Renderer) drawLine(img *image.RGBA, command render.DrawLine) {
 }
 
 func (r *Renderer) drawArc(img *image.RGBA, command render.DrawArc) {
-	if !command.Transform.IsIdentity() {
+	// There is no elliptical-arc rasterizer, and there does not need to be:
+	// the transformed path already walks the arc in world space and maps every
+	// point through the camera, which is exactly the foreshortened arc.
+	if !command.Transform.IsIdentity() || r.Camera.Foreshortens() {
 		r.drawTransformedArc(img, command)
 		return
 	}

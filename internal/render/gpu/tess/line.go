@@ -42,12 +42,12 @@ func AppendPoint(m *Mesh, c ctx, cmd render.DrawPoint) {
 	start := len(m.Vertices)
 
 	center := c.cam.WorldToScreen(cmd.Center)
-	radius := c.cam.WorldScalarToScreen(cmd.Radius)
-	if radius <= 0 {
+	radii := c.cam.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
+	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	appendCircleFan(m, c, center, radius, circleSegments(radius), cmd.Color)
+	appendEllipseFan(m, c, center, radii.X, radii.Y, circleSegments(max(radii.X, radii.Y)), cmd.Color)
 
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
 		clip := clipRect(c, cmd.Clip)

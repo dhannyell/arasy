@@ -30,6 +30,20 @@ func AppendCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
 		return
 	}
 
+	// A circle lies in the world, so a tilted camera draws it as an ellipse.
+	if c.cam.Foreshortens() {
+		AppendEllipse(m, c, render.DrawEllipse{
+			Center:      cmd.Center,
+			RadiusX:     cmd.Radius,
+			RadiusY:     cmd.Radius,
+			Fill:        cmd.Fill,
+			Stroke:      cmd.Stroke,
+			StrokeWidth: cmd.StrokeWidth,
+			BaseCommand: cmd.BaseCommand,
+		})
+		return
+	}
+
 	start := len(m.Vertices)
 
 	center := c.cam.WorldToScreen(cmd.Center)

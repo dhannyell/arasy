@@ -566,15 +566,26 @@ func (c *Canvas2D) drawRect(cmd render.DrawRect, camera render.Camera) {
 	}
 }
 
+// pathArc appends a circular or, under a tilted camera, elliptical arc. A
+// circle lies in the world, so the camera foreshortens it like any other
+// shape; canvas draws that directly with ellipse().
+func (c *Canvas2D) pathArc(center, radii math2d.Vec2, startAngle, endAngle float64) {
+	c.ctx.Call("beginPath")
+	if radii.X == radii.Y {
+		c.ctx.Call("arc", center.X, center.Y, radii.X, startAngle, endAngle)
+		return
+	}
+	c.ctx.Call("ellipse", center.X, center.Y, radii.X, radii.Y, 0, startAngle, endAngle)
+}
+
 func (c *Canvas2D) drawCircle(cmd render.DrawCircle, camera render.Camera) {
 	center := camera.WorldToScreen(cmd.Center)
-	radius := camera.WorldScalarToScreen(cmd.Radius)
-	if radius <= 0 {
+	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
+	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.ctx.Call("beginPath")
-	c.ctx.Call("arc", center.X, center.Y, radius, 0, 2*math.Pi)
+	c.pathArc(center, radii, 0, 2*math.Pi)
 	if cmd.Fill.A > 0 {
 		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
 		c.ctx.Call("fill")
@@ -588,14 +599,13 @@ func (c *Canvas2D) drawCircle(cmd render.DrawCircle, camera render.Camera) {
 
 func (c *Canvas2D) drawEllipse(cmd render.DrawEllipse, camera render.Camera) {
 	center := camera.WorldToScreen(cmd.Center)
-	rx := camera.WorldScalarToScreen(cmd.RadiusX)
-	ry := camera.WorldScalarToScreen(cmd.RadiusY)
-	if rx <= 0 || ry <= 0 {
+	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.RadiusX, Y: cmd.RadiusY})
+	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
 	c.ctx.Call("beginPath")
-	c.ctx.Call("ellipse", center.X, center.Y, rx, ry, 0, 0, 2*math.Pi)
+	c.ctx.Call("ellipse", center.X, center.Y, radii.X, radii.Y, 0, 0, 2*math.Pi)
 	if cmd.Fill.A > 0 {
 		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
 		c.ctx.Call("fill")
@@ -613,13 +623,12 @@ func (c *Canvas2D) drawPoint(cmd render.DrawPoint, camera render.Camera) {
 	}
 
 	center := camera.WorldToScreen(cmd.Center)
-	radius := camera.WorldScalarToScreen(cmd.Radius)
-	if radius <= 0 {
+	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
+	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.ctx.Call("beginPath")
-	c.ctx.Call("arc", center.X, center.Y, radius, 0, 2*math.Pi)
+	c.pathArc(center, radii, 0, 2*math.Pi)
 	c.ctx.Set("fillStyle", cssColor(cmd.Color))
 	c.ctx.Call("fill")
 }
@@ -646,13 +655,12 @@ func (c *Canvas2D) drawArc(cmd render.DrawArc, camera render.Camera) {
 	}
 
 	center := camera.WorldToScreen(cmd.Center)
-	radius := camera.WorldScalarToScreen(cmd.Radius)
-	if radius <= 0 {
+	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
+	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.ctx.Call("beginPath")
-	c.ctx.Call("arc", center.X, center.Y, radius, cmd.StartAngle, cmd.EndAngle)
+	c.pathArc(center, radii, cmd.StartAngle, cmd.EndAngle)
 	c.ctx.Set("strokeStyle", cssColor(cmd.Color))
 	c.ctx.Set("lineWidth", math.Max(1, camera.WorldScalarToScreen(cmd.Width)))
 	c.ctx.Call("stroke")
