@@ -34,13 +34,21 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Rhythm: offline smoke render, then dev server (rebuilds on browser reload)
 go run ./examples/rhythm/raster
-go run ./cmd/Arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
-go run ./cmd/Arasy build ./examples/breakout/wasm -o dist/breakout
+go run ./cmd/arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
+go run ./cmd/arasy build ./examples/breakout/wasm -o dist/breakout
+
+# Native: build and run, or loop with a rebuild on Enter. Both carry arr_dev.
+go run ./cmd/arasy run ./examples/breakout/native
+go run ./cmd/arasy dev -p native ./examples/breakout/native
+go run ./cmd/arasy doctor -p native ./examples/breakout/native  # what the toolchain is missing
 
 # Watch a recorded fuzz case (corpus + paired .arrp, e.g. internal/simfuzz/testdata/{fuzz,replays}):
-# offline GIF by default; --live opens a native window (Windows/amd64 only);
+# offline GIF by default; --live opens a native window and needs -tags arr_dev
+# (the default CLI build stays free of the native host, so go install works
+# on a machine without GLFW/ALSA headers);
 # --browser serves internal/simfuzz/wasm with the dev panel (Backquote/~).
-go run ./cmd/Arasy watch <corpus> <replay>.arrp [--live | --browser]
+go run ./cmd/arasy watch <corpus> <replay>.arrp [--browser]
+go run -tags arr_dev ./cmd/arasy watch <corpus> <replay>.arrp --live
 
 # Golden files (regenerate only after an intentional visual change)
 go test ./platform/raster -run TestGolden -update
@@ -185,6 +193,28 @@ Full guide: `docs/scrubbing.md` ("Modo assistir" section, Portuguese).
 - Prefer small, explicit APIs; add complexity only under real project pressure.
 - Render commands stay backend-agnostic. Measure before optimizing.
 - Prefer the standard library. Engine packages limit third-party dependencies to `golang.org/x/image`, where already used. CLI tooling under `internal/cli` may use `spf13/cobra`.
+
+## Tests and Comments
+
+**A test earns its place or it does not exist.** Never write one to raise a
+coverage number. Delete on sight:
+- assertions that restate the implementation (comparing a name builder against
+  the same `Sprintf`, checking that slicing slices);
+- inputs hand-fed past the uncertainty they claim to cover (supplying a value
+  the real caller computes, so the actual risk goes untested);
+- a case an existing test already covers, and twins of helpers left untested
+  elsewhere in the same package.
+
+A test is worth writing when it pins a decision someone could reasonably undo:
+a guard against a measured bug, a contract that must not drift, a failure mode
+that would otherwise be silent. Prefer one test over the real path to three
+over its pieces.
+
+**Comment why, not what.** A comment that restates the line above it is noise;
+one that explains the reason a line is unusual — a measured failure, a
+platform trap, a decision that looks wrong until you know the constraint — is
+the point. Length follows necessity: most need one line, and none should be
+written for a reader who could have read the code.
 
 ## Float Discipline
 

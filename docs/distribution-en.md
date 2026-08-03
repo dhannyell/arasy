@@ -11,8 +11,8 @@ keeps PT/EN pairs.
 ## Two layouts
 
 ```powershell
-go run ./cmd/Arasy build -p native ./examples/breakout/native
-go run ./cmd/Arasy build -p native --mode bundle --assets examples/breakout/assets ./examples/breakout/native
+go run ./cmd/arasy build -p native ./examples/breakout/native
+go run ./cmd/arasy build -p native --mode bundle --assets examples/breakout/assets ./examples/breakout/native
 ```
 
 | Layout | What ships | When to choose it |
@@ -34,7 +34,7 @@ do not move when the code changes.
 `pack` produces the archive for either layout:
 
 ```powershell
-go run ./cmd/Arasy pack -p native --mode bundle --assets examples/breakout/assets ./examples/breakout/native
+go run ./cmd/arasy pack -p native --mode bundle --assets examples/breakout/assets ./examples/breakout/native
 ```
 
 The archive is named `<game>-<goos>-<goarch>.zip`, because a native build

@@ -17,11 +17,25 @@ var (
 
 var devCmd = &cobra.Command{
 	Use:   "dev [package]",
-	Short: "build and serve a WASM game for development",
+	Short: "build and serve a WASM game, or run a native game with rebuild-on-Enter",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := supportedPlatform(devPlatform); err != nil {
 			return err
+		}
+		if devPlatform == platformNative {
+			if err := rejectWebOnlyFlags(cmd, "dev"); err != nil {
+				return err
+			}
+			if cmd.Flags().Changed("address") {
+				return fmt.Errorf("dev -p native: --address is a wasm-only flag; a native game has no server")
+			}
+			// A native development build always carries the dev panel, the
+			// same as the wasm development server.
+			return runDevNative(cmd, nativePackageArg(args), nativeBuildOptions{
+				DevTools: true,
+				Mode:     nativeModePortable,
+			})
 		}
 		pkg := packageArg(args)
 		title := devTitle
@@ -66,7 +80,7 @@ var devCmd = &cobra.Command{
 }
 
 func init() {
-	devCmd.Flags().StringVarP(&devPlatform, "platform", "p", "wasm", "target platform")
+	devCmd.Flags().StringVarP(&devPlatform, "platform", "p", platformWASM, "target platform (wasm or native)")
 	devCmd.Flags().StringVarP(&devAddress, "address", "a", "127.0.0.1:8080", "server address")
 	devCmd.Flags().StringVar(&devTitle, "title", "", "HTML page title")
 	devBoot.bind(devCmd)
@@ -76,10 +90,6 @@ func init() {
 	// overlaps them by default.
 	devCmd.Flags().Lookup("streaming-compile").DefValue = "true"
 	devBoot.streamingCompile = true
-	if err := devCmd.RegisterFlagCompletionFunc("platform", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		return []string{"wasm"}, cobra.ShellCompDirectiveDefault
-	}); err != nil {
-		panic(err)
-	}
+	registerPlatformCompletion(devCmd)
 	rootCmd.AddCommand(devCmd)
 }

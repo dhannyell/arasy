@@ -42,7 +42,7 @@ case -- checksums already prove the simulation is correct, but only a look
 at the rendered frames catches a camera stuck in place, a shadow that drifts
 off its body, or a playback pace that does not match the recording.
 
-With --live (Windows/amd64 only), it opens a real window and plays the
+With --live, it opens a real window and plays the
 recording once at normal speed through the native host.
 
 With --browser, it builds the WASM viewer under internal/simfuzz/wasm and
@@ -64,7 +64,7 @@ func init() {
 	watchCmd.Flags().StringVar(&watchFramesDir, "frames-dir", "", "optional directory for a frame-NNNN.png sequence")
 	watchCmd.Flags().IntVar(&watchWidth, "width", 480, "render width in pixels")
 	watchCmd.Flags().IntVar(&watchHeight, "height", 480, "render height in pixels")
-	watchCmd.Flags().BoolVar(&watchLive, "live", false, "open a real window and play the recording once (Windows/amd64 only)")
+	watchCmd.Flags().BoolVar(&watchLive, "live", false, "open a real window and play the recording once (needs a CLI built with -tags arr_dev and cgo)")
 	watchCmd.Flags().BoolVar(&watchBrowser, "browser", false, "serve a WASM viewer with the dev panel enabled")
 	watchCmd.Flags().StringVar(&watchAddr, "addr", "127.0.0.1:8095", "server address for --browser")
 	rootCmd.AddCommand(watchCmd)
@@ -104,7 +104,7 @@ func runWatch(cmd *cobra.Command, corpusPath, replayPath string) error {
 
 	if watchLive {
 		if !watchLiveSupported() {
-			return fmt.Errorf("--live requires the native host, which only builds on windows/amd64")
+			return fmt.Errorf("--live needs a CLI built with the native host: go run -tags arr_dev ./cmd/arasy (cgo on windows, linux or darwin, amd64 or arm64)")
 		}
 		return runWatchLive(driver, game, "watch: "+name)
 	}

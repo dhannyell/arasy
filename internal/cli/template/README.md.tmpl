@@ -3,9 +3,21 @@
 ## Development
 
 ```text
-arasy dev ./wasm
-arasy build ./wasm
-go run ./raster
+arasy dev ./wasm       # browser at :8080, rebuilds when you reload the page
+arasy run ./native     # native window
+arasy dev -p native    # native window, rebuilds when you press Enter
+go run ./raster        # render one frame to output/game.png
 ```
+
+## Shipping
+
+```text
+arasy build ./wasm              # a directory to host
+arasy build -p native ./native  # an executable for this machine
+```
+
+The native entry point needs a C toolchain, because GLFW is cgo. Without one
+it drops out of the build and the other entry points still compile; run
+`arasy doctor -p native ./native` to see what is missing.
 
 Run `go mod tidy` once after generating the project.
