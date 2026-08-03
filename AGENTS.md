@@ -43,9 +43,12 @@ go run ./cmd/arasy dev -p native ./examples/breakout/native
 go run ./cmd/arasy doctor -p native ./examples/breakout/native  # what the toolchain is missing
 
 # Watch a recorded fuzz case (corpus + paired .arrp, e.g. internal/simfuzz/testdata/{fuzz,replays}):
-# offline GIF by default; --live opens a native window (needs cgo);
+# offline GIF by default; --live opens a native window and needs -tags arr_dev
+# (the default CLI build stays free of the native host, so go install works
+# on a machine without GLFW/ALSA headers);
 # --browser serves internal/simfuzz/wasm with the dev panel (Backquote/~).
-go run ./cmd/arasy watch <corpus> <replay>.arrp [--live | --browser]
+go run ./cmd/arasy watch <corpus> <replay>.arrp [--browser]
+go run -tags arr_dev ./cmd/arasy watch <corpus> <replay>.arrp --live
 
 # Golden files (regenerate only after an intentional visual change)
 go test ./platform/raster -run TestGolden -update
