@@ -40,6 +40,20 @@ type BaseSprite struct {
 	// With an untilted camera the two are identical and this field costs
 	// nothing to ignore.
 	Plane SpritePlane
+
+	// SortOffset moves this sprite's sorting point away from its base, in
+	// world units.
+	//
+	// A sprite sorts by its base, not its centre, because the centre gets the
+	// common case wrong: a tall tree and a short bush planted on the same line
+	// have centres at different depths while their bases sit together, so
+	// sorting by centre puts the tree behind the bush standing next to it.
+	//
+	// The zero value is that base. Reach for this field when a sprite's art
+	// does not stand on the bottom edge of its own footprint, or when a piece
+	// of a sliced-up object needs to claim the depth of the slice rather than
+	// of the whole.
+	SortOffset math2d.Vec2
 }
 
 type CircleSprite struct {
@@ -69,6 +83,10 @@ type ImageSprite struct {
 	// Plane behaves as BaseSprite.Plane. ImageSprite carries its own copy
 	// because it does not embed BaseSprite: it has no Color to share.
 	Plane SpritePlane
+
+	// SortOffset behaves as BaseSprite.SortOffset, carried here for the same
+	// reason as Plane.
+	SortOffset math2d.Vec2
 }
 
 // SpriteTransform is a render-only per-entity affine applied to the

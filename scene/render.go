@@ -236,7 +236,37 @@ func (w *World) sortSprites(ids []EntityID) {
 func (w *World) sortKey(id EntityID, axis math2d.Vec2) float64 {
 	transform, _ := w.transforms.get(id)
 
-	return transform.Position.Dot(axis)
+	return w.spriteSortOrigin(id, transform.Position).Dot(axis)
+}
+
+// spriteSortOrigin is the point a sprite sorts by: the base of its own
+// footprint, moved by whatever the sprite declared.
+//
+// The base rather than the centre, and that is the whole reason this exists.
+// A tall sprite and a short one standing on the same line have centres at
+// different depths and bases at the same one, so sorting by centre puts the
+// taller of the two behind the neighbour it is standing beside.
+//
+// Transform.Scale is deliberately left out: a sprite that pops or breathes
+// would otherwise reorder itself mid-animation, and a sprite's footprint is
+// where it stands, not how big it is drawing itself this frame.
+func (w *World) spriteSortOrigin(id EntityID, position math2d.Vec2) math2d.Vec2 {
+	if s, ok := w.circleSprites.get(id); ok {
+		return math2d.Vec2{X: position.X, Y: position.Y + s.Radius}.Add(s.SortOffset)
+	}
+	if s, ok := w.rectSprites.get(id); ok {
+		// A rect sprite carries its own world geometry, so its base is read
+		// off the rect instead of guessed from the entity's position.
+		return math2d.Vec2{
+			X: (s.Rect.Min.X + s.Rect.Max.X) * 0.5,
+			Y: s.Rect.Max.Y,
+		}.Add(s.SortOffset)
+	}
+	if s, ok := w.imageSprites.get(id); ok {
+		return math2d.Vec2{X: position.X, Y: position.Y + s.Size.Y*0.5}.Add(s.SortOffset)
+	}
+
+	return position
 }
 
 // spriteLayer returns the layer of the first sprite found for the entity.
