@@ -278,6 +278,25 @@ func (w *World) spriteSortOrigin(id EntityID, position math2d.Vec2) math2d.Vec2 
 	return position
 }
 
+// debugOffset is how far an entity's sprite ends up from where the entity
+// actually is, so that a debug mark drawn at the entity can follow it there.
+//
+// The rule it encodes is "follow where the sprite went, never how it was
+// deformed". SpriteTransform is applied About the entity's position, and About
+// fixes its pivot, so a decorative squash or stretch moves the sprite nowhere
+// and this returns zero -- a collider outline must not squash with the art it
+// belongs to, because its whole job is to say what the physics shape really is.
+// A transform that places the sprite somewhere else does move it, and then a
+// mark left behind at the entity's raw position describes nothing.
+func (w *World) debugOffset(id EntityID, position math2d.Vec2) math2d.Vec2 {
+	sprite, ok := w.spriteTransforms.get(id)
+	if !ok || sprite.M.IsIdentity() {
+		return math2d.Vec2{}
+	}
+
+	return sprite.M.About(position).Apply(position).Sub(position)
+}
+
 // spriteLayer returns the layer of the first sprite found for the entity.
 func (w *World) spriteLayer(id EntityID) int {
 	if s, ok := w.circleSprites.get(id); ok {
@@ -365,9 +384,11 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 			continue
 		}
 
+		position := transform.Position.Add(w.debugOffset(id, transform.Position))
+
 		if collider, isCircle := w.circleColliders.get(id); isCircle {
 			commands = append(commands, render.DrawCircle{
-				Center:      transform.Position,
+				Center:      position,
 				Radius:      collider.Radius,
 				Stroke:      color,
 				StrokeWidth: strokeWidth,
@@ -382,8 +403,8 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 			half := collider.HalfExtends
 			commands = append(commands, render.DrawRect{
 				Rect: math2d.NewRectFromCorners(
-					transform.Position.Sub(half),
-					transform.Position.Add(half),
+					position.Sub(half),
+					position.Add(half),
 				),
 				Stroke:      color,
 				StrokeWidth: strokeWidth,
@@ -412,7 +433,13 @@ func (w *World) debugContactCommands(color render.Color, pointRadius, lineWidth,
 			continue
 		}
 
-		point := transformA.Position.Lerp(transformB.Position, 0.5)
+		// The contact point is already the midpoint of the two entities, so the
+		// midpoint of their offsets is the consistent way to carry it along.
+		offsetA := w.debugOffset(contact.A, transformA.Position)
+		offsetB := w.debugOffset(contact.B, transformB.Position)
+
+		point := transformA.Position.Lerp(transformB.Position, 0.5).
+			Add(offsetA.Lerp(offsetB, 0.5))
 		normalEnd := point.Add(contact.Normal.Mul(normalLength))
 
 		commands = append(commands,
