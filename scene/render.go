@@ -34,29 +34,20 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		ids = make([]EntityID, 0, totalSprites)
 	}
 
-	ids = append(ids, w.circleSprites.ids...)
-	ids = append(ids, w.rectSprites.ids...)
-	ids = append(ids, w.imageSprites.ids...)
+	// A sprite whose entity has no Transform is nowhere and draws nothing, so
+	// it is dropped here rather than in the loop below. Left in, it would have
+	// no depth to compare against and would drag the sprites around it out of
+	// order, because a comparator that answers "equal" to everything is not an
+	// ordering.
+	for _, source := range [][]EntityID{w.circleSprites.ids, w.rectSprites.ids, w.imageSprites.ids} {
+		for _, id := range source {
+			if _, ok := w.transforms.get(id); ok {
+				ids = append(ids, id)
+			}
+		}
+	}
 
-	// Depth sort: Layer dominates, then Y position (lower Y = drawn first = behind),
-	// then EntityID for determinism.
-	slices.SortFunc(ids, func(a, b EntityID) int {
-		layerA, layerB := w.spriteLayer(a), w.spriteLayer(b)
-		if layerA != layerB {
-			return layerA - layerB
-		}
-		ta, aok := w.transforms.get(a)
-		tb, bok := w.transforms.get(b)
-		if aok && bok {
-			if ta.Position.Y < tb.Position.Y {
-				return -1
-			}
-			if ta.Position.Y > tb.Position.Y {
-				return 1
-			}
-		}
-		return int(a) - int(b)
-	})
+	w.sortSprites(ids)
 	w.renderIDScratch = ids
 
 	commands := dst
@@ -210,6 +201,38 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 	}
 
 	return commands
+}
+
+// sortSprites puts sprite ids in painter order: the layer decides first, then
+// how deep into the scene each sprite sits, and finally EntityID.
+//
+// That last tiebreak is not a formality. The depth key is a float64, so two
+// sprites landing on the same value is ordinary rather than rare, and without
+// a total order the same scene could paint two different ways.
+func (w *World) sortSprites(ids []EntityID) {
+	slices.SortFunc(ids, func(a, b EntityID) int {
+		layerA, layerB := w.spriteLayer(a), w.spriteLayer(b)
+		if layerA != layerB {
+			return layerA - layerB
+		}
+		keyA, keyB := w.sortKey(a), w.sortKey(b)
+		if keyA < keyB {
+			return -1
+		}
+		if keyA > keyB {
+			return 1
+		}
+		return int(a) - int(b)
+	})
+}
+
+// sortKey is how far along the scene's depth axis a sprite sits: lower sorts
+// first, which is to say further away. Callers have already established that
+// the entity has a Transform.
+func (w *World) sortKey(id EntityID) float64 {
+	transform, _ := w.transforms.get(id)
+
+	return transform.Position.Y
 }
 
 // spriteLayer returns the layer of the first sprite found for the entity.
