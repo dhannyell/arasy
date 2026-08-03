@@ -41,8 +41,17 @@ func TestRenderProjectBuildsWithLocalEngine(t *testing.T) {
 }
 
 func TestPackageNameSanitizesModulePath(t *testing.T) {
-	if got := packageName("my-game"); got != "mygame" {
-		t.Fatalf("packageName = %q, want mygame", got)
+	for in, want := range map[string]string{
+		"my-game": "mygame",
+		// A Go identifier cannot start with a digit, and a module named after
+		// a number is not hypothetical — examples/2048 is one.
+		"2048":   "game2048",
+		"UI Kit": "uikit",
+		"---":    "",
+	} {
+		if got := packageName(in); got != want {
+			t.Fatalf("packageName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

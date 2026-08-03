@@ -191,6 +191,28 @@ Full guide: `docs/scrubbing.md` ("Modo assistir" section, Portuguese).
 - Render commands stay backend-agnostic. Measure before optimizing.
 - Prefer the standard library. Engine packages limit third-party dependencies to `golang.org/x/image`, where already used. CLI tooling under `internal/cli` may use `spf13/cobra`.
 
+## Tests and Comments
+
+**A test earns its place or it does not exist.** Never write one to raise a
+coverage number. Delete on sight:
+- assertions that restate the implementation (comparing a name builder against
+  the same `Sprintf`, checking that slicing slices);
+- inputs hand-fed past the uncertainty they claim to cover (supplying a value
+  the real caller computes, so the actual risk goes untested);
+- a case an existing test already covers, and twins of helpers left untested
+  elsewhere in the same package.
+
+A test is worth writing when it pins a decision someone could reasonably undo:
+a guard against a measured bug, a contract that must not drift, a failure mode
+that would otherwise be silent. Prefer one test over the real path to three
+over its pieces.
+
+**Comment why, not what.** A comment that restates the line above it is noise;
+one that explains the reason a line is unusual — a measured failure, a
+platform trap, a decision that looks wrong until you know the constraint — is
+the point. Length follows necessity: most need one line, and none should be
+written for a reader who could have read the code.
+
 ## Float Discipline
 
 Sim path (`scene/`, `runtime/`, `math2d/`): only `+ - * /` and `math.Sqrt`.

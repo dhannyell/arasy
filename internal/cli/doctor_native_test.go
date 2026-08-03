@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
@@ -8,6 +9,11 @@ import (
 // A machine missing several development packages should learn all of them
 // from one run, so the probe collects rather than stops at the first.
 func TestMissingPkgConfigModulesNamesEveryAbsentOne(t *testing.T) {
+	// Without pkg-config every module reads as absent, and the test would
+	// pass without exercising a single probe.
+	if _, err := exec.LookPath("pkg-config"); err != nil {
+		t.Skip("pkg-config is not installed, so an absent module proves nothing")
+	}
 	absent := []string{
 		"arasy-no-such-module-one",
 		"arasy-no-such-module-two",
