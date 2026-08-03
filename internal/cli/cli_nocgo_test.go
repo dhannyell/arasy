@@ -20,7 +20,7 @@ func TestCLIBuildsWithoutCGO(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		output += ".exe"
 	}
-	cmd := exec.Command("go", "build", "-o", output, "./cmd/Arasy")
+	cmd := exec.Command("go", "build", "-o", output, "./cmd/arasy")
 	cmd.Dir = repoRoot(t)
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := cmd.CombinedOutput(); err != nil {

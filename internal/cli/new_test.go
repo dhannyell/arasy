@@ -22,17 +22,27 @@ func TestRenderProjectBuildsWithLocalEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	commands := []struct {
-		args []string
-		env  []string
+		args    []string
+		env     []string
+		network bool
 	}{
-		{args: []string{"mod", "tidy"}},
+		// tidy resolves a graph the engine's own build never has to load: the
+		// native entry point reaches the audio decoders, and their go.mod
+		// files are not in a cache warmed by building the engine alone. It is
+		// also the one step a real user runs online, so let it reach the
+		// proxy. The builds that follow stay offline, where an unexpected
+		// download would mean the generated go.mod is incomplete.
+		{args: []string{"mod", "tidy"}, network: true},
 		{args: []string{"build", "./..."}},
 		{args: []string{"build", "-o", "output/app.wasm", "./wasm"}, env: []string{"GOOS=js", "GOARCH=wasm"}},
 	}
 	for _, command := range commands {
 		cmd := exec.Command("go", command.args...)
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOPROXY=off")
+		cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+		if !command.network {
+			cmd.Env = append(cmd.Env, "GOPROXY=off")
+		}
 		cmd.Env = append(cmd.Env, command.env...)
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("go %s: %v\n%s", strings.Join(command.args, " "), err, output)

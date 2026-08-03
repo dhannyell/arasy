@@ -3,7 +3,7 @@
 Build and serve the standalone browser benchmark:
 
 ```powershell
-go run ./cmd/Arasy dev ./examples/bench/textbench/wasm -a 127.0.0.1:8093
+go run ./cmd/arasy dev ./examples/bench/textbench/wasm -a 127.0.0.1:8093
 ```
 
 It lays out N HUD-style text labels (`"Player 1234  42 pts"`) on a

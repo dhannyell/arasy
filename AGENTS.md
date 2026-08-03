@@ -34,18 +34,18 @@ go run ./cmd/wasmserve -dir output/wasm/breakout -addr 127.0.0.1:8090
 
 # Rhythm: offline smoke render, then dev server (rebuilds on browser reload)
 go run ./examples/rhythm/raster
-go run ./cmd/Arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
-go run ./cmd/Arasy build ./examples/breakout/wasm -o dist/breakout
+go run ./cmd/arasy dev ./examples/rhythm/wasm -a 127.0.0.1:8090
+go run ./cmd/arasy build ./examples/breakout/wasm -o dist/breakout
 
 # Native: build and run, or loop with a rebuild on Enter. Both carry arr_dev.
-go run ./cmd/Arasy run ./examples/breakout/native
-go run ./cmd/Arasy dev -p native ./examples/breakout/native
-go run ./cmd/Arasy doctor -p native ./examples/breakout/native  # what the toolchain is missing
+go run ./cmd/arasy run ./examples/breakout/native
+go run ./cmd/arasy dev -p native ./examples/breakout/native
+go run ./cmd/arasy doctor -p native ./examples/breakout/native  # what the toolchain is missing
 
 # Watch a recorded fuzz case (corpus + paired .arrp, e.g. internal/simfuzz/testdata/{fuzz,replays}):
 # offline GIF by default; --live opens a native window (needs cgo);
 # --browser serves internal/simfuzz/wasm with the dev panel (Backquote/~).
-go run ./cmd/Arasy watch <corpus> <replay>.arrp [--live | --browser]
+go run ./cmd/arasy watch <corpus> <replay>.arrp [--live | --browser]
 
 # Golden files (regenerate only after an intentional visual change)
 go test ./platform/raster -run TestGolden -update
