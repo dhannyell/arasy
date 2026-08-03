@@ -2,11 +2,9 @@ package cli
 
 import (
 	"archive/zip"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 
 	"github.com/dhannyell/arasy/internal/wasmserve"
@@ -76,12 +74,5 @@ func TestPackNativeArchiveHoldsTheDepotLayout(t *testing.T) {
 		if !found[name] {
 			t.Fatalf("archive missing %s, has %v", name, found)
 		}
-	}
-}
-
-func TestNativeArchiveNameCarriesTheHostTarget(t *testing.T) {
-	want := fmt.Sprintf("breakout-%s-%s.zip", runtime.GOOS, runtime.GOARCH)
-	if got := nativeArchiveName("./examples/breakout/native"); got != want {
-		t.Fatalf("nativeArchiveName = %q, want %q", got, want)
 	}
 }

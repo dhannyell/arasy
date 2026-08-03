@@ -20,12 +20,9 @@ var linuxNativePkgConfig = []string{
 const linuxNativeAptLine = "sudo apt-get install -y libegl1-mesa-dev mesa-vulkan-drivers libasound2-dev " +
 	"libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev libxxf86vm-dev libxkbcommon-dev libwayland-dev"
 
-// checkNativeEnvironment reports whether this machine can build a native game,
-// and returns whether anything failed.
-//
-// A host outside the native host's reach is reported as skipped, never as a
-// failure: a Linux machine that only ever ships to the web has nothing wrong
-// with it.
+// checkNativeEnvironment reports whether this machine can build a native game.
+// A host outside the native host's reach is a skip, never a failure: a machine
+// that only ever ships to the web has nothing wrong with it.
 func checkNativeEnvironment(out io.Writer, pkg string) (failed bool, err error) {
 	if pkg == "" {
 		return false, doctorPrintf(out, "skipped native: pass a package or run from a project with ./native\n")

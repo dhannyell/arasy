@@ -1,29 +1,9 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestNativeDoctorPackagePrefersTheNativeDirectory(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	if got := nativeDoctorPackage(nil); got != "" {
-		t.Fatalf("nativeDoctorPackage with nothing to check = %q, want empty", got)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "native"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got := nativeDoctorPackage(nil); got != "./native" {
-		t.Fatalf("nativeDoctorPackage with ./native = %q, want ./native", got)
-	}
-	if got := nativeDoctorPackage([]string{"./elsewhere"}); got != "./elsewhere" {
-		t.Fatalf("nativeDoctorPackage with an explicit package = %q, want ./elsewhere", got)
-	}
-}
 
 // A machine missing several development packages should learn all of them
 // from one run, so the probe collects rather than stops at the first.

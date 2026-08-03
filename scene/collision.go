@@ -490,13 +490,11 @@ func (w *World) resolveContacts(contacts []Contact) {
 			restitution := min(bodyA.Restitution, bodyB.Restitution)
 			impulseMagnitude := (1 + restitution) * vRelNormal / totalInvMass
 			// A total inverse mass that is merely tiny rather than exactly
-			// zero passes the guard above and still overflows this division.
-			// The infinity that comes out does not stay contained: multiplied
-			// by an immovable body's zero inverse mass it becomes NaN, and a
-			// single contact then poisons both velocities for the rest of the
-			// run. An impulse that cannot be represented is one we do not
-			// apply — the positional correction above has already separated
-			// the pair, which is the part that keeps them from sinking.
+			// zero passes the guard above and still overflows this division,
+			// and the infinity does not stay contained: times an immovable
+			// body's zero inverse mass it becomes NaN. An impulse we cannot
+			// represent is one we do not apply; the positional correction
+			// above already separated the pair.
 			if math.IsInf(impulseMagnitude, 0) || math.IsNaN(impulseMagnitude) {
 				continue
 			}

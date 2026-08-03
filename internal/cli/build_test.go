@@ -162,9 +162,9 @@ func TestBuildNativeBundleProducesExecutableAndAssets(t *testing.T) {
 }
 
 // writeThrowawayModule creates a dependency-free module whose native/ entry
-// point echoes its arguments and exits 3 when the first one is "fail", and
-// returns its directory. It stands in for a game wherever a test needs the
-// build-and-exec machinery rather than the native host itself.
+// point echoes its arguments and exits 3 when the first one is "fail". It
+// stands in for a game wherever a test needs the build-and-exec machinery
+// rather than the native host itself.
 func writeThrowawayModule(t *testing.T, name string) string {
 	t.Helper()
 	dir := filepath.Join(t.TempDir(), name)

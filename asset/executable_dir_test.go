@@ -1,6 +1,9 @@
 // Unlike the other tests in this package, this one lives in package asset:
 // it drives the executable-relative resolution through a fake executable
 // path, which the exported entry point deliberately does not accept.
+//
+// Layering itself is not retested here — manifest_fs_test.go owns that. What
+// is on trial is where the layer comes from.
 package asset
 
 import (
@@ -8,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"testing/fstest"
 )
 
 func TestExecutableDirFSReportsMissingDirectory(t *testing.T) {
@@ -19,52 +21,23 @@ func TestExecutableDirFSReportsMissingDirectory(t *testing.T) {
 	if ok || external != nil {
 		t.Fatalf("dirFSNextTo(missing) = (%v, %v), want (nil, false)", external, ok)
 	}
-
-	// A portable build loads exactly what it embedded.
-	embedded := fstest.MapFS{
-		"manifest.json":      {Data: []byte(`{"version":1,"audio":[{"id":"theme","file":"audio/theme.wav"}]}`)},
-		"audio/theme.wav":    {Data: []byte("embedded-bytes")},
-		"unrelated/file.txt": {Data: []byte("x")},
-	}
-	manifest, err := Load(embedded)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	got, err := fs.ReadFile(manifest.FS(), "audio/theme.wav")
-	if err != nil {
-		t.Fatalf("ReadFile(theme.wav) error = %v", err)
-	}
-	if string(got) != "embedded-bytes" {
-		t.Fatalf("theme.wav bytes = %q, want embedded-bytes", got)
-	}
 }
 
-func TestExecutableDirFSOverridesEmbeddedAsset(t *testing.T) {
+func TestExecutableDirFSReadsTheDirectoryBesideTheExecutable(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "game.exe")
 	writeFile(t, exe, "binary")
 	writeFile(t, filepath.Join(dir, "assets", "audio", "theme.wav"), "external-bytes")
 
+	// The working directory is deliberately somewhere else: resolving from it
+	// instead of from the executable is the bug this function exists to avoid.
+	t.Chdir(t.TempDir())
+
 	external, ok := dirFSNextTo(exe, "assets")
 	if !ok {
 		t.Fatal("dirFSNextTo(present) reported no directory")
 	}
-
-	embedded := fstest.MapFS{
-		"manifest.json":   {Data: []byte(`{"version":1,"audio":[{"id":"theme","file":"audio/theme.wav"}]}`)},
-		"audio/theme.wav": {Data: []byte("embedded-bytes")},
-	}
-	manifest, err := Load(embedded, external)
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	got, err := fs.ReadFile(manifest.FS(), "audio/theme.wav")
-	if err != nil {
-		t.Fatalf("ReadFile(theme.wav) error = %v", err)
-	}
-	if string(got) != "external-bytes" {
-		t.Fatalf("theme.wav bytes = %q, want external-bytes", got)
-	}
+	assertReads(t, external, "audio/theme.wav", "external-bytes")
 }
 
 func TestExecutableDirFSResolvesThroughSymlink(t *testing.T) {
@@ -88,12 +61,17 @@ func TestExecutableDirFSResolvesThroughSymlink(t *testing.T) {
 	if !ok {
 		t.Fatal("dirFSNextTo(symlink) reported no directory")
 	}
-	got, err := fs.ReadFile(external, "audio/theme.wav")
+	assertReads(t, external, "audio/theme.wav", "external-bytes")
+}
+
+func assertReads(t *testing.T, fsys fs.FS, name, want string) {
+	t.Helper()
+	got, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		t.Fatalf("ReadFile(theme.wav) error = %v", err)
+		t.Fatalf("ReadFile(%s) error = %v", name, err)
 	}
-	if string(got) != "external-bytes" {
-		t.Fatalf("theme.wav bytes = %q, want external-bytes", got)
+	if string(got) != want {
+		t.Fatalf("%s = %q, want %q", name, got, want)
 	}
 }
 

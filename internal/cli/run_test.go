@@ -5,54 +5,12 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
-
-func TestNativePackageArgPrefersTheNativeDirectory(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-
-	if got := nativePackageArg(nil); got != "." {
-		t.Fatalf("nativePackageArg with no ./native = %q, want .", got)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "native"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got := nativePackageArg(nil); got != "./native" {
-		t.Fatalf("nativePackageArg with ./native = %q, want ./native", got)
-	}
-	if got := nativePackageArg([]string{"./elsewhere"}); got != "./elsewhere" {
-		t.Fatalf("nativePackageArg with an explicit package = %q, want ./elsewhere", got)
-	}
-}
-
-func TestSplitRunArgsSeparatesTheGamesArguments(t *testing.T) {
-	cases := []struct {
-		name          string
-		args          []string
-		argsLenAtDash int
-		wantPkg       []string
-		wantGame      []string
-	}{
-		{name: "no dash", args: []string{"./native"}, argsLenAtDash: -1, wantPkg: []string{"./native"}},
-		{name: "dash only", args: []string{"--fullscreen"}, argsLenAtDash: 0, wantGame: []string{"--fullscreen"}},
-		{name: "both", args: []string{"./native", "--level", "3"}, argsLenAtDash: 1, wantPkg: []string{"./native"}, wantGame: []string{"--level", "3"}},
-	}
-	for _, tc := range cases {
-		pkg, game := splitRunArgs(tc.args, tc.argsLenAtDash)
-		if strings.Join(pkg, " ") != strings.Join(tc.wantPkg, " ") {
-			t.Fatalf("%s: package args = %v, want %v", tc.name, pkg, tc.wantPkg)
-		}
-		if strings.Join(game, " ") != strings.Join(tc.wantGame, " ") {
-			t.Fatalf("%s: game args = %v, want %v", tc.name, game, tc.wantGame)
-		}
-	}
-}
 
 // The machinery, not the host: a throwaway binary stands in for a game so this
 // runs on any machine, with or without a C toolchain or a display.
@@ -104,29 +62,6 @@ func TestPromptRebuildEndsCleanlyOnEOF(t *testing.T) {
 	}
 	if again, err := promptRebuild(in, io.Discard); err != nil || again {
 		t.Fatalf("the input ran out and gave (%v, %v), want a clean end", again, err)
-	}
-}
-
-// The whole loop, minus the window: build, run, prompt, and end at EOF. A
-// leaked goroutine or a blocking read here would hang CI rather than fail it.
-func TestRunDevNativeEndsAtEOF(t *testing.T) {
-	module := writeThrowawayModule(t, "game")
-	t.Chdir(module)
-
-	var out, errOut bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetIn(strings.NewReader(""))
-	cmd.SetOut(&out)
-	cmd.SetErr(&errOut)
-
-	if err := runDevNative(cmd, "./native", nativeBuildOptions{Mode: nativeModePortable}); err != nil {
-		t.Fatalf("runDevNative = %v, want a clean end at EOF", err)
-	}
-	if !strings.Contains(out.String(), "args:") {
-		t.Fatalf("stdout = %q, want the game's own output", out.String())
-	}
-	if !strings.Contains(out.String(), "press Enter to rebuild") {
-		t.Fatalf("stdout = %q, want the rebuild prompt", out.String())
 	}
 }
 

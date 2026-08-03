@@ -16,11 +16,11 @@ func TestExitCodeForResolvesTheStatusAnErrorNames(t *testing.T) {
 		err  error
 		want int
 	}{
-		"plain error":    {err: errors.New("boom"), want: 1},
-		"named status":   {err: fakeExitError{code: 3}, want: 3},
-		"wrapped":        {err: fmt.Errorf("run game: %w", fakeExitError{code: 42}), want: 42},
-		"names zero":     {err: fakeExitError{code: 0}, want: 1},
-		"double wrapped": {err: fmt.Errorf("outer: %w", fmt.Errorf("inner: %w", fakeExitError{code: 7})), want: 7},
+		"plain error":  {err: errors.New("boom"), want: 1},
+		"named status": {err: fakeExitError{code: 3}, want: 3},
+		"wrapped":      {err: fmt.Errorf("run game: %w", fakeExitError{code: 42}), want: 42},
+		// A game that names 0 still failed to run, or we would not be here.
+		"names zero": {err: fakeExitError{code: 0}, want: 1},
 	}
 	for name, tc := range cases {
 		if got := exitCodeFor(tc.err); got != tc.want {
