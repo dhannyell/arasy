@@ -282,7 +282,7 @@ go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 - Test structure conventions: [Portuguese](docs/testing.md) | [English](docs/testing-en.md)
 - Animation: [Portuguese](docs/animation.md) | [English](docs/animation-en.md)
 - Vector graphics and SVG compilation: [Portuguese](docs/vector-graphics.md) | [English](docs/vector-graphics-en.md)
-- 2.5D: tilt, planes, and height: [Portuguese](docs/2-5d.md) | [English](docs/2-5d-en.md)
+- 2.5D: tilt, planes, height, and depth order: [Portuguese](docs/2-5d.md) | [English](docs/2-5d-en.md)
 
 ## License
 

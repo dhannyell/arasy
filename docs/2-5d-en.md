@@ -1,4 +1,4 @@
-# 2.5D: Tilt, Planes And Height
+# 2.5D: Tilt, Planes, Height And Depth Order
 
 **The default is 2D, and everything on this page is optional.** A `Camera{}`
 looks straight down, a `BaseSprite{}` behaves exactly as it always has, and a
@@ -111,6 +111,85 @@ wants visible height wants a tilted camera.
 `Projection`'s fields stay public, so a game with its own art direction can
 override one of them — `ShadowAlpha`, say — without giving up the derivation
 for the rest.
+
+## Depth order: who is drawn behind whom
+
+Sprites are painted back to front. Within a layer, each sprite gets one number
+— its **sorting point** projected onto the world's **sort axis** — and lower
+draws first, which is to say further away.
+
+### The sorting point is the sprite's base
+
+A sprite sorts by its base, not its centre. That is the difference between a
+scene that reads correctly and the single most common y-sort bug: a tall tree
+and a short bush planted on the same ground line have centres at very
+different depths and bases at the same one, so sorting by centre draws the
+tree behind the bush standing next to it.
+
+Each sprite type finds its own base — the bottom of a circle's radius, of a
+rect, of an image's size — so mixing types does not reintroduce the problem.
+`SortOffset` moves the point from there:
+
+```go
+world.SetImageSprite(id, scene.ImageSprite{
+    Size:       math2d.Vec2{X: 32, Y: 64},
+    SortOffset: math2d.Vec2{Y: -8}, // art whose feet sit above the bottom edge
+})
+```
+
+`Transform.Scale` deliberately does not enter the base: a sprite that pops or
+breathes would otherwise reorder itself in the middle of its own animation.
+
+### The axis is something the world declares
+
+```go
+world.SetSortAxis(math2d.Vec2{X: 0, Y: 1}) // plain y-sort, and the default
+```
+
+The zero value is `{0, 1}`: further down the screen draws in front, which is
+right for a camera looking straight down and is what the engine did before the
+axis was something you could say out loud. A tilted camera wants depth weighted
+against height; a game that stacks along X wants `{X: 1}`. The vector is a
+direction, so its length is ignored and negating it reverses depth.
+
+### Height stays out of it
+
+An entity in the air still sorts by where it stands on the ground. That is
+where it is in the world, it is where its shadow is, and it is what lets a ball
+pass behind a post while flying past it. Sorting by the lifted position would
+snap the ball in front of the post halfway through the arc.
+
+A game that wants the opposite composes it by hand with `Layer`.
+
+### Ties, and why they are ordinary
+
+The key is a `float64`, so two sprites landing on the same value is common
+rather than rare — every sprite standing on the same ground line ties. `EntityID`
+breaks the tie, which is what makes a frame reproducible: the same scene always
+paints the same way, on any host, in any replay.
+
+`SortAxis` and `SortOffset` are presentation. Neither enters `Checksum()`,
+snapshots or replay.
+
+### What sorting by a single number cannot do
+
+Reducing a sprite to one scalar has three structural limits. They are written
+here so you meet them on this page rather than in a shipped game:
+
+1. **Interpenetration.** Ordering is per command and therefore all-or-nothing:
+   a sprite is entirely in front or entirely behind. A character standing *in*
+   a doorway, or half behind a fence, has no correct order, because the right
+   answer differs per pixel. Only a per-pixel depth buffer resolves this.
+2. **Long objects.** A wall ten units deep gets one key, but things at
+   different depths along it should order differently against it.
+3. **Cycles.** A over B, B over C, C over A. No total order satisfies that.
+
+For the common case — compact sprites (characters, balls, trees, crates) on a
+floor — sorting by the base is correct and complete. For the other two, the
+standard fix is authoring rather than engine: **slice the long object into
+pieces that sort separately**, which is what every 2D game does with walls,
+bridges and doorways. `SortOffset` is what makes that cheap, because each piece
+can claim its own depth without its sprite having to move.
 
 ## What never foreshortens
 
