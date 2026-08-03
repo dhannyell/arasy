@@ -256,7 +256,7 @@ func imageQuadProjection(c ctx, corners [4]math2d.Vec2) ([4]math2d.Vec2, math2d.
 // a non-identity BaseCommand.Transform. The identity path stays on destCorners
 // so the common (and instanced) sprite geometry is byte-identical.
 func imageScreenCorners(c ctx, cmd render.DrawImage) ([4]math2d.Vec2, bool) {
-	if cmd.Transform.IsIdentity() {
+	if !c.perVertex(cmd.Transform) {
 		return destCorners(c, cmd.Dest, cmd.Rotation)
 	}
 	return transformedImageCorners(c, cmd.Dest, cmd.Rotation, cmd.Transform)

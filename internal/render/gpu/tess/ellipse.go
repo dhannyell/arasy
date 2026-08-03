@@ -14,7 +14,7 @@ import (
 // Segment count is derived from the larger semi-axis so the tighter curvature
 // of the minor axis is still adequately sampled.
 func AppendEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
-	if !cmd.Transform.IsIdentity() {
+	if c.perVertex(cmd.Transform) {
 		appendTransformedEllipse(m, c, cmd)
 		return
 	}

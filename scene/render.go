@@ -44,12 +44,14 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 	hasProjection := !w.projection.IsZero()
 
-	// One camera tilt for the whole frame. Without one this stays 1 and every
-	// plane correction below is skipped, so a game that never asks for 2.5D
-	// does not pay for it existing.
-	groundScaleY := 1.0
+	// One camera distortion for the whole frame, and so one correction for
+	// every sprite that has to stand up against it. Without a projection this
+	// stays absent and every plane correction below is skipped, so a game that
+	// never asks for 2.5D does not pay for it existing.
+	upright := math2d.Affine{}
+	hasUpright := false
 	if hasProjection {
-		groundScaleY = w.projection.GroundScaleY()
+		upright, hasUpright = w.projection.UprightCorrection()
 	}
 
 	for _, entry := range sorted {
@@ -108,6 +110,13 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			}
 		}
 
+		// A rect sprite carries its own geometry in world coordinates and takes
+		// no position from its Transform, so the lift has to be handed to it
+		// separately. Without this a raised platform draws its shadow on the
+		// ground and its body on the ground too, and the plane correction
+		// below pivots About a point the sprite does not contain.
+		lift := pos.Sub(interpolated.Position)
+
 		// Per-entity decorative affine (squash & stretch, lean), deforming
 		// about the final — possibly lifted — body center. Render-only.
 		bodyTransform := math2d.Affine{}
@@ -119,8 +128,8 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		// the sprite in its own frame, and only then is the result placed on
 		// the plane it declares. Composing them the other way round would tilt
 		// squash & stretch by the camera.
-		if correction := w.spritePlaneScaleY(id, groundScaleY); correction != 1 {
-			plane := math2d.Scale(math2d.Vec2{X: 1, Y: correction}).About(pos)
+		if hasUpright && w.spritePlane(id) == PlaneUpright {
+			plane := upright.About(pos)
 			if bodyTransform.IsIdentity() {
 				bodyTransform = plane
 			} else {
@@ -146,8 +155,16 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		}
 
 		if rect, hasRect := w.rectSprites.get(id); hasRect {
+			geometry := rect.Rect
+			if lift != (math2d.Vec2{}) {
+				geometry = math2d.NewRectFromCorners(
+					geometry.Min.Add(lift),
+					geometry.Max.Add(lift),
+				)
+			}
+
 			commands = append(commands, render.DrawRect{
-				Rect:        rect.Rect,
+				Rect:        geometry,
 				Fill:        rect.Color,
 				Stroke:      rect.Stroke,
 				StrokeWidth: rect.StrokeWidth,
@@ -311,22 +328,11 @@ func (w *World) spriteLayer(id EntityID) int {
 	return 0
 }
 
-// spritePlaneScaleY is the vertical scale a sprite's own geometry needs so that
-// it lands on the plane it declares. 1 means the command is already right and
-// carries no transform at all.
-//
-// The camera foreshortens every shape it draws, which is what a ground sprite
-// wants and leaves nothing to do. An upright sprite is the one that has to
-// stand back up, by exactly the reciprocal.
-func (w *World) spritePlaneScaleY(id EntityID, groundScaleY float64) float64 {
-	if groundScaleY == 1 || w.spritePlane(id) == PlaneGround {
-		return 1
-	}
-
-	return 1 / groundScaleY
-}
-
 // spritePlane returns the plane of the first sprite found for the entity.
+//
+// The camera distorts every shape it draws, which is what a ground sprite
+// wants and leaves nothing to do. An upright sprite is the one that has to
+// stand back up, by exactly the inverse -- see Projection.UprightCorrection.
 func (w *World) spritePlane(id EntityID) SpritePlane {
 	if s, ok := w.circleSprites.get(id); ok {
 		return s.Plane

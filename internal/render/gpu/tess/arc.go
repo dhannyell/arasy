@@ -16,7 +16,7 @@ func AppendArc(m *Mesh, c ctx, cmd render.DrawArc) {
 	// There is no elliptical-arc ring, and there does not need to be: the
 	// transformed path already walks the arc in world space and maps every
 	// point through the camera, which is exactly the foreshortened arc.
-	if !cmd.Transform.IsIdentity() || c.cam.Foreshortens() {
+	if c.perVertex(cmd.Transform) || c.cam.Foreshortens() {
 		appendTransformedArc(m, c, cmd)
 		return
 	}

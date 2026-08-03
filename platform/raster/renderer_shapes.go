@@ -9,7 +9,9 @@ import (
 )
 
 func (r *Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
-	if !command.Transform.IsIdentity() {
+	// A sheared camera turns a square into a parallelogram, which no pair of
+	// corners describes, so the geometry has to go per vertex either way.
+	if !command.Transform.IsIdentity() || r.Camera.Skews() {
 		r.drawTransformedRect(img, command)
 		return
 	}
@@ -44,7 +46,9 @@ func (r *Renderer) drawRect(img *image.RGBA, command render.DrawRect) {
 }
 
 func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
-	if !command.Transform.IsIdentity() {
+	// A sheared camera turns a square into a parallelogram, which no pair of
+	// corners describes, so the geometry has to go per vertex either way.
+	if !command.Transform.IsIdentity() || r.Camera.Skews() {
 		r.drawTransformedCircle(img, command)
 		return
 	}
@@ -80,7 +84,9 @@ func (r *Renderer) drawCircle(img *image.RGBA, command render.DrawCircle) {
 }
 
 func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
-	if !command.Transform.IsIdentity() {
+	// A sheared camera turns a square into a parallelogram, which no pair of
+	// corners describes, so the geometry has to go per vertex either way.
+	if !command.Transform.IsIdentity() || r.Camera.Skews() {
 		r.drawTransformedEllipse(img, command)
 		return
 	}

@@ -32,12 +32,16 @@ type BaseSprite struct {
 	Layer int
 	Color render.Color
 
-	// Plane selects how the camera's DepthScale treats this sprite. The
-	// default, PlaneUpright, draws it facing the camera: a tilted camera moves
-	// it but never squashes it. PlaneGround lets the same tilt foreshorten it,
-	// because it lies in the plane being foreshortened.
+	// Plane selects how the camera's projection treats this sprite. The
+	// default, PlaneUpright, draws it facing the camera: the projection moves
+	// it but never distorts it. PlaneGround lets the projection have it,
+	// because it lies in the plane being projected.
 	//
-	// With an untilted camera the two are identical and this field costs
+	// Both DepthScale and View count as projection here. Under a tilt the
+	// difference is a squash; under an isometric View it is the difference
+	// between a net standing across the court and one lying on it like a rug.
+	//
+	// With a plain 2D camera the two are identical and this field costs
 	// nothing to ignore.
 	Plane SpritePlane
 

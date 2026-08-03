@@ -15,7 +15,7 @@ import (
 // Rect strokes are generated inside the rectangle bounds.
 // Rounded rectangles are approximated with deterministic corner segments.
 func AppendRect(m *Mesh, c ctx, cmd render.DrawRect) {
-	if !cmd.Transform.IsIdentity() {
+	if c.perVertex(cmd.Transform) {
 		appendTransformedRect(m, c, cmd)
 		return
 	}

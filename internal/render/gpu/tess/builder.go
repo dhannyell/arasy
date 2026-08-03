@@ -387,10 +387,13 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 		}
 		return
 	}
-	if !cmd.Transform.IsIdentity() {
+	if s.ctx.perVertex(cmd.Transform) {
 		// A transformed sprite leaves the instanced fast path (whose record
 		// carries no per-sprite matrix) and draws as an explicit textured quad,
-		// so rotation/shear/scale are honored like the raster backend.
+		// so rotation/shear/scale are honored like the raster backend. A
+		// skewing camera is the same situation arriving from the other side:
+		// the record holds a centre and half-extents, which describe an
+		// upright rectangle and nothing else.
 		start := s.texBegin(cmd.Clip)
 		AppendImage(&s.builder.texMesh, s.ctx, cmd, texW, texH)
 		s.texEnd(cmd.Texture, start)

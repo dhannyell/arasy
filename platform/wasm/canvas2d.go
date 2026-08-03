@@ -538,6 +538,14 @@ func cssColor(c render.Color) string {
 }
 
 func (c *Canvas2D) drawRect(cmd render.DrawRect, camera render.Camera) {
+	// A sheared camera makes a parallelogram of this, which no x/y/w/h
+	// describes.
+	if camera.Skews() {
+		c.pathWorldRect(camera, cmd.Rect)
+		c.fillStrokePath(camera, cmd.Fill, cmd.Stroke, cmd.StrokeWidth)
+		return
+	}
+
 	x, y, w, h := screenRect(cmd.Rect, camera)
 
 	if cmd.CornerRadius > 0 && c.ctx.Get("roundRect").Truthy() {
@@ -566,55 +574,131 @@ func (c *Canvas2D) drawRect(cmd render.DrawRect, camera render.Camera) {
 	}
 }
 
-// pathArc appends a circular or, under a tilted camera, elliptical arc. A
-// circle lies in the world, so the camera foreshortens it like any other
-// shape; canvas draws that directly with ellipse().
-func (c *Canvas2D) pathArc(center, radii math2d.Vec2, startAngle, endAngle float64) {
-	c.ctx.Call("beginPath")
-	if radii.X == radii.Y {
-		c.ctx.Call("arc", center.X, center.Y, radii.X, startAngle, endAngle)
+// pathArc appends a circular or, under a tilted camera, elliptical arc. It
+// takes the shape in world terms so it can decide how to draw it.
+//
+// A circle lies in the world, so the camera foreshortens it like any other
+// shape; canvas draws that directly with ellipse(). A camera that also shears
+// leaves canvas nothing to call: the result is a slanted ellipse, whose axes
+// are not the screen axes, and it has to be walked instead.
+func (c *Canvas2D) pathArc(camera render.Camera, center, radii math2d.Vec2, startAngle, endAngle float64) {
+	if camera.Skews() {
+		c.pathWorldArc(camera, center, radii, startAngle, endAngle)
 		return
 	}
-	c.ctx.Call("ellipse", center.X, center.Y, radii.X, radii.Y, 0, startAngle, endAngle)
+
+	screenCenter := camera.WorldToScreen(center)
+	screenRadii := camera.WorldRadiiToScreen(radii)
+
+	c.ctx.Call("beginPath")
+	if screenRadii.X == screenRadii.Y {
+		c.ctx.Call("arc", screenCenter.X, screenCenter.Y, screenRadii.X, startAngle, endAngle)
+		return
+	}
+	c.ctx.Call("ellipse", screenCenter.X, screenCenter.Y,
+		screenRadii.X, screenRadii.Y, 0, startAngle, endAngle)
+}
+
+// pathWorldArc traces the boundary in world space and maps every point through
+// the camera. It mirrors the raster and GPU backends down to the segment
+// count, so a scene drawn under a skewing view looks the same on all three.
+func (c *Canvas2D) pathWorldArc(camera render.Camera, center, radii math2d.Vec2, startAngle, endAngle float64) {
+	screenRadii := camera.WorldRadiiToScreen(radii)
+	segments := canvasSegments(math.Max(screenRadii.X, screenRadii.Y) * camera.View.MeanScale())
+
+	sweep := endAngle - startAngle
+	closed := math.Abs(sweep) >= 2*math.Pi
+	if closed {
+		sweep = 2 * math.Pi
+	} else {
+		segments = max(2, int(float64(segments)*math.Abs(sweep)/(2*math.Pi)))
+	}
+
+	c.ctx.Call("beginPath")
+	for i := 0; i <= segments; i++ {
+		sin, cos := math.Sincos(startAngle + sweep*float64(i)/float64(segments))
+		point := camera.WorldToScreen(math2d.Vec2{
+			X: center.X + cos*radii.X,
+			Y: center.Y + sin*radii.Y,
+		})
+
+		if i == 0 {
+			c.ctx.Call("moveTo", point.X, point.Y)
+			continue
+		}
+		c.ctx.Call("lineTo", point.X, point.Y)
+	}
+
+	if closed {
+		c.ctx.Call("closePath")
+	}
+}
+
+// pathWorldRect traces a rectangle by its four world corners, which the camera
+// is free to make a parallelogram of.
+//
+// A corner radius does not survive this path, and a skewing camera is the one
+// place canvas draws a rounded rect with square corners. Rounding it correctly
+// means tracing the arcs in world space too, which is geometry this backend
+// has no other use for.
+func (c *Canvas2D) pathWorldRect(camera render.Camera, rect math2d.Rect) {
+	corners := [4]math2d.Vec2{
+		{X: rect.Min.X, Y: rect.Min.Y},
+		{X: rect.Max.X, Y: rect.Min.Y},
+		{X: rect.Max.X, Y: rect.Max.Y},
+		{X: rect.Min.X, Y: rect.Max.Y},
+	}
+
+	c.ctx.Call("beginPath")
+	for i, corner := range corners {
+		screen := camera.WorldToScreen(corner)
+		if i == 0 {
+			c.ctx.Call("moveTo", screen.X, screen.Y)
+			continue
+		}
+		c.ctx.Call("lineTo", screen.X, screen.Y)
+	}
+	c.ctx.Call("closePath")
+}
+
+// canvasSegments matches the raster backend's segment count so the two agree
+// on how round a circle is.
+func canvasSegments(screenRadius float64) int {
+	return min(96, max(12, int(screenRadius)))
+}
+
+// fillStrokePath paints the path already on the context, the shared tail of
+// every world-traced shape.
+func (c *Canvas2D) fillStrokePath(camera render.Camera, fill, stroke render.Color, strokeWidth float64) {
+	if fill.A > 0 {
+		c.ctx.Set("fillStyle", cssColor(fill))
+		c.ctx.Call("fill")
+	}
+	if stroke.A > 0 && strokeWidth > 0 {
+		c.ctx.Set("strokeStyle", cssColor(stroke))
+		c.ctx.Set("lineWidth", camera.WorldScalarToScreen(strokeWidth))
+		c.ctx.Call("stroke")
+	}
 }
 
 func (c *Canvas2D) drawCircle(cmd render.DrawCircle, camera render.Camera) {
-	center := camera.WorldToScreen(cmd.Center)
 	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
 	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.pathArc(center, radii, 0, 2*math.Pi)
-	if cmd.Fill.A > 0 {
-		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
-		c.ctx.Call("fill")
-	}
-	if cmd.Stroke.A > 0 && cmd.StrokeWidth > 0 {
-		c.ctx.Set("strokeStyle", cssColor(cmd.Stroke))
-		c.ctx.Set("lineWidth", camera.WorldScalarToScreen(cmd.StrokeWidth))
-		c.ctx.Call("stroke")
-	}
+	c.pathArc(camera, cmd.Center, math2d.Vec2{X: cmd.Radius, Y: cmd.Radius}, 0, 2*math.Pi)
+	c.fillStrokePath(camera, cmd.Fill, cmd.Stroke, cmd.StrokeWidth)
 }
 
 func (c *Canvas2D) drawEllipse(cmd render.DrawEllipse, camera render.Camera) {
-	center := camera.WorldToScreen(cmd.Center)
 	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.RadiusX, Y: cmd.RadiusY})
 	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.ctx.Call("beginPath")
-	c.ctx.Call("ellipse", center.X, center.Y, radii.X, radii.Y, 0, 0, 2*math.Pi)
-	if cmd.Fill.A > 0 {
-		c.ctx.Set("fillStyle", cssColor(cmd.Fill))
-		c.ctx.Call("fill")
-	}
-	if cmd.Stroke.A > 0 && cmd.StrokeWidth > 0 {
-		c.ctx.Set("strokeStyle", cssColor(cmd.Stroke))
-		c.ctx.Set("lineWidth", camera.WorldScalarToScreen(cmd.StrokeWidth))
-		c.ctx.Call("stroke")
-	}
+	c.pathArc(camera, cmd.Center, math2d.Vec2{X: cmd.RadiusX, Y: cmd.RadiusY}, 0, 2*math.Pi)
+	c.fillStrokePath(camera, cmd.Fill, cmd.Stroke, cmd.StrokeWidth)
 }
 
 func (c *Canvas2D) drawPoint(cmd render.DrawPoint, camera render.Camera) {
@@ -622,13 +706,12 @@ func (c *Canvas2D) drawPoint(cmd render.DrawPoint, camera render.Camera) {
 		return
 	}
 
-	center := camera.WorldToScreen(cmd.Center)
 	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
 	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.pathArc(center, radii, 0, 2*math.Pi)
+	c.pathArc(camera, cmd.Center, math2d.Vec2{X: cmd.Radius, Y: cmd.Radius}, 0, 2*math.Pi)
 	c.ctx.Set("fillStyle", cssColor(cmd.Color))
 	c.ctx.Call("fill")
 }
@@ -654,13 +737,13 @@ func (c *Canvas2D) drawArc(cmd render.DrawArc, camera render.Camera) {
 		return
 	}
 
-	center := camera.WorldToScreen(cmd.Center)
 	radii := camera.WorldRadiiToScreen(math2d.Vec2{X: cmd.Radius, Y: cmd.Radius})
 	if radii.X <= 0 || radii.Y <= 0 {
 		return
 	}
 
-	c.pathArc(center, radii, cmd.StartAngle, cmd.EndAngle)
+	c.pathArc(camera, cmd.Center, math2d.Vec2{X: cmd.Radius, Y: cmd.Radius},
+		cmd.StartAngle, cmd.EndAngle)
 	c.ctx.Set("strokeStyle", cssColor(cmd.Color))
 	c.ctx.Set("lineWidth", math.Max(1, camera.WorldScalarToScreen(cmd.Width)))
 	c.ctx.Call("stroke")

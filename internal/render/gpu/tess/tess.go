@@ -51,6 +51,18 @@ type ctx struct {
 	w, h float64
 }
 
+// perVertex reports whether a shape has to be walked in world space rather
+// than rebuilt on screen from a centre and a pair of radii.
+//
+// A command transform is the familiar reason. A skewing camera is the other:
+// Camera.View turns a square into a parallelogram and a circle into a slanted
+// ellipse, and no pair of screen corners describes either. Both backends that
+// share this package get the answer from here, so neither can drift from the
+// raster reference on its own.
+func (c ctx) perVertex(transform math2d.Affine) bool {
+	return !transform.IsIdentity() || c.cam.Skews()
+}
+
 func vertex(pos [2]float32, col render.Color) Vertex {
 	return Vertex{
 		X: pos[0],
