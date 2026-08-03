@@ -73,9 +73,9 @@ type World struct {
 	// never in Checksum. The zero value means plain Y, see SetSortAxis.
 	sortAxis math2d.Vec2
 
-	// renderIDScratch is reusable render working memory. It is transient:
-	// never cloned or checksummed.
-	renderIDScratch []EntityID
+	// renderSortScratch is reusable render working memory: the sprites of one
+	// frame in painter order. It is transient: never cloned or checksummed.
+	renderSortScratch []sortEntry
 
 	// despawnMarked is reusable batch-removal working memory. It is transient:
 	// never cloned or checksummed.
@@ -134,7 +134,7 @@ func (w *World) Clone() *World {
 		sortAxis:         w.sortAxis,
 		// contacts are transient per-tick — not cloned
 		// collisionScratch is transient broad-phase working memory — not cloned
-		// renderIDScratch is transient render working memory — not cloned
+		// renderSortScratch is transient render working memory — not cloned
 		// debugGrid is a derived overlay cache — not cloned
 	}
 }
