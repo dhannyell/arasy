@@ -130,6 +130,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	switch g.State.Phase {
 	case phaseCountdown, phasePlaying:
 		cmds = append(cmds, drawBeatBars(renderNowMS)...)
+		cmds = append(cmds, drawPulseBar(renderNowMS)...)
 		cmds = append(cmds, drawActiveHoldLanes(g.State)...)
 		// Gameplay continues to judge against whole fixed ticks. Only the
 		// presentation clock advances through the remainder of the tick, so

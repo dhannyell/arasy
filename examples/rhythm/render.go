@@ -79,6 +79,47 @@ func drawBeatBars(nowMS float64) []render.Command {
 	}
 }
 
+// The base of the highway frame has a neon tube baked into the texture.
+// These trace its position in world units.
+const (
+	pulseBarY     = 67.5
+	pulseBarLeft  = 29.0
+	pulseBarRight = 71.0
+)
+
+// drawPulseBar relights the baked tube as live light: an additive flash that
+// peaks on every beat and decays until the next. Because the layers add,
+// the flash climbs over the texture's own glow toward white instead of
+// painting a stripe across it.
+func drawPulseBar(nowMS float64) []render.Command {
+	phase := math.Mod(nowMS-firstBeatMS, beatMS) / beatMS
+	if phase < 0 {
+		phase++
+	}
+	heat := (1 - phase) * (1 - phase)
+	bar := render.BaseCommand{LayerValue: 4, BlendMode: render.BlendAdditive}
+	from := math2d.Vec2{X: pulseBarLeft, Y: pulseBarY}
+	to := math2d.Vec2{X: pulseBarRight, Y: pulseBarY}
+	// A stack of widening, fading strokes approximates a radial falloff;
+	// because each one adds, the steps blend into a smooth bloom.
+	cmds := make([]render.Command, 0, 5)
+	for _, layer := range []struct {
+		width float64
+		color render.Color
+	}{
+		{5.6, render.RGBA(1, 0.16, 0.06, 0.10 * heat)},
+		{4.2, render.RGBA(1, 0.22, 0.08, 0.14 * heat)},
+		{3.0, render.RGBA(1, 0.35, 0.12, 0.20 * heat)},
+		{2.0, render.RGBA(1, 0.55, 0.22, 0.30 * heat)},
+		{1.2, render.RGBA(1, 0.85, 0.60, 0.60 * heat)},
+	} {
+		cmds = append(cmds, render.DrawLine{
+			BaseCommand: bar, From: from, To: to, Width: layer.width, Color: layer.color,
+		})
+	}
+	return cmds
+}
+
 func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []render.Command {
 	noteTex := ctx.Assets.Texture("note")
 	specialTex := ctx.Assets.Texture("special")
