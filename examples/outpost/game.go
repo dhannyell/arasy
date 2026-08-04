@@ -41,12 +41,28 @@ type UnitState struct {
 	TileI, TileJ int
 }
 
+// CursorState is the gamepad and keyboard tile cursor. The stick hysteresis
+// and the repeat clock live inside the state on purpose: they decide which
+// tile a confirm acts on, so a replay has to carry them tick for tick.
+type CursorState struct {
+	I, J int
+
+	// Active flips on the first directional input and stays: a player who
+	// never touches pad or arrows never sees the cursor.
+	Active bool
+
+	Direction input.StickDPad
+	Repeat    input.Repeater
+	DX, DY    int // the direction held last tick, to rearm Repeat on change
+}
+
 type State struct {
 	// Selected is the index of the chosen unit, -1 for none. It is game
 	// state, not decoration: a click means something different because of it,
 	// so a replay has to carry it.
 	Selected int
 	Units    [unitCount]UnitState
+	Cursor   CursorState
 }
 
 type Game struct {
@@ -83,10 +99,32 @@ func (g *Game) Setup() runtime.Config {
 			View:   isoView,
 		},
 		Clear:                render.RGBA8(24, 26, 40, 255),
+		InputBindings:        cursorBindings(),
 		SimulationHz:         60,
 		FPS:                  60,
 		HistoryLen:           600,
 		DisableDefaultSplash: true,
+	}
+}
+
+// cursorBindings maps every way of steering the tile cursor onto the same two
+// axes, plus confirm. The stick arrives analog and the buttons arrive as ±1;
+// StickDPad quantizes both the same way, so the game never asks which device
+// the player picked up.
+func cursorBindings() []input.Binding {
+	return []input.Binding{
+		{Source: input.Gamepad(input.GamepadLeftStickX), Action: input.ActionMoveX, Scale: 1},
+		{Source: input.Gamepad(input.GamepadLeftStickY), Action: input.ActionMoveY, Scale: 1},
+		{Source: input.Gamepad(input.GamepadDpadRight), Action: input.ActionMoveX, Scale: 1},
+		{Source: input.Gamepad(input.GamepadDpadLeft), Action: input.ActionMoveX, Scale: -1},
+		{Source: input.Gamepad(input.GamepadDpadDown), Action: input.ActionMoveY, Scale: 1},
+		{Source: input.Gamepad(input.GamepadDpadUp), Action: input.ActionMoveY, Scale: -1},
+		{Source: input.Gamepad(input.GamepadA), Action: input.ActionConfirm, Scale: 1},
+		{Source: input.Keyboard(input.KeyArrowRight), Action: input.ActionMoveX, Scale: 1},
+		{Source: input.Keyboard(input.KeyArrowLeft), Action: input.ActionMoveX, Scale: -1},
+		{Source: input.Keyboard(input.KeyArrowDown), Action: input.ActionMoveY, Scale: 1},
+		{Source: input.Keyboard(input.KeyArrowUp), Action: input.ActionMoveY, Scale: -1},
+		{Source: input.Keyboard(input.KeyEnter), Action: input.ActionConfirm, Scale: 1},
 	}
 }
 
@@ -113,7 +151,12 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	g.static = buildStaticBoard(projection)
 	spawnProps(ctx.World, projection)
 
-	g.State = State{Selected: -1}
+	g.State = State{
+		Selected: -1,
+		// The cursor waits, inactive, on the first unit's tile: summoning it
+		// starts somewhere meaningful instead of a corner.
+		Cursor: CursorState{I: unitStarts[0][0], J: unitStarts[0][1]},
+	}
 	for u := range g.units {
 		i, j := unitStarts[u][0], unitStarts[u][1]
 		g.State.Units[u] = UnitState{TileI: i, TileJ: j}
@@ -148,9 +191,41 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	}
 }
 
-func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	g.trackHover(ctx)
 	g.handleClicks(ctx)
+	g.steerCursor(ctx, dt)
+}
+
+// steerCursor is the whole gamepad/keyboard scheme: the Mapper already merged
+// stick, dpad and arrows into two axes, StickDPad turns them into a held
+// direction, and the Repeater decides when a held direction steps again.
+func (g *Game) steerCursor(ctx *runtime.UpdateContext, dt float64) {
+	cursor := &g.State.Cursor
+
+	dx, dy := cursor.Direction.Update(
+		ctx.Input.Value(input.ActionMoveX),
+		ctx.Input.Value(input.ActionMoveY),
+	)
+	if dx != cursor.DX || dy != cursor.DY {
+		// A new direction steps right away instead of waiting out a delay
+		// armed for the old one.
+		cursor.Repeat = input.Repeater{}
+		cursor.DX, cursor.DY = dx, dy
+	}
+
+	for range cursor.Repeat.Step(dx != 0 || dy != 0, dt) {
+		if !cursor.Active {
+			cursor.Active = true
+			continue // the first press summons the cursor where it waits
+		}
+		cursor.I = min(max(cursor.I+dx, 0), boardCols-1)
+		cursor.J = min(max(cursor.J+dy, 0), boardRows-1)
+	}
+
+	if cursor.Active && ctx.Input.JustPressed(input.ActionConfirm) {
+		g.clickTile(ctx, cursor.I, cursor.J)
+	}
 }
 
 func (g *Game) trackHover(ctx *runtime.UpdateContext) {
@@ -213,6 +288,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds = g.appendClouds(cmds, ctx.Time)
 	cmds = g.appendWater(cmds, ctx.Time)
 	cmds = g.appendHover(cmds)
+	cmds = g.appendCursor(cmds)
 	cmds = g.appendUnitGround(cmds, ctx)
 
 	cmds = ctx.World.RenderCommandsInto(cmds, ctx.Alpha)
@@ -288,6 +364,20 @@ func (g *Game) appendHover(cmds []render.Command) []render.Command {
 		BaseCommand: render.BaseCommand{LayerValue: layerHover},
 	})
 	return cmds
+}
+
+// appendCursor draws the pad/keyboard tile cursor: the same tile framing as
+// the hover, in the selection gold so the two never read as the same thing.
+func (g *Game) appendCursor(cmds []render.Command) []render.Command {
+	if !g.State.Cursor.Active {
+		return cmds
+	}
+	return append(cmds, render.DrawRect{
+		Rect:        inset(tileRect(g.State.Cursor.I, g.State.Cursor.J), 0.4),
+		Stroke:      render.RGBA(1, 0.85, 0.35, 0.9),
+		StrokeWidth: 0.45,
+		BaseCommand: render.BaseCommand{LayerValue: layerHover},
+	})
 }
 
 // appendUnitGround draws what sits under each unit: a contact shadow while it
