@@ -13,7 +13,10 @@ import (
 // count is derived from the screen-space radius and angular sweep so the same
 // visual error rule used for circles also applies to arcs.
 func AppendArc(m *Mesh, c ctx, cmd render.DrawArc) {
-	if !cmd.Transform.IsIdentity() {
+	// There is no elliptical-arc ring, and there does not need to be: the
+	// transformed path already walks the arc in world space and maps every
+	// point through the camera, which is exactly the foreshortened arc.
+	if !cmd.Transform.IsIdentity() || c.cam.Foreshortens() {
 		appendTransformedArc(m, c, cmd)
 		return
 	}

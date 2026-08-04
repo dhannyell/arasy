@@ -38,6 +38,49 @@ type Camera struct {
 
 	// Aspect controls how the camera handles aspect-ratio differences
 	Aspect AspectMode
+
+	// DepthScale foreshortens the world's depth axis (Y) on screen, which is
+	// what a camera tilted away from straight-down does to the ground plane.
+	// 1 is the default and means no tilt: a top-down camera, the engine's
+	// behaviour before this field existed. 0.5 is the classic 2:1 view of
+	// pixel-art dimetric projection.
+	//
+	// It is the cosine of the camera's tilt from vertical, so 0.5 is a 60
+	// degree tilt and one unit of height is worth tan(60) ~= 1.73 units of
+	// depth on screen. Values outside (0, 1] are clamped.
+	//
+	// The foreshortening happens around the centre of the visible world, so
+	// changing it never drags the scene out of frame. It moves where things
+	// are drawn, not how big the world is: collision, physics and every other
+	// world-space measurement stay in unforeshortened units.
+	DepthScale float64
+}
+
+// minDepthScale keeps a degenerate DepthScale from collapsing the view to a
+// line and from making the inverse mapping blow up. Anything flatter than
+// this is already unusable on screen.
+const minDepthScale = 1e-4
+
+// depthScale resolves DepthScale into the factor the mapping actually uses.
+//
+// Zero means 1 rather than "flat as a line": a Camera{} predates this field
+// and has to keep meaning an untilted, top-down camera.
+func (c Camera) depthScale() float64 {
+	return clampDepthScale(c.DepthScale)
+}
+
+// clampDepthScale is shared with Projection so the camera and the sprites that
+// stand up against it can never disagree on what a given value means.
+func clampDepthScale(depthScale float64) float64 {
+	if depthScale == 0 || depthScale > 1 || math.IsNaN(depthScale) {
+		return 1
+	}
+
+	if depthScale < minDepthScale {
+		return minDepthScale
+	}
+
+	return depthScale
 }
 
 // WorldToScreen converts a point from world coordinates to viewport coordinates.
@@ -84,8 +127,12 @@ func (c Camera) ScreenToWorld(point math2d.Vec2) math2d.Vec2 {
 //
 // It uses the smaller axis scale to avoid making scalar values too large
 // when world and viewport have different aspect ratios.
+//
+// DepthScale does not apply: a scalar has no axis, and foreshortening only
+// means something along one. A radius or a stroke width converts the same
+// whatever the camera's tilt.
 func (c Camera) WorldScalarToScreen(value float64) float64 {
-	world, viewport := c.resolveView()
+	world, viewport := c.resolveAspect()
 
 	if world.Width() == 0 || world.Height() == 0 {
 		return 0
@@ -101,11 +148,35 @@ func (c Camera) WorldScalarToScreen(value float64) float64 {
 	return value * scaleX
 }
 
+// WorldRadiiToScreen converts a shape's world-space radii into the screen
+// radii it draws with.
+//
+// Unlike WorldScalarToScreen this is anisotropic, because a radius does have
+// an axis: it is the geometry of something lying in the world, and a tilted
+// camera sees the world's depth axis foreshortened. A circle on the ground is
+// an ellipse on screen. Stroke widths and corner radii are genuinely axis-less
+// and keep using WorldScalarToScreen.
+func (c Camera) WorldRadiiToScreen(radii math2d.Vec2) math2d.Vec2 {
+	return math2d.Vec2{
+		X: c.WorldScalarToScreen(radii.X),
+		Y: c.WorldScalarToScreen(radii.Y) * c.depthScale(),
+	}
+}
+
+// Foreshortens reports whether the camera's tilt changes the shape of world
+// geometry and not merely where it lands. Backends use it to pick the
+// axis-aware drawing path for shapes that would otherwise be drawn from a
+// single radius.
+func (c Camera) Foreshortens() bool {
+	return c.depthScale() != 1
+}
+
 // ScreenScalarToWorld converts a scalar viewport measurement to world units.
 //
-// It uses the smaller axis scale to match WorldScalarToScreen.
+// It uses the smaller axis scale to match WorldScalarToScreen, and likewise
+// ignores DepthScale.
 func (c Camera) ScreenScalarToWorld(value float64) float64 {
-	world, viewport := c.resolveView()
+	world, viewport := c.resolveAspect()
 
 	if world.Width() == 0 || world.Height() == 0 {
 		return 0
@@ -126,7 +197,36 @@ func (c Camera) ScreenScalarToWorld(value float64) float64 {
 	return value / scale
 }
 
+// resolveView returns the world and viewport rects every point mapping goes
+// through: the aspect-adjusted view, then foreshortened by DepthScale.
 func (c Camera) resolveView() (math2d.Rect, math2d.Rect) {
+	world, viewport := c.resolveAspect()
+
+	return c.foreshortenWorld(world), viewport
+}
+
+// foreshortenWorld widens the visible depth range by the inverse of the depth
+// scale, around the view's centre. Growing the world the camera sees and
+// squashing what it draws towards the centre are the same transform read from
+// either end, and doing it here means every consumer of the view -- point
+// mapping, culling, the backends' projection matrices -- foreshortens the same
+// way for free.
+func (c Camera) foreshortenWorld(world math2d.Rect) math2d.Rect {
+	scale := c.depthScale()
+	if scale == 1 {
+		return world
+	}
+
+	centerY := world.Center().Y
+	halfHeight := world.Height() / 2 / scale
+
+	world.Min.Y = centerY - halfHeight
+	world.Max.Y = centerY + halfHeight
+
+	return world
+}
+
+func (c Camera) resolveAspect() (math2d.Rect, math2d.Rect) {
 	switch c.Aspect {
 	case AspectFit:
 		return c.fitView()

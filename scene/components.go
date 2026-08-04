@@ -14,9 +14,32 @@ type Transform struct {
 	Scale    math2d.Vec2
 }
 
+// SpritePlane says whether a sprite stands up in the world or lies flat on it.
+// It only matters under a tilted camera; see BaseSprite.Plane.
+type SpritePlane uint8
+
+const (
+	// PlaneUpright draws the sprite facing the camera, like a standing
+	// character or a tree.
+	PlaneUpright SpritePlane = iota
+
+	// PlaneGround lays the sprite flat on the ground, like a decal, a puddle
+	// or a painted marking.
+	PlaneGround
+)
+
 type BaseSprite struct {
 	Layer int
 	Color render.Color
+
+	// Plane selects how the camera's DepthScale treats this sprite. The
+	// default, PlaneUpright, draws it facing the camera: a tilted camera moves
+	// it but never squashes it. PlaneGround lets the same tilt foreshorten it,
+	// because it lies in the plane being foreshortened.
+	//
+	// With an untilted camera the two are identical and this field costs
+	// nothing to ignore.
+	Plane SpritePlane
 }
 
 type CircleSprite struct {
@@ -42,6 +65,10 @@ type ImageSprite struct {
 	Src     math2d.Rect
 	Size    math2d.Vec2
 	Tint    render.Color
+
+	// Plane behaves as BaseSprite.Plane. ImageSprite carries its own copy
+	// because it does not embed BaseSprite: it has no Color to share.
+	Plane SpritePlane
 }
 
 // SpriteTransform is a render-only per-entity affine applied to the

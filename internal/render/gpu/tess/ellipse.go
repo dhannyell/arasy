@@ -20,8 +20,8 @@ func AppendEllipse(m *Mesh, c ctx, cmd render.DrawEllipse) {
 	}
 	start := len(m.Vertices)
 	center := c.cam.WorldToScreen(cmd.Center)
-	rx := c.cam.WorldScalarToScreen(cmd.RadiusX)
-	ry := c.cam.WorldScalarToScreen(cmd.RadiusY)
+	radii := c.cam.WorldRadiiToScreen(math2d.Vec2{X: cmd.RadiusX, Y: cmd.RadiusY})
+	rx, ry := radii.X, radii.Y
 	if rx <= 0 || ry <= 0 {
 		return
 	}
