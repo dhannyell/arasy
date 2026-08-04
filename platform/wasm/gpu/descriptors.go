@@ -33,6 +33,24 @@ func PremultipliedBlend() map[string]any {
 }
 
 // AdditiveBlend adds premultiplied source color to the destination.
+// AdditiveStraightBlend is the additive operator for pipelines whose shaders
+// output straight (non-premultiplied) alpha: the source color is scaled by
+// its own alpha before being summed, so a faint glow adds faintly.
+func AdditiveStraightBlend() map[string]any {
+	return map[string]any{
+		"color": map[string]any{
+			"srcFactor": "src-alpha",
+			"dstFactor": "one",
+			"operation": "add",
+		},
+		"alpha": map[string]any{
+			"srcFactor": "one",
+			"dstFactor": "one",
+			"operation": "add",
+		},
+	}
+}
+
 func AdditiveBlend() map[string]any {
 	return map[string]any{
 		"color": map[string]any{
@@ -48,28 +66,28 @@ func AdditiveBlend() map[string]any {
 	}
 }
 
-func SolidPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+func SolidPipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
 	return pipelineDesc(module, format, sampleCount, 24, []any{
 		map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
 		map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
-	}, AlphaBlend())
+	}, blend)
 }
 
-func TexturedPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+func TexturedPipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
 	return pipelineDesc(module, format, sampleCount, 40, []any{
 		map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
 		map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
 		map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
-	}, PremultipliedBlend())
+	}, blend)
 }
 
 // SpritePipelineDesc expands storage-buffer sprite records with vertex
 // pulling, so it intentionally has no vertex buffer layout.
-func SpritePipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+func SpritePipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
 	return map[string]any{
 		"layout":      "auto",
 		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
-		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": PremultipliedBlend()}}},
+		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": blend}}},
 		"primitive":   map[string]any{"topology": "triangle-list"},
 		"multisample": map[string]any{"count": sampleCount},
 	}
@@ -78,11 +96,11 @@ func SpritePipelineDesc(module Handle, format string, sampleCount int) map[strin
 // TextGlyphPipelineDesc expands storage-buffer glyph records without a
 // vertex buffer. Unlike sprites, glyph fragments carry straight RGB plus an
 // alpha mask, so they must retain the text pipeline's straight-alpha blend.
-func TextGlyphPipelineDesc(module Handle, format string, sampleCount int) map[string]any {
+func TextGlyphPipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
 	return map[string]any{
 		"layout":      "auto",
 		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
-		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": AlphaBlend()}}},
+		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": blend}}},
 		"primitive":   map[string]any{"topology": "triangle-list"},
 		"multisample": map[string]any{"count": sampleCount},
 	}

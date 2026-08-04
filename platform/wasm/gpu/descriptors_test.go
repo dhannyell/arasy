@@ -17,23 +17,23 @@ func TestPipelineDescriptorsMatchLiteralFixtures(t *testing.T) {
 		got  map[string]any
 		want map[string]any
 	}{
-		{"solid", gpu.SolidPipelineDesc(module, format, 4), literalPipeline(module, format, 4, 24, []any{
+		{"solid", gpu.SolidPipelineDesc(module, format, 4, gpu.AlphaBlend()), literalPipeline(module, format, 4, 24, []any{
 			map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x2"},
 			map[string]any{"shaderLocation": 1, "offset": 8, "format": "float32x4"},
 		}, literalAlphaBlend())},
-		{"textured", gpu.TexturedPipelineDesc(module, format, 4), literalPipeline(module, format, 4, 40, []any{
+		{"textured", gpu.TexturedPipelineDesc(module, format, 4, gpu.PremultipliedBlend()), literalPipeline(module, format, 4, 40, []any{
 			map[string]any{"shaderLocation": 0, "offset": 0, "format": "float32x4"},
 			map[string]any{"shaderLocation": 1, "offset": 16, "format": "float32x4"},
 			map[string]any{"shaderLocation": 2, "offset": 32, "format": "float32x2"},
 		}, literalPremultipliedBlend())},
-		{"sprites", gpu.SpritePipelineDesc(module, format, 4), map[string]any{
+		{"sprites", gpu.SpritePipelineDesc(module, format, 4, gpu.PremultipliedBlend()), map[string]any{
 			"layout":      "auto",
 			"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
 			"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": literalPremultipliedBlend()}}},
 			"primitive":   map[string]any{"topology": "triangle-list"},
 			"multisample": map[string]any{"count": 4},
 		}},
-		{"text glyphs", gpu.TextGlyphPipelineDesc(module, format, 4), map[string]any{
+		{"text glyphs", gpu.TextGlyphPipelineDesc(module, format, 4, gpu.AlphaBlend()), map[string]any{
 			"layout":      "auto",
 			"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
 			"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": literalAlphaBlend()}}},

@@ -20,6 +20,7 @@ type Frame struct {
 // DrawRunText.
 type StreamRun struct {
 	Kind        DrawRunKind
+	Blend       render.Blend
 	Texture     render.TextureID
 	AtlasKey    AtlasKey
 	Particles   render.DrawParticles
@@ -134,6 +135,7 @@ type streamSink struct {
 
 type streamRunIdentity struct {
 	kind    DrawRunKind
+	blend   render.Blend
 	texture render.TextureID
 	atlas   AtlasKey
 }
@@ -240,8 +242,8 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 // appendRun is the only place that decides whether adjacent stream content
 // can share a draw. Its narrow parameters avoid copying StreamRun's particle
 // payload for every ordinary mesh, sprite, or text command.
-func (s *streamSink) appendRun(kind DrawRunKind, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
-	identity := streamRunIdentity{kind: kind, texture: texture, atlas: atlas}
+func (s *streamSink) appendRun(kind DrawRunKind, blend render.Blend, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
+	identity := streamRunIdentity{kind: kind, blend: blend, texture: texture, atlas: atlas}
 	if s.hasLast && s.lastRun == identity {
 		s.builder.runs[len(s.builder.runs)-1].VertexCount += vertexCount
 		return
@@ -253,7 +255,7 @@ func (s *streamSink) appendRun(kind DrawRunKind, texture render.TextureID, atlas
 // path, which executes once per command in large sprite and text streams.
 func (s *streamSink) startRun(identity streamRunIdentity, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
 	s.builder.runs = append(s.builder.runs, StreamRun{
-		Kind: identity.kind, Texture: texture, AtlasKey: atlas,
+		Kind: identity.kind, Blend: identity.blend, Texture: texture, AtlasKey: atlas,
 		ByteOffset: byteOffset, VertexCount: vertexCount,
 	})
 	s.lastRun = identity
@@ -265,11 +267,11 @@ func (s *streamSink) solidBegin(clip math2d.Rect) int {
 	return len(s.builder.solid)
 }
 
-func (s *streamSink) solidEnd(start int) {
+func (s *streamSink) solidEnd(start int, blend render.Blend) {
 	s.builder.solidMesh.flush()
 	count := (len(s.builder.solid) - start) / SolidVertexStride
 	if count > 0 {
-		s.appendRun(DrawRunSolid, 0, AtlasKey{}, start, count)
+		s.appendRun(DrawRunSolid, blend, 0, AtlasKey{}, start, count)
 	}
 }
 
@@ -278,60 +280,60 @@ func (s *streamSink) texBegin(clip math2d.Rect) int {
 	return len(s.builder.tex)
 }
 
-func (s *streamSink) texEnd(texture render.TextureID, start int) {
+func (s *streamSink) texEnd(texture render.TextureID, start int, blend render.Blend) {
 	s.builder.texMesh.flush()
 	count := (len(s.builder.tex) - start) / TexVertexStride
 	if count > 0 {
-		s.appendRun(DrawRunTextured, texture, AtlasKey{}, start, count)
+		s.appendRun(DrawRunTextured, blend, texture, AtlasKey{}, start, count)
 	}
 }
 
 func (s *streamSink) VisitRect(cmd render.DrawRect) {
 	start := s.solidBegin(cmd.Clip)
 	AppendRect(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitCircle(cmd render.DrawCircle) {
 	start := s.solidBegin(cmd.Clip)
 	AppendCircle(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitEllipse(cmd render.DrawEllipse) {
 	start := s.solidBegin(cmd.Clip)
 	AppendEllipse(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitPoint(cmd render.DrawPoint) {
 	start := s.solidBegin(cmd.Clip)
 	AppendPoint(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitLine(cmd render.DrawLine) {
 	start := s.solidBegin(cmd.Clip)
 	AppendLine(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitArc(cmd render.DrawArc) {
 	start := s.solidBegin(cmd.Clip)
 	AppendArc(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
 	start := s.solidBegin(cmd.Clip)
 	AppendPolygon(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitTriangles(cmd render.DrawTriangles) {
 	start := s.solidBegin(cmd.Clip)
 	AppendTriangles(&s.builder.solidMesh, s.ctx, cmd)
-	s.solidEnd(start)
+	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
@@ -374,7 +376,7 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 	if count == 0 {
 		return
 	}
-	s.appendRun(DrawRunText, 0, atlas.Key, start, count)
+	s.appendRun(DrawRunText, cmd.BlendMode, 0, atlas.Key, start, count)
 }
 
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
@@ -383,7 +385,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 		if corners, ok := imageScreenCorners(s.ctx, cmd); ok {
 			start := s.solidBegin(cmd.Clip)
 			appendMissingTexture(&s.builder.solidMesh, s.ctx, corners, cmd.Clip)
-			s.solidEnd(start)
+			s.solidEnd(start, cmd.BlendMode)
 		}
 		return
 	}
@@ -396,7 +398,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 		// upright rectangle and nothing else.
 		start := s.texBegin(cmd.Clip)
 		AppendImage(&s.builder.texMesh, s.ctx, cmd, texW, texH)
-		s.texEnd(cmd.Texture, start)
+		s.texEnd(cmd.Texture, start, cmd.BlendMode)
 		return
 	}
 	start := len(s.builder.sprites) * SpriteStride
@@ -407,7 +409,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 	if s.builder.spriteArray {
 		runTexture = 0
 	}
-	s.appendRun(DrawRunSprites, runTexture, AtlasKey{}, start, 1)
+	s.appendRun(DrawRunSprites, cmd.BlendMode, runTexture, AtlasKey{}, start, 1)
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
@@ -419,10 +421,10 @@ func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
 	if !ok {
 		start := s.solidBegin(cmd.Clip)
 		appendMissingTexture(&s.builder.solidMesh, s.ctx, screen, cmd.Clip)
-		s.solidEnd(start)
+		s.solidEnd(start, cmd.BlendMode)
 		return
 	}
 	start := s.texBegin(cmd.Clip)
 	AppendImageQuad(&s.builder.texMesh, s.ctx, cmd, texW, texH)
-	s.texEnd(cmd.Texture, start)
+	s.texEnd(cmd.Texture, start, cmd.BlendMode)
 }
