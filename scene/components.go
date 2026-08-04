@@ -91,6 +91,9 @@ type ImageSprite struct {
 	// SortOffset behaves as BaseSprite.SortOffset, carried here for the same
 	// reason as Plane.
 	SortOffset math2d.Vec2
+
+	// ShadowFootprint define the size o shadow when sprite is z >= 0.
+	ShadowFootprint math2d.Vec2
 }
 
 // CommandSprite gives an entity's appearance as raw render commands while

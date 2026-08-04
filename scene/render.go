@@ -432,7 +432,14 @@ func (w *World) spriteFootprint(id EntityID) math2d.Vec2 {
 		}
 	}
 	if s, ok := w.imageSprites.get(id); ok {
-		return math2d.Vec2{X: s.Size.X * 0.5, Y: s.Size.Y * 0.5}
+		if s.ShadowFootprint.X > 0 && s.ShadowFootprint.Y > 0 {
+			return s.ShadowFootprint
+		}
+
+		return math2d.Vec2{
+			X: s.Size.X * 0.5,
+			Y: s.Size.Y * 0.5,
+		}
 	}
 	return math2d.Vec2{}
 }
