@@ -116,7 +116,6 @@ func renderProject(dir string, data projectTemplateData) error {
 		"game.go.tmpl":              "game.go",
 		"wasm/main.go.tmpl":         "wasm/main.go",
 		"native/main.go.tmpl":       "native/main.go",
-		"raster/main.go.tmpl":       "raster/main.go",
 		"assets/manifest.json.tmpl": "assets/manifest.json",
 		"gitignore.tmpl":            ".gitignore",
 		"README.md.tmpl":            "README.md",
