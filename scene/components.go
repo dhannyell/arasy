@@ -93,6 +93,53 @@ type ImageSprite struct {
 	SortOffset math2d.Vec2
 }
 
+// CommandSprite gives an entity's appearance as raw render commands while
+// letting it participate in the painter sort like any other sprite. It exists
+// for the shape none of the built-in sprites can draw -- an extruded building,
+// a faceted mountain -- that still has to order correctly against the units
+// walking past it. Before it, such props had to be sliced onto hand-managed
+// layers.
+//
+// The commands are authored in world coordinates, like RectSprite's geometry,
+// and are emitted exactly as written except for the layer: Layer here
+// overrides each command's own, so the whole group sorts and draws as one
+// body. The entity's Transform.Position is the sorting point (plus
+// SortOffset), which for a standing prop should be where it meets the ground.
+//
+// Content is presentation-only: it never enters Checksum, and a moving entity
+// does not move its commands -- attach static props to static entities, and
+// give moving decoration an Attachment instead.
+type CommandSprite struct {
+	Layer      int
+	SortOffset math2d.Vec2
+	Commands   []render.Command
+}
+
+// Attachment anchors this entity's sprite to another entity: it draws at the
+// parent's position, rides the parent's height, and sorts at the parent's
+// depth. It is how a composite object -- a tree with canopies above its trunk,
+// a machine with a highlight riding on its body -- stays one thing in the
+// painter order while being several sprites.
+//
+// The attached sprite's geometry is authored relative to the anchor point: a
+// RectSprite's Rect is an offset around it rather than absolute world
+// coordinates, and a CircleSprite draws centred on it. The anchor is the
+// parent's (interpolated) position, moved Offset along the ground and
+// HeightOffset up the projection's lift axis on top of the parent's own
+// height. An attached entity needs no Transform or Height of its own and
+// casts no shadow -- the parent's covers the composite.
+type Attachment struct {
+	Parent EntityID
+
+	// Offset moves the anchor along the ground plane, in world units.
+	Offset math2d.Vec2
+
+	// HeightOffset moves the anchor up the projection's lift axis, in the
+	// same units as Height.Z. Under a plain 2D camera there is no lift and
+	// the offset stays on the ground; use Offset there instead.
+	HeightOffset float64
+}
+
 // SpriteTransform is a render-only per-entity affine applied to the
 // entity's body draw commands (squash & stretch, lean). It is decorative:
 // excluded from Checksum, cloned for presentation continuity only, and

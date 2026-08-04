@@ -101,7 +101,11 @@ func populateAll(t *testing.T, w *World, id EntityID, seed float64) map[string]a
 // caches excluded from Checksum — mirroring the store exclusion in
 // TestChecksumCoversAllComponentStores — so they must not count against
 // ChecksumComponentStores.
-var renderOnlySetters = map[string]bool{"SetSpriteTransform": true}
+var renderOnlySetters = map[string]bool{
+	"SetSpriteTransform": true,
+	"SetCommandSprite":   true,
+	"SetAttachment":      true,
+}
 
 func TestComponentSetterConventionCoversAllStores(t *testing.T) {
 	got := 0

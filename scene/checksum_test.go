@@ -363,6 +363,11 @@ func TestChecksumCoversAllComponentStores(t *testing.T) {
 			if f.Name == "renderTransforms" || f.Name == "renderHeights" || f.Name == "spriteTransforms" {
 				continue
 			}
+			// Presentation-only like spriteTransforms: raw command content and
+			// attachment anchoring never enter simulation state.
+			if f.Name == "commandSprites" || f.Name == "attachments" {
+				continue
+			}
 			count++
 		}
 	}

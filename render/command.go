@@ -245,6 +245,57 @@ type DrawParticles struct {
 	Seed uint64
 }
 
+// WithLayer returns the command with its layer replaced, whatever concrete
+// type it is. It exists for code that groups commands authored elsewhere onto
+// a layer of its own -- scene.CommandSprite being the canonical case.
+func WithLayer(c Command, layer int) Command {
+	switch cmd := c.(type) {
+	case DrawRect:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawCircle:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawEllipse:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawPoint:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawLine:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawText:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawArc:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawPolygon:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawTriangles:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawImage:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawImageQuad:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawParticles:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawSpriteBatch:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawTextBatch:
+		cmd.LayerValue = layer
+		return cmd
+	}
+	return c
+}
+
 func (DrawRect) isRenderCommand()        {}
 func (DrawCircle) isRenderCommand()      {}
 func (DrawEllipse) isRenderCommand()     {}

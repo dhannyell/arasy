@@ -28,7 +28,7 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 // the extended slice, letting callers reuse their command buffer across
 // frames. Commands remain ordered by entity ID.
 func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render.Command {
-	totalSprites := w.circleSprites.len() + w.rectSprites.len() + w.imageSprites.len()
+	totalSprites := w.circleSprites.len() + w.rectSprites.len() + w.imageSprites.len() + w.commandSprites.len()
 	sorted := w.sortSprites(totalSprites)
 
 	commands := dst
@@ -56,13 +56,38 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 	for _, entry := range sorted {
 		id := entry.id
-		// The sort already established that the entity has a Transform, and
-		// dropped the sprites that do not.
-		transform, _ := w.transforms.get(id)
+
+		// A command sprite is emitted as authored: its commands already carry
+		// their own geometry, and its place in the painter order -- the whole
+		// reason it exists -- was settled by the sort above. Only the layer is
+		// rewritten, so the group draws as one body on the sprite's layer.
+		if cs, hasCommands := w.commandSprites.get(id); hasCommands {
+			for _, c := range cs.Commands {
+				commands = append(commands, render.WithLayer(c, cs.Layer))
+			}
+			continue
+		}
+
+		// An attached sprite takes everything positional from its parent: the
+		// sort already keyed it at the parent's depth, and here it borrows the
+		// parent's interpolated transform so it can never trail behind the
+		// body it is part of.
+		att, isAttached := w.attachments.get(id)
+		anchorID := id
+		if isAttached {
+			anchorID = att.Parent
+		}
+
+		transform, hasTransform := w.transforms.get(anchorID)
+		if !hasTransform {
+			// The sort established the anchor's Transform existed; an attached
+			// sprite whose parent despawned mid-frame simply vanishes with it.
+			continue
+		}
 
 		interpolated := transform
 		if useAlpha > 0 {
-			if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
+			if prev, hasPrev := w.renderTransforms.get(anchorID); hasPrev {
 				interpolated.Position = prev.Position.Lerp(transform.Position, useAlpha)
 				interpolated.Rotation = math2d.Lerp(prev.Rotation, transform.Rotation, useAlpha)
 				interpolated.Scale = prev.Scale.Lerp(transform.Scale, useAlpha)
@@ -72,7 +97,32 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		// Height projection: lift + scale + shadow (render-only).
 		pos := interpolated.Position
 		scl := interpolated.Scale
-		if hasProjection {
+		if isAttached {
+			pos = pos.Add(att.Offset)
+
+			// The anchor rides the parent's height plus its own offset up the
+			// lift axis. No shadow: the parent's already marks the ground for
+			// the whole composite.
+			if hasProjection {
+				z := att.HeightOffset
+				if h, hasH := w.heights.get(att.Parent); hasH {
+					parentZ := h.Z
+					if useAlpha > 0 {
+						if prevH, hasPrevH := w.renderHeights.get(att.Parent); hasPrevH {
+							parentZ = math2d.Lerp(prevH.Z, h.Z, useAlpha)
+						}
+					}
+					z += parentZ
+				}
+				if z > 0 {
+					proj := w.projection.Project(pos, math2d.Vec2{}, z)
+					pos = proj.BodyPosition
+					if proj.BodyScale > 0 {
+						scl = scl.Mul(proj.BodyScale)
+					}
+				}
+			}
+		} else if hasProjection {
 			if h, hasH := w.heights.get(id); hasH {
 				z := h.Z
 				if useAlpha > 0 {
@@ -116,6 +166,11 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		// ground and its body on the ground too, and the plane correction
 		// below pivots About a point the sprite does not contain.
 		lift := pos.Sub(interpolated.Position)
+		if isAttached {
+			// Attached geometry is authored relative to the anchor, so the
+			// anchor itself is the shift that places it in the world.
+			lift = pos
+		}
 
 		// Per-entity decorative affine (squash & stretch, lean), deforming
 		// about the final — possibly lifted — body center. Render-only.
@@ -230,18 +285,28 @@ func (w *World) sortSprites(totalSprites int) []sortEntry {
 	// question worth asking per sprite.
 	axis := w.depthAxis()
 
-	for _, source := range [][]EntityID{w.circleSprites.ids, w.rectSprites.ids, w.imageSprites.ids} {
+	for _, source := range [][]EntityID{w.circleSprites.ids, w.rectSprites.ids, w.imageSprites.ids, w.commandSprites.ids} {
 		for _, id := range source {
+			// An attached sprite has no place of its own: it sorts exactly at
+			// its parent's origin, which is what keeps a composite object one
+			// thing in the painter order. The EntityID tiebreak below then
+			// draws attachments after the body they decorate, because they
+			// are spawned after it.
+			origin := id
+			if att, ok := w.attachments.get(id); ok {
+				origin = att.Parent
+			}
+
 			// A sprite whose entity has no Transform is nowhere and draws
 			// nothing. Left in, it would have no depth to compare against and
 			// would drag the sprites around it out of order, because a
 			// comparator that answers "equal" to everything is not an ordering.
-			transform, ok := w.transforms.get(id)
+			transform, ok := w.transforms.get(origin)
 			if !ok {
 				continue
 			}
 			sorted = append(sorted, sortEntry{
-				key:   w.spriteSortOrigin(id, transform.Position).Dot(axis),
+				key:   w.spriteSortOrigin(origin, transform.Position).Dot(axis),
 				layer: w.spriteLayer(id),
 				id:    id,
 			})
@@ -291,6 +356,11 @@ func (w *World) spriteSortOrigin(id EntityID, position math2d.Vec2) math2d.Vec2 
 	if s, ok := w.imageSprites.get(id); ok {
 		return math2d.Vec2{X: position.X, Y: position.Y + s.Size.Y*0.5}.Add(s.SortOffset)
 	}
+	if s, ok := w.commandSprites.get(id); ok {
+		// Raw commands have no footprint the engine can read, so the entity's
+		// position is the base -- put it where the prop meets the ground.
+		return position.Add(s.SortOffset)
+	}
 
 	return position
 }
@@ -323,6 +393,9 @@ func (w *World) spriteLayer(id EntityID) int {
 		return s.Layer
 	}
 	if s, ok := w.imageSprites.get(id); ok {
+		return s.Layer
+	}
+	if s, ok := w.commandSprites.get(id); ok {
 		return s.Layer
 	}
 	return 0
