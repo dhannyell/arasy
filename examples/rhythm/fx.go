@@ -197,7 +197,7 @@ func (f *fireSim) step() {
 	f.dirty = true
 	for y := 1; y < fireH; y++ {
 		row := y * fireW
-		for x := 0; x < fireW; x++ {
+		for x := range fireW {
 			left, right := x-1, x+1
 			if left < 0 {
 				left = 0
@@ -238,7 +238,7 @@ func (f *fireSim) step() {
 		f.source[x] = uint8(v)
 	}
 	bottom := (fireH - 1) * fireW
-	for x := 0; x < fireW; x++ {
+	for x := range fireW {
 		left, right := x-1, x+1
 		if left < 0 {
 			left = 0

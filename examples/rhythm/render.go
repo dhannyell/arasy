@@ -45,7 +45,7 @@ func drawBackground(ctx *runtime.RenderContext) []render.Command {
 // steady 97.97 BPM start to finish. The chart's opening tap at 40ms lands on
 // a downbeat, which anchors the bar grid to the notes.
 const (
-	beatMS      = 612.4
+	beatMS      = 610.0
 	firstBeatMS = 40.0
 	beatsPerBar = 4
 )
@@ -83,8 +83,8 @@ func drawBeatBars(nowMS float64) []render.Command {
 // These trace its position in world units.
 const (
 	pulseBarY     = 67.5
-	pulseBarLeft  = 29.0
-	pulseBarRight = 71.0
+	pulseBarLeft  = 30.3
+	pulseBarRight = 69.59
 )
 
 // drawPulseBar relights the baked tube as live light: an additive flash that
@@ -97,7 +97,10 @@ func drawPulseBar(nowMS float64) []render.Command {
 		phase++
 	}
 	heat := (1 - phase) * (1 - phase)
-	bar := render.BaseCommand{LayerValue: 4, BlendMode: render.BlendAdditive}
+	bar := render.BaseCommand{
+		LayerValue: 4,
+		BlendMode:  render.BlendAdditive,
+	}
 	from := math2d.Vec2{X: pulseBarLeft, Y: pulseBarY}
 	to := math2d.Vec2{X: pulseBarRight, Y: pulseBarY}
 	// A stack of widening, fading strokes approximates a radial falloff;
@@ -107,11 +110,11 @@ func drawPulseBar(nowMS float64) []render.Command {
 		width float64
 		color render.Color
 	}{
-		{5.6, render.RGBA(1, 0.16, 0.06, 0.10 * heat)},
-		{4.2, render.RGBA(1, 0.22, 0.08, 0.14 * heat)},
-		{3.0, render.RGBA(1, 0.35, 0.12, 0.20 * heat)},
-		{2.0, render.RGBA(1, 0.55, 0.22, 0.30 * heat)},
-		{1.2, render.RGBA(1, 0.85, 0.60, 0.60 * heat)},
+		{2.1, render.RGBA(1, 0.16, 0.06, 0.10*heat)},
+		{1.5, render.RGBA(1, 0.22, 0.08, 0.14*heat)},
+		{1.0, render.RGBA(1, 0.35, 0.12, 0.20*heat)},
+		{0.5, render.RGBA(1, 0.55, 0.22, 0.30*heat)},
+		{0.2, render.RGBA(1, 0.85, 0.60, 0.60*heat)},
 	} {
 		cmds = append(cmds, render.DrawLine{
 			BaseCommand: bar, From: from, To: to, Width: layer.width, Color: layer.color,

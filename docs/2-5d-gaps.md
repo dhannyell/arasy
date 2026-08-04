@@ -85,8 +85,46 @@ problema (depth buffer) e pode continuar fora.
   então o material existe — falta a câmera saber usá-lo.
 - **Billboard num raycaster** está razoavelmente fora de escopo, e tudo bem.
 
+### 8. A sombra é um blob global, e só existe no ar
+
+A sombra automática funciona para qualquer sprite — inclusive `ImageSprite`
+(o footprint cobre círculo, rect e imagem) — mas tem três limites:
+
+- **Só é emitida com `Height.Z > 0`**: entidade parada no chão não tem sombra
+  de contato nenhuma, e é ela que "cola" um personagem no mundo. Hoje cada
+  cena pinta blobs à mão como decalque.
+- **Zero customização por entidade**: forma (sempre elipse), cor, alpha e
+  offset derivam todos da `Projection` global. Não dá para declarar "esta
+  entidade tem sombra maior", "nenhuma" ou "mais escura".
+- **Silhueta projetada não existe**: a cópia cisalhada e escurecida do próprio
+  sprite no chão (o padrão de jogos de arte texturizada com luz direcional) é
+  tecnicamente um `DrawImage` com transform de skew derivado do `LiftVector`
+  + tint preto — o material existe, o caminho não.
+
+O blob é o padrão certo do gênero para corpos compactos; o gap é a falta de
+opt-out e de grau.
+
+### 9. Não há canal de luz sobre sprites
+
+Nenhum vocabulário de iluminação de corpo: a `ProjectionLight` dirige apenas
+a sombra. O único canal de cor por sprite é o `Tint`/`Color` autorado — que é
+estado de simulação (entra no checksum, por decisão: jogos codificam estado
+em cor de sprite, e os tweens de cor são sim). Consequência: um jogo que
+module o tint por proximidade de uma luz a cada frame transforma estética em
+estado de sim e contamina replay/checksum. O que falta é um canal
+**render-only** de modulação de cor (o análogo exato do `SpriteTransform`,
+que já é o afim render-only fora do checksum) alimentado por luzes
+declaradas (ambiente + pontuais com posição/raio/cor). Normal maps e oclusão
+de luz por parede são um degrau muito acima (shader novo nos três backends) e
+podem continuar fora.
+
 ## Leitura recomendada de prioridade
 
 O item 1 é o único que *bloqueia* uma classe de jogo; 2 e 3 são os que todo
 segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
-6 e 7 são polimento de gênero.
+6 e 7 são polimento de gênero. 8 e 9 são o que separa "sprite colocado na
+cena" de "sprite pertencente à cena": sem sombra de contato e sem luz, arte
+texturizada fica chapada ao lado dos volumes vetoriais extrudados — a sombra
+de contato é a fração mais barata com o maior retorno visual. O item 2 fica
+muito mais barato depois do item 1 (um tilemap de atlas é um batch retido
+sob a `View`).
