@@ -25,7 +25,7 @@ const (
 // stroke is emitted as a ring of quads between the inner and outer radii.
 // When cmd.Clip is non-zero, only the vertices emitted by this call are clipped.
 func AppendCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
-	if !cmd.Transform.IsIdentity() {
+	if c.perVertex(cmd.Transform) {
 		appendTransformedCircle(m, c, cmd)
 		return
 	}
@@ -87,7 +87,11 @@ func appendTransformedCircle(m *Mesh, c ctx, cmd render.DrawCircle) {
 	}
 
 	start := len(m.Vertices)
-	n := circleSegments(radius)
+
+	// The view is part of how big this ends up: scaling it in only after the
+	// segment count was chosen draws a large circle as a dodecagon. MeanScale
+	// is 1 without a view, so nothing else moves.
+	n := circleSegments(radius * c.cam.View.MeanScale())
 
 	center := c.cam.WorldToScreen(cmd.Transform.Apply(cmd.Center))
 	boundary := make([]math2d.Vec2, n)

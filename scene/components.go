@@ -32,14 +32,32 @@ type BaseSprite struct {
 	Layer int
 	Color render.Color
 
-	// Plane selects how the camera's DepthScale treats this sprite. The
-	// default, PlaneUpright, draws it facing the camera: a tilted camera moves
-	// it but never squashes it. PlaneGround lets the same tilt foreshorten it,
-	// because it lies in the plane being foreshortened.
+	// Plane selects how the camera's projection treats this sprite. The
+	// default, PlaneUpright, draws it facing the camera: the projection moves
+	// it but never distorts it. PlaneGround lets the projection have it,
+	// because it lies in the plane being projected.
 	//
-	// With an untilted camera the two are identical and this field costs
+	// Both DepthScale and View count as projection here. Under a tilt the
+	// difference is a squash; under an isometric View it is the difference
+	// between a net standing across the court and one lying on it like a rug.
+	//
+	// With a plain 2D camera the two are identical and this field costs
 	// nothing to ignore.
 	Plane SpritePlane
+
+	// SortOffset moves this sprite's sorting point away from its base, in
+	// world units.
+	//
+	// A sprite sorts by its base, not its centre, because the centre gets the
+	// common case wrong: a tall tree and a short bush planted on the same line
+	// have centres at different depths while their bases sit together, so
+	// sorting by centre puts the tree behind the bush standing next to it.
+	//
+	// The zero value is that base. Reach for this field when a sprite's art
+	// does not stand on the bottom edge of its own footprint, or when a piece
+	// of a sliced-up object needs to claim the depth of the slice rather than
+	// of the whole.
+	SortOffset math2d.Vec2
 }
 
 type CircleSprite struct {
@@ -69,6 +87,10 @@ type ImageSprite struct {
 	// Plane behaves as BaseSprite.Plane. ImageSprite carries its own copy
 	// because it does not embed BaseSprite: it has no Color to share.
 	Plane SpritePlane
+
+	// SortOffset behaves as BaseSprite.SortOffset, carried here for the same
+	// reason as Plane.
+	SortOffset math2d.Vec2
 }
 
 // SpriteTransform is a render-only per-entity affine applied to the

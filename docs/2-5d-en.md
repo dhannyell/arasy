@@ -1,4 +1,4 @@
-# 2.5D: Tilt, Planes And Height
+# 2.5D: Projection, Planes, Height And Depth Order
 
 **The default is 2D, and everything on this page is optional.** A `Camera{}`
 looks straight down, a `BaseSprite{}` behaves exactly as it always has, and a
@@ -40,6 +40,54 @@ before this field existed keeps meaning exactly what it meant.
 The foreshortening happens around the centre of the visible world, so changing
 it never drags the scene out of frame.
 
+## The general projection: `Camera.View`
+
+`DepthScale` covers the tilt because a tilt is common enough to deserve a
+number. It does not cover isometric: squashing the Y axis leaves a rectangle a
+rectangle, and isometric rotates **both** world axes onto the screen, which
+turns a square into a diamond. That is an affine, and `Camera.View` is where it
+lives.
+
+```go
+// screenX = (x - y) * 20    screenY = (x + y) * 10
+isoView := math2d.Affine{A: 20, C: -20, B: 10, D: 10}
+
+cam := render.Camera{
+    World:    view,
+    Viewport: view,
+    Aspect:   render.AspectFit,
+    View:     isoView,
+}
+```
+
+The zero value is identity, so a game that never mentions the field does not
+move a pixel.
+
+**It sits on the camera and not on each sprite, and that is the whole
+decision.** A projection is a fact about the viewer. Put it on the sprites and
+every consumer of the camera keeps working in the unprojected space and quietly
+disagrees with the picture: debug overlays land in the wrong place,
+`ScreenToWorld` answers in a space nothing else uses, and every entity has to
+be re-placed whenever it moves. Declared on the camera, one line reaches all of
+it — and because an affine is invertible, `ScreenToWorld` undoes it, so a click
+on a grid tile answers with that tile.
+
+The world stays a square grid. That is not a style detail: it is the space the
+physics can reason about. A court is an axis-aligned rectangle `Config.Bounds`
+can describe; projected, the same court is a diamond it could not. Only the
+last step before drawing turns squares into diamonds.
+
+`View` and `DepthScale` compose — `View` first, then the tilt — but that is
+rarely what anyone wants: an isometric view already encodes its own tilt.
+
+**Backend coverage:** every backend draws a `View` for shapes, images and
+text, because each of those paths walks its geometry through `WorldToScreen`
+vertex by vertex. What does not follow it are the paths that hand the camera to
+the GPU as a scale and an offset, which cannot carry a shear:
+`DrawSpriteBatch`, `DrawTextBatch` and `DrawParticles`. Those three keep
+drawing as though `View` were identity, which puts them in the wrong place
+rather than merely the wrong shape.
+
 ## What foreshortens, and what does not
 
 A tilted camera does two different things, and telling them apart is the whole
@@ -69,6 +117,13 @@ world.SetCircleSprite(id, scene.CircleSprite{
 `PlaneUpright` is the zero value, so no existing sprite changes and a standing
 character is the default. `PlaneGround` is for decals, puddles, shadows,
 painted markings — anything that lives on the floor.
+
+**The plane applies to `View` too, and that is where it stops being a
+detail.** Under a tilt the difference between the two is a squash; under an
+isometric view it is the difference between a net standing across the court and
+one lying on it like a rug. Working out what shape an upright sprite has to be
+given so the camera's projection lands it facing the viewer is the engine's
+job, not the game's: an isometric game writes no shear correction of its own.
 
 Both sprites move with the foreshortened ground either way: an upright sprite
 that ignored the tilt entirely would drift away from the ground it stands on.
@@ -108,9 +163,101 @@ The lift comes out of the tilt as `tan(acos(DepthScale))`. **With
 camera looking straight down has nowhere on screen to put height. A game that
 wants visible height wants a tilted camera.
 
+Under a skewing `View` the view takes over: it already encodes a tilt of its
+own, and the rule above would read its neutral `DepthScale` as "no height". So
+`GroundProjection` derives two things from it:
+
+- **The direction.** Height has to go up *the screen*. On an isometric grid the
+  world direction that does that is neither of the world's axes but the
+  diagonal — getting it wrong makes a rising ball drift sideways along a grid
+  line. That is `Projection.LiftAxis`.
+- **The distance.** One unit of height is worth the view's mean scale in
+  pixels, which is the screen length it gives a unit of ground. That is the
+  convention that makes a unit cube's three edges come out the same length,
+  which is the definition of an isometric projection.
+
 `Projection`'s fields stay public, so a game with its own art direction can
 override one of them — `ShadowAlpha`, say — without giving up the derivation
 for the rest.
+
+## Depth order: who is drawn behind whom
+
+Sprites are painted back to front. Within a layer, each sprite gets one number
+— its **sorting point** projected onto the world's **sort axis** — and lower
+draws first, which is to say further away.
+
+### The sorting point is the sprite's base
+
+A sprite sorts by its base, not its centre. That is the difference between a
+scene that reads correctly and the single most common y-sort bug: a tall tree
+and a short bush planted on the same ground line have centres at very
+different depths and bases at the same one, so sorting by centre draws the
+tree behind the bush standing next to it.
+
+Each sprite type finds its own base — the bottom of a circle's radius, of a
+rect, of an image's size — so mixing types does not reintroduce the problem.
+`SortOffset` moves the point from there:
+
+```go
+world.SetImageSprite(id, scene.ImageSprite{
+    Size:       math2d.Vec2{X: 32, Y: 64},
+    SortOffset: math2d.Vec2{Y: -8}, // art whose feet sit above the bottom edge
+})
+```
+
+`Transform.Scale` deliberately does not enter the base: a sprite that pops or
+breathes would otherwise reorder itself in the middle of its own animation.
+
+### The axis is something the world declares
+
+```go
+world.SetSortAxis(math2d.Vec2{X: 0, Y: 1}) // plain y-sort, and the default
+```
+
+The zero value is `{0, 1}`: further down the screen draws in front, which is
+right for a camera looking straight down and is what the engine did before the
+axis was something you could say out loud. A tilted camera wants depth weighted
+against height; a game that stacks along X wants `{X: 1}`. The vector is a
+direction, so its length is ignored and negating it reverses depth.
+
+### Height stays out of it
+
+An entity in the air still sorts by where it stands on the ground. That is
+where it is in the world, it is where its shadow is, and it is what lets a ball
+pass behind a post while flying past it. Sorting by the lifted position would
+snap the ball in front of the post halfway through the arc.
+
+A game that wants the opposite composes it by hand with `Layer`.
+
+### Ties, and why they are ordinary
+
+The key is a `float64`, so two sprites landing on the same value is common
+rather than rare — every sprite standing on the same ground line ties. `EntityID`
+breaks the tie, which is what makes a frame reproducible: the same scene always
+paints the same way, on any host, in any replay.
+
+`SortAxis` and `SortOffset` are presentation. Neither enters `Checksum()`,
+snapshots or replay.
+
+### What sorting by a single number cannot do
+
+Reducing a sprite to one scalar has three structural limits. They are written
+here so you meet them on this page rather than in a shipped game:
+
+1. **Interpenetration.** Ordering is per command and therefore all-or-nothing:
+   a sprite is entirely in front or entirely behind. A character standing *in*
+   a doorway, or half behind a fence, has no correct order, because the right
+   answer differs per pixel. Only a per-pixel depth buffer resolves this.
+2. **Long objects.** A wall ten units deep gets one key, but things at
+   different depths along it should order differently against it.
+3. **Cycles.** A over B, B over C, C over A. No total order satisfies that.
+
+For the common case — compact sprites (characters, balls, trees, crates) on a
+floor — sorting by the base is correct and complete. For the other two, the
+standard fix is authoring rather than engine: **slice the long object into
+pieces that sort separately**, which is what every 2D game does with walls,
+bridges and doorways. `SortOffset` is what makes that cheap, because each piece
+can claim its own depth without its sprite having to move.
 
 ## What never foreshortens
 
@@ -132,10 +279,10 @@ Hit-testing keeps working because `Camera.ScreenToWorld` is the exact inverse
 of `WorldToScreen` under any tilt. This matters beyond clicks: recordings
 store pointer coordinates, so an asymmetric pair would break replay.
 
-## The three choices are independent
+## The choices are independent
 
-Tilt, sprite plane and height do not imply one another, and no combination is
-invalid:
+Projection, sprite plane and height do not imply one another, and no
+combination is invalid:
 
 - Blob shadows with no tilt at all: set the `Projection` fields yourself and
   leave `DepthScale` alone.
@@ -148,6 +295,16 @@ invalid:
 `examples/groundplane` is the smallest complete scene: a court painted on the
 ground, two upright posts, and a ball with height bouncing around. All of the
 2.5D in it is `DepthScale` in `Setup` and `GroundProjection` in `Init`.
+
+Under a `View` the same scene keeps its square world grid and puts the whole
+projection in one line in `Setup` — even movement, because keys read on the
+screen invert back onto the grid through that same `View`.
+
+Watch out for the isometric-art trap: a sprite is drawn centred on its
+position, so standing one on its own feet means moving it up *the screen*, not
+along the world's `-Y`. Under a `View` those are different directions, and
+taking the world one slides every prop up and to the right of the ground it is
+meant to be standing on.
 
 `examples/dodgeball` is the same foundation used by a full game.
 
@@ -165,3 +322,14 @@ ground, two upright posts, and a ball with height bouncing around. All of the
   `ShadowSkewPerZ` yourself.
 - **Sprites cannot interpenetrate.** A sprite is drawn entirely in front of or
   entirely behind another. Only a per-pixel depth buffer would change that.
+- **There is no vertical face.** A rectangle leaves the camera as a diamond
+  (ground) or as an upright billboard, never as the parallelogram that would be
+  the side of a block. A step with visible thickness is drawn by painting a
+  dark copy offset underneath the top — a painter's trick, not a projection.
+- **Retained batches and particles ignore `View`.** `DrawSpriteBatch`,
+  `DrawTextBatch` and `DrawParticles` receive the camera as a scale and an
+  offset, and a shear does not fit in those two numbers. Fixing it means a
+  larger uniform and a shader change in both GPU backends.
+- **A rounded rect loses its corners on Canvas2D** under a skewing camera:
+  `roundRect` cannot draw a parallelogram, and the per-vertex path traces only
+  the four corners.

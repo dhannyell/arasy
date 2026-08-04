@@ -94,7 +94,10 @@ func transformedRoundedRectBoundary(rect math2d.Rect, radius float64, segments i
 func (r *Renderer) drawTransformedCircle(img *image.RGBA, command render.DrawCircle) {
 	center := command.Center
 	radius := command.Radius
-	n := circleSegmentCount(r.Camera.WorldScalarToScreen(radius))
+	// The view is part of how big this ends up: scaling it in only after the
+	// segment count was chosen draws a large circle as a dodecagon. MeanScale
+	// is 1 without a view, so nothing else moves.
+	n := circleSegmentCount(r.Camera.WorldScalarToScreen(radius) * r.Camera.View.MeanScale())
 	points := make([]math2d.Vec2, n)
 	for i := 0; i < n; i++ {
 		angle := 2 * math.Pi * float64(i) / float64(n)

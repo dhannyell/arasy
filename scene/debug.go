@@ -266,7 +266,7 @@ func (w *World) debugVelocityCommands(color render.Color, width, scale float64, 
 			continue
 		}
 
-		from := transform.Position
+		from := transform.Position.Add(w.debugOffset(id, transform.Position))
 		to := from.Add(velocity.Linear.Mul(scale))
 
 		commands = append(commands, render.DrawLine{
@@ -296,7 +296,9 @@ func (w *World) debugEntityIDCommands(color render.Color, size float64, offset m
 		transform := w.transforms.dense[i]
 
 		commands = append(commands, render.DrawText{
-			Position: transform.Position.Add(offset),
+			Position: transform.Position.
+				Add(w.debugOffset(id, transform.Position)).
+				Add(offset),
 			Text:     strconv.FormatUint(uint64(id), 10),
 			Color:    color,
 			Size:     size,

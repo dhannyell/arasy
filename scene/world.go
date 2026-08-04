@@ -3,6 +3,7 @@ package scene
 import (
 	"slices"
 
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
 
@@ -68,9 +69,13 @@ type World struct {
 	// with Height. Render-only; never in Checksum.
 	projection render.Projection
 
-	// renderIDScratch is reusable render working memory. It is transient:
-	// never cloned or checksummed.
-	renderIDScratch []EntityID
+	// sortAxis is the direction depth grows in for painter order. Render-only;
+	// never in Checksum. The zero value means plain Y, see SetSortAxis.
+	sortAxis math2d.Vec2
+
+	// renderSortScratch is reusable render working memory: the sprites of one
+	// frame in painter order. It is transient: never cloned or checksummed.
+	renderSortScratch []sortEntry
 
 	// despawnMarked is reusable batch-removal working memory. It is transient:
 	// never cloned or checksummed.
@@ -126,9 +131,10 @@ func (w *World) Clone() *World {
 		renderTransforms: w.renderTransforms.clone(),
 		renderHeights:    w.renderHeights.clone(),
 		projection:       w.projection,
+		sortAxis:         w.sortAxis,
 		// contacts are transient per-tick — not cloned
 		// collisionScratch is transient broad-phase working memory — not cloned
-		// renderIDScratch is transient render working memory — not cloned
+		// renderSortScratch is transient render working memory — not cloned
 		// debugGrid is a derived overlay cache — not cloned
 	}
 }
@@ -654,6 +660,39 @@ func (w *World) Projection() render.Projection {
 // The projection is render-only and never enters Checksum.
 func (w *World) SetProjection(p render.Projection) {
 	w.projection = p
+}
+
+// SortAxis returns the direction depth grows in for painter order.
+func (w *World) SortAxis() math2d.Vec2 {
+	return w.sortAxis
+}
+
+// SetSortAxis declares the direction depth grows in. A sprite's place in the
+// painter order is its sorting point projected onto this axis, so the axis is
+// what decides which of two sprites counts as being behind the other.
+//
+// The zero value, and {X: 0, Y: 1}, are plain Y sorting: further down the
+// screen draws in front. That is the right answer for a camera looking
+// straight down, and it is what the engine did before the axis was something
+// you could say out loud.
+//
+// A camera tilted away from straight down wants depth weighted against
+// height; a game that stacks along X wants {X: 1}. The vector is a direction,
+// so its length is ignored.
+//
+// The axis is presentation: it never enters Checksum, snapshots or replays.
+func (w *World) SetSortAxis(axis math2d.Vec2) {
+	w.sortAxis = axis
+}
+
+// depthAxis resolves the zero value once, so the sort never has to ask whether
+// a game bothered to declare an axis.
+func (w *World) depthAxis() math2d.Vec2 {
+	if w.sortAxis.X == 0 && w.sortAxis.Y == 0 {
+		return math2d.Vec2{Y: 1}
+	}
+
+	return w.sortAxis
 }
 
 func (w *World) markEntityCountDirty() {

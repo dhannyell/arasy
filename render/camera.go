@@ -54,6 +54,45 @@ type Camera struct {
 	// are drawn, not how big the world is: collision, physics and every other
 	// world-space measurement stay in unforeshortened units.
 	DepthScale float64
+
+	// View is a world-to-view affine applied before everything else, for a
+	// game whose world is not laid out the way it is drawn. An isometric grid
+	// is the case it exists for: the world is a square grid the simulation can
+	// reason about, and the screen shows it as diamonds. The zero value is
+	// identity, so a game that never asks for one is unaffected.
+	//
+	// It belongs on the camera and not on each sprite because a projection is
+	// a fact about the viewer. Put it on the sprites and every consumer of the
+	// camera keeps working in the unprojected space and quietly disagrees with
+	// the picture: debug overlays land in the wrong place, ScreenToWorld
+	// answers in a space nothing else uses, and every entity has to be
+	// re-placed whenever it moves. Declared here, one line reaches all of it,
+	// and -- because an affine is invertible -- ScreenToWorld inverts it, so
+	// hit-testing and recorded pointer coordinates stay honest.
+	//
+	// DepthScale is the special case of the same idea for the one projection
+	// common enough to deserve a scalar. The two compose: View is applied
+	// first, then the tilt. Setting both means an isometric grid seen from a
+	// camera that is also tilted, which is rarely what anyone wants -- an
+	// isometric view already encodes its own tilt.
+	//
+	// Backend coverage: every backend draws it for shapes, images and text,
+	// because each of those walks its geometry through WorldToScreen. What
+	// does not follow it are the paths that hand the camera to the GPU as a
+	// scale and an offset, which cannot carry a shear: DrawSpriteBatch,
+	// DrawTextBatch and DrawParticles. Those keep drawing as though View were
+	// identity, which puts them in the wrong place rather than merely the
+	// wrong shape. (DrawParticles already ignores BaseCommand.Transform for
+	// the same reason.)
+	View math2d.Affine
+}
+
+// Skews reports whether View does anything, so a backend can route shape
+// geometry through its per-vertex path instead of rebuilding a shape from a
+// centre and a radius. A sheared square is a parallelogram and no pair of
+// corners describes it.
+func (c Camera) Skews() bool {
+	return !c.View.IsIdentity()
 }
 
 // minDepthScale keeps a degenerate DepthScale from collapsing the view to a
@@ -94,6 +133,10 @@ func (c Camera) WorldToScreen(point math2d.Vec2) math2d.Vec2 {
 		return viewport.Min
 	}
 
+	// The view affine comes first, so World and Viewport keep framing what
+	// ends up on screen rather than what the game happens to store.
+	point = c.View.Apply(point)
+
 	x := (point.X - world.Min.X) / worldSize.X
 	y := (point.Y - world.Min.Y) / worldSize.Y
 
@@ -117,10 +160,19 @@ func (c Camera) ScreenToWorld(point math2d.Vec2) math2d.Vec2 {
 	x := (point.X - viewport.Min.X) / viewportSize.X
 	y := (point.Y - viewport.Min.Y) / viewportSize.Y
 
-	return math2d.Vec2{
+	inView := math2d.Vec2{
 		X: world.Min.X + x*worldSize.X,
 		Y: world.Min.Y + y*worldSize.Y,
 	}
+
+	// Undo the view affine last, so the pair stays an exact round trip. A
+	// singular view has no inverse; the point is already as far back as it
+	// goes.
+	if inverse, ok := c.View.Inverse(); ok {
+		return inverse.Apply(inView)
+	}
+
+	return inView
 }
 
 // WorldScalarToScreen converts a scalar world measurement to viewport units.

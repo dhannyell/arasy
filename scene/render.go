@@ -29,35 +29,7 @@ func (w *World) RenderCommandsInterpolated(alpha float64) []render.Command {
 // frames. Commands remain ordered by entity ID.
 func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render.Command {
 	totalSprites := w.circleSprites.len() + w.rectSprites.len() + w.imageSprites.len()
-	ids := w.renderIDScratch[:0]
-	if cap(ids) < totalSprites {
-		ids = make([]EntityID, 0, totalSprites)
-	}
-
-	ids = append(ids, w.circleSprites.ids...)
-	ids = append(ids, w.rectSprites.ids...)
-	ids = append(ids, w.imageSprites.ids...)
-
-	// Depth sort: Layer dominates, then Y position (lower Y = drawn first = behind),
-	// then EntityID for determinism.
-	slices.SortFunc(ids, func(a, b EntityID) int {
-		layerA, layerB := w.spriteLayer(a), w.spriteLayer(b)
-		if layerA != layerB {
-			return layerA - layerB
-		}
-		ta, aok := w.transforms.get(a)
-		tb, bok := w.transforms.get(b)
-		if aok && bok {
-			if ta.Position.Y < tb.Position.Y {
-				return -1
-			}
-			if ta.Position.Y > tb.Position.Y {
-				return 1
-			}
-		}
-		return int(a) - int(b)
-	})
-	w.renderIDScratch = ids
+	sorted := w.sortSprites(totalSprites)
 
 	commands := dst
 	if commands == nil {
@@ -72,19 +44,21 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 	hasProjection := !w.projection.IsZero()
 
-	// One camera tilt for the whole frame. Without one this stays 1 and every
-	// plane correction below is skipped, so a game that never asks for 2.5D
-	// does not pay for it existing.
-	groundScaleY := 1.0
+	// One camera distortion for the whole frame, and so one correction for
+	// every sprite that has to stand up against it. Without a projection this
+	// stays absent and every plane correction below is skipped, so a game that
+	// never asks for 2.5D does not pay for it existing.
+	upright := math2d.Affine{}
+	hasUpright := false
 	if hasProjection {
-		groundScaleY = w.projection.GroundScaleY()
+		upright, hasUpright = w.projection.UprightCorrection()
 	}
 
-	for _, id := range ids {
-		transform, ok := w.transforms.get(id)
-		if !ok {
-			continue
-		}
+	for _, entry := range sorted {
+		id := entry.id
+		// The sort already established that the entity has a Transform, and
+		// dropped the sprites that do not.
+		transform, _ := w.transforms.get(id)
 
 		interpolated := transform
 		if useAlpha > 0 {
@@ -136,6 +110,13 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			}
 		}
 
+		// A rect sprite carries its own geometry in world coordinates and takes
+		// no position from its Transform, so the lift has to be handed to it
+		// separately. Without this a raised platform draws its shadow on the
+		// ground and its body on the ground too, and the plane correction
+		// below pivots About a point the sprite does not contain.
+		lift := pos.Sub(interpolated.Position)
+
 		// Per-entity decorative affine (squash & stretch, lean), deforming
 		// about the final — possibly lifted — body center. Render-only.
 		bodyTransform := math2d.Affine{}
@@ -147,8 +128,8 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		// the sprite in its own frame, and only then is the result placed on
 		// the plane it declares. Composing them the other way round would tilt
 		// squash & stretch by the camera.
-		if correction := w.spritePlaneScaleY(id, groundScaleY); correction != 1 {
-			plane := math2d.Scale(math2d.Vec2{X: 1, Y: correction}).About(pos)
+		if hasUpright && w.spritePlane(id) == PlaneUpright {
+			plane := upright.About(pos)
 			if bodyTransform.IsIdentity() {
 				bodyTransform = plane
 			} else {
@@ -174,8 +155,16 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		}
 
 		if rect, hasRect := w.rectSprites.get(id); hasRect {
+			geometry := rect.Rect
+			if lift != (math2d.Vec2{}) {
+				geometry = math2d.NewRectFromCorners(
+					geometry.Min.Add(lift),
+					geometry.Max.Add(lift),
+				)
+			}
+
 			commands = append(commands, render.DrawRect{
-				Rect:        rect.Rect,
+				Rect:        geometry,
 				Fill:        rect.Color,
 				Stroke:      rect.Stroke,
 				StrokeWidth: rect.StrokeWidth,
@@ -212,6 +201,119 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 	return commands
 }
 
+// sortEntry is one sprite's place in the painter order, resolved before the
+// sort rather than inside it. Both fields cost several component lookups to
+// work out, and a comparator is asked for them O(n log n) times: recomputing
+// them there measured about 50% slower over a thousand sprites.
+type sortEntry struct {
+	key   float64
+	layer int
+	id    EntityID
+}
+
+// sortSprites returns this world's sprites in painter order: the layer decides
+// first, then how deep into the scene each sprite sits, and finally EntityID.
+//
+// That last tiebreak is not a formality. The depth key is a float64, so two
+// sprites landing on the same value is ordinary rather than rare, and without
+// a total order the same scene could paint two different ways.
+//
+// The returned slice is working memory reused between frames; it stays valid
+// only until the next call.
+func (w *World) sortSprites(totalSprites int) []sortEntry {
+	sorted := w.renderSortScratch[:0]
+	if cap(sorted) < totalSprites {
+		sorted = make([]sortEntry, 0, totalSprites)
+	}
+
+	// One axis for the whole frame: whether a game declared one is not a
+	// question worth asking per sprite.
+	axis := w.depthAxis()
+
+	for _, source := range [][]EntityID{w.circleSprites.ids, w.rectSprites.ids, w.imageSprites.ids} {
+		for _, id := range source {
+			// A sprite whose entity has no Transform is nowhere and draws
+			// nothing. Left in, it would have no depth to compare against and
+			// would drag the sprites around it out of order, because a
+			// comparator that answers "equal" to everything is not an ordering.
+			transform, ok := w.transforms.get(id)
+			if !ok {
+				continue
+			}
+			sorted = append(sorted, sortEntry{
+				key:   w.spriteSortOrigin(id, transform.Position).Dot(axis),
+				layer: w.spriteLayer(id),
+				id:    id,
+			})
+		}
+	}
+
+	slices.SortFunc(sorted, func(a, b sortEntry) int {
+		if a.layer != b.layer {
+			return a.layer - b.layer
+		}
+		if a.key < b.key {
+			return -1
+		}
+		if a.key > b.key {
+			return 1
+		}
+		return int(a.id) - int(b.id)
+	})
+	w.renderSortScratch = sorted
+
+	return sorted
+}
+
+// spriteSortOrigin is the point a sprite sorts by: the base of its own
+// footprint, moved by whatever the sprite declared.
+//
+// The base rather than the centre, and that is the whole reason this exists.
+// A tall sprite and a short one standing on the same line have centres at
+// different depths and bases at the same one, so sorting by centre puts the
+// taller of the two behind the neighbour it is standing beside.
+//
+// Transform.Scale is deliberately left out: a sprite that pops or breathes
+// would otherwise reorder itself mid-animation, and a sprite's footprint is
+// where it stands, not how big it is drawing itself this frame.
+func (w *World) spriteSortOrigin(id EntityID, position math2d.Vec2) math2d.Vec2 {
+	if s, ok := w.circleSprites.get(id); ok {
+		return math2d.Vec2{X: position.X, Y: position.Y + s.Radius}.Add(s.SortOffset)
+	}
+	if s, ok := w.rectSprites.get(id); ok {
+		// A rect sprite carries its own world geometry, so its base is read
+		// off the rect instead of guessed from the entity's position.
+		return math2d.Vec2{
+			X: (s.Rect.Min.X + s.Rect.Max.X) * 0.5,
+			Y: s.Rect.Max.Y,
+		}.Add(s.SortOffset)
+	}
+	if s, ok := w.imageSprites.get(id); ok {
+		return math2d.Vec2{X: position.X, Y: position.Y + s.Size.Y*0.5}.Add(s.SortOffset)
+	}
+
+	return position
+}
+
+// debugOffset is how far an entity's sprite ends up from where the entity
+// actually is, so that a debug mark drawn at the entity can follow it there.
+//
+// The rule it encodes is "follow where the sprite went, never how it was
+// deformed". SpriteTransform is applied About the entity's position, and About
+// fixes its pivot, so a decorative squash or stretch moves the sprite nowhere
+// and this returns zero -- a collider outline must not squash with the art it
+// belongs to, because its whole job is to say what the physics shape really is.
+// A transform that places the sprite somewhere else does move it, and then a
+// mark left behind at the entity's raw position describes nothing.
+func (w *World) debugOffset(id EntityID, position math2d.Vec2) math2d.Vec2 {
+	sprite, ok := w.spriteTransforms.get(id)
+	if !ok || sprite.M.IsIdentity() {
+		return math2d.Vec2{}
+	}
+
+	return sprite.M.About(position).Apply(position).Sub(position)
+}
+
 // spriteLayer returns the layer of the first sprite found for the entity.
 func (w *World) spriteLayer(id EntityID) int {
 	if s, ok := w.circleSprites.get(id); ok {
@@ -226,22 +328,11 @@ func (w *World) spriteLayer(id EntityID) int {
 	return 0
 }
 
-// spritePlaneScaleY is the vertical scale a sprite's own geometry needs so that
-// it lands on the plane it declares. 1 means the command is already right and
-// carries no transform at all.
-//
-// The camera foreshortens every shape it draws, which is what a ground sprite
-// wants and leaves nothing to do. An upright sprite is the one that has to
-// stand back up, by exactly the reciprocal.
-func (w *World) spritePlaneScaleY(id EntityID, groundScaleY float64) float64 {
-	if groundScaleY == 1 || w.spritePlane(id) == PlaneGround {
-		return 1
-	}
-
-	return 1 / groundScaleY
-}
-
 // spritePlane returns the plane of the first sprite found for the entity.
+//
+// The camera distorts every shape it draws, which is what a ground sprite
+// wants and leaves nothing to do. An upright sprite is the one that has to
+// stand back up, by exactly the inverse -- see Projection.UprightCorrection.
 func (w *World) spritePlane(id EntityID) SpritePlane {
 	if s, ok := w.circleSprites.get(id); ok {
 		return s.Plane
@@ -299,9 +390,11 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 			continue
 		}
 
+		position := transform.Position.Add(w.debugOffset(id, transform.Position))
+
 		if collider, isCircle := w.circleColliders.get(id); isCircle {
 			commands = append(commands, render.DrawCircle{
-				Center:      transform.Position,
+				Center:      position,
 				Radius:      collider.Radius,
 				Stroke:      color,
 				StrokeWidth: strokeWidth,
@@ -316,8 +409,8 @@ func (w *World) debugColliderCommands(color render.Color, strokeWidth float64, l
 			half := collider.HalfExtends
 			commands = append(commands, render.DrawRect{
 				Rect: math2d.NewRectFromCorners(
-					transform.Position.Sub(half),
-					transform.Position.Add(half),
+					position.Sub(half),
+					position.Add(half),
 				),
 				Stroke:      color,
 				StrokeWidth: strokeWidth,
@@ -346,7 +439,13 @@ func (w *World) debugContactCommands(color render.Color, pointRadius, lineWidth,
 			continue
 		}
 
-		point := transformA.Position.Lerp(transformB.Position, 0.5)
+		// The contact point is already the midpoint of the two entities, so the
+		// midpoint of their offsets is the consistent way to carry it along.
+		offsetA := w.debugOffset(contact.A, transformA.Position)
+		offsetB := w.debugOffset(contact.B, transformB.Position)
+
+		point := transformA.Position.Lerp(transformB.Position, 0.5).
+			Add(offsetA.Lerp(offsetB, 0.5))
 		normalEnd := point.Add(contact.Normal.Mul(normalLength))
 
 		commands = append(commands,
