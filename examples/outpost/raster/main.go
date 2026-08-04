@@ -6,7 +6,11 @@ import (
 )
 
 func main() {
-	if err := raster.Run(outpost.NewGame(), raster.Options{
+	game, err := outpost.NewGame()
+	if err != nil {
+		panic(err)
+	}
+	if err := raster.Run(game, raster.Options{
 		Width:   1600,
 		Height:  960,
 		Frames:  1,
