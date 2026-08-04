@@ -41,6 +41,44 @@ func drawBackground(ctx *runtime.RenderContext) []render.Command {
 	return cmds
 }
 
+// The song's tempo, measured from the audio by onset autocorrelation: a
+// steady 97.97 BPM start to finish. The chart's opening tap at 40ms lands on
+// a downbeat, which anchors the bar grid to the notes.
+const (
+	beatMS      = 612.4
+	firstBeatMS = 40.0
+	beatsPerBar = 4
+)
+
+// drawBeatBars paints the beat grid scrolling down the highway. The bars ride
+// the same noteY curve as the notes, so the whole road surface appears to
+// move toward the player with the notes glued to it.
+func drawBeatBars(nowMS float64) []render.Command {
+	var cmds []render.Command
+	for k := math.Ceil((nowMS - firstBeatMS) / beatMS); ; k++ {
+		t := firstBeatMS + k*beatMS
+		if t > nowMS+approachMS {
+			return cmds
+		}
+		y := noteY((t - nowMS) / approachMS)
+		left, _ := laneBoundsAtY(0, y, 0)
+		_, right := laneBoundsAtY(laneCount-1, y, 0)
+		depth := roadHalfAt(y) / roadHitHalf
+
+		alpha, width := 0.07, 0.45
+		if beat := int(math.Round(k)); ((beat%beatsPerBar)+beatsPerBar)%beatsPerBar == 0 {
+			alpha, width = 0.16, 0.7
+		}
+		cmds = append(cmds, render.DrawLine{
+			BaseCommand: render.BaseCommand{LayerValue: 4},
+			From:        math2d.Vec2{X: left, Y: y},
+			To:          math2d.Vec2{X: right, Y: y},
+			Width:       width * depth,
+			Color:       render.RGBA(1, 1, 1, alpha),
+		})
+	}
+}
+
 func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []render.Command {
 	noteTex := ctx.Assets.Texture("note")
 	specialTex := ctx.Assets.Texture("special")
