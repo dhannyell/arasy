@@ -29,31 +29,34 @@ func vecNear(a, b math2d.Vec2, epsilon float64) bool {
 	return dx < epsilon && dy < epsilon
 }
 
-func TestRenderShadowCarriesSkewTransform(t *testing.T) {
-	build := func(skew float64) render.DrawEllipse {
+func TestRenderShadowCarriesStretchTransform(t *testing.T) {
+	build := func(stretch float64) render.DrawEllipse {
 		w := scene.NewWorld()
 		w.SetProjection(render.Projection{
-			LiftPerZ:       1,
-			ShadowScale:    math2d.Vec2{X: 1, Y: 1},
-			ShadowAlpha:    0.5,
-			ShadowSkewPerZ: skew,
+			LiftPerZ:         1,
+			ShadowScale:      math2d.Vec2{X: 1, Y: 1},
+			ShadowAlpha:      0.5,
+			ShadowEscapeAxis: math2d.Vec2{X: 1},
+			ShadowEscapePerZ: 0.3,
+			ShadowStretch:    stretch,
 		})
 		id := spawnCircle(w, math2d.Vec2{X: 10, Y: 20})
 		w.SetHeight(id, scene.Height{Z: 5})
 		return w.RenderCommands()[0].(render.DrawEllipse)
 	}
 
-	withSkew := build(0.3)
-	if withSkew.Transform.IsIdentity() {
-		t.Error("shadow Transform is identity with ShadowSkewPerZ != 0")
+	stretched := build(2)
+	if stretched.Transform.IsIdentity() {
+		t.Error("shadow Transform is identity with ShadowStretch != 1")
 	}
-	// The shadow center is the contact point: fixed under its own transform.
-	if got := withSkew.Transform.Apply(withSkew.Center); !vecNear(got, withSkew.Center, 1e-9) {
-		t.Errorf("shadow contact point moved: Apply(%v) = %v", withSkew.Center, got)
+	// The ellipse stretches about its own centre, so the centre is the fixed
+	// point and the command's Center is already where the mark lies.
+	if got := stretched.Transform.Apply(stretched.Center); !vecNear(got, stretched.Center, 1e-9) {
+		t.Errorf("shadow centre moved: Apply(%v) = %v", stretched.Center, got)
 	}
 
-	if noSkew := build(0); !noSkew.Transform.IsIdentity() {
-		t.Error("shadow Transform not identity with ShadowSkewPerZ = 0 (retrocompat broken)")
+	if round := build(0); !round.Transform.IsIdentity() {
+		t.Error("shadow Transform not identity with ShadowStretch = 0")
 	}
 }
 

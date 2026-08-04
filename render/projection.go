@@ -45,10 +45,29 @@ type Projection struct {
 	ShadowAlpha      float64
 	ShadowShrinkPerZ float64
 	ShadowFadePerZ   float64
-	// ShadowSkewPerZ leans the ground shadow horizontally by this amount per
-	// unit of height, so it "escapes" opposite the light and grows with z.
-	// Zero keeps the shadow axis-aligned. Render-only.
-	ShadowSkewPerZ float64
+	// ShadowEscapeAxis is the unit world direction the shadow runs, away from
+	// the light. Zero means the light is overhead and the shadow stays put.
+	ShadowEscapeAxis math2d.Vec2
+
+	// ShadowEscapePerZ is how far along that axis the shadow's centre travels
+	// per unit of height. This is the height cue: a shadow that separates from
+	// its body is what says the body is off the ground, and it is the one part
+	// a viewer reads without being told.
+	//
+	// It replaces an earlier ShadowSkewPerZ, which leaned the shadow with a
+	// shear instead of moving it. A shear preserves area, so the mark got
+	// thinner in exact proportion to how much longer it got, and at any useful
+	// height it degenerated into a scratch. Length and width are separate facts
+	// about a shadow and a single shear cannot carry both.
+	ShadowEscapePerZ float64
+
+	// ShadowStretch is how much longer the shadow is along the escape axis than
+	// across it. Zero and one both mean "round".
+	//
+	// It does not depend on height: a directional light casts the same shape
+	// wherever the body is, and only the distance changes. What softens with
+	// height is the penumbra, which is ShadowShrinkPerZ and ShadowFadePerZ.
+	ShadowStretch float64
 }
 
 type ProjectedHeight struct {
@@ -57,8 +76,9 @@ type ProjectedHeight struct {
 	ShadowCenter math2d.Vec2
 	ShadowRadii  math2d.Vec2
 	ShadowAlpha  float64
-	// ShadowTransform is the affine applied to the shadow ellipse (directional
-	// skew). Zero value = identity = axis-aligned shadow.
+	// ShadowTransform is the affine applied to the shadow ellipse: it stretches
+	// the ellipse along the escape axis and leaves the perpendicular alone.
+	// Zero value = identity = a round shadow.
 	ShadowTransform math2d.Affine
 }
 
@@ -172,8 +192,22 @@ func GroundProjection(cam Camera, light ProjectionLight) Projection {
 		projection.ShadowFadePerZ = perZ
 	}
 
+	// Both shadow terms are the same right triangle, read twice. Theta is the
+	// light's angle from vertical, the body is z up, and the shadow lands where
+	// the ray meets the ground:
+	//
+	//   distance travelled = z * tan(theta)
+	//   length of the mark = z / cos(theta), which is 1/cos(theta) per unit of
+	//                        the body's own width
+	//
+	// So an overhead light (theta = 0) puts a round shadow directly underneath,
+	// and a grazing one throws it far away and draws it long -- without ever
+	// making it narrower, which is the failure the shear had.
 	if direction := light.Direction.Normalize(); tilt > 0 && direction != (math2d.Vec2{}) {
-		projection.ShadowSkewPerZ = math.Tan(tilt*math.Pi/2) * -direction.X
+		theta := tilt * math.Pi / 2
+		projection.ShadowEscapeAxis = direction.Mul(-1)
+		projection.ShadowEscapePerZ = math.Tan(theta)
+		projection.ShadowStretch = 1 / math.Cos(theta)
 	}
 
 	return projection
@@ -240,22 +274,33 @@ func (p Projection) Project(ground math2d.Vec2, footprintHalfExtents math2d.Vec2
 		return ProjectedHeight{}
 	}
 
-	shadowTransform := math2d.Affine{}
-	if p.ShadowSkewPerZ != 0 {
-		shadowCenter := math2d.Vec2{
-			X: ground.X + footprintHalfExtents.X*p.ShadowOffset.X,
-			Y: ground.Y + footprintHalfExtents.Y*p.ShadowOffset.Y,
-		}
-		shadowTransform = math2d.Shear(p.ShadowSkewPerZ*z, 0).About(shadowCenter)
+	// The contact nudge is a constant: it keeps a barely-risen shadow from
+	// hiding behind its own body, and points at the viewer whatever the light
+	// is doing. The escape is the part that grows with height.
+	escape := p.ShadowEscapeAxis.Normalize()
+	shadowCenter := math2d.Vec2{
+		X: footprintHalfExtents.X * p.ShadowOffset.X,
+		Y: footprintHalfExtents.Y * p.ShadowOffset.Y,
 	}
+	shadowCenter = shadowCenter.Add(escape.Mul(p.ShadowEscapePerZ * z))
+
+	// Stretching about the shadow's own centre, so the mark grows along the
+	// light's azimuth from where it actually lies rather than sliding as it
+	// lengthens.
+	shadowTransform := math2d.Affine{}
+	if stretch := p.ShadowStretch; stretch > 0 && stretch != 1 && escape != (math2d.Vec2{}) {
+		angle := math.Atan2(escape.Y, escape.X)
+		shadowTransform = math2d.Rotate(angle).
+			Mul(math2d.Scale(math2d.Vec2{X: stretch, Y: 1})).
+			Mul(math2d.Rotate(-angle)).
+			About(ground.Add(shadowCenter))
+	}
+
 	shrink := 1 / (1 + max(0, p.ShadowShrinkPerZ)*z)
 	return ProjectedHeight{
 		BodyPosition: ground.Add(p.liftAxis().Mul(z * p.LiftPerZ)),
-		BodyScale: max(0, 1+z*p.ScalePerZ),
-		ShadowCenter: math2d.Vec2{
-			X: footprintHalfExtents.X * p.ShadowOffset.X,
-			Y: footprintHalfExtents.Y * p.ShadowOffset.Y,
-		},
+		BodyScale:    max(0, 1+z*p.ScalePerZ),
+		ShadowCenter: shadowCenter,
 		ShadowRadii: math2d.Vec2{
 			X: math.Abs(footprintHalfExtents.X) * max(0, p.ShadowScale.X) * shrink,
 			Y: math.Abs(footprintHalfExtents.Y) * max(0, p.ShadowScale.Y) * shrink,
@@ -333,5 +378,7 @@ func (p Projection) IsZero() bool {
 		p.ShadowAlpha == 0 &&
 		p.ShadowShrinkPerZ == 0 &&
 		p.ShadowFadePerZ == 0 &&
-		p.ShadowSkewPerZ == 0
+		p.ShadowEscapeAxis == (math2d.Vec2{}) &&
+		p.ShadowEscapePerZ == 0 &&
+		p.ShadowStretch == 0
 }
