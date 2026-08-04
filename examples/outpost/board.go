@@ -201,7 +201,7 @@ func buildStaticBoard(p render.Projection) []render.Command {
 
 	commands = waterCommands(commands, p)
 
-	for j := 0; j < boardRows; j++ {
+	for j := range boardRows {
 		for i := 0; i < boardCols; i++ {
 			if terrainAt(i, j) == terrainWater {
 				continue // painted by waterCommands
