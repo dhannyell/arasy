@@ -16,6 +16,8 @@ type Bundle struct {
 	Height         *Height
 	Ballistics     *Ballistics
 	Spin           *Spin
+	CommandSprite  *CommandSprite
+	Attachment     *Attachment
 }
 
 func (w *World) SpawnBundle(b Bundle) EntityID {
@@ -63,5 +65,20 @@ func (w *World) SpawnBundle(b Bundle) EntityID {
 	if b.Spin != nil {
 		w.SetSpin(id, *b.Spin)
 	}
+	if b.CommandSprite != nil {
+		w.SetCommandSprite(id, *b.CommandSprite)
+	}
+	if b.Attachment != nil {
+		w.SetAttachment(id, *b.Attachment)
+	}
+	return id
+}
+
+// SpawnAttached spawns b anchored to parent: SpawnBundle plus an Attachment,
+// in one readable line at the call site. The sprite in b is authored relative
+// to the anchor; see the Attachment component for what that means per sprite.
+func (w *World) SpawnAttached(parent EntityID, offset math2d.Vec2, heightOffset float64, b Bundle) EntityID {
+	id := w.SpawnBundle(b)
+	w.SetAttachment(id, Attachment{Parent: parent, Offset: offset, HeightOffset: heightOffset})
 	return id
 }

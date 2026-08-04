@@ -41,6 +41,88 @@ func drawBackground(ctx *runtime.RenderContext) []render.Command {
 	return cmds
 }
 
+// The song's tempo, measured from the audio by onset autocorrelation: a
+// steady 97.97 BPM start to finish. The chart's opening tap at 40ms lands on
+// a downbeat, which anchors the bar grid to the notes.
+const (
+	beatMS      = 610.0
+	firstBeatMS = 40.0
+	beatsPerBar = 4
+)
+
+// drawBeatBars paints the beat grid scrolling down the highway. The bars ride
+// the same noteY curve as the notes, so the whole road surface appears to
+// move toward the player with the notes glued to it.
+func drawBeatBars(nowMS float64) []render.Command {
+	var cmds []render.Command
+	for k := math.Ceil((nowMS - firstBeatMS) / beatMS); ; k++ {
+		t := firstBeatMS + k*beatMS
+		if t > nowMS+approachMS {
+			return cmds
+		}
+		y := noteY((t - nowMS) / approachMS)
+		left, _ := laneBoundsAtY(0, y, 0)
+		_, right := laneBoundsAtY(laneCount-1, y, 0)
+		depth := roadHalfAt(y) / roadHitHalf
+
+		alpha, width := 0.07, 0.45
+		if beat := int(math.Round(k)); ((beat%beatsPerBar)+beatsPerBar)%beatsPerBar == 0 {
+			alpha, width = 0.16, 0.7
+		}
+		cmds = append(cmds, render.DrawLine{
+			BaseCommand: render.BaseCommand{LayerValue: 4, BlendMode: render.BlendAdditive},
+			From:        math2d.Vec2{X: left, Y: y},
+			To:          math2d.Vec2{X: right, Y: y},
+			Width:       width * depth,
+			Color:       render.RGBA(1, 1, 1, alpha),
+		})
+	}
+}
+
+// The base of the highway frame has a neon tube baked into the texture.
+// These trace its position in world units.
+const (
+	pulseBarY     = 67.5
+	pulseBarLeft  = 30.3
+	pulseBarRight = 69.59
+)
+
+// drawPulseBar relights the baked tube as live light: an additive flash that
+// peaks on every beat and decays until the next. Because the layers add,
+// the flash climbs over the texture's own glow toward white instead of
+// painting a stripe across it.
+func drawPulseBar(nowMS float64) []render.Command {
+	phase := math.Mod(nowMS-firstBeatMS, beatMS) / beatMS
+	if phase < 0 {
+		phase++
+	}
+	heat := (1 - phase) * (1 - phase)
+	bar := render.BaseCommand{
+		LayerValue: 4,
+		BlendMode:  render.BlendAdditive,
+	}
+	from := math2d.Vec2{X: pulseBarLeft, Y: pulseBarY}
+	to := math2d.Vec2{X: pulseBarRight, Y: pulseBarY}
+	// A stack of widening, fading strokes approximates a radial falloff;
+	// because each one adds, the steps blend into a smooth bloom.
+	cmds := make([]render.Command, 0, 5)
+	for _, layer := range []struct {
+		width float64
+		color render.Color
+	}{
+		{2.1, render.RGBA(1, 0.16, 0.06, 0.10*heat)},
+		{1.5, render.RGBA(1, 0.22, 0.08, 0.14*heat)},
+		{1.0, render.RGBA(1, 0.35, 0.12, 0.20*heat)},
+		{0.5, render.RGBA(1, 0.55, 0.22, 0.30*heat)},
+		{0.2, render.RGBA(1, 0.85, 0.60, 0.60*heat)},
+	} {
+		cmds = append(cmds, render.DrawLine{
+			BaseCommand: bar, From: from, To: to, Width: layer.width, Color: layer.color,
+		})
+	}
+	return cmds
+}
+
 func drawChart(ctx *runtime.RenderContext, state MatchState, nowMS float64) []render.Command {
 	noteTex := ctx.Assets.Texture("note")
 	specialTex := ctx.Assets.Texture("special")
@@ -106,9 +188,13 @@ func drawHoldLine(lane int, fromY, toY float64, held bool) []render.Command {
 		outer = render.RGBA(1, 0.14, 0.58, 0.68)
 		inner = render.RGBA(1, 0.48, 0.78, 1)
 	}
+	// Additive layers behave like light: where the halo and the core overlap
+	// they climb toward white, which is what makes a sustain read as a lit
+	// neon tube instead of a painted stripe.
+	glow := render.BaseCommand{LayerValue: 10, BlendMode: render.BlendAdditive}
 	return []render.Command{
-		render.DrawLine{BaseCommand: render.BaseCommand{LayerValue: 10}, From: from, To: to, Width: 1.35 * depth, Color: outer},
-		render.DrawLine{BaseCommand: render.BaseCommand{LayerValue: 10}, From: from, To: to, Width: 0.48 * depth, Color: inner},
+		render.DrawLine{BaseCommand: glow, From: from, To: to, Width: 1.35 * depth, Color: outer},
+		render.DrawLine{BaseCommand: glow, From: from, To: to, Width: 0.48 * depth, Color: inner},
 	}
 }
 
@@ -123,7 +209,7 @@ func drawActiveHoldLanes(state MatchState) []render.Command {
 		topLeft, topRight := laneBoundsAtY(lane, spawnY, 0.16)
 		bottomLeft, bottomRight := laneBoundsAtY(lane, hitLineY, 0.16)
 		cmds = append(cmds, render.DrawPolygon{
-			BaseCommand: render.BaseCommand{LayerValue: 9},
+			BaseCommand: render.BaseCommand{LayerValue: 9, BlendMode: render.BlendAdditive},
 			Points: []math2d.Vec2{
 				{X: topLeft, Y: spawnY},
 				{X: topRight, Y: spawnY},
@@ -203,7 +289,7 @@ func drawHitTargets(ctx *runtime.RenderContext, state MatchState, nowMS int) []r
 				glow = render.RGBA(1, 0.2, 0.6, 0.25+holdPulse(ctx.Time)*0.28)
 			}
 			cmds = append(cmds, render.DrawCircle{
-				BaseCommand: render.BaseCommand{LayerValue: 11},
+				BaseCommand: render.BaseCommand{LayerValue: 11, BlendMode: render.BlendAdditive},
 				Center:      math2d.Vec2{X: centerX, Y: hitLineY},
 				Radius:      targetHeight * 0.78,
 				Fill:        glow,

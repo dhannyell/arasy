@@ -21,11 +21,18 @@ import (
 //     PlaneUpright and stays square, because a standing sprite faces the
 //     camera instead of lying in the plane being foreshortened.
 //   - Three balls at increasing height above the same ground row. The tilt
-//     lifts them up the screen; their shadows stay put on the ground, shrink
-//     and fade with height, and lean right because the light comes from the
+//     lifts them up the screen; their shadows stay on the ground, shrink and
+//     fade with height, and travel right because the light comes from the
 //     left. The leftmost is barely off the ground and its shadow is still
 //     visible below it rather than hidden behind the body, which is the
 //     minimum shadow offset earning its place.
+//
+// The shadows are round here, and that is the point of the fixture. A light
+// only 20 degrees off vertical throws a mark barely longer than the body and
+// barely to the side, so the height reads almost entirely from the lift. An
+// earlier model leaned the shadow with a shear and drew a long thin scratch
+// instead, which looked like more of a cue and was in fact the shadow losing
+// exactly as much width as it gained length.
 func TestGolden25DGroundAndHeight(t *testing.T) {
 	cam := render.Camera{
 		World:      math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 120, Y: 80}),

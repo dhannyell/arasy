@@ -39,6 +39,35 @@ type Renderer struct {
 	// Replace*Batch. Render-only: never snapshotted or recorded.
 	spriteBatches map[render.SpriteBatchID][]render.SpriteInstance
 	textBatches   map[render.TextBatchID][]render.TextLabel
+
+	// additiveScratch is the transparent layer additive commands draw into
+	// before being summed onto the frame. Lazily sized, reused across
+	// commands and frames.
+	additiveScratch *image.RGBA
+}
+
+// drawAdditive renders one command into a transparent scratch image and sums
+// the result into dst channel-wise — the same light-accumulating operator the
+// GPU backends select as an additive pipeline.
+func (r *Renderer) drawAdditive(dst *image.RGBA, draw func(*image.RGBA)) {
+	if r.additiveScratch == nil || r.additiveScratch.Bounds() != dst.Bounds() {
+		r.additiveScratch = image.NewRGBA(dst.Bounds())
+	} else {
+		clear(r.additiveScratch.Pix)
+	}
+	draw(r.additiveScratch)
+	addImage(dst, r.additiveScratch)
+}
+
+func addImage(dst, src *image.RGBA) {
+	for i := 0; i < len(src.Pix); i += 4 {
+		if src.Pix[i] == 0 && src.Pix[i+1] == 0 && src.Pix[i+2] == 0 && src.Pix[i+3] == 0 {
+			continue
+		}
+		for j := i; j < i+4; j++ {
+			dst.Pix[j] = saturatingAdd(dst.Pix[j], src.Pix[j])
+		}
+	}
 }
 
 // NewTarget allocates an RGBA image sized for this renderer.
@@ -79,48 +108,59 @@ type rasterSink struct {
 	image    *image.RGBA
 }
 
+// compose routes a command to the frame directly or, when the command asks
+// for additive blending, through the scratch layer that turns the
+// source-over rasterizers into a light-accumulating draw.
+func (s rasterSink) compose(mode render.Blend, draw func(*image.RGBA)) {
+	if mode == render.BlendAdditive {
+		s.renderer.drawAdditive(s.image, draw)
+		return
+	}
+	draw(s.image)
+}
+
 func (s rasterSink) VisitRect(command render.DrawRect) {
-	s.renderer.drawRect(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawRect(img, command) })
 }
 
 func (s rasterSink) VisitCircle(command render.DrawCircle) {
-	s.renderer.drawCircle(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawCircle(img, command) })
 }
 
 func (s rasterSink) VisitEllipse(command render.DrawEllipse) {
-	s.renderer.drawEllipse(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawEllipse(img, command) })
 }
 
 func (s rasterSink) VisitPoint(command render.DrawPoint) {
-	s.renderer.drawPoint(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawPoint(img, command) })
 }
 
 func (s rasterSink) VisitLine(command render.DrawLine) {
-	s.renderer.drawLine(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawLine(img, command) })
 }
 
 func (s rasterSink) VisitText(command render.DrawText) {
-	s.renderer.drawText(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawText(img, command) })
 }
 
 func (s rasterSink) VisitArc(command render.DrawArc) {
-	s.renderer.drawArc(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawArc(img, command) })
 }
 
 func (s rasterSink) VisitPolygon(command render.DrawPolygon) {
-	s.renderer.drawPolygon(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawPolygon(img, command) })
 }
 
 func (s rasterSink) VisitTriangles(command render.DrawTriangles) {
-	s.renderer.drawTriangles(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawTriangles(img, command) })
 }
 
 func (s rasterSink) VisitImage(command render.DrawImage) {
-	s.renderer.drawImage(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawImage(img, command) })
 }
 
 func (s rasterSink) VisitImageQuad(command render.DrawImageQuad) {
-	s.renderer.drawImageQuad(s.image, command)
+	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawImageQuad(img, command) })
 }
 
 func (s rasterSink) VisitParticles(command render.DrawParticles) {

@@ -262,7 +262,7 @@ func floatNear(a, b, epsilon float64) bool {
 	return diff < epsilon
 }
 
-func TestProjectionShadowSkewZeroIsIdentity(t *testing.T) {
+func TestProjectionRoundShadowNeedsNoTransform(t *testing.T) {
 	p := Projection{
 		LiftPerZ:    1,
 		ShadowScale: math2d.Vec2{X: 1, Y: 1},
@@ -273,61 +273,78 @@ func TestProjectionShadowSkewZeroIsIdentity(t *testing.T) {
 
 	for _, z := range []float64{0.5, 2, 10} {
 		if r := p.Project(ground, fp, z); !r.ShadowTransform.IsIdentity() {
-			t.Errorf("z=%v: ShadowTransform not identity with ShadowSkewPerZ=0", z)
+			t.Errorf("z=%v: ShadowTransform not identity with ShadowStretch=0", z)
 		}
 	}
 }
 
-func TestProjectionShadowSkewKeepsContactPointFixed(t *testing.T) {
+// The stretch happens about the shadow's own centre, not about the body's
+// contact point. Anchoring it anywhere else would slide the mark sideways as it
+// lengthens, so a body climbing straight up would cast a shadow that drifts.
+func TestProjectionShadowStretchesAboutItsOwnCentre(t *testing.T) {
 	p := Projection{
-		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
-		ShadowOffset:   math2d.Vec2{X: 0.5, Y: 0.25},
-		ShadowAlpha:    0.5,
-		ShadowSkewPerZ: 0.3,
+		ShadowScale:      math2d.Vec2{X: 1, Y: 1},
+		ShadowOffset:     math2d.Vec2{X: 0.5, Y: 0.25},
+		ShadowAlpha:      0.5,
+		ShadowEscapeAxis: math2d.Vec2{X: 1},
+		ShadowEscapePerZ: 0.3,
+		ShadowStretch:    2,
 	}
 	ground := math2d.Vec2{X: 10, Y: 20}
 	fp := math2d.Vec2{X: 3, Y: 4}
 
 	r := p.Project(ground, fp, 5)
-	// The shadow's ground contact point (ground + footprint*ShadowOffset) is
-	// the pivot of the skew: the foot stays planted while the top leans.
-	contact := math2d.Vec2{X: 10 + 3*0.5, Y: 20 + 4*0.25}
-	if got := r.ShadowTransform.Apply(contact); got != contact {
-		t.Errorf("Apply(contact) = %v, want fixed point %v", got, contact)
+	centre := ground.Add(r.ShadowCenter)
+	if got := r.ShadowTransform.Apply(centre); !floatNear(got.X, centre.X, 1e-12) ||
+		!floatNear(got.Y, centre.Y, 1e-12) {
+		t.Errorf("Apply(centre) = %v, want fixed point %v", got, centre)
 	}
 }
 
-func TestProjectionShadowSkewGrowsWithZ(t *testing.T) {
+// The height cue: the shadow separates from the body at a constant rate, while
+// its shape stays put. The old shear had these backwards -- the mark never
+// moved and only ever deformed.
+func TestProjectionShadowTravelsWithZButKeepsItsShape(t *testing.T) {
 	p := Projection{
-		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
-		ShadowAlpha:    0.5,
-		ShadowSkewPerZ: 0.3,
+		ShadowScale:      math2d.Vec2{X: 1, Y: 1},
+		ShadowAlpha:      0.5,
+		ShadowEscapeAxis: math2d.Vec2{X: 1},
+		ShadowEscapePerZ: 0.3,
+		ShadowStretch:    2,
 	}
 	ground := math2d.Vec2{X: 10, Y: 20}
 	fp := math2d.Vec2{X: 3, Y: 4}
-	above := math2d.Vec2{X: 10, Y: 19} // 1 unit above the contact point
 
 	r2 := p.Project(ground, fp, 2)
 	r4 := p.Project(ground, fp, 4)
-	if r2.ShadowTransform.IsIdentity() {
-		t.Fatal("ShadowTransform is identity with ShadowSkewPerZ != 0")
+
+	if !floatNear(r2.ShadowCenter.X, 0.3*2, 1e-12) {
+		t.Errorf("travel at z=2 = %v, want ShadowEscapePerZ*z = 0.6", r2.ShadowCenter.X)
 	}
-	d2 := r2.ShadowTransform.Apply(above).X - above.X
-	d4 := r4.ShadowTransform.Apply(above).X - above.X
-	if !floatNear(d4, 2*d2, 1e-12) {
-		t.Errorf("lean at z=4 (%v) != 2x lean at z=2 (%v): skew must grow linearly with z", d4, d2)
+	if !floatNear(r4.ShadowCenter.X, 2*r2.ShadowCenter.X, 1e-12) {
+		t.Errorf("travel at z=4 (%v) != 2x travel at z=2 (%v): it must grow linearly with z",
+			r4.ShadowCenter.X, r2.ShadowCenter.X)
 	}
-	// dy = -1 (1 unit above the pivot), so the lean is shx*z*dy = -0.3*z.
-	if !floatNear(d2, -0.3*2, 1e-12) {
-		t.Errorf("lean at z=2 = %v, want shx*z*dy = -0.6", d2)
+
+	// A directional light casts the same shape at every height. Measured as the
+	// span the transform gives the ellipse along the escape axis.
+	span := func(r ProjectedHeight) float64 {
+		centre := ground.Add(r.ShadowCenter)
+		edge := centre.Add(math2d.Vec2{X: r.ShadowRadii.X})
+		return r.ShadowTransform.Apply(edge).Sub(r.ShadowTransform.Apply(centre)).Len()
+	}
+	if !floatNear(span(r2), span(r4), 1e-12) {
+		t.Errorf("shape changed with height: %v at z=2, %v at z=4", span(r2), span(r4))
 	}
 }
 
-func TestProjectionShadowSkewZeroHeightIsIdentity(t *testing.T) {
+func TestProjectionShadowZeroHeightIsIdentity(t *testing.T) {
 	p := Projection{
-		ShadowScale:    math2d.Vec2{X: 1, Y: 1},
-		ShadowAlpha:    0.5,
-		ShadowSkewPerZ: 0.3,
+		ShadowScale:      math2d.Vec2{X: 1, Y: 1},
+		ShadowAlpha:      0.5,
+		ShadowEscapeAxis: math2d.Vec2{X: 1},
+		ShadowEscapePerZ: 0.3,
+		ShadowStretch:    2,
 	}
 	ground := math2d.Vec2{X: 10, Y: 20}
 	fp := math2d.Vec2{X: 3, Y: 4}
@@ -339,9 +356,11 @@ func TestProjectionShadowSkewZeroHeightIsIdentity(t *testing.T) {
 	}
 }
 
-func TestProjectionIsZeroShadowSkew(t *testing.T) {
-	p := Projection{ShadowSkewPerZ: 1}
-	if p.IsZero() {
-		t.Error("Projection with ShadowSkewPerZ=1 should not be IsZero")
+func TestProjectionIsZeroShadowEscape(t *testing.T) {
+	if (Projection{ShadowEscapePerZ: 1}).IsZero() {
+		t.Error("Projection with ShadowEscapePerZ=1 should not be IsZero")
+	}
+	if (Projection{ShadowStretch: 1}).IsZero() {
+		t.Error("Projection with ShadowStretch=1 should not be IsZero")
 	}
 }

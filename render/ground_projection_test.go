@@ -52,28 +52,68 @@ func TestGroundProjectionShadowFollowsTheLight(t *testing.T) {
 	fromTheLeft := math2d.Vec2{X: -1}
 
 	overhead := GroundProjection(cam, ProjectionLight{Direction: fromTheLeft})
-	if overhead.ShadowSkewPerZ != 0 {
-		t.Errorf("overhead light leans the shadow by %v, want 0", overhead.ShadowSkewPerZ)
+	if overhead.ShadowEscapePerZ != 0 {
+		t.Errorf("overhead light moves the shadow by %v per unit z, want 0", overhead.ShadowEscapePerZ)
 	}
 
 	low := GroundProjection(cam, ProjectionLight{Direction: fromTheLeft, Tilt: 0.4})
 	grazing := GroundProjection(cam, ProjectionLight{Direction: fromTheLeft, Tilt: 0.9})
 
 	// The light comes from the left, so the shadow escapes to the right.
-	if low.ShadowSkewPerZ <= 0 {
-		t.Errorf("shadow leans by %v, want it away from the light", low.ShadowSkewPerZ)
+	if low.ShadowEscapeAxis.X <= 0 {
+		t.Errorf("escape axis = %v, want it pointing away from the light", low.ShadowEscapeAxis)
 	}
-	if grazing.ShadowSkewPerZ <= low.ShadowSkewPerZ {
-		t.Errorf("grazing lean %v should exceed low lean %v", grazing.ShadowSkewPerZ, low.ShadowSkewPerZ)
+	if low.ShadowEscapePerZ <= 0 {
+		t.Errorf("shadow travels %v per unit z, want it away from the light", low.ShadowEscapePerZ)
+	}
+	if grazing.ShadowEscapePerZ <= low.ShadowEscapePerZ {
+		t.Errorf("grazing travel %v should exceed low travel %v", grazing.ShadowEscapePerZ, low.ShadowEscapePerZ)
+	}
+	if grazing.ShadowStretch <= low.ShadowStretch {
+		t.Errorf("grazing stretch %v should exceed low stretch %v", grazing.ShadowStretch, low.ShadowStretch)
 	}
 	if grazing.ShadowAlpha >= low.ShadowAlpha {
 		t.Errorf("grazing alpha %v should fall below low alpha %v", grazing.ShadowAlpha, low.ShadowAlpha)
 	}
 
-	// Reversing the light mirrors the lean and nothing else.
+	// Reversing the light mirrors where the shadow goes, and nothing else: the
+	// mark is the same shape whichever side the light stands on.
 	mirrored := GroundProjection(cam, ProjectionLight{Direction: math2d.Vec2{X: 1}, Tilt: 0.4})
-	if math.Abs(mirrored.ShadowSkewPerZ+low.ShadowSkewPerZ) > 1e-12 {
-		t.Errorf("mirrored lean = %v, want %v", mirrored.ShadowSkewPerZ, -low.ShadowSkewPerZ)
+	if math.Abs(mirrored.ShadowEscapeAxis.X+low.ShadowEscapeAxis.X) > 1e-12 {
+		t.Errorf("mirrored escape axis = %v, want %v", mirrored.ShadowEscapeAxis, low.ShadowEscapeAxis.Mul(-1))
+	}
+	if math.Abs(mirrored.ShadowEscapePerZ-low.ShadowEscapePerZ) > 1e-12 {
+		t.Errorf("mirrored travel = %v, want the same %v", mirrored.ShadowEscapePerZ, low.ShadowEscapePerZ)
+	}
+}
+
+// The regression the escape model exists to prevent. A shear leaned the shadow
+// by trading width for length -- area is preserved, so at any useful height the
+// mark degenerated into a scratch. Length and width are independent facts and
+// only the length may grow.
+func TestGroundProjectionShadowNeverGetsThinner(t *testing.T) {
+	projection := GroundProjection(
+		groundCamera(0.5),
+		ProjectionLight{Direction: math2d.Vec2{X: -1, Y: -1}, Tilt: 0.6},
+	)
+	footprint := math2d.Vec2{X: 4, Y: 4}
+	axis := projection.ShadowEscapeAxis.Normalize()
+	across := math2d.Vec2{X: -axis.Y, Y: axis.X}
+
+	for _, z := range []float64{0.5, 4, 12, 40} {
+		result := projection.Project(math2d.Vec2{}, footprint, z)
+
+		// Measure the mark across the light by pushing the ellipse's own radius
+		// through the transform, which is where a shear would have eaten it.
+		edge := across.Mul(result.ShadowRadii.Y)
+		centre := result.ShadowCenter
+		width := result.ShadowTransform.Apply(centre.Add(edge)).Sub(
+			result.ShadowTransform.Apply(centre)).Len()
+
+		if width < result.ShadowRadii.Y-1e-9 {
+			t.Errorf("z=%v: half-width across the light = %v, shrank below the radius %v",
+				z, width, result.ShadowRadii.Y)
+		}
 	}
 }
 
@@ -138,7 +178,10 @@ func TestGroundProjectionStaysFiniteForEveryCamera(t *testing.T) {
 				"ShadowAlpha":      projection.ShadowAlpha,
 				"ShadowShrinkPerZ": projection.ShadowShrinkPerZ,
 				"ShadowFadePerZ":   projection.ShadowFadePerZ,
-				"ShadowSkewPerZ":   projection.ShadowSkewPerZ,
+				"ShadowEscapeX":    projection.ShadowEscapeAxis.X,
+				"ShadowEscapeY":    projection.ShadowEscapeAxis.Y,
+				"ShadowEscapePerZ": projection.ShadowEscapePerZ,
+				"ShadowStretch":    projection.ShadowStretch,
 			} {
 				if math.IsNaN(value) || math.IsInf(value, 0) {
 					t.Errorf("depth scale %v, light %+v: %s = %v", depthScale, light, name, value)

@@ -8,6 +8,7 @@ import (
 	"github.com/dhannyell/arasy/examples/rhythm"
 	"github.com/dhannyell/arasy/internal/brand"
 	"github.com/dhannyell/arasy/platform/native"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -37,6 +38,7 @@ func main() {
 			}
 			return replayGame
 		},
+		MSAA: render.MSAA2x,
 	}); err != nil {
 		log.Error("native host error", "err", err)
 		os.Exit(1)

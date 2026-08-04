@@ -36,8 +36,26 @@ type Command interface {
 // name through the manifest.
 type TextureID uint32
 
+// Blend selects how a command's pixels combine with what is already drawn.
+type Blend uint8
+
+const (
+	// BlendAlpha is ordinary source-over compositing: opaque pixels cover,
+	// translucent pixels mix toward the source color.
+	BlendAlpha Blend = iota
+	// BlendAdditive sums the source into the destination, the way light
+	// accumulates: overlapping glows brighten toward white instead of
+	// saturating at the source color. Neon, fire, sparks, laser halos.
+	BlendAdditive
+)
+
 type BaseCommand struct {
 	LayerValue int
+
+	// BlendMode selects the compositing operator. Zero value = BlendAlpha.
+	// Particle effects declare their own blend and ignore this field, as do
+	// retained sprite/text batches.
+	BlendMode Blend
 
 	// Clip, when non-zero, restricts this command to the rectangle in world
 	// coordinates. Zero value = no clipping.
@@ -243,6 +261,57 @@ type DrawParticles struct {
 	// Seed differentiates instances; same seed + same command stream =
 	// same spawn sequence on every backend.
 	Seed uint64
+}
+
+// WithLayer returns the command with its layer replaced, whatever concrete
+// type it is. It exists for code that groups commands authored elsewhere onto
+// a layer of its own -- scene.CommandSprite being the canonical case.
+func WithLayer(c Command, layer int) Command {
+	switch cmd := c.(type) {
+	case DrawRect:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawCircle:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawEllipse:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawPoint:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawLine:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawText:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawArc:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawPolygon:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawTriangles:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawImage:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawImageQuad:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawParticles:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawSpriteBatch:
+		cmd.LayerValue = layer
+		return cmd
+	case DrawTextBatch:
+		cmd.LayerValue = layer
+		return cmd
+	}
+	return c
 }
 
 func (DrawRect) isRenderCommand()        {}

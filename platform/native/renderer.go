@@ -75,8 +75,15 @@ type Renderer struct {
 	spritePipeline    *wgpu.RenderPipeline
 	textGlyphPipeline *wgpu.RenderPipeline
 	mipPipeline       *wgpu.RenderPipeline
-	textureSampler    *wgpu.Sampler
-	mipSampler        *wgpu.Sampler
+
+	// Additive variants of the command pipelines, selected per draw run when
+	// a command sets BlendAdditive. Same shaders, different blend state.
+	solidAddPipeline     *wgpu.RenderPipeline
+	texturedAddPipeline  *wgpu.RenderPipeline
+	spriteAddPipeline    *wgpu.RenderPipeline
+	textGlyphAddPipeline *wgpu.RenderPipeline
+	textureSampler       *wgpu.Sampler
+	mipSampler           *wgpu.Sampler
 
 	solidBuffer     *wgpu.Buffer
 	solidCap        int
@@ -629,6 +636,10 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.texturedPipeline)
 	releasePipeline(&r.spritePipeline)
 	releasePipeline(&r.textGlyphPipeline)
+	releasePipeline(&r.solidAddPipeline)
+	releasePipeline(&r.texturedAddPipeline)
+	releasePipeline(&r.spriteAddPipeline)
+	releasePipeline(&r.textGlyphAddPipeline)
 	releasePipeline(&r.mipPipeline)
 	releaseSampler(&r.textureSampler)
 	releaseSampler(&r.mipSampler)
@@ -680,6 +691,50 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		nil,
 		alphaBlend(),
+	); err != nil {
+		return err
+	}
+
+	if r.solidAddPipeline, err = r.createPipeline(
+		"solid additive",
+		shaders.SolidWGSL,
+		r.device.config.Format,
+		r.msaaSamples,
+		solidVertexLayout(),
+		additiveStraightBlend(),
+	); err != nil {
+		return err
+	}
+
+	if r.texturedAddPipeline, err = r.createPipeline(
+		"textured additive",
+		shaders.TexturedWGSL,
+		r.device.config.Format,
+		r.msaaSamples,
+		texturedVertexLayout(),
+		additiveBlend(),
+	); err != nil {
+		return err
+	}
+
+	if r.spriteAddPipeline, err = r.createPipeline(
+		"sprite additive",
+		shaders.SpriteWGSL,
+		r.device.config.Format,
+		r.msaaSamples,
+		nil,
+		additiveBlend(),
+	); err != nil {
+		return err
+	}
+
+	if r.textGlyphAddPipeline, err = r.createPipeline(
+		"text glyph additive",
+		shaders.TextGlyphWGSL,
+		r.device.config.Format,
+		r.msaaSamples,
+		nil,
+		additiveStraightBlend(),
 	); err != nil {
 		return err
 	}
@@ -1212,9 +1267,10 @@ func (r *Renderer) drawRun(
 	offscreenParticles bool,
 	lastComposited *int,
 ) error {
+	additive := run.Blend == render.BlendAdditive
 	switch run.Kind {
 	case tess.DrawRunSolid:
-		pass.SetPipeline(r.solidPipeline)
+		pass.SetPipeline(pick(additive, r.solidAddPipeline, r.solidPipeline))
 		pass.SetVertexBuffer(0, r.solidBuffer, 0, uint64(r.solidCap))
 		pass.Draw(uint32(run.VertexCount), 1, uint32(run.ByteOffset/tess.SolidVertexStride), 0)
 	case tess.DrawRunTextured:
@@ -1222,7 +1278,7 @@ func (r *Renderer) drawRun(
 		if !ok {
 			return nil
 		}
-		pass.SetPipeline(r.texturedPipeline)
+		pass.SetPipeline(pick(additive, r.texturedAddPipeline, r.texturedPipeline))
 		pass.SetVertexBuffer(0, r.texBuffer, 0, uint64(r.texCap))
 		pass.SetBindGroup(0, texture.bindGroup, nil)
 		pass.Draw(uint32(run.VertexCount), 1, uint32(run.ByteOffset/tess.TexVertexStride), 0)
@@ -1231,7 +1287,7 @@ func (r *Renderer) drawRun(
 		if !ok || texture.spriteBindGroup == nil {
 			return nil
 		}
-		pass.SetPipeline(r.spritePipeline)
+		pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
 		pass.SetBindGroup(0, texture.spriteBindGroup, nil)
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.SpriteStride*6), 0)
 	case tess.DrawRunText:
@@ -1242,7 +1298,7 @@ func (r *Renderer) drawRun(
 		if !ok {
 			return nil
 		}
-		pass.SetPipeline(r.textGlyphPipeline)
+		pass.SetPipeline(pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline))
 		pass.SetBindGroup(0, atlas.glyphBindGroup, nil)
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.TextGlyphStride*6), 0)
 	case tess.DrawRunParticles:
@@ -1339,6 +1395,30 @@ func premultipliedBlend() *wgpu.BlendState {
 		},
 	}
 }
+
+// additiveStraightBlend is the additive operator for pipelines whose shaders
+// output straight (non-premultiplied) alpha: the source color is scaled by
+// its own alpha before being summed, so a faint glow adds faintly.
+func pick(additive bool, add, alpha *wgpu.RenderPipeline) *wgpu.RenderPipeline {
+	if additive {
+		return add
+	}
+	return alpha
+}
+
+func additiveStraightBlend() *wgpu.BlendState {
+	return &wgpu.BlendState{
+		Color: wgpu.BlendComponent{
+			Operation: wgpu.BlendOperationAdd,
+			SrcFactor: wgpu.BlendFactorSrcAlpha,
+			DstFactor: wgpu.BlendFactorOne},
+		Alpha: wgpu.BlendComponent{
+			Operation: wgpu.BlendOperationAdd,
+			SrcFactor: wgpu.BlendFactorOne,
+			DstFactor: wgpu.BlendFactorOne},
+	}
+}
+
 func additiveBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{
 		Color: wgpu.BlendComponent{

@@ -72,6 +72,14 @@ type webgpuRenderer struct {
 	texturedPipeline    js.Value
 	spritePipeline      js.Value
 	spriteArrayPipeline js.Value
+
+	// Additive variants of the command pipelines, selected per draw run when
+	// a command sets BlendAdditive. Same shaders, different blend state.
+	solidAddPipeline       js.Value
+	textGlyphAddPipeline   js.Value
+	texturedAddPipeline    js.Value
+	spriteAddPipeline      js.Value
+	spriteArrayAddPipeline js.Value
 	// mipPipeline renders a fullscreen triangle sampling one mip level into
 	// the next. Boot-time only, used by generateMipmaps.
 	mipPipeline js.Value
@@ -241,11 +249,11 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
 
-	r.solidPipeline = r.createSolidPipeline()
-	r.textGlyphPipeline = r.createTextGlyphPipeline()
-	r.texturedPipeline = r.createTexturedPipeline()
-	r.spritePipeline = r.createSpritePipeline()
-	r.spriteArrayPipeline = r.createSpriteArrayPipeline()
+	r.solidPipeline, r.solidAddPipeline = r.createSolidPipelines()
+	r.textGlyphPipeline, r.textGlyphAddPipeline = r.createTextGlyphPipelines()
+	r.texturedPipeline, r.texturedAddPipeline = r.createTexturedPipelines()
+	r.spritePipeline, r.spriteAddPipeline = r.createSpritePipelines()
+	r.spriteArrayPipeline, r.spriteArrayAddPipeline = r.createSpriteArrayPipelines()
 	r.mipPipeline = r.createMipPipeline()
 	r.texSampler = r.createTextureSampler()
 	r.mipSampler = r.createMipSampler()
@@ -376,6 +384,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:   tess.DrawRunSolid,
+				blend:  run.Blend,
 				offset: run.ByteOffset / tess.SolidVertexStride,
 				count:  run.VertexCount,
 			})
@@ -385,6 +394,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunTextured,
+				blend:   run.Blend,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.TexVertexStride,
 				count:   run.VertexCount,
@@ -395,6 +405,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunSprites,
+				blend:   run.Blend,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.SpriteStride,
 				count:   run.VertexCount,
@@ -405,6 +416,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
+				blend:    run.Blend,
 				atlasKey: run.AtlasKey,
 				offset:   run.ByteOffset / tess.TextGlyphStride,
 				count:    run.VertexCount,
@@ -605,7 +617,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	for _, run := range drawRuns {
 		switch run.kind {
 		case tess.DrawRunSolid:
-			pass.Call("setPipeline", r.solidPipeline)
+			pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
 			pass.Call("setVertexBuffer", 0, r.solidBuffer)
 			pass.Call("draw", run.count, 1, run.offset, 0)
 		case tess.DrawRunTextured:
@@ -613,20 +625,20 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			if !ok {
 				continue
 			}
-			pass.Call("setPipeline", r.texturedPipeline)
+			pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
 			pass.Call("setVertexBuffer", 0, r.texBuffer)
 			pass.Call("setBindGroup", 0, gt.bindGroup)
 			pass.Call("draw", run.count, 1, run.offset, 0)
 		case tess.DrawRunSprites:
 			if r.spriteArrayEnabled {
-				pass.Call("setPipeline", r.spriteArrayPipeline)
+				pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
 				pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
 			} else {
 				gt, ok := r.textureFor(run.texture)
 				if !ok || gt.spriteBindGroup.IsUndefined() || gt.spriteBindGroup.IsNull() {
 					continue
 				}
-				pass.Call("setPipeline", r.spritePipeline)
+				pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
 				pass.Call("setBindGroup", 0, gt.spriteBindGroup)
 			}
 			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
@@ -635,7 +647,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			if !ok {
 				continue
 			}
-			pass.Call("setPipeline", r.textGlyphPipeline)
+			pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
 			pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
 			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 		case tess.DrawRunParticles:
@@ -863,8 +875,16 @@ func (r *webgpuRenderer) signalReadyAfterPresent() {
 	js.Global().Call("requestAnimationFrame", firstFrame)
 }
 
+func pickJS(blend render.Blend, add, alpha js.Value) js.Value {
+	if blend == render.BlendAdditive {
+		return add
+	}
+	return alpha
+}
+
 type gpuDrawRun struct {
 	kind      tess.DrawRunKind
+	blend     render.Blend
 	texture   render.TextureID
 	atlasKey  tess.AtlasKey
 	particles render.DrawParticles
@@ -912,29 +932,34 @@ type particleTarget struct {
 	bindGroup js.Value
 }
 
-func (r *webgpuRenderer) createSolidPipeline() js.Value {
+func (r *webgpuRenderer) createSolidPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SolidWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AlphaBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend())))
 }
 
-func (r *webgpuRenderer) createTextGlyphPipeline() js.Value {
+func (r *webgpuRenderer) createTextGlyphPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.TextGlyphWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AlphaBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend())))
 }
 
-func (r *webgpuRenderer) createTexturedPipeline() js.Value {
+func (r *webgpuRenderer) createTexturedPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.TexturedWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
 }
 
-func (r *webgpuRenderer) createSpritePipeline() js.Value {
+func (r *webgpuRenderer) createSpritePipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SpriteWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
 }
 
-func (r *webgpuRenderer) createSpriteArrayPipeline() js.Value {
+func (r *webgpuRenderer) createSpriteArrayPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples)))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a

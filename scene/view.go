@@ -31,6 +31,8 @@ func (v WorldView) ImageSprite(id EntityID) (ImageSprite, bool) { return v.w.Ima
 func (v WorldView) SpriteTransform(id EntityID) (SpriteTransform, bool) {
 	return v.w.SpriteTransform(id)
 }
+func (v WorldView) CommandSprite(id EntityID) (CommandSprite, bool)   { return v.w.CommandSprite(id) }
+func (v WorldView) Attachment(id EntityID) (Attachment, bool)         { return v.w.Attachment(id) }
 func (v WorldView) Velocity(id EntityID) (Velocity, bool)             { return v.w.Velocity(id) }
 func (v WorldView) Acceleration(id EntityID) (Acceleration, bool)     { return v.w.Acceleration(id) }
 func (v WorldView) Damping(id EntityID) (Damping, bool)               { return v.w.Damping(id) }
@@ -41,6 +43,7 @@ func (v WorldView) Height(id EntityID) (Height, bool)                 { return v
 func (v WorldView) Spin(id EntityID) (Spin, bool)                     { return v.w.Spin(id) }
 func (v WorldView) Ballistics(id EntityID) (Ballistics, bool)         { return v.w.Ballistics(id) }
 func (v WorldView) Locomotion(id EntityID) (Locomotion, bool)         { return v.w.Locomotion(id) }
+func (v WorldView) HopTween(id EntityID) (HopTween, bool)             { return v.w.HopTween(id) }
 func (v WorldView) MoveIntent(id EntityID) (MoveIntent, bool)         { return v.w.MoveIntent(id) }
 func (v WorldView) Contacts() []Contact                               { return v.w.Contacts() }
 func (v WorldView) Entities() []EntityID                              { return v.w.Entities() }

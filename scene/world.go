@@ -42,6 +42,8 @@ type World struct {
 	ballistics       store[Ballistics]
 	locomotions      store[Locomotion]
 	moveIntents      store[MoveIntent]
+	hopTweens        store[HopTween]
+	attachments      store[Attachment]
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
 	collisionScratch collisionScratch
@@ -58,6 +60,11 @@ type World struct {
 	// spriteTransforms is a presentation cache only and
 	// is NOT included in Checksum.
 	spriteTransforms store[SpriteTransform]
+
+	// commandSprites is presentation-only content and is NOT included in
+	// Checksum: raw render commands cannot be hashed field by field, and a
+	// prop's looks are not simulation state.
+	commandSprites store[CommandSprite]
 
 	// renderHeights stores the previous-tick Height for each entity,
 	// used by RenderCommandsInterpolated for smooth Height interpolation.
@@ -125,6 +132,9 @@ func (w *World) Clone() *World {
 		ballistics:       w.ballistics.clone(),
 		locomotions:      w.locomotions.clone(),
 		moveIntents:      w.moveIntents.clone(),
+		hopTweens:        w.hopTweens.clone(),
+		attachments:      w.attachments.clone(),
+		commandSprites:   w.commandSprites.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
@@ -169,6 +179,9 @@ func (w *World) Despawn(id EntityID) {
 	w.ballistics.remove(id)
 	w.locomotions.remove(id)
 	w.moveIntents.remove(id)
+	w.hopTweens.remove(id)
+	w.attachments.remove(id)
+	w.commandSprites.remove(id)
 	w.renderTransforms.remove(id)
 	w.renderHeights.remove(id)
 }
@@ -206,6 +219,9 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.ballistics.removeMarked(w.despawnMarked)
 	w.locomotions.removeMarked(w.despawnMarked)
 	w.moveIntents.removeMarked(w.despawnMarked)
+	w.hopTweens.removeMarked(w.despawnMarked)
+	w.attachments.removeMarked(w.despawnMarked)
+	w.commandSprites.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
 	w.renderHeights.removeMarked(w.despawnMarked)
 	clear(w.despawnMarked)
@@ -549,6 +565,78 @@ func (w *World) RemoveSpriteTransform(id EntityID) {
 	w.spriteTransforms.remove(id)
 }
 
+// HopTween
+
+func (w *World) HopTween(id EntityID) (HopTween, bool) {
+	tw, ok := w.hopTweens.get(id)
+	return tw, ok
+}
+
+// SetHopTween is a low-level API. Prefer Hop unless you need explicit
+// From/Elapsed state, such as loading snapshots or tests.
+func (w *World) SetHopTween(id EntityID, tw HopTween) {
+	w.markEntityCountDirty()
+	w.hopTweens.set(id, tw)
+}
+
+// Hop sends an entity from where it stands to target in an arc: the straight
+// line on the ground, with Height peaking at opts.Apex halfway. The tween
+// removes itself on landing, leaving the entity at target with zero height.
+// It returns false when the entity has no Transform to fly from.
+func (w *World) Hop(id EntityID, target math2d.Vec2, opts HopOptions) bool {
+	from, ok := w.transforms.get(id)
+	if !ok {
+		return false
+	}
+	w.markEntityCountDirty()
+	// A hop owns the transform for its whole flight, exactly like SetTransform
+	// owns the instant: driving the same entity through both at once is the
+	// mistake, not a composition.
+	w.transformTweens.remove(id)
+	w.hopTweens.set(id, HopTween{From: from.Position, To: target, Apex: opts.Apex, Duration: opts.Duration})
+	return true
+}
+
+func (w *World) RemoveHopTween(id EntityID) {
+	w.markEntityCountDirty()
+	w.hopTweens.remove(id)
+}
+
+// CommandSprite
+
+func (w *World) CommandSprite(id EntityID) (CommandSprite, bool) {
+	s, ok := w.commandSprites.get(id)
+	return s, ok
+}
+
+// SetCommandSprite installs raw commands as the entity's appearance. Like
+// SpriteTransform it is presentation-only: never in Checksum. The Commands
+// slice is kept as given -- treat it as immutable once set.
+func (w *World) SetCommandSprite(id EntityID, s CommandSprite) {
+	w.commandSprites.set(id, s)
+}
+
+func (w *World) RemoveCommandSprite(id EntityID) {
+	w.commandSprites.remove(id)
+}
+
+// Attachment
+
+func (w *World) Attachment(id EntityID) (Attachment, bool) {
+	a, ok := w.attachments.get(id)
+	return a, ok
+}
+
+// SetAttachment anchors id's sprite to another entity; see the Attachment
+// component. Presentation-only: never in Checksum.
+func (w *World) SetAttachment(id EntityID, a Attachment) {
+	w.attachments.set(id, a)
+}
+
+func (w *World) RemoveAttachment(id EntityID) {
+	w.attachments.remove(id)
+}
+
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {
 	return w.debugGridCells
 }
@@ -645,6 +733,9 @@ func (w *World) collectEntityIDs() map[EntityID]struct{} {
 		ids[id] = struct{}{}
 	}
 	for _, id := range w.moveIntents.ids {
+		ids[id] = struct{}{}
+	}
+	for _, id := range w.hopTweens.ids {
 		ids[id] = struct{}{}
 	}
 

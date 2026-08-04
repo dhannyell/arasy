@@ -65,6 +65,7 @@ benchmarks/runs/
 CLAUDE.md
 tools/brand/
 docs/assets/
+dist/
 
 # Windows resource objects (icons) are generated per game by go-winres and
 # picked up automatically by go build; see docs/distribution-en.md.
