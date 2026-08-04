@@ -70,7 +70,7 @@ func drawBeatBars(nowMS float64) []render.Command {
 			alpha, width = 0.16, 0.7
 		}
 		cmds = append(cmds, render.DrawLine{
-			BaseCommand: render.BaseCommand{LayerValue: 4},
+			BaseCommand: render.BaseCommand{LayerValue: 4, BlendMode: render.BlendAdditive},
 			From:        math2d.Vec2{X: left, Y: y},
 			To:          math2d.Vec2{X: right, Y: y},
 			Width:       width * depth,
@@ -144,9 +144,13 @@ func drawHoldLine(lane int, fromY, toY float64, held bool) []render.Command {
 		outer = render.RGBA(1, 0.14, 0.58, 0.68)
 		inner = render.RGBA(1, 0.48, 0.78, 1)
 	}
+	// Additive layers behave like light: where the halo and the core overlap
+	// they climb toward white, which is what makes a sustain read as a lit
+	// neon tube instead of a painted stripe.
+	glow := render.BaseCommand{LayerValue: 10, BlendMode: render.BlendAdditive}
 	return []render.Command{
-		render.DrawLine{BaseCommand: render.BaseCommand{LayerValue: 10}, From: from, To: to, Width: 1.35 * depth, Color: outer},
-		render.DrawLine{BaseCommand: render.BaseCommand{LayerValue: 10}, From: from, To: to, Width: 0.48 * depth, Color: inner},
+		render.DrawLine{BaseCommand: glow, From: from, To: to, Width: 1.35 * depth, Color: outer},
+		render.DrawLine{BaseCommand: glow, From: from, To: to, Width: 0.48 * depth, Color: inner},
 	}
 }
 
@@ -161,7 +165,7 @@ func drawActiveHoldLanes(state MatchState) []render.Command {
 		topLeft, topRight := laneBoundsAtY(lane, spawnY, 0.16)
 		bottomLeft, bottomRight := laneBoundsAtY(lane, hitLineY, 0.16)
 		cmds = append(cmds, render.DrawPolygon{
-			BaseCommand: render.BaseCommand{LayerValue: 9},
+			BaseCommand: render.BaseCommand{LayerValue: 9, BlendMode: render.BlendAdditive},
 			Points: []math2d.Vec2{
 				{X: topLeft, Y: spawnY},
 				{X: topRight, Y: spawnY},
@@ -241,7 +245,7 @@ func drawHitTargets(ctx *runtime.RenderContext, state MatchState, nowMS int) []r
 				glow = render.RGBA(1, 0.2, 0.6, 0.25+holdPulse(ctx.Time)*0.28)
 			}
 			cmds = append(cmds, render.DrawCircle{
-				BaseCommand: render.BaseCommand{LayerValue: 11},
+				BaseCommand: render.BaseCommand{LayerValue: 11, BlendMode: render.BlendAdditive},
 				Center:      math2d.Vec2{X: centerX, Y: hitLineY},
 				Radius:      targetHeight * 0.78,
 				Fill:        glow,
