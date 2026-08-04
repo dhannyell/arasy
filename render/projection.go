@@ -251,7 +251,7 @@ func (p Projection) Project(ground math2d.Vec2, footprintHalfExtents math2d.Vec2
 	shrink := 1 / (1 + max(0, p.ShadowShrinkPerZ)*z)
 	return ProjectedHeight{
 		BodyPosition: ground.Add(p.liftAxis().Mul(z * p.LiftPerZ)),
-		BodyScale: max(0, 1+z*p.ScalePerZ),
+		BodyScale:    max(0, 1+z*p.ScalePerZ),
 		ShadowCenter: math2d.Vec2{
 			X: footprintHalfExtents.X * p.ShadowOffset.X,
 			Y: footprintHalfExtents.Y * p.ShadowOffset.Y,
