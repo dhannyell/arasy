@@ -229,6 +229,32 @@ type CircleSpriteTweenOptions struct {
 	RemoveOnComplete bool
 }
 
+// HopTween carries an entity from one ground point to another in an arc:
+// Position runs the straight line while Height rises to Apex halfway and
+// lands at zero. It is the tactics-game hop -- the third dimension
+// TransformTween does not animate -- and it removes itself on landing, so
+// "is this entity mid-hop" is simply whether the component exists.
+//
+// It is simulation state like the tweens: it enters Checksum and replays.
+// Prefer World.Hop; set this directly only to restore explicit state, such
+// as loading snapshots.
+type HopTween struct {
+	From, To math2d.Vec2
+	Apex     float64
+	Duration float64
+	Elapsed  float64
+}
+
+// HopOptions configures World.Hop.
+type HopOptions struct {
+	// Duration is the flight time in seconds. Zero lands the hop on the
+	// next step.
+	Duration float64
+
+	// Apex is the height of the arc's peak, in the same units as Height.Z.
+	Apex float64
+}
+
 // Height gives an entity a scalar altitude above the 2D plane. Z is
 // simulation state (it participates in checksum and cloning); visual
 // presentation derives from it via render.Projection.

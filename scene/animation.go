@@ -7,7 +7,42 @@ import (
 
 func (w *World) advanceAnimations(dt float64) {
 	w.advanceTransformTweens(dt)
+	w.advanceHopTweens(dt)
 	w.advanceCircleSpriteTweens(dt)
+}
+
+func (w *World) advanceHopTweens(dt float64) {
+	var toRemove []EntityID
+
+	for i, id := range w.hopTweens.ids {
+		tw := w.hopTweens.dense[i]
+		transform, ok := w.transforms.get(id)
+		if !ok {
+			continue
+		}
+
+		tw.Elapsed += dt
+		t := ease.Progress(tw.Elapsed, tw.Duration)
+
+		transform.Position = tw.From.Lerp(tw.To, t)
+		w.transforms.set(id, transform)
+
+		// The arc is the parabola through zero at both ends: gone the moment
+		// the hop lands, so the entity never rests in the air.
+		height, _ := w.heights.get(id)
+		height.Z = tw.Apex * 4 * t * (1 - t)
+		w.heights.set(id, height)
+
+		if t >= 1 {
+			toRemove = append(toRemove, id)
+			continue
+		}
+		w.hopTweens.set(id, tw)
+	}
+
+	for _, id := range toRemove {
+		w.hopTweens.remove(id)
+	}
 }
 
 func (w *World) advanceTransformTweens(dt float64) {
