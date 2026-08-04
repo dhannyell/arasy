@@ -9,8 +9,13 @@ import (
 )
 
 func main() {
+	game, err := outpost.NewGame()
+	if err != nil {
+		panic(err)
+	}
+
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := native.Run(outpost.NewGame(), native.Options{
+	if err := native.Run(game, native.Options{
 		Title:    "Outpost — Isometric Showcase",
 		Width:    1600,
 		Height:   960,

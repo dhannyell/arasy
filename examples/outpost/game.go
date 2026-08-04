@@ -1,14 +1,20 @@
 package outpost
 
 import (
+	"embed"
+	"io/fs"
 	"math"
 
+	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/scene"
 )
+
+//go:embed assets
+var embeddedAssets embed.FS
 
 const (
 	viewportWidth  = 1600
@@ -22,14 +28,29 @@ const (
 	unitRadius = 2.1
 )
 
+var (
+	sheepIdleSrc = math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 0},
+		math2d.Vec2{X: 124, Y: 62},
+	)
+	sheepAirborneSrc = math2d.NewRect(
+		math2d.Vec2{X: 124, Y: 0},
+		math2d.Vec2{X: 124, Y: 62},
+	)
+	sheepLandingSrc = math2d.NewRect(
+		math2d.Vec2{X: 0, Y: 62},
+		math2d.Vec2{X: 124, Y: 62},
+	)
+)
+
 // isoView is the entire projection: screenX = x - y, screenY = (x + y) / 2,
 // the classic 2:1 dimetric view. The simulation below never mentions it
 // again -- tiles stay squares, clicks come back through ScreenToWorld.
 var isoView = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
 
 var unitBodies = [unitCount]render.Color{
-	render.RGBA8(74, 181, 173, 255),
-	render.RGBA8(230, 152, 74, 255),
+	render.RGBA8(128, 128, 128, 255),
+	render.RGBA8(255, 255, 255, 255),
 }
 
 var unitStarts = [unitCount][2]int{{2, 5}, {6, 2}}
@@ -39,6 +60,8 @@ var unitStarts = [unitCount][2]int{{2, 5}, {6, 2}}
 // here.
 type UnitState struct {
 	TileI, TileJ int
+	Airborne     bool
+	LandingHeld  bool
 }
 
 // CursorState is the gamepad and keyboard tile cursor. The stick hysteresis
@@ -78,10 +101,20 @@ type Game struct {
 	hovered    bool
 
 	commands []render.Command
+
+	assets asset.Manifest
 }
 
-func NewGame() *Game {
-	return &Game{}
+func NewGame() (*Game, error) {
+	sub, err := fs.Sub(embeddedAssets, "assets")
+	if err != nil {
+		return nil, err
+	}
+	m, err := asset.Load(sub)
+	if err != nil {
+		return nil, err
+	}
+	return &Game{assets: m}, nil
 }
 
 func (g *Game) Setup() runtime.Config {
@@ -104,6 +137,7 @@ func (g *Game) Setup() runtime.Config {
 		FPS:                  60,
 		HistoryLen:           600,
 		DisableDefaultSplash: true,
+		Assets:               g.assets,
 	}
 }
 
@@ -157,31 +191,24 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 		// starts somewhere meaningful instead of a corner.
 		Cursor: CursorState{I: unitStarts[0][0], J: unitStarts[0][1]},
 	}
+	sheepTexture := ctx.Assets.Texture("sheep")
 	for u := range g.units {
 		i, j := unitStarts[u][0], unitStarts[u][1]
 		g.State.Units[u] = UnitState{TileI: i, TileJ: j}
 		g.units[u] = ctx.World.SpawnBundle(scene.Bundle{
 			Transform: &scene.Transform{Position: tileCenter(i, j)},
-			CircleSprite: &scene.CircleSprite{
-				Radius:     unitRadius,
-				BaseSprite: scene.BaseSprite{Layer: layerActors, Color: unitBodies[u]},
+			ImageSprite: &scene.ImageSprite{
+				Layer:           layerActors,
+				Texture:         sheepTexture,
+				Size:            math2d.Vec2{X: 12, Y: 6},
+				Tint:            unitBodies[u],
+				Plane:           scene.PlaneUpright,
+				ShadowFootprint: math2d.Vec2{X: 1.8, Y: 0.8},
+				Src:             math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 124, Y: 62}},
 			},
 			Height: &scene.Height{},
 		})
 
-		// The chassis plate and the highlight ride the body as attachments:
-		// they take the unit's position and height without being told, sort
-		// as part of it, and the plate -- an upright sprite -- gets the
-		// projection's own stand-up correction from the engine.
-		ctx.World.SpawnAttached(g.units[u], math2d.Vec2{}, 0, scene.Bundle{
-			RectSprite: &scene.RectSprite{
-				Rect: math2d.NewRectFromCorners(
-					math2d.Vec2{X: -2.5, Y: 0.9},
-					math2d.Vec2{X: 2.5, Y: 1.9},
-				),
-				BaseSprite: scene.BaseSprite{Layer: layerActors, Color: darken(unitBodies[u])},
-			},
-		})
 		ctx.World.SpawnAttached(g.units[u], math2d.Vec2{X: -0.7, Y: -0.7}, 0, scene.Bundle{
 			CircleSprite: &scene.CircleSprite{
 				Radius:     0.6,
@@ -195,6 +222,29 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	g.trackHover(ctx)
 	g.handleClicks(ctx)
 	g.steerCursor(ctx, dt)
+}
+
+func (g *Game) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
+	for u, id := range g.units {
+		state := &g.State.Units[u]
+
+		_, airborne := ctx.World.HopTween(id)
+
+		if state.Airborne && !airborne {
+			state.LandingHeld = true
+		}
+
+		state.Airborne = airborne
+
+		switch {
+		case state.LandingHeld:
+			g.setSheepFrame(ctx, id, sheepLandingSrc)
+		case airborne:
+			g.setSheepFrame(ctx, id, sheepAirborneSrc)
+		default:
+			g.setSheepFrame(ctx, id, sheepIdleSrc)
+		}
+	}
 }
 
 // steerCursor is the whole gamepad/keyboard scheme: the Mapper already merged
@@ -246,6 +296,7 @@ func (g *Game) handleClicks(ctx *runtime.UpdateContext) {
 
 func (g *Game) clickTile(ctx *runtime.UpdateContext, i, j int) {
 	if u, ok := g.unitAt(i, j); ok {
+		g.State.Units[u].LandingHeld = false
 		g.State.Selected = u
 		return
 	}
@@ -292,6 +343,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds = g.appendUnitGround(cmds, ctx)
 
 	cmds = ctx.World.RenderCommandsInto(cmds, ctx.Alpha)
+	cmds = g.appendConfusion(cmds, ctx)
 
 	g.commands = cmds
 	return cmds
@@ -320,8 +372,8 @@ func (g *Game) appendClouds(cmds []render.Command, time float64) []render.Comman
 }
 
 func (g *Game) appendWater(cmds []render.Command, time float64) []render.Command {
-	for j := 0; j < boardRows; j++ {
-		for i := 0; i < boardCols; i++ {
+	for j := range boardRows {
+		for i := range boardCols {
 			if terrainAt(i, j) != terrainWater {
 				continue
 			}
@@ -416,6 +468,85 @@ func (g *Game) appendUnitGround(cmds []render.Command, ctx *runtime.RenderContex
 		}
 	}
 	return cmds
+}
+
+func (g *Game) setSheepFrame(
+	ctx *runtime.UpdateContext,
+	id scene.EntityID,
+	frame math2d.Rect,
+) {
+	sprite, ok := ctx.World.ImageSprite(id)
+	if !ok || sprite.Src == frame {
+		return
+	}
+
+	sprite.Src = frame
+	ctx.World.SetImageSprite(id, sprite)
+}
+
+func (g *Game) appendConfusion(
+	cmds []render.Command,
+	ctx *runtime.RenderContext,
+) []render.Command {
+	for u, state := range g.State.Units {
+		if !state.LandingHeld {
+			continue
+		}
+
+		id := g.units[u]
+		transform, ok := ctx.World.Transform(id)
+		if !ok {
+			continue
+		}
+
+		height, _ := ctx.World.Height(id)
+		center := g.projection.Lift(transform.Position, height.Z+3.4)
+
+		for star := range 3 {
+			angle := ctx.Time*2.5 + float64(star)*2*math.Pi/3
+			orbit := math2d.Vec2{
+				X: math.Cos(angle) * 0.8,
+				Y: math.Sin(angle) * 0.35,
+			}
+
+			cmds = append(cmds, render.DrawPolygon{
+				Points: starPoints(
+					center.Add(orbit),
+					0.45,
+					0.18,
+					angle,
+				),
+				Fill: render.RGBA8(255, 220, 70, 255),
+				BaseCommand: render.BaseCommand{
+					LayerValue: layerActors + 1,
+				},
+			})
+		}
+	}
+
+	return cmds
+}
+
+func starPoints(
+	center math2d.Vec2,
+	outer, inner, rotation float64,
+) []math2d.Vec2 {
+	points := make([]math2d.Vec2, 10)
+
+	for i := range points {
+		radius := inner
+		if i%2 == 0 {
+			radius = outer
+		}
+
+		angle := rotation + float64(i)*math.Pi/5
+		points[i] = center.Add(math2d.Vec2{
+			X: math.Cos(angle) * radius,
+			Y: math.Sin(angle) * radius,
+		})
+	}
+
+	return points
 }
 
 func darken(c render.Color) render.Color {
