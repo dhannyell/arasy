@@ -30,6 +30,20 @@ type PointerFrame struct {
 	Events  []PointerEvent
 }
 
+// Clicks returns where button was pressed this tick, in screen coordinates.
+// It is the shortcut for the overwhelmingly common question -- "did the player
+// click, and where" -- so a game only walks Events itself when it needs
+// releases or drags.
+func (f PointerFrame) Clicks(button PointerButton) []math2d.Vec2 {
+	var clicks []math2d.Vec2
+	for _, event := range f.Events {
+		if event.Kind == EventButtonDown && event.Button == button {
+			clicks = append(clicks, event.Pos)
+		}
+	}
+	return clicks
+}
+
 type PointerState struct {
 	pos    math2d.Vec2
 	button [3]bool
