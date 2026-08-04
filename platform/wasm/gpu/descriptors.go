@@ -32,8 +32,8 @@ func PremultipliedBlend() map[string]any {
 	}
 }
 
-// AdditiveBlend adds premultiplied source color to the destination.
-// AdditiveStraightBlend is the additive operator for pipelines whose shaders
+// AdditiveStraightBlend adds premultiplied source color to the destination.
+// is the additive operator for pipelines whose shaders
 // output straight (non-premultiplied) alpha: the source color is scaled by
 // its own alpha before being summed, so a faint glow adds faintly.
 func AdditiveStraightBlend() map[string]any {

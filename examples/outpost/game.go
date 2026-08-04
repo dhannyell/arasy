@@ -548,7 +548,3 @@ func starPoints(
 
 	return points
 }
-
-func darken(c render.Color) render.Color {
-	return render.RGBA(c.R*0.55, c.G*0.55, c.B*0.55, c.A)
-}

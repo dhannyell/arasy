@@ -82,8 +82,8 @@ type Renderer struct {
 	texturedAddPipeline  *wgpu.RenderPipeline
 	spriteAddPipeline    *wgpu.RenderPipeline
 	textGlyphAddPipeline *wgpu.RenderPipeline
-	textureSampler    *wgpu.Sampler
-	mipSampler        *wgpu.Sampler
+	textureSampler       *wgpu.Sampler
+	mipSampler           *wgpu.Sampler
 
 	solidBuffer     *wgpu.Buffer
 	solidCap        int
@@ -1395,6 +1395,7 @@ func premultipliedBlend() *wgpu.BlendState {
 		},
 	}
 }
+
 // additiveStraightBlend is the additive operator for pipelines whose shaders
 // output straight (non-premultiplied) alpha: the source color is scaled by
 // its own alpha before being summed, so a faint glow adds faintly.
