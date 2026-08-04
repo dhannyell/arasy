@@ -14,7 +14,9 @@ const (
 	viewportWidth  = 1600
 	viewportHeight = 960
 
-	simulationDt = 1.0 / 60.0
+	// cameraAir is the margin FrameGround adds around the board: enough for
+	// the peaks above it and the cliffs below without dwarfing the island.
+	cameraAir = 0.12
 
 	unitCount  = 2
 	unitRadius = 2.1
@@ -32,14 +34,11 @@ var unitBodies = [unitCount]render.Color{
 
 var unitStarts = [unitCount][2]int{{2, 5}, {6, 2}}
 
+// UnitState is which tile a unit claims. The hop itself lives in the world as
+// a scene.HopTween, so the flight is simulation state without being repeated
+// here.
 type UnitState struct {
 	TileI, TileJ int
-
-	// A hop in flight: from and to tiles, and progress 0..1.
-	Hopping      bool
-	FromI, FromJ int
-	ToI, ToJ     int
-	T            float64
 }
 
 type State struct {
@@ -70,14 +69,12 @@ func NewGame() *Game {
 }
 
 func (g *Game) Setup() runtime.Config {
-	// Camera.World frames *view* space: the board's diamond after isoView,
-	// plus headroom for the peaks above and the cliffs below.
 	return runtime.Config{
 		Camera: render.Camera{
-			World: math2d.NewRect(
-				math2d.Vec2{X: -72, Y: -14},
-				math2d.Vec2{X: 160, Y: 96},
-			),
+			// Camera.World frames *view* space -- the board's diamond, not its
+			// square -- and FrameGround does that projection so the framing is
+			// "the board plus some air" instead of four numbers found by eye.
+			World: render.FrameGround(isoView, boardRect(), cameraAir),
 			Viewport: math2d.NewRect(
 				math2d.Vec2{},
 				math2d.Vec2{X: viewportWidth, Y: viewportHeight},
@@ -154,10 +151,6 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 	g.trackHover(ctx)
 	g.handleClicks(ctx)
-
-	for u := range g.State.Units {
-		g.stepUnit(ctx, u)
-	}
 }
 
 func (g *Game) trackHover(ctx *runtime.UpdateContext) {
@@ -169,37 +162,32 @@ func (g *Game) trackHover(ctx *runtime.UpdateContext) {
 }
 
 func (g *Game) handleClicks(ctx *runtime.UpdateContext) {
-	for _, event := range ctx.Pointer.Events {
-		if event.Kind != input.EventButtonDown || event.Button != input.PointerPrimary {
-			continue
+	for _, click := range ctx.Pointer.Clicks(input.PointerPrimary) {
+		if i, j, ok := tileAt(ctx.Camera().ScreenToWorld(click)); ok {
+			g.clickTile(ctx, i, j)
 		}
-		i, j, ok := tileAt(ctx.Camera().ScreenToWorld(event.Pos))
-		if !ok {
-			continue
-		}
-		g.clickTile(i, j)
 	}
 }
 
-func (g *Game) clickTile(i, j int) {
+func (g *Game) clickTile(ctx *runtime.UpdateContext, i, j int) {
 	if u, ok := g.unitAt(i, j); ok {
 		g.State.Selected = u
 		return
 	}
 
 	selected := g.State.Selected
-	if selected < 0 || g.State.Units[selected].Hopping {
+	if selected < 0 || terrainAt(i, j) != terrainGrass {
 		return
 	}
-	if terrainAt(i, j) != terrainGrass {
+	if _, hopping := ctx.World.HopTween(g.units[selected]); hopping {
 		return
 	}
 
 	unit := &g.State.Units[selected]
-	unit.Hopping = true
-	unit.FromI, unit.FromJ = unit.TileI, unit.TileJ
-	unit.ToI, unit.ToJ = i, j
-	unit.T = 0
+	from := tileCenter(unit.TileI, unit.TileJ)
+	to := tileCenter(i, j)
+	duration, apex := hopFlight(from, to)
+	ctx.World.Hop(g.units[selected], to, scene.HopOptions{Duration: duration, Apex: apex})
 	unit.TileI, unit.TileJ = i, j // the destination is claimed on takeoff
 }
 
@@ -218,32 +206,6 @@ func (g *Game) unitAt(i, j int) (int, bool) {
 func hopFlight(from, to math2d.Vec2) (duration, apex float64) {
 	distance := to.Sub(from).Len()
 	return 0.45 + distance*0.008, 3.2 + distance*0.14
-}
-
-func (g *Game) stepUnit(ctx *runtime.UpdateContext, u int) {
-	unit := &g.State.Units[u]
-	id := g.units[u]
-
-	position := tileCenter(unit.TileI, unit.TileJ)
-	z := 0.0
-
-	if unit.Hopping {
-		from := tileCenter(unit.FromI, unit.FromJ)
-		to := tileCenter(unit.ToI, unit.ToJ)
-		duration, apex := hopFlight(from, to)
-
-		unit.T += simulationDt / duration
-		if unit.T >= 1 {
-			unit.Hopping = false
-			unit.T = 1
-		} else {
-			position = from.Add(to.Sub(from).Mul(unit.T))
-			z = apex * 4 * unit.T * (1 - unit.T)
-		}
-	}
-
-	ctx.World.SetTransform(id, scene.Transform{Position: position, Scale: math2d.Vec2{X: 1, Y: 1}})
-	ctx.World.SetHeight(id, scene.Height{Z: z})
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {

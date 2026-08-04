@@ -95,6 +95,12 @@ func terrainAt(i, j int) terrain {
 	}
 }
 
+// boardRect is the whole board on the ground, the rectangle everything else
+// is authored inside.
+func boardRect() math2d.Rect {
+	return math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: boardCols * tileSize, Y: boardRows * tileSize})
+}
+
 func tileRect(i, j int) math2d.Rect {
 	return math2d.NewRect(
 		math2d.Vec2{X: float64(i) * tileSize, Y: float64(j) * tileSize},

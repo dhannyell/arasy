@@ -16,6 +16,7 @@ type hopProbe struct {
 	*Game
 	position math2d.Vec2
 	peakZ    float64
+	hopping  bool
 }
 
 func (p *hopProbe) Update(ctx *runtime.UpdateContext, dt float64) {
@@ -27,6 +28,7 @@ func (p *hopProbe) Update(ctx *runtime.UpdateContext, dt float64) {
 	if height, ok := ctx.World.Height(p.units[0]); ok && height.Z > p.peakZ {
 		p.peakZ = height.Z
 	}
+	_, p.hopping = ctx.World.HopTween(p.units[0])
 }
 
 func clickAt(driver *runtime.Driver, screen math2d.Vec2) {
@@ -65,7 +67,7 @@ func TestClickSelectsAndHopsAcrossTheProjection(t *testing.T) {
 	}
 
 	clickAt(driver, camera.WorldToScreen(tileCenter(target[0], target[1])))
-	if !probe.State.Units[0].Hopping {
+	if !probe.hopping {
 		t.Fatal("unit 0 is not hopping after clicking a grass tile")
 	}
 
@@ -74,7 +76,7 @@ func TestClickSelectsAndHopsAcrossTheProjection(t *testing.T) {
 	}
 
 	unit := probe.State.Units[0]
-	if unit.Hopping {
+	if probe.hopping {
 		t.Fatal("unit 0 is still hopping after two hundred ticks")
 	}
 	if unit.TileI != target[0] || unit.TileJ != target[1] {
