@@ -1,6 +1,7 @@
 package render_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -12,6 +13,27 @@ func TestBaseCommandLayerReturnsConfiguredLayer(t *testing.T) {
 
 	if got := command.Layer(); got != 7 {
 		t.Fatalf("Layer() = %d, want 7", got)
+	}
+}
+
+// WithLayer is a type switch with a silent fallthrough: a command type added
+// without a case there keeps its own layer, and a CommandSprite group
+// silently breaks. CommandSink has one Visit method per command type, so
+// reflecting over it discovers every command this package can ever emit.
+func TestWithLayerCoversEveryCommandType(t *testing.T) {
+	sink := reflect.TypeOf((*render.CommandSink)(nil)).Elem()
+
+	for i := range sink.NumMethod() {
+		argument := sink.Method(i).Type.In(0)
+		command, ok := reflect.New(argument).Elem().Interface().(render.Command)
+		if !ok {
+			t.Fatalf("%s takes %v, which is not a render.Command", sink.Method(i).Name, argument)
+		}
+
+		if got := render.WithLayer(command, 42); got.Layer() != 42 {
+			t.Errorf("WithLayer(%s, 42) kept layer %d: add a case to the switch",
+				argument.Name(), got.Layer())
+		}
 	}
 }
 
