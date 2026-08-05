@@ -122,9 +122,9 @@ func drawLegendCard() []render.Command {
 	return cmds
 }
 
-// drawStadiumGlyph is a minimal flat pictogram (bowl curve + rim line) per
-// plans/implementacao/021 §3.6: keep icons legible in a handful of draw
-// commands, fall back to text rather than chase pixel-perfect fidelity.
+// drawStadiumGlyph is a minimal flat pictogram (bowl curve + rim line). Keep
+// it legible with a handful of draw commands; fall back to text rather than
+// chase pixel-perfect fidelity.
 func drawStadiumGlyph(center math2d.Vec2, size float64, col render.Color) []render.Command {
 	return []render.Command{
 		render.DrawArc{

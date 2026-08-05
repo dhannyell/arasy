@@ -110,7 +110,7 @@ nao o agendamento.
 
 Cues de audio sao audiveis durante o playback -- e a primeira audicao de quem
 carregou a gravacao. Durante o scrub elas continuam mudas, porque ja foram
-ouvidas na execucao original. Veja `docs/audio.md`.
+ouvidas na execucao original. Veja `docs/pt-br/audio.md`.
 
 ### `ReplayForViewing`
 

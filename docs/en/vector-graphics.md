@@ -3,7 +3,7 @@
 This guide covers Arasy's vector geometry API (`render/vector`) and the
 `arasy svg` compiler (`internal/svggen`) that turns an authored, animated SVG
 into deterministic Go using that API. See
-[`docs/animation-en.md`](animation-en.md) for the `anim.Timeline`/
+[`docs/en/animation.md`](animation.md) for the `anim.Timeline`/
 `render.Builder` layer this content is built on.
 
 ## `render/vector`: paths, stroke, and motion
@@ -209,8 +209,8 @@ gap, not an oversight:
 
 ## Related documents
 
-- [`docs/animation-en.md`](animation-en.md) — `anim.Timeline`,
+- [`docs/en/animation.md`](animation.md) — `anim.Timeline`,
   `ui.Sequence`, and `render.Builder` group composition.
-- [`docs/testing-en.md`](testing-en.md) — where `internal/svggen`'s parser
+- [`docs/en/testing.md`](testing.md) — where `internal/svggen`'s parser
   and codegen tests (including its fuzz targets) live and how they're
   organized.

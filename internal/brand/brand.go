@@ -2,7 +2,7 @@
 // it. It is the icon an Arasy demo wears, not a default the engine imposes: a
 // game supplies its own image through the host's Icon option, and the icon a
 // file manager shows for the executable is a separate, per-game resource
-// built with go-winres (see docs/distribution-en.md).
+// built with go-winres (see docs/en/distribution.md).
 //
 // The source of truth for the brand art lives outside the module, in a
 // directory that is not versioned. The image here is a checked-in copy,

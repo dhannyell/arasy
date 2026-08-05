@@ -58,7 +58,7 @@ method: nothing is mutated in place, so the same `Timeline` value can be
 evaluated any number of times, from any goroutine, without synchronization.
 
 `RenderContext.Time`/`Dt` are the render-elapsed clock this stack is built
-on — see [`docs/runtime-en.md`](runtime-en.md) for how they diverge from
+on — see [`docs/en/runtime.md`](runtime.md) for how they diverge from
 simulation ticks during pause and rewind. `UpdateContext` intentionally has
 no `Time` field: deterministic simulation code has no legitimate use for
 wall-clock time, so the type doesn't offer it.
@@ -138,10 +138,10 @@ sprite/label caps).
 
 ## Related documents
 
-- [`docs/vector-graphics.md`](vector-graphics-en.md) — the `render/vector`
+- [`docs/en/vector-graphics.md`](vector-graphics.md) — the `render/vector`
   path/stroke/motion API and the `arasy svg` SVG-to-Go compiler that
   produces generated `Timeline`-driven content.
-- [`docs/runtime-en.md`](runtime-en.md) — `RenderContext`/`UpdateContext`
+- [`docs/en/runtime.md`](runtime.md) — `RenderContext`/`UpdateContext`
   and the tick/render clock split.
-- [`docs/ui-en.md`](ui-en.md) — the `Drawer` contract, including
+- [`docs/en/ui.md`](ui.md) — the `Drawer` contract, including
   `SequenceKeyed`.

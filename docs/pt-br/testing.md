@@ -191,7 +191,7 @@ generate_test.go    -> TestGenerateIsDeterministicAndFormatted (gera duas vezes,
 `go test ./...` (corpus commitado) e como fuzzer real sob demanda
 (`go test ./internal/svggen -fuzz FuzzParseSVG -fuzztime 60s`), no mesmo
 espirito do fuzzing de simulacao descrito abaixo. Veja
-`docs/vector-graphics.md` para o que o compilador aceita/rejeita.
+`docs/pt-br/vector-graphics.md` para o que o compilador aceita/rejeita.
 
 ### Pacotes pequenos
 

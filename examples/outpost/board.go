@@ -338,7 +338,7 @@ func spawnCommandProp(world *scene.World, i, j int, commands []render.Command) {
 
 // spawnTree plants a trunk with two canopies attached above it. The canopies
 // hang up the projection's lift axis -- "straight up on screen", which under
-// this view is not the world's -Y (the isometric art trap docs/2-5d.md warns
+// this view is not the world's -Y (the isometric art trap docs/en/2-5d.md warns
 // about) -- and the Attachment keeps the whole tree one thing in the painter
 // order, sorting where the trunk meets the ground.
 func spawnTree(world *scene.World, i, j int) {

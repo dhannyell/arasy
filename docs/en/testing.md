@@ -173,7 +173,7 @@ generate_test.go    -> TestGenerateIsDeterministicAndFormatted (generate twice, 
 `go test ./...` (committed seed corpus) and as a real fuzzer on demand
 (`go test ./internal/svggen -fuzz FuzzParseSVG -fuzztime 60s`), the same
 spirit as the simulation fuzzing described below. See
-`docs/vector-graphics-en.md` for what the compiler accepts/rejects.
+`docs/en/vector-graphics.md` for what the compiler accepts/rejects.
 
 ### Small Packages
 
