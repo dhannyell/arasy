@@ -150,6 +150,36 @@ func TestShadowShrinkIsMeasuredInWorldUnits(t *testing.T) {
 	}
 }
 
+// A view that only translates, rotates or uniformly scales does not skew, so
+// it has no tilt of its own to supply a lift from: the DepthScale rule keeps
+// deciding. Before this was checked, any invertible view hijacked the rule --
+// a panned camera tilted at 0.5 lifted by 1, and a rotated top-down camera
+// showed height at all.
+func TestGroundProjectionKeepsTheTiltRuleForViewsThatDoNotSkew(t *testing.T) {
+	want := math.Tan(math.Acos(0.5))
+
+	for name, view := range map[string]math2d.Affine{
+		"translation":   math2d.Translate(math2d.Vec2{X: 30, Y: -12}),
+		"uniform zoom":  math2d.Scale(math2d.Vec2{X: 3, Y: 3}),
+		"pure rotation": math2d.Rotate(math.Pi / 6),
+	} {
+		t.Run(name, func(t *testing.T) {
+			projection := GroundProjection(tilted(viewCamera(view), 0.5), ProjectionLight{})
+
+			if math.Abs(projection.LiftPerZ-want) > 1e-9 {
+				t.Fatalf("LiftPerZ = %v, want the DepthScale rule's %v", projection.LiftPerZ, want)
+			}
+		})
+	}
+
+	// The extreme case: a rotated camera looking straight down has no tilt
+	// anywhere, so height has nowhere on screen to go.
+	projection := GroundProjection(viewCamera(math2d.Rotate(math.Pi/6)), ProjectionLight{})
+	if projection.LiftPerZ != 0 {
+		t.Fatalf("a rotated top-down camera lifts by %v, want 0", projection.LiftPerZ)
+	}
+}
+
 func tilted(cam Camera, depthScale float64) Camera {
 	cam.DepthScale = depthScale
 

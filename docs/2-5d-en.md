@@ -72,6 +72,12 @@ be re-placed whenever it moves. Declared on the camera, one line reaches all of
 it — and because an affine is invertible, `ScreenToWorld` undoes it, so a click
 on a grid tile answers with that tile.
 
+Framing follows the projection: `Camera.World` frames *view* space, and under
+a skewing view a square board becomes a diamond whose numbers nobody should
+work out by eye. `render.FrameGround(view, groundRect, margin)` does that
+arithmetic — the box around the projected corners, plus a fraction of air on
+every side.
+
 The world stays a square grid. That is not a style detail: it is the space the
 physics can reason about. A court is an axis-aligned rectangle `Config.Bounds`
 can describe; projected, the same court is a diamond it could not. Only the
@@ -180,6 +186,12 @@ own, and the rule above would read its neutral `DepthScale` as "no height". So
 override one of them — `ShadowAlpha`, say — without giving up the derivation
 for the rest.
 
+The movement every tactics game hand-rolls on top of this has a name:
+`World.Hop(id, target, HopOptions{Duration, Apex})` carries an entity in an
+arc — position along the straight line, `Height` peaking halfway through the
+flight — and the tween removes itself on landing, so "is it airborne" is
+whether the component exists.
+
 ## Depth order: who is drawn behind whom
 
 Sprites are painted back to front. Within a layer, each sprite gets one number
@@ -259,6 +271,46 @@ pieces that sort separately**, which is what every 2D game does with walls,
 bridges and doorways. `SortOffset` is what makes that cheap, because each piece
 can claim its own depth without its sprite having to move.
 
+### Raw-command props: `CommandSprite`
+
+A prop whose shape no built-in sprite can draw — an extruded building, a
+faceted mountain — becomes a list of raw commands, and raw commands have no
+base to sort by. `CommandSprite` gives them one: the entity joins the painter
+sort like any sprite, with its `Transform.Position` (plus `SortOffset`) as
+the sorting point, and the commands come out exactly as written, only with
+the layer rewritten to the component's, so the group paints as one body.
+
+```go
+world.SpawnBundle(scene.Bundle{
+    Transform:     &scene.Transform{Position: buildingBase},
+    CommandSprite: &scene.CommandSprite{Layer: layerActors, Commands: building},
+})
+```
+
+The content is presentation: it never enters `Checksum`, and a moving entity
+does not move its commands — they are absolute world geometry, like a
+`RectSprite`'s `Rect`. Decoration that moves wants an `Attachment`.
+
+### Composite objects: `Attachment`
+
+A tree is a trunk with two canopies; a machine is a body with a glow riding
+on it. `Attachment` keeps the set **one thing** in the painter order: the
+attached sprite draws at the parent's position (interpolated like the
+parent's), climbs `HeightOffset` up the lift axis *on top of* the parent's
+own height, sorts exactly at the parent's depth and draws right after it. It
+casts no shadow of its own — the parent's marks the ground for the whole
+composite.
+
+```go
+trunk := world.SpawnBundle(scene.Bundle{ /* Transform + RectSprite */ })
+world.SpawnAttached(trunk, math2d.Vec2{}, canopyHeight, scene.Bundle{
+    CircleSprite: &scene.CircleSprite{Radius: 2.3, /* ... */},
+})
+```
+
+Attached geometry is relative to the anchor: an attached `RectSprite`'s
+`Rect` is an offset around it, not absolute coordinates.
+
 ## What never foreshortens
 
 Foreshortening is a fact about the camera, not about the world. It stays out of:
@@ -300,13 +352,20 @@ Under a `View` the same scene keeps its square world grid and puts the whole
 projection in one line in `Setup` — even movement, because keys read on the
 screen invert back onto the grid through that same `View`.
 
+For the artist, the chosen angle becomes a contract through `arasy stencil`:
+the command renders a PNG guide sheet — tile grid, unit cube, lift vector and
+shadow — through the same camera and projection the game declares, with the
+pixel measurements annotated. The flags mirror the `Setup` fields one for one
+(`--view "2:1"` or the raw affine, `--depth-scale`, `--tile` for scale).
+
 Watch out for the isometric-art trap: a sprite is drawn centred on its
 position, so standing one on its own feet means moving it up *the screen*, not
 along the world's `-Y`. Under a `View` those are different directions, and
 taking the world one slides every prop up and to the right of the ground it is
 meant to be standing on.
 
-`examples/dodgeball` is the same foundation used by a full game.
+`examples/outpost` is the same foundation used by a full scene: an
+isometric island of extruded volumes, with units hopping from tile to tile.
 
 ## Known limits
 
@@ -317,15 +376,18 @@ meant to be standing on.
   body it belongs to so that the depth sort keeps an entity's commands
   together, which means one entity's shadow can fall over a neighbour already
   drawn in the same layer.
-- **A very low light stretches the shadow into a sliver.** The lean grows with
-  height without bound; keep `ProjectionLight.Tilt` modest, or set
-  `ShadowSkewPerZ` yourself.
+- **A very low light throws the shadow far away.** The distance it travels
+  grows with height without bound; keep `ProjectionLight.Tilt` modest, or set
+  `ShadowEscapePerZ` yourself.
 - **Sprites cannot interpenetrate.** A sprite is drawn entirely in front of or
   entirely behind another. Only a per-pixel depth buffer would change that.
-- **There is no vertical face.** A rectangle leaves the camera as a diamond
-  (ground) or as an upright billboard, never as the parallelogram that would be
-  the side of a block. A step with visible thickness is drawn by painting a
-  dark copy offset underneath the top — a painter's trick, not a projection.
+- **There is no true vertical face.** A rectangle leaves the camera as a
+  diamond (ground) or as an upright billboard, never as the side of a block.
+  What exists is the painter's trick with an API name: `Projection.Wall`
+  sweeps a ground edge along the lift, and `Projection.ExtrudeRect` assembles
+  the whole block — the two faces the projection makes visible plus the top
+  lifted by `Projection.LiftVector()`, the same vector that lifts entities
+  with `Height`. `examples/outpost` builds an entire island out of it.
 - **Retained batches and particles ignore `View`.** `DrawSpriteBatch`,
   `DrawTextBatch` and `DrawParticles` receive the camera as a scale and an
   offset, and a shear does not fit in those two numbers. Fixing it means a

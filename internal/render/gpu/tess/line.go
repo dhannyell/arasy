@@ -39,6 +39,19 @@ func AppendPoint(m *Mesh, c ctx, cmd render.DrawPoint) {
 		return
 	}
 
+	// A point is a small circle, so a skewing camera slants it like one:
+	// rebuild it per vertex or it stays axis-aligned while every other shape
+	// around it shears.
+	if c.perVertex(cmd.Transform) {
+		AppendCircle(m, c, render.DrawCircle{
+			Center:      cmd.Center,
+			Radius:      cmd.Radius,
+			Fill:        cmd.Color,
+			BaseCommand: cmd.BaseCommand,
+		})
+		return
+	}
+
 	start := len(m.Vertices)
 
 	center := c.cam.WorldToScreen(cmd.Center)
