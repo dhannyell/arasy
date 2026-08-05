@@ -48,6 +48,10 @@ func (w *World) Checksum() uint64 {
 // colors, geometry -- never invalidates a recording. Tween stores are
 // simulation state even when they animate a sprite: the tween's own fields
 // carry the deterministic clock, the sprite it writes is derived.
+//
+// The guarantee assumes simulation code never reads presentation state.
+// Game logic that branches on a sprite field diverges silently under
+// replay; that discipline belongs to the game, not to this hash.
 func (w *World) SimChecksum() uint64 {
 	return w.checksum(true, false)
 }
@@ -56,6 +60,10 @@ func (w *World) SimChecksum() uint64 {
 // fingerprint of authored visuals, recorded once per replay so a divergence
 // loads with a warning ("the content changed since recording") instead of a
 // false anchor failure.
+//
+// It covers components, not assets: an ImageSprite hashes its Texture
+// handle, never the pixels behind it. Swapping a spritesheet in the same
+// texture slot changes neither hash.
 func (w *World) ContentChecksum() uint64 {
 	return w.checksum(false, true)
 }

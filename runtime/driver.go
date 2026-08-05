@@ -67,6 +67,10 @@ type Driver struct {
 	// event the live run never actually stepped through.
 	recordingStaged  []input.Event
 	recordingAnchors []Anchor
+	// recordingContentChecksum fingerprints the authored visuals at
+	// StartRecording, so a later load can attribute a divergence to a content
+	// edit instead of failing an anchor.
+	recordingContentChecksum uint64
 	// recordingInitialViewport is the surface size captured at StartRecording
 	// (tick 0) so StopRecording can persist it; Replay must restore it or
 	// viewport-dependent logic (UI hit-tests) diverges from the live run.
@@ -321,7 +325,9 @@ func (d *Driver) stepOnce(dt float64) {
 		d.recorder.Capture(d.captureSnapshot())
 	}
 	if d.recordingEnabled && d.tick%uint64(d.cfg.KeyframeInterval) == 0 {
-		d.recordingAnchors = append(d.recordingAnchors, Anchor{Tick: d.tick, Checksum: d.world.Checksum()})
+		// Anchors hash simulation state only, so editing presentation state
+		// (sprite colors, geometry) never invalidates a recording.
+		d.recordingAnchors = append(d.recordingAnchors, Anchor{Tick: d.tick, Checksum: d.world.SimChecksum()})
 	}
 
 	// Capture render pose before the simulation step so the next frame

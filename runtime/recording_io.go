@@ -55,6 +55,11 @@ func (r Recording) WriteTo(w io.Writer) (int64, error) {
 	if err := cw.write(r.GamepadDeadzone); err != nil {
 		return cw.n, err
 	}
+	// Content fingerprint at tick 0. Added in place without a version bump:
+	// no .arrp is distributed yet, so committed fixtures regenerate instead.
+	if err := cw.write(r.ContentChecksum); err != nil {
+		return cw.n, err
+	}
 	// Viewport at tick 0 (4 float64 = 32 bytes). A zero rect signals "use the
 	// game's Config default" — recordings made before viewport capture.
 	if err := cw.write(r.Viewport.Min.X); err != nil {
@@ -165,6 +170,9 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.GamepadDeadzone); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.ContentChecksum); err != nil {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.Viewport.Min.X); err != nil {
@@ -327,9 +335,11 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 		eventsByTick[event.Tick] = append(eventsByTick[event.Tick], event)
 	}
 
+	warnOnContentDivergence(driver, log, rec)
+
 	nextAnchor := 0
 	for nextAnchor < len(rec.Anchors) && rec.Anchors[nextAnchor].Tick == 0 {
-		if got, want := driver.Checksum(), rec.Anchors[nextAnchor].Checksum; got != want {
+		if got, want := driver.world.SimChecksum(), rec.Anchors[nextAnchor].Checksum; got != want {
 			return fmt.Errorf("anchor mismatch at tick 0: got %d want %d", got, want)
 		}
 		nextAnchor++
@@ -344,7 +354,7 @@ func VerifyRecording(game Game, log *slog.Logger, rec Recording) error {
 		}
 		driver.Step()
 		for nextAnchor < len(rec.Anchors) && rec.Anchors[nextAnchor].Tick == driver.tick {
-			if got, want := driver.Checksum(), rec.Anchors[nextAnchor].Checksum; got != want {
+			if got, want := driver.world.SimChecksum(), rec.Anchors[nextAnchor].Checksum; got != want {
 				return fmt.Errorf("anchor mismatch at tick %d: got %d want %d", driver.tick, got, want)
 			}
 			nextAnchor++

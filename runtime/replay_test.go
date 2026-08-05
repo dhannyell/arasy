@@ -105,6 +105,78 @@ func TestRecordingInvalidGamepadDeadzoneUsesFreshGameConfiguration(t *testing.T)
 	}
 }
 
+// The reason anchors hash SimChecksum: retuning authored visuals must not
+// invalidate a recording. The divergence surfaces as a content warning on
+// load, never as an anchor failure.
+func TestVerifyRecordingSurvivesSpriteRecolor(t *testing.T) {
+	live := &recolorGame{color: render.RGBA(1, 0, 0, 1)}
+	driver := NewDriver(live, slog.Default())
+	driver.StartRecording()
+	for range 120 {
+		driver.Step()
+	}
+	rec := driver.StopRecording()
+	if len(rec.Anchors) == 0 {
+		t.Fatal("recording captured no anchors")
+	}
+	if rec.ContentChecksum == 0 {
+		t.Fatal("recording captured no content fingerprint")
+	}
+
+	recolored := &recolorGame{color: render.RGBA(0, 1, 0, 1)}
+	if err := VerifyRecording(recolored, slog.Default(), rec); err != nil {
+		t.Fatalf("a sprite recolor failed verification: %v", err)
+	}
+}
+
+// A sprite driven by a tween is overwritten every tick, so recoloring its
+// authored value is free too: the tween carries the deterministic clock and
+// sits in the anchor, the sprite it writes does not. This is the dynamic
+// half of the recolor guarantee above.
+func TestVerifyRecordingSurvivesRecolorUnderTween(t *testing.T) {
+	live := &recolorGame{color: render.RGBA(1, 0, 0, 1), tween: true}
+	driver := NewDriver(live, slog.Default())
+	driver.StartRecording()
+	for range 120 {
+		driver.Step()
+	}
+	rec := driver.StopRecording()
+
+	recolored := &recolorGame{color: render.RGBA(0, 1, 0, 1), tween: true}
+	if err := VerifyRecording(recolored, slog.Default(), rec); err != nil {
+		t.Fatalf("a recolor under an active tween failed verification: %v", err)
+	}
+}
+
+type recolorGame struct {
+	color  render.Color
+	tween  bool
+	sprite scene.EntityID
+}
+
+func (g *recolorGame) Setup() Config { return Config{SimulationHz: 60} }
+
+func (g *recolorGame) Init(ctx *UpdateContext) {
+	g.sprite = ctx.World.Spawn()
+	ctx.World.SetTransform(g.sprite, scene.Transform{Scale: math2d.Vec2{X: 1, Y: 1}})
+	ctx.World.SetVelocity(g.sprite, scene.Velocity{Linear: math2d.Vec2{X: 1, Y: 0}})
+	ctx.World.SetCircleSprite(g.sprite, scene.CircleSprite{
+		BaseSprite: scene.BaseSprite{Layer: 1, Color: g.color},
+		Radius:     2,
+	})
+	if g.tween {
+		ctx.World.SetCircleSpriteTween(g.sprite, scene.CircleSpriteTween{
+			From:     scene.CircleSprite{Radius: 2},
+			To:       scene.CircleSprite{Radius: 4},
+			Duration: 5,
+		})
+	}
+}
+
+func (g *recolorGame) Update(ctx *UpdateContext, _ float64) {}
+
+func (g *recolorGame) Render(ctx *RenderContext) []render.Command { return nil }
+
 type deadzoneReplayGame struct {
 	deadzone  float64
 	lastValue float64

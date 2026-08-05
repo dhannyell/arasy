@@ -19,6 +19,7 @@ func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
 		Ticks:           120,
 		Seed:            42,
 		GamepadDeadzone: .25,
+		ContentChecksum: 77,
 		Viewport:        math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 1920, Y: 1080}),
 		Viewports: []ViewportChange{
 			{Tick: 30, Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720})},
