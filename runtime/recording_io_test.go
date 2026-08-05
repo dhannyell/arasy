@@ -18,6 +18,7 @@ func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
 	rec := Recording{
 		Ticks:           120,
 		Seed:            42,
+		SimulationHz:    60,
 		GamepadDeadzone: .25,
 		ContentChecksum: 77,
 		Viewport:        math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 1920, Y: 1080}),
@@ -60,6 +61,61 @@ func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, rec) {
 		t.Fatalf("round trip = %#v, want %#v", got, rec)
+	}
+}
+
+// The provenance section is the only optional section of the format, so the
+// round trip needs both sides: present with every field filled, and absent
+// with the absence surviving the trip (the state of every committed fixture).
+func TestRecordingProvenanceRoundTrip(t *testing.T) {
+	rec := Recording{
+		Ticks: 10,
+		Provenance: Provenance{
+			Present:       true,
+			EngineVersion: "v0.1.0",
+			GameID:        "acme-dodgeball",
+			GameVersion:   "1.4.2",
+			Platform:      "windows/amd64",
+			GameBlob:      []byte("level=3;mods=none"),
+		},
+	}
+
+	data, err := rec.MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary returned error: %v", err)
+	}
+	got, err := ReadRecordingFromBytes(data)
+	if err != nil {
+		t.Fatalf("ReadRecordingFromBytes returned error: %v", err)
+	}
+	if !reflect.DeepEqual(got.Provenance, rec.Provenance) {
+		t.Fatalf("round trip = %#v, want %#v", got.Provenance, rec.Provenance)
+	}
+
+	bare, err := (Recording{Ticks: 10}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary returned error: %v", err)
+	}
+	gotBare, err := ReadRecordingFromBytes(bare)
+	if err != nil {
+		t.Fatalf("ReadRecordingFromBytes returned error: %v", err)
+	}
+	if gotBare.Provenance.Present {
+		t.Fatal("recording without provenance read back as Present")
+	}
+}
+
+func TestReadRecordingRejectsInvalidProvenanceMarker(t *testing.T) {
+	data, err := (Recording{Ticks: 1}).MarshalBinary()
+	if err != nil {
+		t.Fatalf("MarshalBinary returned error: %v", err)
+	}
+	// The marker is the last byte of a provenance-free recording.
+	data[len(data)-1] = 2
+
+	_, err = ReadRecordingFromBytes(data)
+	if !errors.Is(err, ErrUnsupportedRecordingFormat) {
+		t.Fatalf("error = %v, want ErrUnsupportedRecordingFormat", err)
 	}
 }
 
@@ -107,7 +163,7 @@ func TestReadRecordingRejectsLegacyV1Layout(t *testing.T) {
 
 	// Before GamepadDeadzone was added, v1 placed Viewport immediately after
 	// Seed. Removing that field reconstructs the incompatible legacy layout.
-	const deadzoneOffset = len(recordingMagic) + 2 + 8 + 8
+	const deadzoneOffset = len(recordingMagic) + 2 + 8 + 8 + 2
 	legacy := append([]byte(nil), data[:deadzoneOffset]...)
 	legacy = append(legacy, data[deadzoneOffset+8:]...)
 
@@ -127,7 +183,9 @@ func TestReadRecordingDoesNotPreallocateFromHeaderCounts(t *testing.T) {
 	for _, field := range []any{
 		recordingVersion,
 		uint64(0), uint64(0), // ticks, seed
+		uint16(0),                                      // simulation hz
 		float64(0),                                     // gamepad deadzone
+		uint64(0),                                      // content checksum
 		float64(0), float64(0), float64(0), float64(0), // viewport
 		uint32(maxRecordingAnchors),
 		uint32(maxRecordingEvents),
@@ -188,6 +246,80 @@ func TestVerifyRecordingChecksAnchors(t *testing.T) {
 	if !strings.Contains(err.Error(), "anchor mismatch") {
 		t.Fatalf("error = %v, want anchor mismatch", err)
 	}
+}
+
+// The whole value of provenance is attribution on failure: a recording made
+// by an identified game must say who made it when an anchor diverges, and a
+// recording without provenance must say that too — absence is information.
+func TestVerifyRecordingAttributesDivergence(t *testing.T) {
+	game := &provenancedGame{}
+	driver := NewDriver(game, slog.Default())
+	driver.StartRecording()
+	for range 35 {
+		driver.Step()
+	}
+	rec := driver.StopRecording()
+
+	if !rec.Provenance.Present {
+		t.Fatal("recording from an identified game carries no provenance")
+	}
+	if rec.Provenance.Platform != hostPlatform() || rec.Provenance.EngineVersion == "" {
+		t.Fatalf("engine-owned fields not filled: %+v", rec.Provenance)
+	}
+	if len(rec.Anchors) == 0 {
+		t.Fatal("recording captured no anchors")
+	}
+
+	rec.Anchors[len(rec.Anchors)-1].Checksum++
+	err := VerifyRecording(&provenancedGame{}, slog.Default(), rec)
+	if err == nil {
+		t.Fatal("VerifyRecording succeeded with tampered anchor")
+	}
+	if !strings.Contains(err.Error(), "game acme-dodgeball 1.4.2") {
+		t.Fatalf("error = %v, want game attribution", err)
+	}
+
+	rec.Provenance = Provenance{}
+	err = VerifyRecording(&provenancedGame{}, slog.Default(), rec)
+	if err == nil || !strings.Contains(err.Error(), "recorded without provenance") {
+		t.Fatalf("error = %v, want explicit absence note", err)
+	}
+}
+
+// Metadata must never make a recording unsavable: an oversized blob is
+// dropped with a warning, the rest of the provenance stays, and the input
+// log still serializes.
+func TestStopRecordingDropsOversizedGameMetadata(t *testing.T) {
+	game := &provenancedGame{metadata: make([]byte, maxProvenanceBlob+1)}
+	driver := NewDriver(game, slog.Default())
+	driver.StartRecording()
+	driver.Step()
+	rec := driver.StopRecording()
+
+	if !rec.Provenance.Present {
+		t.Fatal("oversized metadata dropped the whole provenance section")
+	}
+	if rec.Provenance.GameBlob != nil {
+		t.Fatalf("oversized blob survived: %d bytes", len(rec.Provenance.GameBlob))
+	}
+	if _, err := rec.MarshalBinary(); err != nil {
+		t.Fatalf("recording did not serialize: %v", err)
+	}
+}
+
+// provenancedGame is inputBackGame plus a game identity in Config — the
+// opt-in that makes recordings carry provenance.
+type provenancedGame struct {
+	inputBackGame
+	metadata []byte
+}
+
+func (g *provenancedGame) Setup() Config {
+	cfg := g.inputBackGame.Setup()
+	cfg.GameID = "acme-dodgeball"
+	cfg.GameVersion = "1.4.2"
+	cfg.GameMetadata = g.metadata
+	return cfg
 }
 
 func TestReadRecordingRejectsInvalidEvent(t *testing.T) {

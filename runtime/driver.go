@@ -126,13 +126,17 @@ type AdvanceStats struct {
 }
 
 func NewDriver(game Game, log *slog.Logger) *Driver {
-	return newDriver(game, log, nil)
+	return newDriver(game, log, nil, nil)
 }
 
-func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
+func newDriver(game Game, log *slog.Logger, seedOverride *uint64, simHzOverride *uint16) *Driver {
 	cfg := game.Setup()
 	if seedOverride != nil {
 		cfg.Seed = *seedOverride
+	}
+	gameHz := cfg.SimulationHz
+	if simHzOverride != nil && *simHzOverride > 0 {
+		cfg.SimulationHz = int(*simHzOverride)
 	}
 	if cfg.SimulationHz <= 0 {
 		cfg.SimulationHz = defaultSimulationHz
@@ -146,6 +150,10 @@ func newDriver(game Game, log *slog.Logger, seedOverride *uint64) *Driver {
 	cfg.GamepadDeadzone = input.EffectiveGamepadDeadzone(cfg.GamepadDeadzone)
 	if log == nil {
 		log = slog.Default()
+	}
+	if simHzOverride != nil && *simHzOverride > 0 && int(*simHzOverride) != gameHz && gameHz > 0 {
+		log.Info("replay uses the recording's simulation rate; the game now runs at a different rate",
+			"recorded_hz", *simHzOverride, "game_hz", gameHz)
 	}
 	if !cfg.DisableDefaultSplash {
 		// Load default engine splash assets

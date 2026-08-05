@@ -35,6 +35,8 @@ referenced documents when you need subsystem detail.
 - Use `ctx.Rand` in simulation code. Do not use random values during render.
 - Do not use unordered map iteration in simulation results.
 - Keep presentation state out of checksums, snapshots, recordings, and replay.
+- Leave `Config.GameID`/`GameVersion` empty in tests and fixtures; shipped
+  games set them so recordings carry provenance.
 - Treat `StateSlot[T]` reference fields as requiring `Clone() T`.
 - Read [runtime](docs/en/runtime.md) and [scrubbing](docs/en/scrubbing.md) for
   the full replay contract.
