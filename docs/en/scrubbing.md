@@ -107,6 +107,27 @@ If the game breaks the contract, scrubbing reconstructs a state different
 from the one that was watched — the Driver's per-tick debug checksum log
 exists precisely to expose that.
 
+## Live input during replay (known limitation)
+
+`ApplyInput` has no replay guard. While a recording is being watched
+(`ReplayForViewing` / watch mode), events a host keeps pumping enter the
+input state and the timeline journal at the current tick — they merge with,
+and can override, what the recording applied on that tick. Combined with the
+forking rule above, pressing gameplay keys mid-watch takes over the timeline
+from that point.
+
+Today this is undefined behavior that happens to be useful: it works as an
+ad-hoc "take over and try something else" debug tool, and it is what lets
+presentation-side input (camera movement, zoom, hover queries) keep working
+while a replay plays. But the engine cannot tell a camera binding from a
+gameplay binding, so nothing stops live simulation input from silently
+rewriting the recorded run. If you need a faithful watch, do not feed
+simulation input while `replayMode` is active; the deliberate way to take
+control is a `ControlPlay`/`ControlStep` command, which also releases the
+keys the recording left held.
+
+How (and whether) to enforce this boundary is an open design question.
+
 ## Costs and limits
 
 - **Cost per scrub**: O(target tick) — every jump re-simulates from tick 0.
