@@ -119,6 +119,39 @@ func TestSkewingViewSlantsACircle(t *testing.T) {
 	}
 }
 
+// A point is a small circle, and a skewing view has to slant it like one.
+// The fast path rebuilds it from a centre and a radius, which stays
+// axis-aligned while every shape around it shears.
+func TestSkewingViewSlantsAPoint(t *testing.T) {
+	c := skewCtx()
+
+	var mesh Mesh
+	AppendPoint(&mesh, c, render.DrawPoint{
+		Center: math2d.Vec2{X: 10, Y: 10},
+		Radius: 8,
+		Color:  render.RGBA(1, 0, 0, 1),
+	})
+
+	if len(mesh.Vertices) == 0 {
+		t.Fatal("no point was drawn")
+	}
+
+	var minX, maxX, minY, maxY float32
+	for i, vertex := range mesh.Vertices {
+		if i == 0 {
+			minX, maxX, minY, maxY = vertex.X, vertex.X, vertex.Y, vertex.Y
+			continue
+		}
+		minX, maxX = min(minX, vertex.X), max(maxX, vertex.X)
+		minY, maxY = min(minY, vertex.Y), max(maxY, vertex.Y)
+	}
+
+	width, height := float64(maxX-minX), float64(maxY-minY)
+	if width <= height*1.5 {
+		t.Fatalf("point bounds are %vx%v, which is not a slanted ellipse", width, height)
+	}
+}
+
 // The segment count is taken from the screen radius, which is measured before
 // the view scales the shape up. A view that magnifies would otherwise draw a
 // large circle as a dodecagon.

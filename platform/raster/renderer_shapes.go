@@ -112,8 +112,9 @@ func (r *Renderer) drawEllipse(img *image.RGBA, command render.DrawEllipse) {
 }
 
 func (r *Renderer) drawPoint(img *image.RGBA, command render.DrawPoint) {
-	if !command.Transform.IsIdentity() {
-		// Point under transform: draw as small N-gon
+	if !command.Transform.IsIdentity() || r.Camera.Skews() {
+		// Point under a transform or a skewing camera: draw as small N-gon,
+		// walked in world space like every other sheared shape.
 		r.drawTransformedCircle(img, render.DrawCircle{
 			Center:      command.Center,
 			Radius:      command.Radius,
