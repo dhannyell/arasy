@@ -85,7 +85,7 @@ cmd/benchsave/
   Cross-platform helper that runs Go benchmarks and saves a Markdown report.
 
 docs/
-  Additional notes, guides, and the technical review/roadmap.
+  Language-separated guides under en/ and pt-br/, plus project assets.
 ```
 
 ## Requirements
@@ -219,6 +219,15 @@ Rhythm also has an offline smoke render:
 go run ./examples/rhythm/raster
 ```
 
+The 2.5D examples render offline the same way: `examples/groundplane` (a
+tilted court with a bouncing ball) and `examples/outpost` (an isometric
+island of extruded volumes with hopping units):
+
+```powershell
+go run ./examples/groundplane/raster
+go run ./examples/outpost/raster
+```
+
 For the interactive demo, build the WASM entry point and serve `output/wasm/rhythm`
 with the local development server. Use `D`, `F`, `J`, and `K` for the four lanes;
 left/right arrows adjust the deterministic calibration offset.
@@ -274,15 +283,16 @@ go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 
 ## Documentation
 
-- Runtime guide: [Portuguese](docs/runtime.md) | [English](docs/runtime-en.md)
-- UI guide: [Portuguese](docs/ui.md) | [English](docs/ui-en.md)
-- Math visual guide: [Portuguese](docs/math2d-visual-guide.md) | [English](docs/math2d-visual-guide-en.md)
-- Camera, world, and viewport: [Portuguese](docs/camera-world-viewport.md) | [English](docs/camera-world-viewport-en.md)
-- Bidirectional time scrubbing: [Portuguese](docs/scrubbing.md) | [English](docs/scrubbing-en.md)
-- Test structure conventions: [Portuguese](docs/testing.md) | [English](docs/testing-en.md)
-- Animation: [Portuguese](docs/animation.md) | [English](docs/animation-en.md)
-- Vector graphics and SVG compilation: [Portuguese](docs/vector-graphics.md) | [English](docs/vector-graphics-en.md)
-- 2.5D: tilt, planes, height, and depth order: [Portuguese](docs/2-5d.md) | [English](docs/2-5d-en.md)
+- Runtime guide: [Portuguese](docs/pt-br/runtime.md) | [English](docs/en/runtime.md)
+- UI guide: [Portuguese](docs/pt-br/ui.md) | [English](docs/en/ui.md)
+- Math visual guide: [Portuguese](docs/pt-br/math2d-visual-guide.md) | [English](docs/en/math2d-visual-guide.md)
+- Camera, world, and viewport: [Portuguese](docs/pt-br/camera-world-viewport.md) | [English](docs/en/camera-world-viewport.md)
+- Bidirectional time scrubbing: [Portuguese](docs/pt-br/scrubbing.md) | [English](docs/en/scrubbing.md)
+- Test structure conventions: [Portuguese](docs/pt-br/testing.md) | [English](docs/en/testing.md)
+- Animation: [Portuguese](docs/pt-br/animation.md) | [English](docs/en/animation.md)
+- Vector graphics and SVG compilation: [Portuguese](docs/pt-br/vector-graphics.md) | [English](docs/en/vector-graphics.md)
+- 2.5D: tilt, planes, height, and depth order: [Portuguese](docs/pt-br/2-5d.md) | [English](docs/en/2-5d.md)
+- 2.5D gaps survey: [Portuguese](docs/pt-br/2-5d-gaps.md) | [English](docs/en/2-5d-gaps.md)
 
 ## License
 

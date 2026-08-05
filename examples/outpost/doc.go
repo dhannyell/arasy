@@ -2,7 +2,7 @@
 // the style of tactics games, drawn entirely with vector commands.
 //
 // Everything that makes the scene read as 2.5D is engine vocabulary from
-// docs/2-5d.md, used together:
+// docs/en/2-5d.md, used together:
 //
 //   - Camera.View is the whole projection. The world is a plain square grid
 //     the simulation reasons about; one affine on the camera turns it into

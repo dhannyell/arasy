@@ -63,7 +63,7 @@ ser avaliado qualquer número de vezes, de qualquer goroutine, sem
 sincronização.
 
 `RenderContext.Time`/`Dt` são o relógio de tempo decorrido de renderização
-sobre o qual essa pilha é construída — veja [`docs/runtime.md`](runtime.md)
+sobre o qual essa pilha é construída — veja [`docs/pt-br/runtime.md`](runtime.md)
 para como eles divergem dos ticks de simulação durante pausa e rewind.
 `UpdateContext` propositalmente não tem campo `Time`: código de simulação
 determinístico não tem uso legítimo para tempo de parede, então o tipo não
@@ -147,9 +147,9 @@ de sprite/label do Canvas2D).
 
 ## Documentos relacionados
 
-- [`docs/vector-graphics.md`](vector-graphics.md) — a API de
+- [`docs/pt-br/vector-graphics.md`](vector-graphics.md) — a API de
   path/stroke/motion do `render/vector` e o compilador SVG-para-Go
   `arasy svg` que produz conteúdo guiado por `Timeline`.
-- [`docs/runtime.md`](runtime.md) — `RenderContext`/`UpdateContext` e a
+- [`docs/pt-br/runtime.md`](runtime.md) — `RenderContext`/`UpdateContext` e a
   separação entre relógio de tick e de renderização.
-- [`docs/ui.md`](ui.md) — o contrato `Drawer`, incluindo `SequenceKeyed`.
+- [`docs/pt-br/ui.md`](ui.md) — o contrato `Drawer`, incluindo `SequenceKeyed`.
