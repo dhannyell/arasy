@@ -93,6 +93,24 @@ instance, not one attached to a live driver. Recordings must start at tick 0
 (a fresh driver, or right after a reset); a reset in the middle of a
 recording restarts the capture, because ticks restart from zero.
 
+### Two narrower hashes: simulation and content
+
+Recording verification does not use the full `Checksum()`. It splits the
+state by class:
+
+- **Anchors hash `World.SimChecksum()`** — simulation state only: the
+  stores `World.Step` reads or writes, plus entity and tick meta. Retuning
+  authored visuals (a sprite color, a rect) never invalidates a recording.
+  Tween stores are simulation state even when they animate a sprite: the
+  tween carries the deterministic clock, the sprite it writes is derived.
+- **The recording stores a `World.ContentChecksum()` fingerprint** of the
+  authored visuals at capture. Loading a recording whose content diverged
+  logs a warning ("recording content differs from the game's authored
+  visuals; simulation anchors still verify") — attribution, not failure.
+
+The full `Checksum()` covers both classes; rewind parity and the
+cross-architecture golden still pin it.
+
 ## Recording provenance
 
 A replay can stop reproducing for three distinct reasons: the game changed,
