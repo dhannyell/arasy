@@ -7,14 +7,14 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-// A rect sprite carries its geometry in world coordinates and takes no
-// position from its Transform, so it was the one sprite kind Height did
-// nothing to: a raised platform drew its shadow on the ground and its body on
-// the ground too, and the plane correction pivoted About a point outside it.
+// The rect is anchored at the Transform like every other sprite, so Height
+// lifts it the same way: a raised platform draws its body up the lift axis
+// while its shadow stays on the ground.
 func TestHeightLiftsARectSprite(t *testing.T) {
 	world := NewWorld()
 	world.SetProjection(render.Projection{DepthScale: 0.5, LiftPerZ: 2})
 
+	// The world-space footprint the platform occupies when on the ground.
 	ground := math2d.NewRectFromCorners(
 		math2d.Vec2{X: 9, Y: 9},
 		math2d.Vec2{X: 11, Y: 11},
@@ -23,7 +23,10 @@ func TestHeightLiftsARectSprite(t *testing.T) {
 	id := world.SpawnBundle(Bundle{
 		Transform: &Transform{Position: math2d.Vec2{X: 10, Y: 10}, Scale: math2d.Vec2{X: 1, Y: 1}},
 		RectSprite: &RectSprite{
-			Rect:       ground,
+			Rect: math2d.NewRectFromCorners(
+				math2d.Vec2{X: -1, Y: -1},
+				math2d.Vec2{X: 1, Y: 1},
+			),
 			BaseSprite: BaseSprite{Plane: PlaneGround},
 		},
 	})
@@ -53,9 +56,10 @@ func TestHeightLiftsAnUprightRectSpriteToo(t *testing.T) {
 	id := world.SpawnBundle(Bundle{
 		Transform: &Transform{Position: math2d.Vec2{X: 10, Y: 10}, Scale: math2d.Vec2{X: 1, Y: 1}},
 		RectSprite: &RectSprite{
+			// Anchored at the entity's foot: the shape rises from the anchor.
 			Rect: math2d.NewRectFromCorners(
-				math2d.Vec2{X: 9, Y: 8},
-				math2d.Vec2{X: 11, Y: 10},
+				math2d.Vec2{X: -1, Y: -2},
+				math2d.Vec2{X: 1, Y: 0},
 			),
 		},
 	})
@@ -93,7 +97,10 @@ func TestNoHeightLeavesARectSpriteAlone(t *testing.T) {
 	world.SpawnBundle(Bundle{
 		Transform: &Transform{Position: math2d.Vec2{X: 10, Y: 10}, Scale: math2d.Vec2{X: 1, Y: 1}},
 		RectSprite: &RectSprite{
-			Rect:       ground,
+			Rect: math2d.NewRectFromCorners(
+				math2d.Vec2{X: -1, Y: -1},
+				math2d.Vec2{X: 1, Y: 1},
+			),
 			BaseSprite: BaseSprite{Plane: PlaneGround},
 		},
 	})

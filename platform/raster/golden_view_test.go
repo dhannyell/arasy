@@ -47,8 +47,9 @@ func TestGoldenIsometricView(t *testing.T) {
 	rect := func(area math2d.Rect, layer int, plane scene.SpritePlane, colour render.Color) scene.EntityID {
 		id := world.Spawn()
 		world.SetTransform(id, scene.Transform{Position: area.Center(), Scale: math2d.Vec2{X: 1, Y: 1}})
+		half := area.Size().Mul(0.5)
 		world.SetRectSprite(id, scene.RectSprite{
-			Rect:       area,
+			Rect:       math2d.NewRectFromCorners(half.Mul(-1), half),
 			BaseSprite: scene.BaseSprite{Layer: layer, Color: colour, Plane: plane},
 		})
 

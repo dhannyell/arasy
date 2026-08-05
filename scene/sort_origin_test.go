@@ -99,8 +99,8 @@ func TestSortBaseIsDerivedPerSpriteType(t *testing.T) {
 	})
 	world.SetRectSprite(rect, scene.RectSprite{
 		Rect: math2d.NewRectFromCorners(
-			math2d.Vec2{X: 30, Y: groundY - 60},
-			math2d.Vec2{X: 50, Y: groundY},
+			math2d.Vec2{X: -10, Y: -30},
+			math2d.Vec2{X: 10, Y: 30},
 		),
 	})
 

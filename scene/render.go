@@ -160,18 +160,6 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			}
 		}
 
-		// A rect sprite carries its own geometry in world coordinates and takes
-		// no position from its Transform, so the lift has to be handed to it
-		// separately. Without this a raised platform draws its shadow on the
-		// ground and its body on the ground too, and the plane correction
-		// below pivots About a point the sprite does not contain.
-		lift := pos.Sub(interpolated.Position)
-		if isAttached {
-			// Attached geometry is authored relative to the anchor, so the
-			// anchor itself is the shift that places it in the world.
-			lift = pos
-		}
-
 		// Per-entity decorative affine (squash & stretch, lean), deforming
 		// about the final — possibly lifted — body center. Render-only.
 		bodyTransform := math2d.Affine{}
@@ -210,13 +198,19 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		}
 
 		if rect, hasRect := w.rectSprites.get(id); hasRect {
-			geometry := rect.Rect
-			if lift != (math2d.Vec2{}) {
-				geometry = math2d.NewRectFromCorners(
-					geometry.Min.Add(lift),
-					geometry.Max.Add(lift),
-				)
+			// Same convention as the circle path: an unset (zero) scale means
+			// unscaled, so entities spawned without Scale keep their size.
+			sx, sy := scl.X, scl.Y
+			if sx <= 0 {
+				sx = 1
 			}
+			if sy <= 0 {
+				sy = 1
+			}
+			geometry := math2d.NewRectFromCorners(
+				math2d.Vec2{X: pos.X + rect.Rect.Min.X*sx, Y: pos.Y + rect.Rect.Min.Y*sy},
+				math2d.Vec2{X: pos.X + rect.Rect.Max.X*sx, Y: pos.Y + rect.Rect.Max.Y*sy},
+			)
 
 			commands = append(commands, render.DrawRect{
 				Rect:        geometry,
@@ -346,11 +340,11 @@ func (w *World) spriteSortOrigin(id EntityID, position math2d.Vec2) math2d.Vec2 
 		return math2d.Vec2{X: position.X, Y: position.Y + s.Radius}.Add(s.SortOffset)
 	}
 	if s, ok := w.rectSprites.get(id); ok {
-		// A rect sprite carries its own world geometry, so its base is read
-		// off the rect instead of guessed from the entity's position.
+		// The rect is anchored at the Transform, so its base is the anchored
+		// shape's bottom edge placed at the entity's position.
 		return math2d.Vec2{
-			X: (s.Rect.Min.X + s.Rect.Max.X) * 0.5,
-			Y: s.Rect.Max.Y,
+			X: position.X + (s.Rect.Min.X+s.Rect.Max.X)*0.5,
+			Y: position.Y + s.Rect.Max.Y,
 		}.Add(s.SortOffset)
 	}
 	if s, ok := w.imageSprites.get(id); ok {

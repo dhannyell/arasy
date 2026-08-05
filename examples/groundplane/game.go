@@ -104,7 +104,10 @@ func (g *Game) spawnCourt(world *scene.World) {
 	world.SpawnBundle(scene.Bundle{
 		Transform: &scene.Transform{Position: courtBounds.Center()},
 		RectSprite: &scene.RectSprite{
-			Rect:       courtBounds,
+			Rect: math2d.NewRectFromCorners(
+				courtBounds.Size().Mul(-0.5),
+				courtBounds.Size().Mul(0.5),
+			),
 			BaseSprite: scene.BaseSprite{Layer: layerPitch, Color: courtColor, Plane: scene.PlaneGround},
 		},
 	})
@@ -152,8 +155,8 @@ func (g *Game) spawnPosts(world *scene.World) {
 			Transform: &scene.Transform{Position: foot},
 			RectSprite: &scene.RectSprite{
 				Rect: math2d.NewRectFromCorners(
-					foot.Sub(math2d.Vec2{X: 2, Y: 14}),
-					foot.Add(math2d.Vec2{X: 2, Y: 2}),
+					math2d.Vec2{X: -2, Y: -14},
+					math2d.Vec2{X: 2, Y: 2},
 				),
 				BaseSprite: scene.BaseSprite{Layer: layerStanding, Color: postColor},
 			},
