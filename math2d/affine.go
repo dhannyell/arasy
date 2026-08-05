@@ -48,14 +48,18 @@ func Shear(shx, shy float64) Affine {
 
 // Mul returns m∘n: applies n first, then m (composition à esquerda).
 // Mul is the mathematical composition: m.Mul(n).Apply(p) == m.Apply(n.Apply(p)).
+//
+// The float64 casts pin every product before it meets an add, so arm64 cannot
+// fuse them into FMAs and drift from x86-64 — ScreenToWorld runs this on the
+// picking path, where one ulp is a replay divergence.
 func (m Affine) Mul(n Affine) Affine {
 	return Affine{
-		A: m.A*n.A + m.C*n.B,
-		B: m.B*n.A + m.D*n.B,
-		C: m.A*n.C + m.C*n.D,
-		D: m.B*n.C + m.D*n.D,
-		E: m.A*n.E + m.C*n.F + m.E,
-		F: m.B*n.E + m.D*n.F + m.F,
+		A: float64(m.A*n.A) + float64(m.C*n.B),
+		B: float64(m.B*n.A) + float64(m.D*n.B),
+		C: float64(m.A*n.C) + float64(m.C*n.D),
+		D: float64(m.B*n.C) + float64(m.D*n.D),
+		E: float64(m.A*n.E) + float64(m.C*n.F) + m.E,
+		F: float64(m.B*n.E) + float64(m.D*n.F) + m.F,
 	}
 }
 
@@ -66,8 +70,8 @@ func (m Affine) Apply(p Vec2) Vec2 {
 		return p
 	}
 	return Vec2{
-		X: m.A*p.X + m.C*p.Y + m.E,
-		Y: m.B*p.X + m.D*p.Y + m.F,
+		X: float64(m.A*p.X) + float64(m.C*p.Y) + m.E,
+		Y: float64(m.B*p.X) + float64(m.D*p.Y) + m.F,
 	}
 }
 
@@ -83,7 +87,7 @@ func (m Affine) About(pivot Vec2) Affine {
 // Inverse returns the inverse of m. ok is false when the determinant is near
 // zero (singular / non-invertible).
 func (m Affine) Inverse() (Affine, bool) {
-	det := m.A*m.D - m.B*m.C
+	det := float64(m.A*m.D) - float64(m.B*m.C)
 	if math.Abs(det) <= 1e-12 {
 		return Affine{}, false
 	}
@@ -93,8 +97,8 @@ func (m Affine) Inverse() (Affine, bool) {
 		B: -m.B * invDet,
 		C: -m.C * invDet,
 		D: m.A * invDet,
-		E: (m.C*m.F - m.D*m.E) * invDet,
-		F: (m.B*m.E - m.A*m.F) * invDet,
+		E: float64(float64(m.C*m.F)-float64(m.D*m.E)) * invDet,
+		F: float64(float64(m.B*m.E)-float64(m.A*m.F)) * invDet,
 	}, true
 }
 
@@ -106,7 +110,7 @@ func (m Affine) MeanScale() float64 {
 	if m.IsIdentity() {
 		return 1
 	}
-	det := m.A*m.D - m.B*m.C
+	det := float64(m.A*m.D) - float64(m.B*m.C)
 	return math.Sqrt(math.Abs(det))
 }
 
