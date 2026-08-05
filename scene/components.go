@@ -43,6 +43,12 @@ type BaseSprite struct {
 	//
 	// With a plain 2D camera the two are identical and this field costs
 	// nothing to ignore.
+	//
+	// A note for RectSprite: its geometry is world-space and its upright
+	// correction pivots on the entity's Transform position, so an upright
+	// rect drawn far from that position shears around a point it does not
+	// contain. Ground geometry -- courts, walls, platforms -- wants
+	// PlaneGround, which is what the rect sprite exists for.
 	Plane SpritePlane
 
 	// SortOffset moves this sprite's sorting point away from its base, in
@@ -92,7 +98,12 @@ type ImageSprite struct {
 	// reason as Plane.
 	SortOffset math2d.Vec2
 
-	// ShadowFootprint define the size o shadow when sprite is z >= 0.
+	// ShadowFootprint overrides the half-extents the shadow is derived from,
+	// for art whose transparent padding or overhang makes the sprite's own
+	// size the wrong measure of how it meets the ground. Both axes must be
+	// positive for the override to apply; the zero value falls back to half
+	// the sprite's Size. Only consulted while the entity is airborne (Z > 0),
+	// which is when a shadow is emitted at all.
 	ShadowFootprint math2d.Vec2
 }
 

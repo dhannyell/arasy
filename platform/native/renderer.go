@@ -1396,9 +1396,7 @@ func premultipliedBlend() *wgpu.BlendState {
 	}
 }
 
-// additiveStraightBlend is the additive operator for pipelines whose shaders
-// output straight (non-premultiplied) alpha: the source color is scaled by
-// its own alpha before being summed, so a faint glow adds faintly.
+// pick selects the additive variant of a pipeline when the run asks for it.
 func pick(additive bool, add, alpha *wgpu.RenderPipeline) *wgpu.RenderPipeline {
 	if additive {
 		return add
@@ -1406,6 +1404,9 @@ func pick(additive bool, add, alpha *wgpu.RenderPipeline) *wgpu.RenderPipeline {
 	return alpha
 }
 
+// additiveStraightBlend is the additive operator for pipelines whose shaders
+// output straight (non-premultiplied) alpha: the source color is scaled by
+// its own alpha before being summed, so a faint glow adds faintly.
 func additiveStraightBlend() *wgpu.BlendState {
 	return &wgpu.BlendState{
 		Color: wgpu.BlendComponent{
