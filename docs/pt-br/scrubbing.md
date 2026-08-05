@@ -201,6 +201,29 @@ Se o jogo quebrar o contrato, o scrub reconstroi um estado diferente do que
 foi assistido — o checksum por tick no log de debug do Driver existe para
 denunciar exatamente isso.
 
+## Input vivo durante replay (limitação conhecida)
+
+`ApplyInput` não tem guarda de replay. Enquanto uma gravação é assistida
+(`ReplayForViewing` / watch mode), eventos que o host continua bombeando
+entram no estado de input e no journal do timeline no tick atual — eles se
+misturam com o que a gravação aplicou naquele tick, e podem sobrescrevê-lo.
+Combinado com a regra de fork acima, apertar teclas de gameplay no meio da
+observação assume o timeline daquele ponto em diante.
+
+Hoje isso é comportamento indefinido que por acaso é útil: funciona como
+ferramenta improvisada de "assumir e testar outra coisa" no debug, e é o que
+permite que input de apresentação (mover a câmera, zoom, consultas de hover)
+continue funcionando durante o replay. Mas a engine não distingue um binding
+de câmera de um binding de gameplay, então nada impede que input vivo de
+simulação reescreva em silêncio a execução gravada. Para uma observação
+fiel, não alimente input de simulação enquanto `replayMode` estiver ativo; o
+jeito deliberado de assumir o controle é um comando
+`ControlPlay`/`ControlStep`, que também solta as teclas que a gravação
+deixou pressionadas.
+
+Como (e se) essa fronteira deve ser imposta é uma questão de design em
+aberto.
+
 ## Custos e limites
 
 - **Custo por scrub**: O(tick alvo) — cada salto re-simula desde o tick 0.

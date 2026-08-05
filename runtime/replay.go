@@ -18,6 +18,13 @@ type Recording struct {
 	GamepadDeadzone float64
 	Anchors         []Anchor
 
+	// ContentChecksum fingerprints the authored visuals (sprite stores) at
+	// StartRecording. Anchors cover simulation state only, so this is what
+	// lets a load attribute a divergence to a content edit -- a warning, not
+	// an anchor failure. Zero means "not captured" (recordings constructed in
+	// memory) and skips the check.
+	ContentChecksum uint64
+
 	// Viewport is the surface size active at tick 0 of the recording. A zero
 	// value (Width/Height <= 0) means "use the game's Config default", which is
 	// the behavior of recordings made before viewport capture existed. Replay
@@ -44,6 +51,9 @@ type ViewportChange struct {
 	Viewport math2d.Rect
 }
 
+// Anchor pins the simulation checksum at one tick of a recording. It hashes
+// simulation state only (scene.World.SimChecksum): presentation edits must
+// not break replay verification.
 type Anchor struct {
 	Tick     uint64
 	Checksum uint64
@@ -64,6 +74,7 @@ func (d *Driver) StartRecording() {
 	// responsive browser canvas) shifts pointer coordinates and breaks UI
 	// hit-tests during replay.
 	d.recordingInitialViewport = d.viewport
+	d.recordingContentChecksum = d.world.ContentChecksum()
 }
 
 // StopRecording returns the captured input log and final tick.
@@ -77,6 +88,8 @@ func (d *Driver) StopRecording() Recording {
 	d.recordingStaged = nil
 	d.recordingAnchors = nil
 	d.recordingInitialViewport = math2d.Rect{}
+	content := d.recordingContentChecksum
+	d.recordingContentChecksum = 0
 	return Recording{
 		Events:          events,
 		Ticks:           d.tick,
@@ -85,6 +98,7 @@ func (d *Driver) StopRecording() Recording {
 		Anchors:         anchors,
 		Viewport:        initial,
 		Viewports:       viewports,
+		ContentChecksum: content,
 	}
 }
 
@@ -110,6 +124,20 @@ func viewportChangesToLog(changes []ViewportChange) []viewportEntry {
 		log[i] = viewportEntry{tick: c.Tick, viewport: c.Viewport}
 	}
 	return log
+}
+
+// warnOnContentDivergence compares the recording's content fingerprint with
+// the fresh game's authored visuals. A difference is attribution, not
+// failure: the simulation anchors still verify, the visuals changed since
+// the recording was made. Zero means the recording never captured one.
+func warnOnContentDivergence(d *Driver, log *slog.Logger, rec Recording) {
+	if rec.ContentChecksum == 0 || log == nil {
+		return
+	}
+	if got := d.world.ContentChecksum(); got != rec.ContentChecksum {
+		log.Warn("recording content differs from the game's authored visuals; simulation anchors still verify",
+			"recorded", rec.ContentChecksum, "current", got)
+	}
 }
 
 // Replay reconstructs a recording on a fresh Driver, returning it at the
@@ -140,6 +168,7 @@ func ReplayForViewing(game Game, log *slog.Logger, rec Recording) *Driver {
 // instead of being dropped, at the cost of a world clone per keyframe.
 func replayWithViewport(game Game, log *slog.Logger, rec Recording, initialViewport math2d.Rect, viewportLog []viewportEntry, keepRecorder bool) *Driver {
 	driver := newDriverFromRecording(game, log, rec)
+	warnOnContentDivergence(driver, log, rec)
 
 	if !keepRecorder {
 		// The final state is all that's needed; snapshot capture would clone
