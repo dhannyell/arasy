@@ -99,8 +99,6 @@ func spawnBuildBricks(world *scene.World) []Brick {
 				X: startX + float64(col)*(brickWidth+brickGap),
 				Y: brickTop + float64(row)*(brickHeight+brickGap),
 			}
-			// Transform.Position is the collider center; the sprite spans
-			// pos..pos+size, so its center is pos+half — keep them aligned.
 			center := pos.Add(math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2})
 			id := world.SpawnBundle(
 				scene.Bundle{
@@ -115,7 +113,10 @@ func spawnBuildBricks(world *scene.World) []Brick {
 							Layer: 1,
 							Color: brickColor(row),
 						},
-						Rect: math2d.NewRect(pos, math2d.Vec2{X: brickWidth, Y: brickHeight}),
+						Rect: math2d.NewRectFromCorners(
+							math2d.Vec2{X: -brickWidth / 2, Y: -brickHeight / 2},
+							math2d.Vec2{X: brickWidth / 2, Y: brickHeight / 2},
+						),
 					},
 					Body: &scene.Body{
 						InvMass:     0,
@@ -159,12 +160,7 @@ func brickColor(row int) render.Color {
 		return p
 	}
 
-	var q float64
-	if l < 0.5 {
-		q = l * (1 + s)
-	} else {
-		q = l + s - l*s
-	}
+	q := l + s - l*s
 	p := 2*l - q
 
 	rFloat := hue2(p, q, h+1.0/3.0)

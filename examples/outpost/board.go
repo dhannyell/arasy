@@ -202,7 +202,7 @@ func buildStaticBoard(p render.Projection) []render.Command {
 	commands = waterCommands(commands, p)
 
 	for j := range boardRows {
-		for i := 0; i < boardCols; i++ {
+		for i := range boardCols {
 			if terrainAt(i, j) == terrainWater {
 				continue // painted by waterCommands
 			}
@@ -248,8 +248,8 @@ func buildStaticBoard(p render.Projection) []render.Command {
 // stops mattering inside a pass, because no pass overlaps itself.
 func waterCommands(commands []render.Command, p render.Projection) []render.Command {
 	eachWaterTile := func(visit func(i, j int, rect, surface math2d.Rect)) {
-		for j := 0; j < boardRows; j++ {
-			for i := 0; i < boardCols; i++ {
+		for j := range boardRows {
+			for i := range boardCols {
 				if terrainAt(i, j) == terrainWater {
 					visit(i, j, tileRect(i, j), waterSurfaceRect(i, j))
 				}
@@ -307,8 +307,8 @@ func waterCommands(commands []render.Command, p render.Projection) []render.Comm
 // base-sort at the tile they stand on is what keeps a unit behind a building
 // it has not passed yet and in front of one it has.
 func spawnProps(world *scene.World, p render.Projection) {
-	for j := 0; j < boardRows; j++ {
-		for i := 0; i < boardCols; i++ {
+	for j := range boardRows {
+		for i := range boardCols {
 			switch terrainAt(i, j) {
 			case terrainForest:
 				spawnTree(world, i, j)
@@ -356,8 +356,8 @@ func spawnTree(world *scene.World, i, j int) {
 		Transform: &scene.Transform{Position: foot},
 		RectSprite: &scene.RectSprite{
 			Rect: math2d.NewRectFromCorners(
-				foot.Sub(math2d.Vec2{X: trunkHalfWidth, Y: trunkHeight}),
-				foot.Add(math2d.Vec2{X: trunkHalfWidth, Y: 0.2}),
+				math2d.Vec2{X: -trunkHalfWidth, Y: -trunkHeight},
+				math2d.Vec2{X: trunkHalfWidth, Y: 0.2},
 			),
 			BaseSprite: scene.BaseSprite{Layer: layerActors, Color: trunkColor},
 		},

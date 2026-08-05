@@ -11,7 +11,9 @@ import (
 
 func TestGoldenDebugOverlay(t *testing.T) {
 	world := goldenDebugWorld()
-	const expectedChecksum uint64 = 3452738200581198465
+	// RectSprite.Rect is local to the Transform, so the authored component
+	// values feed this checksum -- the physics never sees them.
+	const expectedChecksum uint64 = 7292338543307702996
 	if got := world.Checksum(); got != expectedChecksum {
 		t.Fatalf("debug world checksum = %d, want %d", got, expectedChecksum)
 	}
@@ -124,7 +126,7 @@ func spawnGoldenRect(world *scene.World, position, halfExtents, velocity math2d.
 	world.SetRectCollider(entity, scene.RectCollider{HalfExtends: halfExtents})
 	world.SetRectSprite(entity, scene.RectSprite{
 		BaseSprite:  scene.BaseSprite{Layer: layer, Color: color},
-		Rect:        math2d.NewRectFromCorners(position.Sub(halfExtents), position.Add(halfExtents)),
+		Rect:        math2d.NewRectFromCorners(halfExtents.Mul(-1), halfExtents),
 		Stroke:      render.RGBA(1, 1, 1, 0.58),
 		StrokeWidth: 0.8,
 	})

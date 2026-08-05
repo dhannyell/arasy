@@ -85,7 +85,10 @@ func (b *Breakout) Init(ctx *runtime.UpdateContext) {
 				Color: render.RGBA(0.5, 1, 1, 1),
 				Layer: 1,
 			},
-			Rect: b.State.paddle.Rect,
+			Rect: math2d.NewRectFromCorners(
+				math2d.Vec2{X: -paddleWidth / 2, Y: -paddleHeight / 2},
+				math2d.Vec2{X: paddleWidth / 2, Y: paddleHeight / 2},
+			),
 		},
 		RectCollider: &scene.RectCollider{
 			HalfExtends: math2d.Vec2{X: paddleWidth / 2, Y: paddleHeight / 2},
@@ -301,16 +304,12 @@ func (b *Breakout) syncBallFromWorld(world *scene.World) {
 	}
 }
 
-// syncPaddleToWorld pushes the paddle's game-owned Rect into its entity so the
-// collider and sprite follow the player's input (the entity is the physics
-// truth the ball collides with).
+// syncPaddleToWorld pushes the paddle's game-owned position into its entity so
+// the collider and sprite follow the player's input (the entity is the physics
+// truth the ball collides with). The sprite's Rect is anchored at the
+// Transform, so moving the Transform is all it takes.
 func (b *Breakout) syncPaddleToWorld(world *scene.World) {
-	rect := b.State.paddle.Rect
-	world.SetTransform(b.State.paddle.id, scene.Transform{Position: rect.Center()})
-	if sprite, ok := world.RectSprite(b.State.paddle.id); ok {
-		sprite.Rect = rect
-		world.SetRectSprite(b.State.paddle.id, sprite)
-	}
+	world.SetTransform(b.State.paddle.id, scene.Transform{Position: b.State.paddle.Rect.Center()})
 }
 
 // resolveGameContacts applies breakout's game rules to the physics contacts of

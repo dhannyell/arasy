@@ -44,11 +44,11 @@ type BaseSprite struct {
 	// With a plain 2D camera the two are identical and this field costs
 	// nothing to ignore.
 	//
-	// A note for RectSprite: its geometry is world-space and its upright
-	// correction pivots on the entity's Transform position, so an upright
-	// rect drawn far from that position shears around a point it does not
-	// contain. Ground geometry -- courts, walls, platforms -- wants
-	// PlaneGround, which is what the rect sprite exists for.
+	// A note for RectSprite: its upright correction pivots on the entity's
+	// Transform position, so an upright rect whose local Rect sits far from
+	// the anchor shears around a point it does not contain. Ground geometry
+	// -- courts, walls, platforms -- wants PlaneGround, which is what the
+	// rect sprite exists for.
 	Plane SpritePlane
 
 	// SortOffset moves this sprite's sorting point away from its base, in
@@ -71,6 +71,12 @@ type CircleSprite struct {
 	Radius float64
 }
 
+// RectSprite draws a rectangle anchored at the entity's Transform. Rect is
+// the shape in local coordinates: it is translated by Transform.Position and
+// scaled about it, so {-w/2,-h/2}..{w/2,h/2} draws centered on the entity,
+// and an asymmetric Rect anchors elsewhere -- a post whose Transform sits at
+// its foot keeps Rect.Max.Y at 0. Height lift and depth sorting follow the
+// anchored shape, and an unset (zero) Transform.Scale means unscaled.
 type RectSprite struct {
 	BaseSprite
 	Rect        math2d.Rect
