@@ -159,7 +159,11 @@ func (g *Game2048) Update(ctx *runtime.UpdateContext, _ float64) {
 func (g *Game2048) Render(ctx *runtime.RenderContext) []render.Command {
 	cmds := make([]render.Command, 0, 1+gridSize*gridSize*2+8)
 	cmds = append(cmds, boardBackgroundCommands()...)
-	cmds = append(cmds, tileCommands(g.state.State.board, g.state.State.animation, animationProgress(g.state.State.animation, ctx.Tick, ctx.Alpha))...)
+	cmds = append(cmds, tileCommands(
+		g.state.State.board,
+		g.state.State.animation,
+		animationProgress(ctx, g.state.State.animation))...,
+	)
 	g.drawHUD(ctx)
 
 	if g.state.State.animation.Active {

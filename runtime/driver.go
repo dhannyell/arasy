@@ -509,27 +509,6 @@ func (d *Driver) SetViewport(viewport math2d.Rect) {
 	d.timeline.recordViewport(d.tick, viewport)
 }
 
-func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
-	alpha := 0.0
-	if d.cfg.RenderInterpolation {
-		alpha = d.clock.Alpha()
-	}
-	return RenderContext{
-		World:              d.world.View(),
-		Assets:             d.cfg.Assets,
-		UI:                 uiInst.Draw(),
-		Time:               d.renderTime,
-		Dt:                 d.renderDt,
-		Log:                d.log.With("scope", "game"),
-		Tick:               d.tick,
-		Alpha:              alpha,
-		GamepadConnected:   d.gamepadConnected,
-		UpdateTextureField: &TexturePort{texture: &d.texture},
-		Batches:            &d.batchPort,
-		camera:             d.cameraForSurface(),
-	}
-}
-
 // doReset rebuilds the World and calls Game.Init.
 func (d *Driver) doReset() {
 	d.world = scene.NewWorld()

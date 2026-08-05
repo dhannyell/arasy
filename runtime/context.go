@@ -73,6 +73,9 @@ type RenderContext struct {
 	// calls Frame() first.
 	Batches *BatchPort
 
+	// fixedDt is a simulation tick in seconds. 1/SimulationHz
+	fixedDt float64
+
 	camera render.Camera
 }
 
@@ -107,6 +110,28 @@ func (ctx *RenderContext) UpdateTexture(id render.TextureID, img *image.RGBA) {
 	ctx.UpdateTextureField.UpdateTexture(id, img)
 }
 
+func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
+	alpha := 0.0
+	if d.cfg.RenderInterpolation {
+		alpha = d.clock.Alpha()
+	}
+	return RenderContext{
+		World:              d.world.View(),
+		Assets:             d.cfg.Assets,
+		UI:                 uiInst.Draw(),
+		Time:               d.renderTime,
+		Dt:                 d.renderDt,
+		Log:                d.log.With("scope", "game"),
+		Tick:               d.tick,
+		Alpha:              alpha,
+		GamepadConnected:   d.gamepadConnected,
+		UpdateTextureField: &TexturePort{texture: &d.texture},
+		Batches:            &d.batchPort,
+		fixedDt:            d.clock.DT(),
+		camera:             d.cameraForSurface(),
+	}
+}
+
 func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 	return UpdateContext{
 		World:      d.world,
@@ -122,4 +147,33 @@ func (d *Driver) makeUpdateContext(uiInst *ui.UI) UpdateContext {
 		StepConfig: scene.StepConfig{Bounds: d.cfg.Bounds, Bounce: d.cfg.Bounce, Physics: d.cfg.Physics},
 		camera:     d.cameraForSurface(),
 	}
+}
+
+// SubTick returns the current simulation position in fractional ticks.
+// Use it for presentation values that need sub-tick updates beyond transform
+// interpolation. When interpolation is disabled, it equals float64(Tick).
+func (ctx *RenderContext) SubTick() float64 {
+	return float64(ctx.Tick) + ctx.Alpha
+}
+
+// TicksSince returns the elapsed simulation ticks since start, including the
+// current fractional tick. It returns zero when start is in the future.
+func (ctx *RenderContext) TicksSince(start uint64) float64 {
+	if start > ctx.Tick {
+		return 0
+	}
+	return ctx.SubTick() - float64(start)
+}
+
+// SimTime returns the current simulation time in seconds. It stays aligned
+// with the simulation during rewind and replay.
+func (ctx *RenderContext) SimTime() float64 {
+	return ctx.SubTick() * ctx.fixedDt
+}
+
+// SimTimeSince returns the signed seconds elapsed since tick on the
+// simulation clock. Negative means tick is still in the future -- useful
+// for countdowns anchored to a tick stored in simulation state.
+func (ctx *RenderContext) SimTimeSince(tick uint64) float64 {
+	return (ctx.SubTick() - float64(tick)) * ctx.fixedDt
 }

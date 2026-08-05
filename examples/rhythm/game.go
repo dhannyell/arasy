@@ -123,7 +123,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	nowMS := songTimeMS(g.State, ctx.Tick)
-	renderNowMS := interpolatedSongTimeMS(g.State, ctx.Tick, ctx.Alpha)
+	renderNowMS := float64(g.State.CalibrationMS) + ctx.SimTimeSince(g.State.SongStartTick)*1000
 
 	cmds := drawBackground(ctx)
 	cmds = append(cmds, g.drawFire(ctx, g.State.Combo)...)
@@ -149,13 +149,6 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 		cmds = append(cmds, drawMenu()...)
 	}
 	return cmds
-}
-
-// interpolatedSongTimeMS is the presentation-only song clock. Alpha is the
-// unconsumed fraction of the current fixed simulation tick and is supplied by
-// runtime only when RenderInterpolation is enabled.
-func interpolatedSongTimeMS(state MatchState, tick uint64, alpha float64) float64 {
-	return float64(songTimeMS(state, tick)) + alpha*1000/simHz
 }
 
 func (g *Game) start(ctx *runtime.UpdateContext) {

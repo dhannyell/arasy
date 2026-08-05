@@ -4,6 +4,10 @@
 // input mapping, optional rewind snapshots and frame production. It steps the
 // World after Update unless the game calls UpdateContext.HoldSimulation.
 //
+// Presentation values animated outside the automatic transform interpolation
+// should use RenderContext.SubTick, TicksSince or SimTime instead of
+// recombining Tick and Alpha by hand.
+//
 // Runtime has no transport, windowing, HTTP, canvas or raster knowledge.
 // Platforms adapt native input/output to ApplyInput, Control, AdvanceTime,
 // Step and Frame.
