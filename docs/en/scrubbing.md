@@ -93,6 +93,28 @@ instance, not one attached to a live driver. Recordings must start at tick 0
 (a fresh driver, or right after a reset); a reset in the middle of a
 recording restarts the capture, because ticks restart from zero.
 
+## Recording provenance
+
+A replay can stop reproducing for three distinct reasons: the game changed,
+the engine changed, or the platform changed. Recordings can carry a
+provenance section so a failed verification says which one. Set `GameID`
+and `GameVersion` in `runtime.Config`, and every recording also captures
+the engine module version and the GOOS/GOARCH pair it was made on;
+`Config.GameMetadata` travels along as an opaque blob the game owns. When
+an anchor diverges, the error attributes it:
+
+```text
+anchor mismatch at tick 812: got ... want ...
+  recorded with: game acme-dodgeball 1.4.2, engine v0.1.0, windows/amd64
+```
+
+Fill the fields in shipped games. Leave them empty in tests and golden
+fixtures, so recorded bytes stay machine-independent — a recording made
+without identification verifies normally and the diagnostic states
+"recorded without provenance". Provenance is metadata only: it never enters
+a checksum and never feeds simulation. The format's evolution rules live at
+the top of `runtime/recording_io.go`.
+
 ## The contract: your game must be deterministic
 
 Scrubbing inherits the replay requirements. Inside `Update`:

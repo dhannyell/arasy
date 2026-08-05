@@ -187,6 +187,28 @@ instancia nova, nao a que estiver acoplada a um driver vivo. Gravacoes devem
 comecar no tick 0 (driver novo ou logo apos reset); um reset no meio de uma
 gravacao reinicia a captura, porque os ticks recomecam do zero.
 
+## Proveniencia da gravacao
+
+Um replay pode deixar de reproduzir por tres motivos distintos: o jogo
+mudou, a engine mudou, ou a plataforma mudou. Gravacoes podem carregar uma
+secao de proveniencia para que uma verificacao que falha diga qual foi.
+Preencha `GameID` e `GameVersion` no `runtime.Config`, e cada gravacao
+tambem captura a versao do modulo da engine e o par GOOS/GOARCH em que foi
+feita; `Config.GameMetadata` viaja junto como um blob opaco do jogo. Quando
+uma ancora diverge, o erro atribui:
+
+```text
+anchor mismatch at tick 812: got ... want ...
+  recorded with: game acme-dodgeball 1.4.2, engine v0.1.0, windows/amd64
+```
+
+Preencha os campos em jogos publicados. Deixe-os vazios em testes e
+fixtures golden, para que os bytes gravados nao variem por maquina — uma
+gravacao sem identificacao verifica normalmente e o diagnostico diz
+"recorded without provenance". Proveniencia e so metadado: nunca entra em
+checksum e nunca alimenta a simulacao. As regras de evolucao do formato
+vivem no topo de `runtime/recording_io.go`.
+
 ## O contrato: seu jogo precisa ser deterministico
 
 O scrubbing herda os requisitos do replay. Dentro de `Update`:
