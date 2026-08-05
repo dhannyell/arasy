@@ -39,7 +39,7 @@ func boardBackgroundCommands() []render.Command {
 		Fill:         boardColor,
 		CornerRadius: 2,
 	})
-	for i := 0; i < gridSize*gridSize; i++ {
+	for i := range gridSize * gridSize {
 		cmds = append(cmds, render.DrawRect{
 			BaseCommand:  render.BaseCommand{LayerValue: layerCell},
 			Rect:         cellRect(i),
@@ -133,11 +133,11 @@ func movingTileRect(from, to int, progress float64) math2d.Rect {
 	return math2d.NewRect(center.Sub(fromRect.Size().Mul(0.5)), fromRect.Size())
 }
 
-func animationProgress(animation turnAnimation, tick uint64, alpha float64) float64 {
-	if !animation.Active || tick < animation.StartTick {
+func animationProgress(ctx *runtime.RenderContext, animation turnAnimation) float64 {
+	if !animation.Active {
 		return 0
 	}
-	return math2d.Clamp((float64(tick-animation.StartTick)+alpha)/float64(animationTicks), 0, 1)
+	return math2d.Clamp(ctx.TicksSince(animation.StartTick)/float64(animationTicks), 0, 1)
 }
 
 func (g *Game2048) drawHUD(ctx *runtime.RenderContext) {
