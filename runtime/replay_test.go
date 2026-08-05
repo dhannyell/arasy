@@ -171,6 +171,17 @@ func TestVerifyRecordingUsesRecordedSimulationRate(t *testing.T) {
 	}
 }
 
+// A rate beyond the uint16 field must record as zero (replay falls back to
+// the game's own rate), never as a silently truncated wrong rate.
+func TestStopRecordingZeroesOutOfRangeSimulationRate(t *testing.T) {
+	driver := NewDriver(&rateGame{hz: math.MaxUint16 + 1}, slog.Default())
+	driver.StartRecording()
+	driver.Step()
+	if rec := driver.StopRecording(); rec.SimulationHz != 0 {
+		t.Fatalf("recording rate = %d, want 0 fallback", rec.SimulationHz)
+	}
+}
+
 // rateGame moves an entity by velocity, so its positions depend on the fixed
 // dt and any simulation-rate mismatch shows up in the checksum anchors.
 type rateGame struct {

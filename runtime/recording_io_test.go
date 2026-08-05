@@ -183,9 +183,9 @@ func TestReadRecordingDoesNotPreallocateFromHeaderCounts(t *testing.T) {
 	for _, field := range []any{
 		recordingVersion,
 		uint64(0), uint64(0), // ticks, seed
-		uint16(0),  // simulation hz
-		float64(0), // gamepad deadzone
-		uint64(0),  // content checksum
+		uint16(0),                                      // simulation hz
+		float64(0),                                     // gamepad deadzone
+		uint64(0),                                      // content checksum
 		float64(0), float64(0), float64(0), float64(0), // viewport
 		uint32(maxRecordingAnchors),
 		uint32(maxRecordingEvents),

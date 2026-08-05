@@ -3,6 +3,7 @@ package runtime
 import (
 	"bytes"
 	"log/slog"
+	"math"
 	goruntime "runtime"
 	"runtime/debug"
 	"strings"
@@ -130,6 +131,12 @@ func (d *Driver) StartRecording() {
 // StopRecording returns the captured input log and final tick.
 func (d *Driver) StopRecording() Recording {
 	d.recordingEnabled = false
+	hz := d.cfg.SimulationHz
+	if hz > math.MaxUint16 {
+		d.log.Warn("SimulationHz exceeds the recording field range; recording it as zero",
+			"hz", hz, "max", math.MaxUint16)
+		hz = 0
+	}
 	events := d.recording
 	anchors := d.recordingAnchors
 	initial := d.recordingInitialViewport
@@ -144,7 +151,7 @@ func (d *Driver) StopRecording() Recording {
 		Events:          events,
 		Ticks:           d.tick,
 		Seed:            d.cfg.Seed,
-		SimulationHz:    uint16(d.cfg.SimulationHz),
+		SimulationHz:    uint16(hz),
 		GamepadDeadzone: d.cfg.GamepadDeadzone,
 		Anchors:         anchors,
 		Viewport:        initial,
