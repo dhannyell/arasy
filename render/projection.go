@@ -242,13 +242,20 @@ func viewScale(view math2d.Affine) float64 {
 
 // viewLift is how far and in which world direction one unit of height moves a
 // body under view, reported as a single vector. It fails for a view that does
-// not skew, which is the signal to keep the DepthScale rule instead.
+// not skew, which is the signal to keep the DepthScale rule instead: a view
+// that only translates, rotates or uniformly scales has no tilt of its own to
+// supply a lift from.
 func viewLift(view math2d.Affine) (math2d.Vec2, bool) {
 	if view.IsIdentity() {
 		return math2d.Vec2{}, false
 	}
 
-	inverse, ok := linearPart(view).Inverse()
+	linear := linearPart(view)
+	if linear.IsIdentity() || isSimilarity(linear) {
+		return math2d.Vec2{}, false
+	}
+
+	inverse, ok := linear.Inverse()
 	if !ok {
 		return math2d.Vec2{}, false
 	}
@@ -259,6 +266,14 @@ func viewLift(view math2d.Affine) (math2d.Vec2, bool) {
 	}
 
 	return lift, true
+}
+
+// isSimilarity reports whether m only rotates and uniformly scales -- no
+// skew. The constructors produce such matrices exactly, and the tolerance is
+// for ones authored by hand.
+func isSimilarity(m math2d.Affine) bool {
+	const tolerance = 1e-9
+	return math.Abs(m.A-m.D) <= tolerance && math.Abs(m.B+m.C) <= tolerance
 }
 
 func clampOrZero(value, max float64) float64 {
