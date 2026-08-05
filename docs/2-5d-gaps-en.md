@@ -1,0 +1,131 @@
+# 2.5D: current state and points of improvement
+
+A survey of where the engine stands for 2.5D games in general — not only the
+isometric `examples/outpost`. Written in 2026-08; revisit whenever any item
+becomes a feature.
+
+## What is already solved
+
+The principle organizing 2.5D here is that the projection is **declared, and
+everything else derives** — tilt, height, shadow and ordering are not the
+game's problem:
+
+- `Camera.DepthScale` and `Camera.View` — the projection lives on the camera,
+  so picking (`ScreenToWorld`), debug overlays and physics stay on the square
+  grid.
+- `Height` + `Ballistics` + `GroundProjection` — height is simulation state
+  and the shadow that detaches from the body comes for free.
+- `PlaneUpright`/`PlaneGround` with automatic correction — the engine works
+  out the shape an upright sprite needs under the view, with no hand-written
+  shear correction in the game.
+- Base-sort with `SortAxis`/`SortOffset`, `CommandSprite` (raw-command props
+  in the painter sort), `Attachment` (composites that sort as one thing) and
+  `Projection.Wall`/`ExtrudeRect` (extruded volume on the same lift as the
+  entities).
+
+## The gaps, in impact order
+
+### 1. Batched textures ignore the `View`
+
+`DrawSpriteBatch`, `DrawTextBatch` and `DrawParticles` receive the camera as
+scale+offset and cannot carry a shear (an already documented limit). In
+practice: **an isometric game made of textured art — the most common case —
+cannot use the fast paths**; outpost works around it by being 100% vector.
+It is the gap that most restricts "which kind of 2.5D game can be built".
+It takes a full-matrix uniform in both GPU backends.
+
+### 2. There is no tilemap
+
+No tilemap support at all — no renderer, no autotile, no import of the map
+editor formats games already use (Tiled, LDtk). For 2.5D this weighs double,
+because the ground is always a tilemap. Outpost's text `boardMap` is the
+embryo of what a minimal API could be: grid + atlas + layers, with the `View`
+doing the rest.
+
+### 3. Height does not enter picking
+
+`ScreenToWorld` inverts the view on the ground plane (z=0). Clicking a lifted
+body — a unit at the top of its hop, a prop on raised terrain — hits the tile
+*behind* it, because the lift moved the body on screen. What is missing is
+the inverse of the lift: a `Projection.ScreenToGround(cam, screen, z)` that
+answers "which ground point is under this pixel, assuming height z". Today
+every game would subtract `LiftVector().Mul(z)` by hand.
+
+### 4. Height does not enter collision
+
+Colliders are 2D: a projectile with `Height.Z = 10` still collides with a
+wall it visibly flies over. The missing component is small — a height on the
+collider (`Tall`/`ZExtent`) plus the test "only collides if the Z intervals
+overlap" — and it unlocks throws over obstacles, bridges, and the arcing shot
+of any isometric action game.
+
+### 5. Terrain has no elevation
+
+`Height` is per entity; the ground is flat. Tactics games with platforms need
+per-tile elevation: the drawing already works with `ExtrudeRect`, but
+projectile landing (`Ballistics` assumes ground at z=0), the shadow (always
+projected at z=0) and picking do not know the ground rose. A `GroundHeight`
+queryable by the projection and by ballistics would cover all three.
+
+### 6. Occlusion without a gameplay answer
+
+A character behind a building vanishes — and the tactics-genre standard is a
+silhouette or a cutout. The engine has no "this sprite is occluded by that
+one". A cheap query (compare depth key + screen-footprint overlap) would let
+the game draw the silhouette; the per-pixel cutout is another problem (depth
+buffer) and can stay out.
+
+### 7. 2.5D styles still without a path
+
+- **Layer parallax** (side-view 2.5D): one camera only; missing a parallax
+  factor per layer or cameras per command group. The engine that declares
+  projection could declare this too.
+- **Perspective ground (Mode-7 style)**: `View` is affine; perspective wants
+  a homography. `DrawImageQuad` already interpolates with perspective
+  correction, so the material exists — the camera does not know how to use
+  it yet.
+- **Billboard in a raycaster** is reasonably out of scope, and that is fine.
+
+### 8. The shadow is a global blob, and only exists airborne
+
+The automatic shadow works for any sprite — including `ImageSprite` (the
+footprint covers circle, rect and image) — but has three limits:
+
+- **Only emitted with `Height.Z > 0`**: an entity standing on the ground has
+  no contact shadow at all, and that is the shadow that "glues" a character
+  to the world. Today every scene paints blobs by hand as decals.
+- **Zero per-entity customization**: shape (always an ellipse), color, alpha
+  and offset all derive from the global `Projection`. There is no way to
+  declare "this entity has a larger shadow", "none" or "a darker one".
+- **No projected silhouette**: the skewed, darkened copy of the sprite itself
+  on the ground (the standard for textured art under directional light) is
+  technically a `DrawImage` with a skew transform derived from the
+  `LiftVector` + black tint — the material exists, the path does not.
+
+The blob is the genre's right default for compact bodies; the gap is the lack
+of opt-out and of degree.
+
+### 9. There is no light channel over sprites
+
+No body-lighting vocabulary: the `ProjectionLight` only drives the shadow.
+The only per-sprite color channel is the authored `Tint`/`Color` — which is
+simulation state (it enters the checksum, by decision: games encode state in
+sprite color, and color tweens are sim). The consequence: a game that
+modulates tint by proximity to a light every frame turns aesthetics into sim
+state and contaminates replay/checksum. What is missing is a **render-only**
+color-modulation channel (the exact analogue of `SpriteTransform`, already
+the render-only affine outside the checksum) fed by declared lights (ambient
++ point lights with position/radius/color). Normal maps and wall light
+occlusion are a full step above (new shader in all three backends) and can
+stay out.
+
+## Recommended priority reading
+
+Item 1 is the only one that *blocks* a class of game; 2 and 3 are what every
+second 2.5D game will ask for; 4 and 5 turn 2.5D from visual into mechanics;
+6 and 7 are genre polish. 8 and 9 are what separates "sprite placed in the
+scene" from "sprite belonging to the scene": without contact shadow and
+without light, textured art looks flat next to the extruded vector volumes —
+and the contact shadow is the cheapest fraction with the biggest visual
+return. Item 2 gets much cheaper after item 1 (an atlas tilemap is a retained
+batch under the `View`).
