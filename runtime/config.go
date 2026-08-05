@@ -88,4 +88,18 @@ type Config struct {
 	// tick 0. The zero value uses Clear, so disabling the engine brand never
 	// introduces an implicit black frame.
 	BootBackground render.Color
+
+	// GameID and GameVersion identify the game that produced a recording.
+	// They are metadata only: never part of a checksum, never read by
+	// simulation. When either is set, recordings carry a provenance section
+	// so a failed replay can say what changed — the game, the engine, or the
+	// platform. Leave them empty in tests and golden fixtures so recorded
+	// bytes stay machine-independent.
+	GameID      string
+	GameVersion string
+	// GameMetadata is an opaque blob the game owns. The engine stores and
+	// returns it with the recording without interpreting it, the same
+	// contract the save format gives a game's payload. It travels only when
+	// the provenance section is recorded.
+	GameMetadata []byte
 }

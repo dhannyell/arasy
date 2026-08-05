@@ -1,7 +1,11 @@
 package runtime
 
 import (
+	"bytes"
 	"log/slog"
+	goruntime "runtime"
+	"runtime/debug"
+	"strings"
 
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
@@ -48,6 +52,46 @@ type Recording struct {
 	// position and UI clicks that started the game live are missed during
 	// replay.
 	Viewports []ViewportChange
+
+	// Provenance identifies what produced the recording, so a failed
+	// verification can say what changed — the game, the engine, or the
+	// platform — instead of only where it diverged.
+	Provenance Provenance
+}
+
+// Provenance identifies what produced a recording. Ownership is layered like
+// the save format: the engine fills EngineVersion and Platform, the game
+// fills the rest through Config. It is diagnostic metadata only — it never
+// enters a checksum, never feeds simulation, and never changes what a replay
+// reproduces. Metadata explains; it does not decide.
+type Provenance struct {
+	// Present reports whether the recording carries a provenance section.
+	// Absence is valid and means "recorded without provenance" — the state
+	// of every test fixture, so recorded bytes stay machine-independent.
+	Present bool
+	// EngineVersion is the arasy module version compiled into the binary
+	// that captured the recording, or "devel" inside the engine repo itself.
+	EngineVersion string
+	// GameID and GameVersion are copied verbatim from Config.
+	GameID      string
+	GameVersion string
+	// Platform is the GOOS/GOARCH pair the recording was captured on.
+	Platform string
+	// GameBlob is an opaque payload the game owns through
+	// Config.GameMetadata. The engine stores and returns it without
+	// interpreting it.
+	GameBlob []byte
+}
+
+// note is the attribution line diagnostics append to a failed verification.
+// Absence is stated, never omitted: "recorded without provenance" tells the
+// developer the file itself cannot say what changed.
+func (p Provenance) note() string {
+	if !p.Present {
+		return "recorded without provenance"
+	}
+	game := strings.TrimSpace(p.GameID + " " + p.GameVersion)
+	return "recorded with: game " + game + ", engine " + p.EngineVersion + ", " + p.Platform
 }
 
 // ViewportChange is one SetViewport call captured in a Recording, stamped with
@@ -106,7 +150,55 @@ func (d *Driver) StopRecording() Recording {
 		Viewport:        initial,
 		Viewports:       viewports,
 		ContentChecksum: content,
+		Provenance:      d.recordingProvenance(),
 	}
+}
+
+// recordingProvenance builds the provenance section for a recording the
+// driver is about to emit. The game opts in through Config; fixtures and
+// tests leave the fields empty, record no provenance, and keep their bytes
+// machine-independent.
+func (d *Driver) recordingProvenance() Provenance {
+	if d.cfg.GameID == "" && d.cfg.GameVersion == "" {
+		return Provenance{}
+	}
+	blob := d.cfg.GameMetadata
+	if len(blob) > maxProvenanceBlob {
+		// Losing the blob is acceptable; losing the recording over metadata
+		// is not. Kept, the oversized blob would make WriteTo reject the
+		// whole file at save time.
+		d.log.Warn("GameMetadata exceeds the provenance blob limit; recording without it",
+			"size", len(blob), "max", maxProvenanceBlob)
+		blob = nil
+	}
+	return Provenance{
+		Present:       true,
+		EngineVersion: engineVersion(),
+		GameID:        d.cfg.GameID,
+		GameVersion:   d.cfg.GameVersion,
+		Platform:      hostPlatform(),
+		// Cloned so a game mutating its metadata buffer after StopRecording
+		// cannot silently rewrite an already-emitted recording.
+		GameBlob: bytes.Clone(blob),
+	}
+}
+
+// engineVersion reports the arasy module version compiled into the binary,
+// or "devel" when the binary is the engine repo itself (tests, demos).
+func engineVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/dhannyell/arasy" {
+				return dep.Version
+			}
+		}
+	}
+	return "devel"
+}
+
+// hostPlatform is the GOOS/GOARCH pair provenance records for attribution.
+func hostPlatform() string {
+	return goruntime.GOOS + "/" + goruntime.GOARCH
 }
 
 // viewportLogToChanges copies the driver's viewport change log into the
