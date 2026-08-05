@@ -52,6 +52,9 @@ func (r Recording) WriteTo(w io.Writer) (int64, error) {
 	if err := cw.write(r.Seed); err != nil {
 		return cw.n, err
 	}
+	if err := cw.write(r.SimulationHz); err != nil {
+		return cw.n, err
+	}
 	if err := cw.write(r.GamepadDeadzone); err != nil {
 		return cw.n, err
 	}
@@ -167,6 +170,9 @@ func ReadRecording(r io.Reader) (Recording, error) {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.Seed); err != nil {
+		return Recording{}, err
+	}
+	if err := cr.read(&rec.SimulationHz); err != nil {
 		return Recording{}, err
 	}
 	if err := cr.read(&rec.GamepadDeadzone); err != nil {

@@ -18,6 +18,7 @@ func TestRecordingWriteToReadRecordingRoundTrip(t *testing.T) {
 	rec := Recording{
 		Ticks:           120,
 		Seed:            42,
+		SimulationHz:    60,
 		GamepadDeadzone: .25,
 		ContentChecksum: 77,
 		Viewport:        math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 1920, Y: 1080}),
@@ -107,7 +108,7 @@ func TestReadRecordingRejectsLegacyV1Layout(t *testing.T) {
 
 	// Before GamepadDeadzone was added, v1 placed Viewport immediately after
 	// Seed. Removing that field reconstructs the incompatible legacy layout.
-	const deadzoneOffset = len(recordingMagic) + 2 + 8 + 8
+	const deadzoneOffset = len(recordingMagic) + 2 + 8 + 8 + 2
 	legacy := append([]byte(nil), data[:deadzoneOffset]...)
 	legacy = append(legacy, data[deadzoneOffset+8:]...)
 
@@ -127,7 +128,9 @@ func TestReadRecordingDoesNotPreallocateFromHeaderCounts(t *testing.T) {
 	for _, field := range []any{
 		recordingVersion,
 		uint64(0), uint64(0), // ticks, seed
-		float64(0),                                     // gamepad deadzone
+		uint16(0),  // simulation hz
+		float64(0), // gamepad deadzone
+		uint64(0),  // content checksum
 		float64(0), float64(0), float64(0), float64(0), // viewport
 		uint32(maxRecordingAnchors),
 		uint32(maxRecordingEvents),

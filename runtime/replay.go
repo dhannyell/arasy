@@ -12,6 +12,12 @@ type Recording struct {
 	Events []input.Event
 	Ticks  uint64
 	Seed   uint64
+	// SimulationHz is the fixed simulation rate the recording was captured
+	// at. Replay steps at this rate — the recording is authoritative, like
+	// Seed — so a recording reproduces regardless of the game's current
+	// SimulationHz. Zero (recordings constructed in memory) falls back to
+	// the fresh game's rate.
+	SimulationHz uint16
 	// GamepadDeadzone is the effective deterministic stick-axis deadzone.
 	// Zero, or an invalid value in a Recording constructed in memory, means
 	// use the fresh game's configured effective deadzone.
@@ -94,6 +100,7 @@ func (d *Driver) StopRecording() Recording {
 		Events:          events,
 		Ticks:           d.tick,
 		Seed:            d.cfg.Seed,
+		SimulationHz:    uint16(d.cfg.SimulationHz),
 		GamepadDeadzone: d.cfg.GamepadDeadzone,
 		Anchors:         anchors,
 		Viewport:        initial,

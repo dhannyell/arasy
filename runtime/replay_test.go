@@ -148,6 +148,47 @@ func TestVerifyRecordingSurvivesRecolorUnderTween(t *testing.T) {
 	}
 }
 
+// The recording's simulation rate is authoritative, like Seed: a .arrp
+// captured at 60 Hz must verify even after the game's config moves to
+// 120 Hz, because each replayed Step must integrate dt = 1/60 like the live
+// run did. Without the override the physics advance at the live rate and the
+// first post-step anchor diverges.
+func TestVerifyRecordingUsesRecordedSimulationRate(t *testing.T) {
+	live := &rateGame{hz: 60}
+	driver := NewDriver(live, slog.Default())
+	driver.StartRecording()
+	for range 90 {
+		driver.Step()
+	}
+	rec := driver.StopRecording()
+	if rec.SimulationHz != 60 {
+		t.Fatalf("recording rate = %d, want 60", rec.SimulationHz)
+	}
+
+	retuned := &rateGame{hz: 120}
+	if err := VerifyRecording(retuned, slog.Default(), rec); err != nil {
+		t.Fatalf("a SimulationHz retune failed verification: %v", err)
+	}
+}
+
+// rateGame moves an entity by velocity, so its positions depend on the fixed
+// dt and any simulation-rate mismatch shows up in the checksum anchors.
+type rateGame struct {
+	hz int
+}
+
+func (g *rateGame) Setup() Config { return Config{SimulationHz: g.hz} }
+
+func (g *rateGame) Init(ctx *UpdateContext) {
+	e := ctx.World.Spawn()
+	ctx.World.SetTransform(e, scene.Transform{Scale: math2d.Vec2{X: 1, Y: 1}})
+	ctx.World.SetVelocity(e, scene.Velocity{Linear: math2d.Vec2{X: 3, Y: 1}})
+}
+
+func (g *rateGame) Update(ctx *UpdateContext, _ float64) {}
+
+func (g *rateGame) Render(ctx *RenderContext) []render.Command { return nil }
+
 type recolorGame struct {
 	color  render.Color
 	tween  bool
