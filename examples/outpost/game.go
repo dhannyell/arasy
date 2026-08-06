@@ -174,6 +174,15 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	// stand rather than by plain screen Y.
 	ctx.World.SetSortAxis(math2d.Vec2{X: 1, Y: 1})
 
+	// Lighting is declarative and render-only, like the projection: the world
+	// says which lights exist and which layers feel them, and no checksum ever
+	// sees any of it. The dusk ambient dims the actors into the evening the
+	// dark sky and lit windows already suggest; the plaza lantern pays it back
+	// with a warm pool. The band covers actors only — the board is authored
+	// commands, and marks, hover and clouds keep their colors.
+	ctx.World.SetAmbientLight(scene.AmbientLight{Color: duskAmbient})
+	ctx.World.SetLitLayers(layerActors, layerActors)
+
 	// The projection is the whole 2.5D vocabulary in one value: every piece
 	// of fake volume below -- cliffs, mountains, buildings -- extrudes along
 	// its LiftVector, the same vector that lifts entities with Height, so

@@ -59,17 +59,18 @@ const (
 	terrainMountain
 	terrainPeak // a taller, two-tier mountain
 	terrainBuilding
+	terrainLantern
 )
 
 // boardMap is authored as text so the layout can be read at a glance:
 // 'M' tall mountain, 'm' mountain, '~' water, 'f' forest, 'B' building,
-// '.' grass.
+// 'L' lantern, '.' grass.
 var boardMap = [boardRows]string{
 	"MMm....~~~",
 	"Mm..f..~~~",
 	"....f...~~",
 	"..B.....~~",
-	"....B.....",
+	"....BLf...",
 	".f....B...",
 	"...f......",
 	".f....f...",
@@ -90,6 +91,8 @@ func terrainAt(i, j int) terrain {
 		return terrainForest
 	case 'B':
 		return terrainBuilding
+	case 'L':
+		return terrainLantern
 	default:
 		return terrainGrass
 	}
@@ -159,6 +162,14 @@ var (
 	trunkColor  = render.RGBA8(104, 78, 54, 255)
 	canopyColor = render.RGBA8(62, 116, 70, 255)
 	canopyCrown = render.RGBA8(80, 138, 84, 255)
+
+	// The dusk over the lit band, slightly cool and below full white: the
+	// distance between this and 1 is the room the lantern has to shine.
+	duskAmbient = render.RGBA(0.6, 0.6, 0.72, 1)
+
+	// The lantern's contribution at its flame. Warm on purpose: against the
+	// cool ambient, the pool around the lantern is what makes the light read.
+	lanternGlow = render.RGBA(0.6, 0.42, 0.18, 1)
 )
 
 func inset(rect math2d.Rect, amount float64) math2d.Rect {
@@ -316,6 +327,8 @@ func spawnProps(world *scene.World, p render.Projection) {
 				spawnCommandProp(world, i, j, mountainCommands(p, i, j, true))
 			case terrainBuilding:
 				spawnCommandProp(world, i, j, buildingCommands(p, i, j))
+			case terrainLantern:
+				spawnLantern(world, i, j)
 			}
 		}
 	}
@@ -375,6 +388,47 @@ func spawnTree(world *scene.World, i, j int) {
 			},
 		})
 	}
+}
+
+// spawnLantern raises the plaza lantern: a post with a flame hung up the
+// lift axis, and the island's one point light on the same entity. The light
+// has no position of its own — it shines from the post's Transform, the way
+// a sprite stands where its entity stands — so a light that should move
+// would simply be an entity that moves. The pool it casts only touches the
+// layers declared in World.SetLitLayers.
+func spawnLantern(world *scene.World, i, j int) {
+	const (
+		postHalfWidth = 0.18
+		postHeight    = 3.0
+		flameHeight   = 3.2 // how far up the lift axis the flame hangs
+		flameRadius   = 0.55
+
+		// Two and a half tiles of reach: enough to pool over the plaza
+		// without flattening the dusk across the island.
+		lanternRadius = 2.5 * tileSize
+	)
+
+	post := world.SpawnBundle(scene.Bundle{
+		Transform: &scene.Transform{Position: tileCenter(i, j)},
+		RectSprite: &scene.RectSprite{
+			Rect: math2d.NewRectFromCorners(
+				math2d.Vec2{X: -postHalfWidth, Y: -postHeight},
+				math2d.Vec2{X: postHalfWidth, Y: 0.2},
+			),
+			BaseSprite: scene.BaseSprite{Layer: layerActors, Color: trunkColor},
+		},
+	})
+	world.SpawnAttached(post, math2d.Vec2{}, flameHeight, scene.Bundle{
+		CircleSprite: &scene.CircleSprite{
+			Radius:     flameRadius,
+			BaseSprite: scene.BaseSprite{Layer: layerActors, Color: windowLit},
+		},
+	})
+	world.SetPointLight(post, scene.PointLight{
+		Color:   lanternGlow,
+		Radius:  lanternRadius,
+		Falloff: 1, // one extra power: a tighter, warmer pool
+	})
 }
 
 // mountainCommands raises a faceted pyramid: two triangular faces from the
