@@ -104,25 +104,33 @@ contact in place, the remaining gap is silhouette only.
 
 ### 9. There is no light channel over sprites
 
-No body-lighting vocabulary: the `ProjectionLight` only drives the shadow.
-The only per-sprite color channel is the authored `Tint`/`Color` — which is
-simulation state (it enters the checksum, by decision: games encode state in
-sprite color, and color tweens are sim). The consequence: a game that
-modulates tint by proximity to a light every frame turns aesthetics into sim
-state and contaminates replay/checksum. What is missing is a **render-only**
-color-modulation channel (the exact analogue of `SpriteTransform`, already
-the render-only affine outside the checksum) fed by declared lights (ambient
-+ point lights with position/radius/color). Normal maps and wall light
-occlusion are a full step above (new shader in all three backends) and can
-stay out.
+**Closed in v1**: `scene.AmbientLight` and `scene.PointLight` are the
+declared render-only lights. `World.SetLitLayers` selects the layers they
+affect. For each affected sprite, the renderer evaluates the ambient and
+point-light contributions at the interpolated ground position, clamps each
+RGB channel to `[0, 1]`, and multiplies the result by the authored
+`Tint`/`Color`. This happens before commands are emitted, so it needs no new
+render command or backend code, and lights never enter a checksum.
+Authored `Tint`/`Color` remains simulation state, and lighting never writes
+to it. `examples/outpost` consumes the channel with dusk ambient light and a
+plaza lantern; the lighting section of `2-5d.md` documents the design. Out by
+decision:
+
+- **Normal maps: not supported.** Per-pixel lighting needs a new shader in
+  every backend — Canvas2D has none to program — plus a second authored
+  texture per sprite. Color modulation is the declared substitute at this
+  tier.
+- Lighting for retained batches and `DrawParticles` (the likely shape is a
+  per-batch uniform; the trigger is the first lit tilemap scene), and
+  colored shadows (contact shadows remain black).
 
 ## Recommended priority reading
 
 Item 1 is the only one that *blocks* a class of game; 2 and 3 are what every
 second 2.5D game will ask for; 4 and 5 turn 2.5D from visual into mechanics;
 6 and 7 are genre polish. 8 and 9 are what separates "sprite placed in the
-scene" from "sprite belonging to the scene": without contact shadow and
-without light, textured art looks flat next to the extruded vector volumes —
-and the contact shadow is the cheapest fraction with the biggest visual
-return. Item 2 gets much cheaper after item 1 (an atlas tilemap is a retained
+scene" from "sprite belonging to the scene", and both now have v1 solutions:
+styled contact shadows and declared light modulation. Projected silhouettes
+and per-pixel lighting remain deliberate next steps. Item 2 gets much cheaper
+after item 1 (an atlas tilemap is a retained
 batch under the `View`).
