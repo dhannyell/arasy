@@ -1,1 +1,0 @@
-screen=4 query="ar" sort={Col:4 Desc:true} filter=0 u23=true selected=2 rows=58

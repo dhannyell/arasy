@@ -24,6 +24,11 @@
 //     the same way. Each composite is one thing in the painter order.
 //   - Picking is ScreenToWorld. A click lands on the square grid because the
 //     camera's affine is invertible, so tile math never sees the projection.
+//   - Light is declared, render-only. A scene.AmbientLight dims the actors
+//     into dusk and one scene.PointLight on the plaza lantern warms them back
+//     near it; World.SetLitLayers keeps marks, hover and clouds out of the
+//     band. None of it enters a checksum: authored color is state, light
+//     never is.
 //
 // Click a unit to select it, click a grass tile to send it hopping there.
 package outpost

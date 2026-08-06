@@ -20,6 +20,14 @@ type DebugGridCell struct {
 	Candidate bool
 }
 
+// litLayers selects the render-only layer range affected by lighting.
+// It is excluded from Checksum. The zero value disables lighting; call
+// SetLitLayers to enable it and keep HUD and overlay layers unchanged.
+type litLayers struct {
+	min, max int
+	set      bool
+}
+
 type World struct {
 	nextID EntityID
 
@@ -44,12 +52,19 @@ type World struct {
 	moveIntents      store[MoveIntent]
 	hopTweens        store[HopTween]
 	attachments      store[Attachment]
+	pointLights      store[PointLight]
+	litLayers        litLayers
+	ambientLight     AmbientLight
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
 	collisionScratch collisionScratch
 
 	entityCountCache int
 	entityCountDirty bool
+
+	// lightScratch is reusable render working memory: the point lights of one
+	// frame at their interpolated positions. Transient: never cloned or checksummed.
+	lightScratch []frameLight
 
 	// renderTransforms stores the previous-tick transform for each entity,
 	// used by RenderCommandsInterpolated to produce smooth visual poses
@@ -139,6 +154,9 @@ func (w *World) Clone() *World {
 		moveIntents:      w.moveIntents.clone(),
 		hopTweens:        w.hopTweens.clone(),
 		attachments:      w.attachments.clone(),
+		pointLights:      w.pointLights.clone(),
+		litLayers:        w.litLayers,
+		ambientLight:     w.ambientLight,
 		commandSprites:   w.commandSprites.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
@@ -187,6 +205,7 @@ func (w *World) Despawn(id EntityID) {
 	w.moveIntents.remove(id)
 	w.hopTweens.remove(id)
 	w.attachments.remove(id)
+	w.pointLights.remove(id)
 	w.commandSprites.remove(id)
 	w.renderTransforms.remove(id)
 	w.renderHeights.remove(id)
@@ -228,6 +247,7 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.moveIntents.removeMarked(w.despawnMarked)
 	w.hopTweens.removeMarked(w.despawnMarked)
 	w.attachments.removeMarked(w.despawnMarked)
+	w.pointLights.removeMarked(w.despawnMarked)
 	w.commandSprites.removeMarked(w.despawnMarked)
 	w.renderTransforms.removeMarked(w.despawnMarked)
 	w.renderHeights.removeMarked(w.despawnMarked)
@@ -659,6 +679,41 @@ func (w *World) SetAttachment(id EntityID, a Attachment) {
 
 func (w *World) RemoveAttachment(id EntityID) {
 	w.attachments.remove(id)
+}
+
+// Light
+
+// SetLitLayers enables lighting for sprites in the inclusive layer range
+// [min, max]. Sprites outside the range keep their authored colors. Lighting
+// stays disabled until this method is called.
+func (w *World) SetLitLayers(min, max int) {
+	w.litLayers.min, w.litLayers.max, w.litLayers.set = min, max, true
+}
+
+// LitLayers reports the declared band; ok is false when lighting is off.
+func (w *World) LitLayers() (min, max int, ok bool) {
+	return w.litLayers.min, w.litLayers.max, w.litLayers.set
+}
+
+func (w *World) AmbientLight() AmbientLight {
+	return w.ambientLight
+}
+
+func (w *World) SetAmbientLight(a AmbientLight) {
+	w.ambientLight = a
+}
+
+func (w *World) PointLight(id EntityID) (PointLight, bool) {
+	l, ok := w.pointLights.get(id)
+	return l, ok
+}
+
+func (w *World) SetPointLight(id EntityID, l PointLight) {
+	w.pointLights.set(id, l)
+}
+
+func (w *World) RemovePointLight(id EntityID) {
+	w.pointLights.remove(id)
 }
 
 func (w *World) debugGridCellsSnapshot() []DebugGridCell {

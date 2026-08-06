@@ -166,6 +166,78 @@ func TestDespawnCleansUpRenderTransforms(t *testing.T) {
 	}
 }
 
+// lightingFillAt renders the single lit circle of the lighting interpolation
+// tests below and returns its fill.
+func lightingFillAt(t *testing.T, world *scene.World, alpha float64) render.Color {
+	t.Helper()
+
+	commands := world.RenderCommandsInterpolated(alpha)
+	if len(commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(commands))
+	}
+	circle, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	return circle.Fill
+}
+
+func TestRenderCommandsInterpolatedMovesLightingWithBody(t *testing.T) {
+	// The light samples the interpolated body position: a body that stepped
+	// from the light's center to its edge is dark at alpha 0 (current pose)
+	// and three-quarters lit halfway back to the previous pose.
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+
+	torch := world.Spawn()
+	world.SetTransform(torch, scene.Transform{})
+	world.SetPointLight(torch, scene.PointLight{Color: render.RGBA(1, 1, 1, 1), Radius: 10})
+
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{Position: math2d.Vec2{}})
+	world.SetCircleSprite(body, scene.CircleSprite{Radius: 1, BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 1), Layer: 5}})
+	world.SetVelocity(body, scene.Velocity{Linear: math2d.Vec2{X: 10}})
+
+	world.SyncRenderState()
+	world.Step(1, scene.StepConfig{})
+
+	if got, want := lightingFillAt(t, world, 0), render.RGBA(0, 0, 0, 1); got != want {
+		t.Fatalf("alpha 0: got fill %+v, want %+v", got, want)
+	}
+	if got, want := lightingFillAt(t, world, 0.5), render.RGBA(0.75, 0.75, 0.75, 1); got != want {
+		t.Fatalf("alpha 0.5: got fill %+v, want %+v", got, want)
+	}
+}
+
+func TestRenderCommandsInterpolatedMovesLightWithItsEntity(t *testing.T) {
+	// The light's own position interpolates too: a torch that stepped past a
+	// still body lights it by where the torch is at this alpha, so the glow
+	// never detaches from a moving light source.
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+
+	torch := world.Spawn()
+	world.SetTransform(torch, scene.Transform{Position: math2d.Vec2{}})
+	world.SetPointLight(torch, scene.PointLight{Color: render.RGBA(1, 1, 1, 1), Radius: 10})
+	world.SetVelocity(torch, scene.Velocity{Linear: math2d.Vec2{X: 10}})
+
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{Position: math2d.Vec2{X: 5}})
+	world.SetCircleSprite(body, scene.CircleSprite{Radius: 1, BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 1), Layer: 5}})
+
+	world.SyncRenderState()
+	world.Step(1, scene.StepConfig{})
+
+	// Current torch pose is x=10, body at x=5: distance 5 gives 0.75.
+	if got, want := lightingFillAt(t, world, 0), render.RGBA(0.75, 0.75, 0.75, 1); got != want {
+		t.Fatalf("alpha 0: got fill %+v, want %+v", got, want)
+	}
+	// Halfway back the torch sits at x=5, on the body: full light.
+	if got, want := lightingFillAt(t, world, 0.5), render.RGBA(1, 1, 1, 1); got != want {
+		t.Fatalf("alpha 0.5: got fill %+v, want %+v", got, want)
+	}
+}
+
 func TestRenderCommandsEqInterpolatedZeroAlpha(t *testing.T) {
 	world := scene.NewWorld()
 	id := world.Spawn()

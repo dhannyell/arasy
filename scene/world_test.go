@@ -107,6 +107,82 @@ func TestWorldCloneCopiesComponentsWithoutSharingMaps(t *testing.T) {
 	}
 }
 
+func TestWorldClonePreservesLightsAndIsolation(t *testing.T) {
+	w := scene.NewWorld()
+	id := spawnAt(w, math2d.Vec2{X: 10, Y: 20})
+	ambient := scene.AmbientLight{Color: render.RGBA(0.2, 0.3, 0.4, 1)}
+	point := scene.PointLight{
+		Color:   render.RGBA(1, 0.5, 0.25, 1),
+		Radius:  12,
+		Falloff: 0.75,
+	}
+	w.SetAmbientLight(ambient)
+	w.SetPointLight(id, point)
+
+	clone := w.Clone()
+	if got := clone.AmbientLight(); got != ambient {
+		t.Fatalf("clone ambient light = %+v, want %+v", got, ambient)
+	}
+	if got, ok := clone.PointLight(id); !ok || got != point {
+		t.Fatalf("clone point light = %+v, %v; want %+v, true", got, ok, point)
+	}
+
+	w.SetAmbientLight(scene.AmbientLight{Color: render.RGBA(0.8, 0.7, 0.6, 1)})
+	w.SetPointLight(id, scene.PointLight{Radius: 2})
+
+	if got := clone.AmbientLight(); got != ambient {
+		t.Fatalf("clone ambient light changed after source mutation: %+v", got)
+	}
+	if got, ok := clone.PointLight(id); !ok || got != point {
+		t.Fatalf("clone point light changed after source mutation: %+v, %v", got, ok)
+	}
+}
+
+func TestLightsDoNotAffectChecksums(t *testing.T) {
+	without := scene.NewWorld()
+	with := scene.NewWorld()
+	withoutID := spawnAt(without, math2d.Vec2{X: 10, Y: 20})
+	withID := spawnAt(with, math2d.Vec2{X: 10, Y: 20})
+
+	with.SetAmbientLight(scene.AmbientLight{Color: render.RGBA(0.2, 0.3, 0.4, 1)})
+	with.SetLitLayers(0, 10)
+	with.SetPointLight(withID, scene.PointLight{
+		Color:   render.RGBA(1, 0.5, 0.25, 1),
+		Radius:  12,
+		Falloff: 0.75,
+	})
+
+	if withoutID != withID {
+		t.Fatalf("test worlds use different entity IDs: %d and %d", withoutID, withID)
+	}
+	if got, want := with.Checksum(), without.Checksum(); got != want {
+		t.Fatalf("Checksum with lights = %d, want %d", got, want)
+	}
+	if got, want := with.SimChecksum(), without.SimChecksum(); got != want {
+		t.Fatalf("SimChecksum with lights = %d, want %d", got, want)
+	}
+	if got, want := with.ContentChecksum(), without.ContentChecksum(); got != want {
+		t.Fatalf("ContentChecksum with lights = %d, want %d", got, want)
+	}
+}
+
+func TestDespawnBatchRemovesPointLights(t *testing.T) {
+	w := scene.NewWorld()
+	first := spawnAt(w, math2d.Vec2{X: 10, Y: 20})
+	second := spawnAt(w, math2d.Vec2{X: 30, Y: 40})
+	w.SetPointLight(first, scene.PointLight{Radius: 10})
+	w.SetPointLight(second, scene.PointLight{Radius: 20})
+
+	w.DespawnBatch([]scene.EntityID{first})
+
+	if _, ok := w.PointLight(first); ok {
+		t.Fatal("point light remained after despawning its entity")
+	}
+	if got, ok := w.PointLight(second); !ok || got.Radius != 20 {
+		t.Fatalf("second point light = %+v, %v; want radius 20, true", got, ok)
+	}
+}
+
 func TestWorldStoresAndReadsTransform(t *testing.T) {
 	world := scene.NewWorld()
 	entity := world.Spawn()

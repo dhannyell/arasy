@@ -32,37 +32,24 @@ type BaseSprite struct {
 	Layer int
 	Color render.Color
 
-	// Plane selects how the camera's projection treats this sprite. The
-	// default, PlaneUpright, draws it facing the camera: the projection moves
-	// it but never distorts it. PlaneGround lets the projection have it,
-	// because it lies in the plane being projected.
+	// Plane controls how projection transforms this sprite. PlaneUpright moves and
+	// scales the sprite without distorting it. PlaneGround applies the projection
+	// to the sprite geometry.
 	//
-	// Both DepthScale and View count as projection here. Under a tilt the
-	// difference is a squash; under an isometric View it is the difference
-	// between a net standing across the court and one lying on it like a rug.
+	// DepthScale and View both affect this behavior. A plain 2D camera treats both
+	// planes the same.
 	//
-	// With a plain 2D camera the two are identical and this field costs
-	// nothing to ignore.
-	//
-	// A note for RectSprite: its upright correction pivots on the entity's
-	// Transform position, so an upright rect whose local Rect sits far from
-	// the anchor shears around a point it does not contain. Ground geometry
-	// -- courts, walls, platforms -- wants PlaneGround, which is what the
-	// rect sprite exists for.
+	// RectSprite upright correction pivots around Transform.Position. Use
+	// PlaneGround for ground geometry such as courts, walls, and platforms.
 	Plane SpritePlane
 
-	// SortOffset moves this sprite's sorting point away from its base, in
-	// world units.
+	// SortOffset shifts the sprite's base sorting point in world units.
 	//
-	// A sprite sorts by its base, not its centre, because the centre gets the
-	// common case wrong: a tall tree and a short bush planted on the same line
-	// have centres at different depths while their bases sit together, so
-	// sorting by centre puts the tree behind the bush standing next to it.
+	// Sprites sort by their base rather than their center, so objects planted on
+	// the same ground line keep the expected depth order.
 	//
-	// The zero value is that base. Reach for this field when a sprite's art
-	// does not stand on the bottom edge of its own footprint, or when a piece
-	// of a sliced-up object needs to claim the depth of the slice rather than
-	// of the whole.
+	// Use this when the art does not rest on the bottom of its footprint or when a
+	// sliced object must sort from a different point.
 	SortOffset math2d.Vec2
 }
 
@@ -71,12 +58,15 @@ type CircleSprite struct {
 	Radius float64
 }
 
-// RectSprite draws a rectangle anchored at the entity's Transform. Rect is
-// the shape in local coordinates: it is translated by Transform.Position and
-// scaled about it, so {-w/2,-h/2}..{w/2,h/2} draws centered on the entity,
-// and an asymmetric Rect anchors elsewhere -- a post whose Transform sits at
-// its foot keeps Rect.Max.Y at 0. Height lift and depth sorting follow the
-// anchored shape, and an unset (zero) Transform.Scale means unscaled.
+// RectSprite draws a rectangle in local coordinates, anchored at
+// Transform.Position. Rect is translated and scaled around that point.
+//
+// A centered rectangle places the entity at its center. An asymmetric
+// rectangle can place the entity at another anchor, such as the foot of a
+// standing object.
+//
+// Height projection and depth sorting use the anchored rectangle. An unset
+// Transform.Scale leaves it unscaled.
 type RectSprite struct {
 	BaseSprite
 	Rect        math2d.Rect
@@ -90,64 +80,47 @@ type RectSprite struct {
 // Texture and Src must already be resolved through asset.Manifest because the
 // scene package stays independent of asset loading.
 type ImageSprite struct {
-	Layer   int
+	BaseSprite
 	Texture render.TextureID
 	Src     math2d.Rect
 	Size    math2d.Vec2
-	Tint    render.Color
 
-	// Plane behaves as BaseSprite.Plane. ImageSprite carries its own copy
-	// because it does not embed BaseSprite: it has no Color to share.
-	Plane SpritePlane
-
-	// SortOffset behaves as BaseSprite.SortOffset, carried here for the same
-	// reason as Plane.
-	SortOffset math2d.Vec2
-
-	// ShadowFootprint overrides the half-extents the shadow is derived from,
-	// for art whose transparent padding or overhang makes the sprite's own
-	// size the wrong measure of how it meets the ground. Both axes must be
-	// positive for the override to apply; the zero value falls back to half
-	// the sprite's Size. Consulted whenever an automatic shadow is emitted:
-	// airborne (Z > 0) and, with a ShadowStyle, at contact (Z == 0).
+	// ShadowFootprint sets the half-extents used to calculate an ImageSprite's
+	// automatic shadow. Use it when transparent padding or an overhang makes
+	// Size a poor measure of the sprite's ground contact.
+	//
+	// The override applies when both axes are positive. The zero value uses half
+	// of Size. It is used for airborne shadows and contact shadows enabled by
+	// ShadowStyle.
 	ShadowFootprint math2d.Vec2
 }
 
-// CommandSprite gives an entity's appearance as raw render commands while
-// letting it participate in the painter sort like any other sprite. It exists
-// for the shape none of the built-in sprites can draw -- an extruded building,
-// a faceted mountain -- that still has to order correctly against the units
-// walking past it. Before it, such props had to be sliced onto hand-managed
-// layers.
+// CommandSprite gives an entity an appearance made of raw render commands.
+// It participates in painter sorting like other sprites and supports shapes
+// such as buildings and mountains.
 //
-// The commands are authored in world coordinates, like RectSprite's geometry,
-// and are emitted exactly as written except for the layer: Layer here
-// overrides each command's own, so the whole group sorts and draws as one
-// body. The entity's Transform.Position is the sorting point (plus
-// SortOffset), which for a standing prop should be where it meets the ground.
+// Commands use world coordinates and are emitted as authored. Layer overrides
+// each command's layer so the group sorts and renders as one body. The
+// entity's Transform.Position, plus SortOffset, is the sorting point.
 //
-// Content is presentation-only: it never enters Checksum, and a moving entity
-// does not move its commands -- attach static props to static entities, and
-// give moving decoration an Attachment instead.
+// CommandSprite is presentation-only and excluded from Checksum. Moving the
+// entity does not move its commands. Use Attachment for moving decorations.
 type CommandSprite struct {
 	Layer      int
 	SortOffset math2d.Vec2
 	Commands   []render.Command
 }
 
-// Attachment anchors this entity's sprite to another entity: it draws at the
-// parent's position, rides the parent's height, and sorts at the parent's
-// depth. It is how a composite object -- a tree with canopies above its trunk,
-// a machine with a highlight riding on its body -- stays one thing in the
-// painter order while being several sprites.
+// Attachment anchors an entity's sprite to another entity. It follows the
+// parent's interpolated position and height, and uses the parent's depth for
+// sorting.
 //
-// The attached sprite's geometry is authored relative to the anchor point: a
-// RectSprite's Rect is an offset around it rather than absolute world
-// coordinates, and a CircleSprite draws centred on it. The anchor is the
-// parent's (interpolated) position, moved Offset along the ground and
-// HeightOffset up the projection's lift axis on top of the parent's own
-// height. An attached entity needs no Transform or Height of its own and
-// casts no shadow -- the parent's covers the composite.
+// The attached sprite is authored relative to the anchor. RectSprite uses a
+// local offset, while CircleSprite is centered on the anchor.
+//
+// Offset moves the sprite along the ground. HeightOffset moves it along the
+// projection's lift axis. The attached entity does not need its own Transform
+// or Height, and does not cast a separate shadow.
 type Attachment struct {
 	Parent EntityID
 
@@ -160,31 +133,50 @@ type Attachment struct {
 	HeightOffset float64
 }
 
-// SpriteTransform is a render-only per-entity affine applied to the
-// entity's body draw commands (squash & stretch, lean). It is decorative:
-// excluded from Checksum, cloned for presentation continuity only, and
-// authored by the consumer each frame. The matrix is applied About the
-// body's (possibly lifted) center, so non-uniform scale deforms from the
-// center; compose Translate for a different pivot.
+// SpriteTransform applies a render-only affine transform to an entity's body
+// commands. Use it for squash, stretch, and lean effects.
+//
+// It is excluded from Checksum and cloned only for presentation continuity.
+// The consumer provides it each frame. The transform is applied around the
+// body's current center, including its projected height. Compose a translation
+// to use a different pivot.
 type SpriteTransform struct {
 	M math2d.Affine
 }
 
-// ShadowStyle adjusts the automatic ground shadow for one entity, and its
-// presence is what turns the contact shadow on: with it, an entity with
-// Height at Z == 0 keeps its shadow instead of losing it at touchdown. It is
-// presentation-only: it never enters Checksum and never affects simulation.
-// The zero value keeps the projection's defaults.
+// ShadowStyle controls an entity's automatic ground shadow. Its presence
+// enables a contact shadow when Height.Z == 0.
 //
-// The geometry still comes from the sprite's footprint (see
-// ImageSprite.ShadowFootprint); this component only scales, fades, nudges or
-// disables the emission. On a PlaneGround sprite it is a documented no-op: a
-// decal lies in the ground and casts no shadow of its own.
+// ShadowStyle is presentation-only. It is excluded from Checksum and does not
+// affect simulation. The zero value uses the projection defaults.
+//
+// The sprite footprint defines the shadow geometry. ImageSprite.ShadowFootprint
+// can override it. This component only scales, fades, offsets, or disables the
+// shadow. It has no effect on PlaneGround sprites because they already lie on
+// the ground.
 type ShadowStyle struct {
 	Scale   float64     // multiplies the shadow radii; 0 means 1 (default)
 	Alpha   float64     // multiplies the projection alpha; 0 means 1
 	Offset  math2d.Vec2 // ground-space nudge, added to ShadowCenter
 	Disable bool        // no automatic shadow for this entity
+}
+
+// AmbientLight sets the base color for render-only lighting.
+type AmbientLight struct {
+	// Color is the base light multiplier. The zero value leaves sprites unchanged.
+	Color render.Color
+}
+
+// PointLight adds render-only light at the entity's interpolated transform.
+type PointLight struct {
+	Color render.Color // Color is the light contribution at the source
+	// Radius is the finite light range. The contribution is zero outside it.
+	Radius float64
+	// Falloff sharpens the attenuation. The base curve is 1 - d²/R² (squared
+	// distance, so the evaluation stays sqrt-free); each whole step of
+	// Falloff multiplies the curve by itself once more, and a fractional
+	// part blends linearly toward the next step's curve.
+	Falloff float64
 }
 
 type Velocity struct {
@@ -266,15 +258,16 @@ type CircleSpriteTweenOptions struct {
 	RemoveOnComplete bool
 }
 
-// HopTween carries an entity from one ground point to another in an arc:
-// Position runs the straight line while Height rises to Apex halfway and
-// lands at zero. It is the tactics-game hop -- the third dimension
-// TransformTween does not animate -- and it removes itself on landing, so
-// "is this entity mid-hop" is simply whether the component exists.
+// HopTween moves an entity between two ground points along an arc. Position
+// follows a straight line, while Height reaches Apex at the midpoint and
+// returns to zero on landing.
 //
-// It is simulation state like the tweens: it enters Checksum and replays.
-// Prefer World.Hop; set this directly only to restore explicit state, such
-// as loading snapshots.
+// HopTween is simulation state. It contributes to Checksum and replay state.
+// The component is removed when the hop completes; its presence indicates an
+// active hop.
+//
+// Use World.Hop to start a hop. Set HopTween directly only when restoring
+// explicit state, such as loading a snapshot.
 type HopTween struct {
 	From, To math2d.Vec2
 	Apex     float64

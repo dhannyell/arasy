@@ -251,7 +251,7 @@ func scanNaNInf(w *scene.World, ids []scene.EntityID) error {
 			}
 		}
 		if sprite, ok := w.ImageSprite(id); ok {
-			if !finiteRect(sprite.Src) || !finiteVec(sprite.Size) || !finiteColor(sprite.Tint) {
+			if !finiteRect(sprite.Src) || !finiteVec(sprite.Size) || !finiteColor(sprite.Color) {
 				return fmt.Errorf("entity %d: non-finite image sprite %+v", id, sprite)
 			}
 		}

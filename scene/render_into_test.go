@@ -19,7 +19,7 @@ func TestRenderCommandsIntoMatchesInterpolatedAndReusesBuffer(t *testing.T) {
 		case 1:
 			world.SetRectSprite(id, scene.RectSprite{Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 3}), BaseSprite: scene.BaseSprite{Layer: 1}})
 		case 2:
-			world.SetImageSprite(id, scene.ImageSprite{Texture: 1, Size: math2d.Vec2{X: 2, Y: 2}, Layer: 3})
+			world.SetImageSprite(id, scene.ImageSprite{Texture: 1, Size: math2d.Vec2{X: 2, Y: 2}, BaseSprite: scene.BaseSprite{Layer: 3}})
 		}
 	}
 

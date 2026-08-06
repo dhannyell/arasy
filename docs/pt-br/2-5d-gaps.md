@@ -103,25 +103,33 @@ no lugar, o gap restante é só a silhueta.
 
 ### 9. Não há canal de luz sobre sprites
 
-Nenhum vocabulário de iluminação de corpo: a `ProjectionLight` dirige apenas
-a sombra. O único canal de cor por sprite é o `Tint`/`Color` autorado — que é
-estado de simulação (entra no checksum, por decisão: jogos codificam estado
-em cor de sprite, e os tweens de cor são sim). Consequência: um jogo que
-module o tint por proximidade de uma luz a cada frame transforma estética em
-estado de sim e contamina replay/checksum. O que falta é um canal
-**render-only** de modulação de cor (o análogo exato do `SpriteTransform`,
-que já é o afim render-only fora do checksum) alimentado por luzes
-declaradas (ambiente + pontuais com posição/raio/cor). Normal maps e oclusão
-de luz por parede são um degrau muito acima (shader novo nos três backends) e
-podem continuar fora.
+**Fechado na v1**: `scene.AmbientLight` e `scene.PointLight` são as luzes
+declaradas e render-only. `World.SetLitLayers` seleciona as layers afetadas.
+Para cada sprite dentro dessa faixa, o renderer calcula as contribuições da
+luz ambiente e das luzes pontuais na posição de chão interpolada, limita cada
+canal RGB a `[0, 1]` e multiplica o resultado pela `Tint`/`Color` autorada.
+Isso acontece antes da emissão dos comandos, sem criar comandos novos nem
+alterar backends; as luzes nunca entram em checksum. `Tint`/`Color` autorados
+continuam sendo estado de simulação, e a iluminação nunca escreve neles.
+`examples/outpost` consome o canal com ambiente de anoitecer e uma lanterna da
+praça; a seção de luz do `2-5d.md` documenta o design. Fora por decisão:
+
+- **Normal maps: não-suportados.** Luz por pixel exige shader novo em todo
+  backend — o Canvas2D não tem nenhum para programar — mais uma segunda
+  textura autorada por sprite. A modulação de cor é a substituta declarada
+  neste degrau.
+- Iluminação de batches retidos e `DrawParticles` (a forma provável é um
+  uniform por batch; o gatilho é a primeira cena de tilemap iluminado), e
+  sombras coloridas (a sombra de contato continua preta).
 
 ## Leitura recomendada de prioridade
 
 O item 1 é o único que *bloqueia* uma classe de jogo; 2 e 3 são os que todo
 segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
 6 e 7 são polimento de gênero. 8 e 9 são o que separa "sprite colocado na
-cena" de "sprite pertencente à cena": sem sombra de contato e sem luz, arte
-texturizada fica chapada ao lado dos volumes vetoriais extrudados — a sombra
-de contato é a fração mais barata com o maior retorno visual. O item 2 fica
+cena" de "sprite pertencente à cena", e os dois agora têm soluções v1:
+sombra de contato com estilo e modulação de luz declarada. A silhueta
+projetada e a luz por pixel continuam como próximos degraus deliberados. O
+item 2 fica
 muito mais barato depois do item 1 (um tilemap de atlas é um batch retido
 sob a `View`).

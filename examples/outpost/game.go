@@ -174,6 +174,17 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	// stand rather than by plain screen Y.
 	ctx.World.SetSortAxis(math2d.Vec2{X: 1, Y: 1})
 
+	// Lighting is declarative and render-only, like the projection: the world
+	// says which lights exist and which layers feel them, and no checksum ever
+	// sees any of it. The dusk ambient dims the actor layer into the evening
+	// the dark sky and lit windows already suggest; the plaza lantern pays it
+	// back with a warm pool. Everything standing on the board — units, trees,
+	// mountains, buildings — shares that layer and dims together; the static
+	// terrain lives outside the world and keeps its authored daylight, and
+	// marks, hover and clouds stay out of the band.
+	ctx.World.SetAmbientLight(scene.AmbientLight{Color: duskAmbient})
+	ctx.World.SetLitLayers(layerActors, layerActors)
+
 	// The projection is the whole 2.5D vocabulary in one value: every piece
 	// of fake volume below -- cliffs, mountains, buildings -- extrudes along
 	// its LiftVector, the same vector that lifts entities with Height, so
@@ -197,11 +208,13 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 		g.units[u] = ctx.World.SpawnBundle(scene.Bundle{
 			Transform: &scene.Transform{Position: tileCenter(i, j)},
 			ImageSprite: &scene.ImageSprite{
-				Layer:           layerActors,
+				BaseSprite: scene.BaseSprite{
+					Layer: layerActors,
+					Color: unitBodies[u],
+					Plane: scene.PlaneUpright,
+				},
 				Texture:         sheepTexture,
 				Size:            math2d.Vec2{X: 12, Y: 6},
-				Tint:            unitBodies[u],
-				Plane:           scene.PlaneUpright,
 				ShadowFootprint: math2d.Vec2{X: 1.8, Y: 1.8},
 				Src:             math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 124, Y: 62}},
 			},

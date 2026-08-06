@@ -241,7 +241,7 @@ func TestSpritePlaneStaysOutOfTheChecksum(t *testing.T) {
 
 		image := world.Spawn()
 		world.SetTransform(image, scene.Transform{Scale: math2d.Vec2{X: 1, Y: 1}})
-		world.SetImageSprite(image, scene.ImageSprite{Size: math2d.Vec2{X: 4, Y: 4}, Plane: plane})
+		world.SetImageSprite(image, scene.ImageSprite{Size: math2d.Vec2{X: 4, Y: 4}, BaseSprite: scene.BaseSprite{Plane: plane}})
 
 		return world.Checksum()
 	}

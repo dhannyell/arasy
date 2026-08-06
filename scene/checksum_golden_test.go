@@ -223,11 +223,13 @@ func buildGoldenWorld() *scene.World {
 		Scale:    math2d.Vec2{X: 1.25, Y: 0.75},
 	})
 	w.SetImageSprite(imageID, scene.ImageSprite{
-		Layer:   3,
+		BaseSprite: scene.BaseSprite{
+			Layer: 3,
+			Color: render.RGBA(0.8, 0.7, 0.6, 0.9),
+		},
 		Texture: render.TextureID(7),
 		Src:     math2d.NewRect(math2d.Vec2{X: 2, Y: 4}, math2d.Vec2{X: 18, Y: 28}),
 		Size:    math2d.Vec2{X: 6, Y: 9},
-		Tint:    render.RGBA(0.8, 0.7, 0.6, 0.9),
 	})
 
 	// ---- Static entities (3, zero InvMass) ----

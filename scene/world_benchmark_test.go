@@ -60,9 +60,11 @@ func benchmarkDespawnWorld(count int) (*scene.World, []scene.EntityID) {
 			Scale:    math2d.Vec2{X: 1, Y: 1},
 		})
 		world.SetImageSprite(id, scene.ImageSprite{
+			BaseSprite: scene.BaseSprite{
+				Color: render.RGBA(1, 1, 1, 1),
+			},
 			Texture: 1,
 			Size:    math2d.Vec2{X: 16, Y: 16},
-			Tint:    render.RGBA(1, 1, 1, 1),
 		})
 		ids = append(ids, id)
 	}
