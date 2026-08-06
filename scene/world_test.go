@@ -145,6 +145,7 @@ func TestLightsDoNotAffectChecksums(t *testing.T) {
 	withID := spawnAt(with, math2d.Vec2{X: 10, Y: 20})
 
 	with.SetAmbientLight(scene.AmbientLight{Color: render.RGBA(0.2, 0.3, 0.4, 1)})
+	with.SetLitLayers(0, 10)
 	with.SetPointLight(withID, scene.PointLight{
 		Color:   render.RGBA(1, 0.5, 0.25, 1),
 		Radius:  12,

@@ -20,6 +20,14 @@ type DebugGridCell struct {
 	Candidate bool
 }
 
+// litLayers selects the render-only layer range affected by lighting.
+// It is excluded from Checksum. The zero value disables lighting; call
+// SetLitLayers to enable it and keep HUD and overlay layers unchanged.
+type litLayers struct {
+	min, max int
+	set      bool
+}
+
 type World struct {
 	nextID EntityID
 
@@ -45,6 +53,7 @@ type World struct {
 	hopTweens        store[HopTween]
 	attachments      store[Attachment]
 	pointLights      store[PointLight]
+	litLayers        litLayers
 	ambientLight     AmbientLight
 	debugGridCells   []DebugGridCell
 	contacts         []Contact
@@ -52,6 +61,10 @@ type World struct {
 
 	entityCountCache int
 	entityCountDirty bool
+
+	// lightScratch is reusable render working memory: the point lights of one
+	// frame at their interpolated positions. Transient: never cloned or checksummed.
+	lightScratch []frameLight
 
 	// renderTransforms stores the previous-tick transform for each entity,
 	// used by RenderCommandsInterpolated to produce smooth visual poses
@@ -142,6 +155,7 @@ func (w *World) Clone() *World {
 		hopTweens:        w.hopTweens.clone(),
 		attachments:      w.attachments.clone(),
 		pointLights:      w.pointLights.clone(),
+		litLayers:        w.litLayers,
 		ambientLight:     w.ambientLight,
 		commandSprites:   w.commandSprites.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
@@ -668,6 +682,18 @@ func (w *World) RemoveAttachment(id EntityID) {
 }
 
 // Light
+
+// SetLitLayers enables lighting for sprites in the inclusive layer range
+// [min, max]. Sprites outside the range keep their authored colors. Lighting
+// stays disabled until this method is called.
+func (w *World) SetLitLayers(min, max int) {
+	w.litLayers.min, w.litLayers.max, w.litLayers.set = min, max, true
+}
+
+// LitLayers reports the declared band; ok is false when lighting is off.
+func (w *World) LitLayers() (min, max int, ok bool) {
+	return w.litLayers.min, w.litLayers.max, w.litLayers.set
+}
 
 func (w *World) AmbientLight() AmbientLight {
 	return w.ambientLight

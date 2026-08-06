@@ -107,6 +107,7 @@ var renderOnlySetters = map[string]bool{
 	"SetCommandSprite":   true,
 	"SetAttachment":      true,
 	"SetPointLight":      true,
+	"SetLitLayers":       true,
 }
 
 func TestComponentSetterConventionCoversAllStores(t *testing.T) {

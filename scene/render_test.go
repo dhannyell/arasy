@@ -501,3 +501,282 @@ func assertPointInsideRect(t *testing.T, point math2d.Vec2, rect math2d.Rect) {
 		t.Fatalf("point %+v is outside rect %+v", point, rect)
 	}
 }
+
+// spawnTorch spawns a still point light: an entity with only Transform and
+// PointLight, the declared shape for a light that does not move.
+func spawnTorch(w *scene.World, pos math2d.Vec2, l scene.PointLight) scene.EntityID {
+	id := w.Spawn()
+	w.SetTransform(id, scene.Transform{Position: pos})
+	w.SetPointLight(id, l)
+	return id
+}
+
+// Distances and radii below are picked so every expected attenuation value
+// is exact in binary, allowing == on colors. RenderCommands renders at
+// alpha 0, so these cases also guard the non-interpolated path.
+func TestRenderCommandsPointLightAttenuation(t *testing.T) {
+	cases := []struct {
+		name    string
+		at      math2d.Vec2
+		falloff float64
+		want    float64 // modulation factor applied to a white sprite
+	}{
+		{"light center: full contribution", math2d.Vec2{}, 0, 1},
+		// The curve is 1 - d²/R², not linear in d: DistanceSq keeps the
+		// evaluation inside the plan's + - * / budget, sqrt-free.
+		{"halfway: smooth quadratic curve", math2d.Vec2{X: 5}, 0, 0.75},
+		{"radius edge: zero", math2d.Vec2{X: 10}, 0, 0},
+		{"outside the radius: zero", math2d.Vec2{X: 20}, 0, 0},
+		{"falloff squares the same curve", math2d.Vec2{X: 5}, 1, 0.5625},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			world := scene.NewWorld()
+			world.SetLitLayers(0, 5)
+			spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+				Color:   render.RGBA(1, 1, 1, 1),
+				Radius:  10,
+				Falloff: tc.falloff,
+			})
+
+			body := world.Spawn()
+			world.SetTransform(body, scene.Transform{Position: tc.at})
+			world.SetCircleSprite(body, scene.CircleSprite{
+				Radius:     1,
+				BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 1), Layer: 5},
+			})
+
+			commands := world.RenderCommands()
+			if len(commands) != 1 {
+				t.Fatalf("got %d commands, want 1", len(commands))
+			}
+			circle, ok := commands[0].(render.DrawCircle)
+			if !ok {
+				t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+			}
+			want := render.RGBA(tc.want, tc.want, tc.want, 1)
+			if circle.Fill != want {
+				t.Fatalf("got fill %+v, want %+v", circle.Fill, want)
+			}
+		})
+	}
+}
+
+func TestRenderCommandsPointLightsSumAndClampPreservingAlpha(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+
+	// Two 0.75-strength lights at the sprite sum to 1.5 and clamp to 1 per
+	// channel. The authored alpha never joins the sum: light changes what a
+	// sprite looks like, not how much of it exists.
+	light := scene.PointLight{Color: render.RGBA(0.75, 0.75, 0.75, 1), Radius: 10}
+	spawnTorch(world, math2d.Vec2{}, light)
+	spawnTorch(world, math2d.Vec2{}, light)
+
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{})
+	world.SetCircleSprite(body, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 0.5), Layer: 5},
+	})
+
+	commands := world.RenderCommands()
+	if len(commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(commands))
+	}
+	circle, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	if want := render.RGBA(1, 1, 1, 0.5); circle.Fill != want {
+		t.Fatalf("got fill %+v, want %+v", circle.Fill, want)
+	}
+}
+
+func TestRenderCommandsLightingRespectsLitLayersBand(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+	spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+		Color: render.RGBA(1, 1, 1, 1), Radius: 10,
+	})
+
+	authored := render.RGBA(0.25, 0.5, 0.75, 1)
+	lit := world.Spawn()
+	world.SetTransform(lit, scene.Transform{})
+	world.SetCircleSprite(lit, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: authored, Layer: 5},
+	})
+	hud := world.Spawn()
+	world.SetTransform(hud, scene.Transform{})
+	world.SetCircleSprite(hud, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: authored, Layer: 6},
+	})
+
+	commands := world.RenderCommands()
+	if len(commands) != 2 {
+		t.Fatalf("got %d commands, want 2", len(commands))
+	}
+	// Layer sorts first, so the lit sprite (layer 5) precedes the HUD one.
+	litCircle, okLit := commands[0].(render.DrawCircle)
+	hudCircle, okHud := commands[1].(render.DrawCircle)
+	if !okLit || !okHud {
+		t.Fatalf("got command types %T and %T, want render.DrawCircle", commands[0], commands[1])
+	}
+	if litCircle.Fill != authored {
+		t.Fatalf("in-band sprite at full light: got fill %+v, want authored %+v", litCircle.Fill, authored)
+	}
+	if hudCircle.Fill != authored {
+		t.Fatalf("out-of-band sprite modulated: got fill %+v, want authored %+v", hudCircle.Fill, authored)
+	}
+}
+
+func TestRenderCommandsLightingOffWithoutLitLayers(t *testing.T) {
+	// Declared lights alone do nothing: SetLitLayers is the single opt-in.
+	world := scene.NewWorld()
+	spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+		Color: render.RGBA(1, 1, 1, 1), Radius: 10,
+	})
+
+	authored := render.RGBA(0.25, 0.5, 0.75, 1)
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{})
+	world.SetCircleSprite(body, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: authored, Layer: 5},
+	})
+
+	commands := world.RenderCommands()
+	if len(commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(commands))
+	}
+	circle, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	if circle.Fill != authored {
+		t.Fatalf("got fill %+v, want authored %+v", circle.Fill, authored)
+	}
+}
+
+func TestRenderCommandsAmbientLightModulatesPerChannel(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+	world.SetAmbientLight(scene.AmbientLight{Color: render.RGBA(0.5, 0.25, 1, 1)})
+
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{})
+	world.SetCircleSprite(body, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 1), Layer: 5},
+	})
+
+	commands := world.RenderCommands()
+	if len(commands) != 1 {
+		t.Fatalf("got %d commands, want 1", len(commands))
+	}
+	circle, ok := commands[0].(render.DrawCircle)
+	if !ok {
+		t.Fatalf("got command type %T, want render.DrawCircle", commands[0])
+	}
+	if want := render.RGBA(0.5, 0.25, 1, 1); circle.Fill != want {
+		t.Fatalf("got fill %+v, want %+v", circle.Fill, want)
+	}
+}
+
+// The modulation is applied at three separate emit sites, one per sprite
+// kind; a regression in one would be invisible to the circle-only tests.
+func TestRenderCommandsLightingCoversAllSpriteKinds(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+	spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+		Color: render.RGBA(1, 1, 1, 1), Radius: 10,
+	})
+
+	at := scene.Transform{Position: math2d.Vec2{X: 5}} // 0.75 modulation
+	white := render.RGBA(1, 1, 1, 1)
+
+	circleID := world.Spawn()
+	world.SetTransform(circleID, at)
+	world.SetCircleSprite(circleID, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: white, Layer: 5},
+	})
+	rectID := world.Spawn()
+	world.SetTransform(rectID, at)
+	world.SetRectSprite(rectID, scene.RectSprite{
+		Rect:        math2d.NewRectFromCorners(math2d.Vec2{X: -1, Y: -1}, math2d.Vec2{X: 1, Y: 1}),
+		Stroke:      white,
+		StrokeWidth: 0.1,
+		BaseSprite:  scene.BaseSprite{Color: white, Layer: 5},
+	})
+	imageID := world.Spawn()
+	world.SetTransform(imageID, at)
+	world.SetImageSprite(imageID, scene.ImageSprite{
+		Texture:    1,
+		Size:       math2d.Vec2{X: 2, Y: 2},
+		BaseSprite: scene.BaseSprite{Color: white, Layer: 5},
+	})
+
+	want := render.RGBA(0.75, 0.75, 0.75, 1)
+	commands := world.RenderCommands()
+	if len(commands) != 3 {
+		t.Fatalf("got %d commands, want 3", len(commands))
+	}
+	for _, c := range commands {
+		switch cmd := c.(type) {
+		case render.DrawCircle:
+			if cmd.Fill != want {
+				t.Fatalf("circle fill %+v, want %+v", cmd.Fill, want)
+			}
+		case render.DrawRect:
+			if cmd.Fill != want {
+				t.Fatalf("rect fill %+v, want %+v", cmd.Fill, want)
+			}
+			// The stroke is lit with the fill: an authored-color outline on a
+			// modulated body would read as a rendering bug.
+			if cmd.Stroke != want {
+				t.Fatalf("rect stroke %+v, want %+v", cmd.Stroke, want)
+			}
+		case render.DrawImage:
+			if cmd.Tint != want {
+				t.Fatalf("image tint %+v, want %+v", cmd.Tint, want)
+			}
+		default:
+			t.Fatalf("unexpected command type %T", c)
+		}
+	}
+}
+
+func TestRenderCommandsWithLightingIdenticalAcrossClones(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+
+	torch := spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+		Color: render.RGBA(1, 0.5, 0.25, 1), Radius: 10, Falloff: 1,
+	})
+	world.SetVelocity(torch, scene.Velocity{Linear: math2d.Vec2{X: 3, Y: 1}})
+
+	body := world.Spawn()
+	world.SetTransform(body, scene.Transform{Position: math2d.Vec2{X: 4, Y: 2}})
+	world.SetCircleSprite(body, scene.CircleSprite{
+		Radius:     1,
+		BaseSprite: scene.BaseSprite{Color: render.RGBA(1, 1, 1, 1), Layer: 5},
+	})
+	world.SetVelocity(body, scene.Velocity{Linear: math2d.Vec2{X: -2, Y: 1}})
+
+	world.SyncRenderState()
+	world.Step(1, scene.StepConfig{})
+
+	a := world.Clone().RenderCommandsInterpolated(0.5)
+	b := world.RenderCommandsInterpolated(0.5)
+	if len(a) != len(b) {
+		t.Fatalf("command count differs: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("command %d differs:\nclone: %+v\nworld: %+v", i, a[i], b[i])
+		}
+	}
+}

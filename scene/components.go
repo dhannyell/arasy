@@ -172,7 +172,9 @@ type PointLight struct {
 	Color render.Color // Color is the light contribution at the source
 	// Radius is the finite light range. The contribution is zero outside it.
 	Radius float64
-	// Falloff controls the polynomial attenuation. Zero uses linear falloff.
+	// Falloff sharpens the attenuation. The base curve is 1 - d²/R² (squared
+	// distance, so the evaluation stays sqrt-free); each whole step of
+	// Falloff multiplies the curve by itself once more. Fractions truncate.
 	Falloff float64
 }
 

@@ -27,6 +27,35 @@ func BenchmarkRenderCommands(b *testing.B) {
 			})
 		}
 	}
+
+	// Plan 153 budget case: v1 assumes at most 16 declared lights, and this
+	// is that worst case over every sprite — all layers lit, every light
+	// with a live radius. Compare against sprites/1000 above.
+	for _, alpha := range []float64{0, 0.5} {
+		b.Run(fmt.Sprintf("sprites/1000/lights/16/alpha-%g", alpha), func(b *testing.B) {
+			world := benchmarkRenderWorld(1000)
+			world.SetLitLayers(0, 6)
+			for i := range 16 {
+				torch := world.Spawn()
+				world.SetTransform(torch, scene.Transform{
+					Position: math2d.Vec2{X: float64(i%4)*12 + 5, Y: float64(i/4)*5 + 2},
+				})
+				world.SetPointLight(torch, scene.PointLight{
+					Color:   render.RGBA(1, 0.9, 0.7, 1),
+					Radius:  10,
+					Falloff: 1,
+				})
+			}
+			commands := make([]render.Command, 0, 1000)
+
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				commands = world.RenderCommandsInto(commands[:0], alpha)
+				benchmarkRenderCommandSink = commands
+			}
+		})
+	}
 }
 
 func benchmarkRenderWorld(count int) *scene.World {

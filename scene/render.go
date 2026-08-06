@@ -8,6 +8,15 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
+// frameLight stores a point light resolved for the current frame.
+// Position is interpolated, and radiusSq and falloff are ready for evaluation.
+type frameLight struct {
+	pos      math2d.Vec2
+	radiusSq float64
+	color    render.Color
+	falloff  int
+}
+
 func (w *World) RenderCommands() []render.Command {
 	return w.RenderCommandsInto(nil, 0)
 }
@@ -40,6 +49,13 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 		useAlpha = 0
 	} else if useAlpha >= 1 {
 		useAlpha = math.Nextafter(1, 0)
+	}
+
+	var frameLit []frameLight
+	hasLights := false
+	if w.litLayers.set {
+		frameLit = w.gatherFrameLights(useAlpha)
+		hasLights = len(frameLit) > 0 || w.ambientLight != (AmbientLight{})
 	}
 
 	hasProjection := !w.projection.IsZero()
@@ -93,6 +109,8 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 				interpolated.Scale = prev.Scale.Lerp(transform.Scale, useAlpha)
 			}
 		}
+
+		groundPos := interpolated.Position
 
 		// Height projection: lift + scale + shadow (render-only).
 		pos := interpolated.Position
@@ -193,10 +211,14 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			if scl.X > 0 {
 				r *= scl.X
 			}
+			fill := circle.Color
+			if hasLights {
+				fill = w.litColor(fill, frameLit, groundPos, circle.Layer)
+			}
 			commands = append(commands, render.DrawCircle{
 				Center: pos,
 				Radius: r,
-				Fill:   circle.Color,
+				Fill:   fill,
 				BaseCommand: render.BaseCommand{
 					LayerValue: circle.Layer,
 					Transform:  bodyTransform,
@@ -215,6 +237,12 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 			if sy <= 0 {
 				sy = 1
 			}
+			fill := rect.Color
+			stroke := rect.Stroke
+			if hasLights {
+				fill = w.litColor(fill, frameLit, groundPos, rect.Layer)
+				stroke = w.litColor(stroke, frameLit, groundPos, rect.Layer)
+			}
 			geometry := math2d.NewRectFromCorners(
 				math2d.Vec2{X: pos.X + rect.Rect.Min.X*sx, Y: pos.Y + rect.Rect.Min.Y*sy},
 				math2d.Vec2{X: pos.X + rect.Rect.Max.X*sx, Y: pos.Y + rect.Rect.Max.Y*sy},
@@ -222,8 +250,8 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 			commands = append(commands, render.DrawRect{
 				Rect:        geometry,
-				Fill:        rect.Color,
-				Stroke:      rect.Stroke,
+				Fill:        fill,
+				Stroke:      stroke,
 				StrokeWidth: rect.StrokeWidth,
 				BaseCommand: render.BaseCommand{
 					LayerValue: rect.Layer,
@@ -238,6 +266,10 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 				X: halfSize.X * scl.X,
 				Y: halfSize.Y * scl.Y,
 			}
+			fill := img.Color
+			if hasLights {
+				fill = w.litColor(fill, frameLit, groundPos, img.Layer)
+			}
 			commands = append(commands, render.DrawImage{
 				Texture: img.Texture,
 				Dest: math2d.NewRectFromCorners(
@@ -245,7 +277,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 					pos.Add(scaledHalf),
 				),
 				Src:      img.Src,
-				Tint:     img.Color,
+				Tint:     fill,
 				Rotation: interpolated.Rotation,
 				BaseCommand: render.BaseCommand{
 					LayerValue: img.Layer,
@@ -680,6 +712,78 @@ func (w *World) debugCandidateGridCommands(fill, stroke render.Color, strokeWidt
 	}
 
 	return commands
+}
+
+// gatherFrameLights resolves the declared point lights for the current frame.
+// It interpolates each light's position with the same alpha as sprite bodies.
+func (w *World) gatherFrameLights(alpha float64) []frameLight {
+	lights := w.lightScratch[:0]
+	for _, id := range w.pointLights.ids {
+		l, _ := w.pointLights.get(id)
+		if l.Radius <= 0 {
+			continue
+		}
+		t, ok := w.transforms.get(id)
+		if !ok {
+			continue
+		}
+		pos := t.Position
+		if alpha > 0 {
+			if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
+				pos = prev.Position.Lerp(t.Position, alpha)
+			}
+		}
+		lights = append(lights, frameLight{
+			pos:      pos,
+			radiusSq: l.Radius * l.Radius,
+			color:    l.Color,
+			falloff:  max(int(l.Falloff), 0),
+		})
+	}
+	w.lightScratch = lights
+	return lights
+}
+
+// litColor applies frame lighting to an authored color at a ground position.
+// It preserves alpha.
+func (w *World) litColor(c render.Color, lights []frameLight, p math2d.Vec2, layer int) render.Color {
+	if layer < w.litLayers.min || layer > w.litLayers.max {
+		return c
+	}
+	l := w.ambientLight.Color
+	for i := range lights {
+		fl := lights[i]
+		t := pointAttenuation(p, fl)
+		if t == 0 {
+			continue
+		}
+		attenuation := t
+		for range fl.falloff {
+			attenuation = attenuation * t
+		}
+		l.R += fl.color.R * attenuation
+		l.G += fl.color.G * attenuation
+		l.B += fl.color.B * attenuation
+	}
+	return render.Color{
+		R: c.R * math2d.Clamp(l.R, 0, 1),
+		G: c.G * math2d.Clamp(l.G, 0, 1),
+		B: c.B * math2d.Clamp(l.B, 0, 1),
+		A: c.A,
+	}
+}
+
+// pointAttenuation is the base falloff of one light at a ground position:
+// 1 - d²/R², zero at and beyond the radius. Squared distance keeps it
+// sqrt-free, and the body is loop-free on purpose so it inlines into
+// litColor's per-light loop — the Falloff powers live at that call site.
+// Invalid radii are filtered by gatherFrameLights.
+func pointAttenuation(p math2d.Vec2, fl frameLight) float64 {
+	distanceSq := p.DistanceSq(fl.pos)
+	if distanceSq >= fl.radiusSq {
+		return 0
+	}
+	return float64(1 - distanceSq/fl.radiusSq)
 }
 
 func debugGridAreaCommands(bounds math2d.Rect, cellSize float64, color render.Color, strokeWidth, dashLength float64, layer int) []render.Command {
