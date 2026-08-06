@@ -176,10 +176,12 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 
 	// Lighting is declarative and render-only, like the projection: the world
 	// says which lights exist and which layers feel them, and no checksum ever
-	// sees any of it. The dusk ambient dims the actors into the evening the
-	// dark sky and lit windows already suggest; the plaza lantern pays it back
-	// with a warm pool. The band covers actors only — the board is authored
-	// commands, and marks, hover and clouds keep their colors.
+	// sees any of it. The dusk ambient dims the actor layer into the evening
+	// the dark sky and lit windows already suggest; the plaza lantern pays it
+	// back with a warm pool. Everything standing on the board — units, trees,
+	// mountains, buildings — shares that layer and dims together; the static
+	// terrain lives outside the world and keeps its authored daylight, and
+	// marks, hover and clouds stay out of the band.
 	ctx.World.SetAmbientLight(scene.AmbientLight{Color: duskAmbient})
 	ctx.World.SetLitLayers(layerActors, layerActors)
 

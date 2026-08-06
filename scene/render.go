@@ -9,12 +9,14 @@ import (
 )
 
 // frameLight stores a point light resolved for the current frame.
-// Position is interpolated, and radiusSq and falloff are ready for evaluation.
+// Position is interpolated, and radiusSq and the falloff split are ready
+// for evaluation: whole powers plus the fractional blend toward the next.
 type frameLight struct {
-	pos      math2d.Vec2
-	radiusSq float64
-	color    render.Color
-	falloff  int
+	pos         math2d.Vec2
+	radiusSq    float64
+	color       render.Color
+	falloff     int
+	falloffFrac float64
 }
 
 func (w *World) RenderCommands() []render.Command {
@@ -75,11 +77,35 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 
 		// A command sprite is emitted as authored: its commands already carry
 		// their own geometry, and its place in the painter order -- the whole
-		// reason it exists -- was settled by the sort above. Only the layer is
-		// rewritten, so the group draws as one body on the sprite's layer.
+		// reason it exists -- was settled by the sort above. Two rewrites
+		// only: the layer, so the group draws as one body, and -- inside the
+		// lit band -- the frame's light at the entity's interpolated
+		// position: one light value for the whole group, the composite rule
+		// attachments already follow. Authored shading inside the commands
+		// composes under it by multiplication.
 		if cs, hasCommands := w.commandSprites.get(id); hasCommands {
+			groupLight := render.Color{}
+			lit := hasLights && cs.Layer >= w.litLayers.min && cs.Layer <= w.litLayers.max
+			if lit {
+				if t, hasT := w.transforms.get(id); hasT {
+					pos := t.Position
+					if useAlpha > 0 {
+						if prev, hasPrev := w.renderTransforms.get(id); hasPrev {
+							pos = prev.Position.Lerp(t.Position, useAlpha)
+						}
+					}
+					groupLight = w.lightAt(frameLit, pos)
+					lit = groupLight != render.RGBA(1, 1, 1, 1)
+				} else {
+					lit = false
+				}
+			}
 			for _, c := range cs.Commands {
-				commands = append(commands, render.WithLayer(c, cs.Layer))
+				c = render.WithLayer(c, cs.Layer)
+				if lit {
+					c = render.WithLight(c, groupLight)
+				}
+				commands = append(commands, c)
 			}
 			continue
 		}
@@ -733,11 +759,14 @@ func (w *World) gatherFrameLights(alpha float64) []frameLight {
 				pos = prev.Position.Lerp(t.Position, alpha)
 			}
 		}
+		falloff := max(l.Falloff, 0)
+		whole := int(falloff)
 		lights = append(lights, frameLight{
-			pos:      pos,
-			radiusSq: l.Radius * l.Radius,
-			color:    l.Color,
-			falloff:  max(int(l.Falloff), 0),
+			pos:         pos,
+			radiusSq:    l.Radius * l.Radius,
+			color:       l.Color,
+			falloff:     whole,
+			falloffFrac: falloff - float64(whole),
 		})
 	}
 	w.lightScratch = lights
@@ -750,6 +779,19 @@ func (w *World) litColor(c render.Color, lights []frameLight, p math2d.Vec2, lay
 	if layer < w.litLayers.min || layer > w.litLayers.max {
 		return c
 	}
+	l := w.lightAt(lights, p)
+	return render.Color{
+		R: c.R * l.R,
+		G: c.G * l.G,
+		B: c.B * l.B,
+		A: c.A,
+	}
+}
+
+// lightAt is the clamped light value at one ground position: ambient plus
+// every point contribution, per RGB channel, alpha pinned to 1 so the value
+// can multiply any color without touching coverage.
+func (w *World) lightAt(lights []frameLight, p math2d.Vec2) render.Color {
 	l := w.ambientLight.Color
 	for i := range lights {
 		fl := lights[i]
@@ -761,15 +803,20 @@ func (w *World) litColor(c render.Color, lights []frameLight, p math2d.Vec2, lay
 		for range fl.falloff {
 			attenuation = attenuation * t
 		}
+		// A fractional Falloff blends linearly toward the next whole power,
+		// so the curve moves continuously as a game tunes the value.
+		if fl.falloffFrac > 0 {
+			attenuation += (attenuation*t - attenuation) * fl.falloffFrac
+		}
 		l.R += fl.color.R * attenuation
 		l.G += fl.color.G * attenuation
 		l.B += fl.color.B * attenuation
 	}
 	return render.Color{
-		R: c.R * math2d.Clamp(l.R, 0, 1),
-		G: c.G * math2d.Clamp(l.G, 0, 1),
-		B: c.B * math2d.Clamp(l.B, 0, 1),
-		A: c.A,
+		R: math2d.Clamp(l.R, 0, 1),
+		G: math2d.Clamp(l.G, 0, 1),
+		B: math2d.Clamp(l.B, 0, 1),
+		A: 1,
 	}
 }
 

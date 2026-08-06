@@ -324,7 +324,7 @@ func spawnProps(world *scene.World, p render.Projection) {
 			case terrainMountain:
 				spawnCommandProp(world, i, j, mountainCommands(p, i, j, false))
 			case terrainPeak:
-				spawnCommandProp(world, i, j, mountainCommands(p, i, j, true))
+				addWatchfire(world, spawnCommandProp(world, i, j, mountainCommands(p, i, j, true)))
 			case terrainBuilding:
 				spawnCommandProp(world, i, j, buildingCommands(p, i, j))
 			case terrainLantern:
@@ -336,14 +336,43 @@ func spawnProps(world *scene.World, p render.Projection) {
 
 // spawnCommandProp is a volumetric prop drawn with raw commands: the entity's
 // position at the tile center is where it meets the ground, which is all the
-// painter sort needs to order it against everything walking past.
-func spawnCommandProp(world *scene.World, i, j int, commands []render.Command) {
-	world.SpawnBundle(scene.Bundle{
+// painter sort needs to order it against everything walking past. It returns
+// the entity because a prop is an entity like any other — the peak
+// watchfires hang a flame and a PointLight on theirs.
+func spawnCommandProp(world *scene.World, i, j int, commands []render.Command) scene.EntityID {
+	return world.SpawnBundle(scene.Bundle{
 		Transform: &scene.Transform{Position: tileCenter(i, j)},
 		CommandSprite: &scene.CommandSprite{
 			Layer:    layerActors,
 			Commands: commands,
 		},
+	})
+}
+
+// addWatchfire lights a fire at a peak's summit: a flame hung up the lift
+// axis and the light on the prop entity itself. The peak brightens by its
+// own fire — one light value per composite, at the entity's position — and
+// the neighboring summits catch the spill.
+func addWatchfire(world *scene.World, peak scene.EntityID) {
+	const (
+		flameHeight = 5.8 // just above the tall summit's apex
+		flameRadius = 0.5
+
+		// Two tiles of reach: enough for the range to share the glow
+		// without the fires flattening into one wash.
+		fireRadius = 2.0 * tileSize
+	)
+
+	world.SpawnAttached(peak, math2d.Vec2{}, flameHeight, scene.Bundle{
+		CircleSprite: &scene.CircleSprite{
+			Radius:     flameRadius,
+			BaseSprite: scene.BaseSprite{Layer: layerActors, Color: windowLit},
+		},
+	})
+	world.SetPointLight(peak, scene.PointLight{
+		Color:   lanternGlow,
+		Radius:  fireRadius,
+		Falloff: 1,
 	})
 }
 

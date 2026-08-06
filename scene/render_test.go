@@ -528,6 +528,8 @@ func TestRenderCommandsPointLightAttenuation(t *testing.T) {
 		{"radius edge: zero", math2d.Vec2{X: 10}, 0, 0},
 		{"outside the radius: zero", math2d.Vec2{X: 20}, 0, 0},
 		{"falloff squares the same curve", math2d.Vec2{X: 5}, 1, 0.5625},
+		// Halfway between the two whole-power curves: 0.75 + (0.5625-0.75)/2.
+		{"fractional falloff blends neighboring curves", math2d.Vec2{X: 5}, 0.5, 0.65625},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -746,6 +748,54 @@ func TestRenderCommandsLightingCoversAllSpriteKinds(t *testing.T) {
 		default:
 			t.Fatalf("unexpected command type %T", c)
 		}
+	}
+}
+
+// A CommandSprite group joins the channel through render.WithLight: one
+// light value at the entity's position, multiplied into every authored
+// command — the 153 addendum. Out of the band the group stays authored.
+func TestRenderCommandsLightingModulatesCommandSprites(t *testing.T) {
+	world := scene.NewWorld()
+	world.SetLitLayers(0, 5)
+	spawnTorch(world, math2d.Vec2{}, scene.PointLight{
+		Color: render.RGBA(1, 1, 1, 1), Radius: 10,
+	})
+
+	white := render.RGBA(1, 1, 1, 1)
+	prop := world.Spawn()
+	world.SetTransform(prop, scene.Transform{Position: math2d.Vec2{X: 5}}) // 0.75 modulation
+	world.SetCommandSprite(prop, scene.CommandSprite{
+		Layer: 5,
+		Commands: []render.Command{
+			render.DrawPolygon{
+				Points: []math2d.Vec2{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0, Y: 1}},
+				Fill:   white,
+				Stroke: white,
+			},
+		},
+	})
+	hud := world.Spawn()
+	world.SetTransform(hud, scene.Transform{Position: math2d.Vec2{X: 5}})
+	world.SetCommandSprite(hud, scene.CommandSprite{
+		Layer:    6,
+		Commands: []render.Command{render.DrawPolygon{Points: []math2d.Vec2{{X: 0, Y: 0}, {X: 1, Y: 0}, {X: 0, Y: 1}}, Fill: white}},
+	})
+
+	commands := world.RenderCommands()
+	if len(commands) != 2 {
+		t.Fatalf("got %d commands, want 2", len(commands))
+	}
+	litPoly, okLit := commands[0].(render.DrawPolygon)
+	hudPoly, okHud := commands[1].(render.DrawPolygon)
+	if !okLit || !okHud {
+		t.Fatalf("got command types %T and %T, want render.DrawPolygon", commands[0], commands[1])
+	}
+	want := render.RGBA(0.75, 0.75, 0.75, 1)
+	if litPoly.Fill != want || litPoly.Stroke != want {
+		t.Fatalf("in-band group: fill %+v stroke %+v, want both %+v", litPoly.Fill, litPoly.Stroke, want)
+	}
+	if hudPoly.Fill != white {
+		t.Fatalf("out-of-band group modulated: got fill %+v, want authored %+v", hudPoly.Fill, white)
 	}
 }
 

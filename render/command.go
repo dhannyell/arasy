@@ -314,6 +314,82 @@ func WithLayer(c Command, layer int) Command {
 	return c
 }
 
+// WithLight returns the command with every color field multiplied by l per
+// RGB channel, alpha untouched — the same rule World lighting applies to
+// component sprites. It exists for code that modulates commands authored
+// elsewhere by a light value; scene.CommandSprite inside the lit layer band
+// is the canonical case.
+//
+// Retained and self-blending content passes through unchanged on purpose:
+// DrawSpriteBatch and DrawTextBatch reference uploaded resources (lighting
+// them is the per-batch uniform extension), and DrawParticles declares its
+// own blend. The guard test walks every command's color fields, so both a
+// new command type and a new color field fail loudly until classified.
+func WithLight(c Command, l Color) Command {
+	switch cmd := c.(type) {
+	case DrawRect:
+		cmd.Fill = litRGB(cmd.Fill, l)
+		cmd.Stroke = litRGB(cmd.Stroke, l)
+		return cmd
+	case DrawCircle:
+		cmd.Fill = litRGB(cmd.Fill, l)
+		cmd.Stroke = litRGB(cmd.Stroke, l)
+		return cmd
+	case DrawEllipse:
+		cmd.Fill = litRGB(cmd.Fill, l)
+		cmd.Stroke = litRGB(cmd.Stroke, l)
+		return cmd
+	case DrawPoint:
+		cmd.Color = litRGB(cmd.Color, l)
+		return cmd
+	case DrawLine:
+		cmd.Color = litRGB(cmd.Color, l)
+		return cmd
+	case DrawText:
+		cmd.Color = litRGB(cmd.Color, l)
+		return cmd
+	case DrawArc:
+		cmd.Color = litRGB(cmd.Color, l)
+		return cmd
+	case DrawPolygon:
+		cmd.Fill = litRGB(cmd.Fill, l)
+		cmd.Stroke = litRGB(cmd.Stroke, l)
+		return cmd
+	case DrawTriangles:
+		cmd.Color = litRGB(cmd.Color, l)
+		return cmd
+	case DrawImage:
+		cmd.Tint = litTint(cmd.Tint, l)
+		return cmd
+	case DrawImageQuad:
+		cmd.Tint = litTint(cmd.Tint, l)
+		return cmd
+	case DrawParticles:
+		return cmd
+	case DrawSpriteBatch:
+		return cmd
+	case DrawTextBatch:
+		return cmd
+	}
+	return c
+}
+
+// litRGB multiplies the light into a color's RGB and leaves alpha alone:
+// light changes what a thing looks like, never how much of it exists.
+func litRGB(c, l Color) Color {
+	return Color{R: c.R * l.R, G: c.G * l.G, B: c.B * l.B, A: c.A}
+}
+
+// litTint is litRGB for texture tints, whose zero value means "no tint".
+// The zero promotes to opaque white first, so an untinted image darkens
+// under the light instead of ignoring it.
+func litTint(tint, l Color) Color {
+	if tint == (Color{}) {
+		tint = Color{R: 1, G: 1, B: 1, A: 1}
+	}
+	return litRGB(tint, l)
+}
+
 func (DrawRect) isRenderCommand()        {}
 func (DrawCircle) isRenderCommand()      {}
 func (DrawEllipse) isRenderCommand()     {}

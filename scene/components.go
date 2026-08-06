@@ -174,7 +174,8 @@ type PointLight struct {
 	Radius float64
 	// Falloff sharpens the attenuation. The base curve is 1 - d²/R² (squared
 	// distance, so the evaluation stays sqrt-free); each whole step of
-	// Falloff multiplies the curve by itself once more. Fractions truncate.
+	// Falloff multiplies the curve by itself once more, and a fractional
+	// part blends linearly toward the next step's curve.
 	Falloff float64
 }
 
