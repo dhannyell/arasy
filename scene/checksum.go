@@ -227,6 +227,8 @@ func (w *World) checksum(sim, content bool) uint64 {
 			hashF64(h, buf[:], s.Tint.G)
 			hashF64(h, buf[:], s.Tint.B)
 			hashF64(h, buf[:], s.Tint.A)
+			hashF64(h, buf[:], s.ShadowFootprint.X)
+			hashF64(h, buf[:], s.ShadowFootprint.Y)
 		})
 	}
 

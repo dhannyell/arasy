@@ -13,7 +13,8 @@
 //     and lifted entities can never disagree about which way up is.
 //   - Height is scene.Height. A unit ordered to another tile hops there in a
 //     ballistic arc, and the shadow that detaches under it is the engine's
-//     GroundProjection at work, not hand-drawn.
+//     GroundProjection at work, not hand-drawn. Standing still it keeps a
+//     contact shadow from the same projection: scene.ShadowStyle opts in.
 //   - Depth order is one layer and base-sort. Compact sprites (units, trees)
 //     are entities; volumetric props (mountains, buildings) are
 //     scene.CommandSprite entities, so their raw commands sort by the tile

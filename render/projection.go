@@ -285,7 +285,7 @@ func clampOrZero(value, max float64) float64 {
 }
 
 func (p Projection) Project(ground math2d.Vec2, footprintHalfExtents math2d.Vec2, z float64) ProjectedHeight {
-	if z <= 0 {
+	if z < 0 {
 		return ProjectedHeight{}
 	}
 

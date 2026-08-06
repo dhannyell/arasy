@@ -61,6 +61,10 @@ type World struct {
 	// is NOT included in Checksum.
 	spriteTransforms store[SpriteTransform]
 
+	// shadowStyles is a presentation cache only, like spriteTransforms, and
+	// is NOT included in Checksum.
+	shadowStyles store[ShadowStyle]
+
 	// commandSprites is presentation-only content and is NOT included in
 	// Checksum: raw render commands cannot be hashed field by field, and a
 	// prop's looks are not simulation state.
@@ -117,6 +121,7 @@ func (w *World) Clone() *World {
 		transforms:       w.transforms.clone(),
 		transformTweens:  w.transformTweens.clone(),
 		spriteTransforms: w.spriteTransforms.clone(),
+		shadowStyles:     w.shadowStyles.clone(),
 		circleSprites:    w.circleSprites.clone(),
 		circleTweens:     w.circleTweens.clone(),
 		rectSprites:      w.rectSprites.clone(),
@@ -164,6 +169,7 @@ func (w *World) Despawn(id EntityID) {
 	w.transforms.remove(id)
 	w.transformTweens.remove(id)
 	w.spriteTransforms.remove(id)
+	w.shadowStyles.remove(id)
 	w.circleSprites.remove(id)
 	w.circleTweens.remove(id)
 	w.rectSprites.remove(id)
@@ -204,6 +210,7 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	w.transforms.removeMarked(w.despawnMarked)
 	w.transformTweens.removeMarked(w.despawnMarked)
 	w.spriteTransforms.removeMarked(w.despawnMarked)
+	w.shadowStyles.removeMarked(w.despawnMarked)
 	w.circleSprites.removeMarked(w.despawnMarked)
 	w.circleTweens.removeMarked(w.despawnMarked)
 	w.rectSprites.removeMarked(w.despawnMarked)
@@ -563,6 +570,23 @@ func (w *World) SetSpriteTransform(id EntityID, s SpriteTransform) {
 func (w *World) RemoveSpriteTransform(id EntityID) {
 	w.markEntityCountDirty()
 	w.spriteTransforms.remove(id)
+}
+
+// ShadowStyle
+
+func (w *World) ShadowStyle(id EntityID) (ShadowStyle, bool) {
+	s, ok := w.shadowStyles.get(id)
+	return s, ok
+}
+
+func (w *World) SetShadowStyle(id EntityID, s ShadowStyle) {
+	w.markEntityCountDirty()
+	w.shadowStyles.set(id, s)
+}
+
+func (w *World) RemoveShadowStyle(id EntityID) {
+	w.markEntityCountDirty()
+	w.shadowStyles.remove(id)
 }
 
 // HopTween

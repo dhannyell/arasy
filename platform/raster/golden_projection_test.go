@@ -95,3 +95,72 @@ func TestGolden25DGroundAndHeight(t *testing.T) {
 
 	assertGolden(t, "projection_25d", renderer.Render(world.RenderCommands()))
 }
+
+// TestGolden25DContactShadow is the composition proof for the contact shadow
+// and its per-entity style. Four balls of identical world size against the
+// same tilted, lit camera as the fixture above:
+//
+//   - The first stands on the ground with no ShadowStyle: no shadow, the 2D
+//     behaviour every scene had before the component existed.
+//   - The second adds a zero ShadowStyle: the contact shadow appears, shaped
+//     by the projection's own light.
+//   - The third styles it -- wider, fainter, nudged toward the viewer.
+//   - The fourth is airborne with Disable: the body lifts, no shadow at all.
+func TestGolden25DContactShadow(t *testing.T) {
+	cam := render.Camera{
+		World:      math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 120, Y: 80}),
+		Viewport:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 240, Y: 160}),
+		DepthScale: 0.5,
+	}
+
+	world := scene.NewWorld()
+	world.SetProjection(render.GroundProjection(cam, render.ProjectionLight{
+		Direction: math2d.Vec2{X: -1},
+		Tilt:      0.22,
+		Softness:  0.6,
+	}))
+
+	ground := world.Spawn()
+	world.SetTransform(ground, scene.Transform{
+		Position: math2d.Vec2{X: 60, Y: 46},
+		Scale:    math2d.Vec2{X: 1, Y: 1},
+	})
+	world.SetRectSprite(ground, scene.RectSprite{
+		Rect:       math2d.NewRectFromCorners(math2d.Vec2{X: -54, Y: -20}, math2d.Vec2{X: 54, Y: 20}),
+		BaseSprite: scene.BaseSprite{Layer: 0, Color: render.RGBA(0.16, 0.28, 0.20, 1), Plane: scene.PlaneGround},
+	})
+
+	styles := []struct {
+		z     float64
+		style *scene.ShadowStyle
+	}{
+		{z: 0, style: nil},
+		{z: 0, style: &scene.ShadowStyle{}},
+		{z: 0, style: &scene.ShadowStyle{Scale: 1.6, Alpha: 0.5, Offset: math2d.Vec2{Y: 2}}},
+		{z: 6, style: &scene.ShadowStyle{Disable: true}},
+	}
+	for i, s := range styles {
+		ball := world.Spawn()
+		world.SetTransform(ball, scene.Transform{
+			Position: math2d.Vec2{X: 24 + float64(i)*24, Y: 46},
+			Scale:    math2d.Vec2{X: 1, Y: 1},
+		})
+		world.SetCircleSprite(ball, scene.CircleSprite{
+			Radius:     6,
+			BaseSprite: scene.BaseSprite{Layer: 2, Color: render.RGBA(0.90, 0.45, 0.35, 1)},
+		})
+		world.SetHeight(ball, scene.Height{Z: s.z})
+		if s.style != nil {
+			world.SetShadowStyle(ball, *s.style)
+		}
+	}
+
+	renderer := &Renderer{
+		Width:  240,
+		Height: 160,
+		Camera: cam,
+		Clear:  goldenClear,
+	}
+
+	assertGolden(t, "projection_25d_contact_shadow", renderer.Render(world.RenderCommands()))
+}
