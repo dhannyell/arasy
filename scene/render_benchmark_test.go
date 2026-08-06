@@ -52,10 +52,12 @@ func benchmarkRenderWorld(count int) *scene.World {
 			})
 		case 2:
 			world.SetImageSprite(id, scene.ImageSprite{
-				Layer:   i % 7,
+				BaseSprite: scene.BaseSprite{
+					Layer: i % 7,
+					Color: render.RGBA(0, 0, 1, 1),
+				},
 				Texture: render.TextureID(i%5 + 1),
 				Size:    math2d.Vec2{X: 2, Y: 2},
-				Tint:    render.RGBA(0, 0, 1, 1),
 			})
 		}
 	}

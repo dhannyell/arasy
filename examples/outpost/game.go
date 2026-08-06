@@ -197,11 +197,13 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 		g.units[u] = ctx.World.SpawnBundle(scene.Bundle{
 			Transform: &scene.Transform{Position: tileCenter(i, j)},
 			ImageSprite: &scene.ImageSprite{
-				Layer:           layerActors,
+				BaseSprite: scene.BaseSprite{
+					Layer: layerActors,
+					Color: unitBodies[u],
+					Plane: scene.PlaneUpright,
+				},
 				Texture:         sheepTexture,
 				Size:            math2d.Vec2{X: 12, Y: 6},
-				Tint:            unitBodies[u],
-				Plane:           scene.PlaneUpright,
 				ShadowFootprint: math2d.Vec2{X: 1.8, Y: 1.8},
 				Src:             math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 124, Y: 62}},
 			},

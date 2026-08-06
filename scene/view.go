@@ -34,6 +34,7 @@ func (v WorldView) SpriteTransform(id EntityID) (SpriteTransform, bool) {
 func (v WorldView) ShadowStyle(id EntityID) (ShadowStyle, bool)       { return v.w.ShadowStyle(id) }
 func (v WorldView) CommandSprite(id EntityID) (CommandSprite, bool)   { return v.w.CommandSprite(id) }
 func (v WorldView) Attachment(id EntityID) (Attachment, bool)         { return v.w.Attachment(id) }
+func (v WorldView) PointLight(id EntityID) (PointLight, bool)         { return v.w.PointLight(id) }
 func (v WorldView) Velocity(id EntityID) (Velocity, bool)             { return v.w.Velocity(id) }
 func (v WorldView) Acceleration(id EntityID) (Acceleration, bool)     { return v.w.Acceleration(id) }
 func (v WorldView) Damping(id EntityID) (Damping, bool)               { return v.w.Damping(id) }

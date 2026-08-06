@@ -2,6 +2,7 @@ package scene_test
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -9,6 +10,16 @@ import (
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
 )
+
+var renderOnly = []string{
+	"renderTransforms",
+	"renderHeights",
+	"spriteTransforms",
+	"shadowStyles",
+	"commandSprites",
+	"attachments",
+	"pointLights",
+}
 
 func TestChecksumDeterministic(t *testing.T) {
 	w := scene.NewWorld()
@@ -360,13 +371,7 @@ func TestChecksumCoversAllComponentStores(t *testing.T) {
 	count := 0
 	for f := range wt.Fields() {
 		if strings.HasPrefix(f.Type.String(), "scene.store[") {
-			if f.Name == "renderTransforms" || f.Name == "renderHeights" ||
-				f.Name == "spriteTransforms" || f.Name == "shadowStyles" {
-				continue
-			}
-			// Presentation-only like spriteTransforms: raw command content and
-			// attachment anchoring never enter simulation state.
-			if f.Name == "commandSprites" || f.Name == "attachments" {
+			if slices.Contains(renderOnly, f.Name) {
 				continue
 			}
 			count++

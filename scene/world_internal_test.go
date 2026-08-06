@@ -105,9 +105,11 @@ func batchTestWorld() *World {
 			Scale:    math2d.Vec2{X: 1, Y: 1},
 		})
 		w.SetImageSprite(id, ImageSprite{
+			BaseSprite: BaseSprite{
+				Color: render.RGBA(0.2, 0.4, 0.6, 1),
+			},
 			Texture: render.TextureID(i),
 			Size:    math2d.Vec2{X: float64(i), Y: float64(i + 1)},
-			Tint:    render.RGBA(0.2, 0.4, 0.6, 1),
 		})
 		if i%2 == 0 {
 			w.SetVelocity(id, Velocity{Linear: math2d.Vec2{X: float64(i), Y: 1}})
@@ -121,6 +123,13 @@ func batchTestWorld() *World {
 			w.SetRectSprite(id, RectSprite{})
 			w.SetBody(id, Body{InvMass: 1})
 		}
+		if i%5 == 0 {
+			w.SetPointLight(id, PointLight{
+				Color:   render.RGBA(0.2, 0.4, 0.6, 1),
+				Radius:  float64(i),
+				Falloff: 0.5,
+			})
+		}
 	}
 	return w
 }
@@ -132,6 +141,9 @@ func assertBatchWorldEqual(t *testing.T, got, want *World) {
 	}
 	if gotCount, wantCount := got.entityCount(), want.entityCount(); gotCount != wantCount {
 		t.Fatalf("entityCount() = %d, want %d", gotCount, wantCount)
+	}
+	if gotLight, wantLight := got.ambientLight, want.ambientLight; gotLight != wantLight {
+		t.Fatalf("ambientLight = %+v, want %+v", gotLight, wantLight)
 	}
 	if !equalStore(got.transforms, want.transforms) ||
 		!equalStore(got.transformTweens, want.transformTweens) ||
@@ -145,6 +157,7 @@ func assertBatchWorldEqual(t *testing.T, got, want *World) {
 		!equalStore(got.bodies, want.bodies) ||
 		!equalStore(got.circleColliders, want.circleColliders) ||
 		!equalStore(got.rectColliders, want.rectColliders) ||
+		!equalStore(got.pointLights, want.pointLights) ||
 		!equalStore(got.renderTransforms, want.renderTransforms) {
 		t.Fatal("DespawnBatch stores differ from sequential Despawn")
 	}

@@ -72,10 +72,12 @@ func TestWorldViewExposesImageSprite(t *testing.T) {
 
 func testImageSprite() scene.ImageSprite {
 	return scene.ImageSprite{
-		Layer:   7,
+		BaseSprite: scene.BaseSprite{
+			Layer: 7,
+			Color: render.RGBA(0.8, 0.7, 0.6, 0.5),
+		},
 		Texture: render.TextureID(3),
 		Src:     math2d.NewRect(math2d.Vec2{X: 2, Y: 4}, math2d.Vec2{X: 14, Y: 20}),
 		Size:    math2d.Vec2{X: 8, Y: 6},
-		Tint:    render.RGBA(0.8, 0.7, 0.6, 0.5),
 	}
 }

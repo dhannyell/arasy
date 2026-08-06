@@ -16,8 +16,8 @@ func componentSetters(t *testing.T) []reflect.Method {
 	t.Helper()
 	wt := reflect.TypeFor[*World]()
 	var setters []reflect.Method
-	for i := 0; i < wt.NumMethod(); i++ {
-		m := wt.Method(i)
+	for m := range wt.Methods() {
+		m := m
 		if !strings.HasPrefix(m.Name, "Set") {
 			continue
 		}
@@ -106,6 +106,7 @@ var renderOnlySetters = map[string]bool{
 	"SetShadowStyle":     true,
 	"SetCommandSprite":   true,
 	"SetAttachment":      true,
+	"SetPointLight":      true,
 }
 
 func TestComponentSetterConventionCoversAllStores(t *testing.T) {

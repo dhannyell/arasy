@@ -245,7 +245,7 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 					pos.Add(scaledHalf),
 				),
 				Src:      img.Src,
-				Tint:     img.Tint,
+				Tint:     img.Color,
 				Rotation: interpolated.Rotation,
 				BaseCommand: render.BaseCommand{
 					LayerValue: img.Layer,

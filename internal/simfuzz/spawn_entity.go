@@ -123,19 +123,21 @@ func spawnEntity(w *scene.World, ed EntityDef, idx int, bounds math2d.Rect, id s
 
 	if ed.ComponentMask&CompImageSprite != 0 {
 		w.SetImageSprite(id, scene.ImageSprite{
-			Layer:   int(int32(readU32(data, &off))),
+			BaseSprite: scene.BaseSprite{
+				Layer: int(int32(readU32(data, &off))),
+				Color: render.RGBA(
+					clampF(readF64Finite(data, &off), 0, 1),
+					clampF(readF64Finite(data, &off), 0, 1),
+					clampF(readF64Finite(data, &off), 0, 1),
+					clampF(readF64Finite(data, &off), 0, 1),
+				),
+			},
 			Texture: render.TextureID(readU32(data, &off)),
 			Src: math2d.Rect{
 				Min: math2d.Vec2{X: readF64Finite(data, &off), Y: readF64Finite(data, &off)},
 				Max: math2d.Vec2{X: readF64Finite(data, &off), Y: readF64Finite(data, &off)},
 			},
 			Size: math2d.Vec2{X: readF64Finite(data, &off), Y: readF64Finite(data, &off)},
-			Tint: render.RGBA(
-				clampF(readF64Finite(data, &off), 0, 1),
-				clampF(readF64Finite(data, &off), 0, 1),
-				clampF(readF64Finite(data, &off), 0, 1),
-				clampF(readF64Finite(data, &off), 0, 1),
-			),
 		})
 	}
 

@@ -35,7 +35,7 @@ func TestRenderCommandsCreatesScaledImageSprite(t *testing.T) {
 	if got.Dest != wantDest {
 		t.Fatalf("Dest = %+v, want %+v", got.Dest, wantDest)
 	}
-	if got.Texture != sprite.Texture || got.Src != sprite.Src || got.Tint != sprite.Tint || got.Rotation != transform.Rotation || got.Layer() != sprite.Layer {
+	if got.Texture != sprite.Texture || got.Src != sprite.Src || got.Tint != sprite.Color || got.Rotation != transform.Rotation || got.Layer() != sprite.Layer {
 		t.Fatalf("DrawImage did not preserve sprite/transform fields: %+v", got)
 	}
 }
