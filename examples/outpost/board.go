@@ -41,9 +41,9 @@ const (
 	layerCliff  = 2
 	layerCloud  = 3
 
-	// Ground marks under the actors: the contact shadow and selection ring.
-	// A mark lies on the ground, so anything standing anywhere correctly
-	// draws over it -- no depth sorting needed.
+	// Ground marks under the actors: the selection ring. A mark lies on the
+	// ground, so anything standing anywhere correctly draws over it -- no
+	// depth sorting needed.
 	layerMarks = 4
 	layerHover = 5
 
@@ -159,8 +159,6 @@ var (
 	trunkColor  = render.RGBA8(104, 78, 54, 255)
 	canopyColor = render.RGBA8(62, 116, 70, 255)
 	canopyCrown = render.RGBA8(80, 138, 84, 255)
-
-	standShadow = render.RGBA(0.02, 0.05, 0.03, 0.25)
 )
 
 func inset(rect math2d.Rect, amount float64) math2d.Rect {
@@ -324,7 +322,7 @@ func spawnProps(world *scene.World, p render.Projection) {
 }
 
 // spawnCommandProp is a volumetric prop drawn with raw commands: the entity's
-// position at the tile centre is where it meets the ground, which is all the
+// position at the tile center is where it meets the ground, which is all the
 // painter sort needs to order it against everything walking past.
 func spawnCommandProp(world *scene.World, i, j int, commands []render.Command) {
 	world.SpawnBundle(scene.Bundle{

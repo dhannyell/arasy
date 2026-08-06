@@ -103,6 +103,7 @@ func populateAll(t *testing.T, w *World, id EntityID, seed float64) map[string]a
 // ChecksumComponentStores.
 var renderOnlySetters = map[string]bool{
 	"SetSpriteTransform": true,
+	"SetShadowStyle":     true,
 	"SetCommandSprite":   true,
 	"SetAttachment":      true,
 }

@@ -87,22 +87,19 @@ problema (depth buffer) e pode continuar fora.
 
 ### 8. A sombra é um blob global, e só existe no ar
 
-A sombra automática funciona para qualquer sprite — inclusive `ImageSprite`
-(o footprint cobre círculo, rect e imagem) — mas tem três limites:
+**Contato e estilo fechados**: `scene.ShadowStyle` é o opt-in
+render-only da sombra de contato em `Z == 0` e o ajuste por entidade —
+`Scale`, `Alpha`, `Offset`, `Disable` — sobre a emissão da projeção. O
+`examples/outpost` consome. O que segue aberto:
 
-- **Só é emitida com `Height.Z > 0`**: entidade parada no chão não tem sombra
-  de contato nenhuma, e é ela que "cola" um personagem no mundo. Hoje cada
-  cena pinta blobs à mão como decalque.
-- **Zero customização por entidade**: forma (sempre elipse), cor, alpha e
-  offset derivam todos da `Projection` global. Não dá para declarar "esta
-  entidade tem sombra maior", "nenhuma" ou "mais escura".
 - **Silhueta projetada não existe**: a cópia cisalhada e escurecida do próprio
   sprite no chão (o padrão de jogos de arte texturizada com luz direcional) é
   tecnicamente um `DrawImage` com transform de skew derivado do `LiftVector`
-  + tint preto — o material existe, o caminho não.
+  + tint preto — o material existe, o caminho não. Gatilho: a primeira demo
+  de arte texturizada com luz direcional forte.
 
-O blob é o padrão certo do gênero para corpos compactos; o gap é a falta de
-opt-out e de grau.
+O blob é o padrão certo do gênero para corpos compactos; com estilo e contato
+no lugar, o gap restante é só a silhueta.
 
 ### 9. Não há canal de luz sobre sprites
 

@@ -108,8 +108,8 @@ type ImageSprite struct {
 	// for art whose transparent padding or overhang makes the sprite's own
 	// size the wrong measure of how it meets the ground. Both axes must be
 	// positive for the override to apply; the zero value falls back to half
-	// the sprite's Size. Only consulted while the entity is airborne (Z > 0),
-	// which is when a shadow is emitted at all.
+	// the sprite's Size. Consulted whenever an automatic shadow is emitted:
+	// airborne (Z > 0) and, with a ShadowStyle, at contact (Z == 0).
 	ShadowFootprint math2d.Vec2
 }
 
@@ -168,6 +168,23 @@ type Attachment struct {
 // center; compose Translate for a different pivot.
 type SpriteTransform struct {
 	M math2d.Affine
+}
+
+// ShadowStyle adjusts the automatic ground shadow for one entity, and its
+// presence is what turns the contact shadow on: with it, an entity with
+// Height at Z == 0 keeps its shadow instead of losing it at touchdown. It is
+// presentation-only: it never enters Checksum and never affects simulation.
+// The zero value keeps the projection's defaults.
+//
+// The geometry still comes from the sprite's footprint (see
+// ImageSprite.ShadowFootprint); this component only scales, fades, nudges or
+// disables the emission. On a PlaneGround sprite it is a documented no-op: a
+// decal lies in the ground and casts no shadow of its own.
+type ShadowStyle struct {
+	Scale   float64     // multiplies the shadow radii; 0 means 1 (default)
+	Alpha   float64     // multiplies the projection alpha; 0 means 1
+	Offset  math2d.Vec2 // ground-space nudge, added to ShadowCenter
+	Disable bool        // no automatic shadow for this entity
 }
 
 type Velocity struct {

@@ -58,13 +58,24 @@ func TestProjectionZeroHeightIdentity(t *testing.T) {
 	ground := math2d.Vec2{X: 10, Y: 20}
 	footprint := math2d.Vec2{X: 3, Y: 4}
 
+	// z == 0 is the contact shadow: body stays put at its authored size and
+	// the shadow is the footprint at full alpha.
 	r := p.Project(ground, footprint, 0)
-	// z <= 0 returns empty ProjectedHeight (identity)
-	if r != (ProjectedHeight{}) {
-		t.Errorf("z=0: got %+v, want zero ProjectedHeight", r)
+	if r.BodyPosition != ground {
+		t.Errorf("z=0: BodyPosition = %+v, want %+v", r.BodyPosition, ground)
+	}
+	if r.BodyScale != 1 {
+		t.Errorf("z=0: BodyScale = %v, want 1", r.BodyScale)
+	}
+	if r.ShadowAlpha != p.ShadowAlpha {
+		t.Errorf("z=0: ShadowAlpha = %v, want %v", r.ShadowAlpha, p.ShadowAlpha)
+	}
+	want := math2d.Vec2{X: footprint.X * p.ShadowScale.X, Y: footprint.Y * p.ShadowScale.Y}
+	if r.ShadowRadii != want {
+		t.Errorf("z=0: ShadowRadii = %+v, want %+v", r.ShadowRadii, want)
 	}
 
-	// Negative z should also return identity
+	// Below ground stays outside the projection's domain.
 	rNeg := p.Project(ground, footprint, -5)
 	if rNeg != (ProjectedHeight{}) {
 		t.Errorf("z<0: got %+v, want zero ProjectedHeight", rNeg)
@@ -103,8 +114,8 @@ func TestProjectionBodyScale(t *testing.T) {
 	r1 := p.Project(ground, fp, 2)
 	r2 := p.Project(ground, fp, 4)
 
-	if r0.BodyScale != 0 {
-		t.Errorf("z=0: BodyScale = %v, want 0", r0.BodyScale)
+	if r0.BodyScale != 1 {
+		t.Errorf("z=0: BodyScale = %v, want 1", r0.BodyScale)
 	}
 	if r1.BodyScale != 2 {
 		t.Errorf("z=2: BodyScale = %v, want 2", r1.BodyScale)
@@ -134,8 +145,8 @@ func TestProjectionShadowAlpha(t *testing.T) {
 	fp := math2d.Vec2{X: 2, Y: 2}
 
 	r0 := p.Project(ground, fp, 0)
-	if r0.ShadowAlpha != 0 {
-		t.Errorf("z=0: ShadowAlpha = %v, want 0", r0.ShadowAlpha)
+	if r0.ShadowAlpha != 0.9 {
+		t.Errorf("z=0: ShadowAlpha = %v, want full 0.9 at contact", r0.ShadowAlpha)
 	}
 
 	r1 := p.Project(ground, fp, 5)
@@ -170,8 +181,9 @@ func TestProjectionShadowShrink(t *testing.T) {
 	ground := math2d.Vec2{X: 0, Y: 0}
 
 	r0 := p.Project(ground, fp, 0)
-	if r0.ShadowRadii.X != 0 || r0.ShadowRadii.Y != 0 {
-		t.Errorf("z=0: ShadowRadii = %v, want (0,0)", r0.ShadowRadii)
+	// Contact: no shrink, footprint times ShadowScale.
+	if !floatNear(r0.ShadowRadii.X, 4.5, 1e-9) || !floatNear(r0.ShadowRadii.Y, 3.2, 1e-9) {
+		t.Errorf("z=0: ShadowRadii = %v, want (4.5, 3.2)", r0.ShadowRadii)
 	}
 
 	r1 := p.Project(ground, fp, 2)
@@ -349,10 +361,14 @@ func TestProjectionShadowZeroHeightIsIdentity(t *testing.T) {
 	ground := math2d.Vec2{X: 10, Y: 20}
 	fp := math2d.Vec2{X: 3, Y: 4}
 
-	for _, z := range []float64{0, -1} {
-		if r := p.Project(ground, fp, z); !r.ShadowTransform.IsIdentity() {
-			t.Errorf("z=%v: ShadowTransform not identity at ground/below", z)
-		}
+	// A directional light casts the same shape at every height, contact
+	// included: the stretch applies at z == 0 too.
+	if r := p.Project(ground, fp, 0); r.ShadowTransform.IsIdentity() {
+		t.Error("z=0: contact shadow lost the directional stretch")
+	}
+
+	if r := p.Project(ground, fp, -1); !r.ShadowTransform.IsIdentity() {
+		t.Error("z<0: ShadowTransform not identity below ground")
 	}
 }
 

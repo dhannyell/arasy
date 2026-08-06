@@ -130,10 +130,18 @@ func (w *World) RenderCommandsInto(dst []render.Command, alpha float64) []render
 						z = math2d.Lerp(prevH.Z, h.Z, useAlpha)
 					}
 				}
-				if z > 0 {
+
+				style, hasStyle := w.shadowStyles.get(id)
+				if hasStyle && w.spritePlane(id) == PlaneGround {
+					hasStyle = false
+				}
+				if z > 0 || (hasStyle && z == 0) {
 					ground := pos
 					fp := w.spriteFootprint(id)
 					proj := w.projection.Project(ground, fp, z)
+					if hasStyle {
+						proj = applyShadowStyle(proj, style)
+					}
 					// Ground shadow first, so it draws behind the lifted body.
 					// Same layer, emitted adjacent to the body, so the depth
 					// sort keeps the composite entity's commands together.
@@ -436,6 +444,28 @@ func (w *World) spriteFootprint(id EntityID) math2d.Vec2 {
 		}
 	}
 	return math2d.Vec2{}
+}
+
+func applyShadowStyle(proj render.ProjectedHeight, style ShadowStyle) render.ProjectedHeight {
+	if style.Disable {
+		proj.ShadowAlpha = 0
+		return proj
+	}
+	scale := style.Scale
+	if style.Scale == 0 {
+		scale = 1
+	}
+	proj.ShadowRadii = math2d.Vec2{X: proj.ShadowRadii.X * scale, Y: proj.ShadowRadii.Y * scale}
+	proj.ShadowCenter = math2d.Vec2{
+		X: proj.ShadowCenter.X + style.Offset.X,
+		Y: proj.ShadowCenter.Y + style.Offset.Y,
+	}
+	alpha := style.Alpha
+	if alpha == 0 {
+		alpha = 1
+	}
+	proj.ShadowAlpha *= alpha
+	return proj
 }
 
 func (w *World) SyncRenderState() {

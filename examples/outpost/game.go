@@ -24,8 +24,7 @@ const (
 	// the peaks above it and the cliffs below without dwarfing the island.
 	cameraAir = 0.12
 
-	unitCount  = 2
-	unitRadius = 2.1
+	unitCount = 2
 )
 
 var (
@@ -203,11 +202,16 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 				Size:            math2d.Vec2{X: 12, Y: 6},
 				Tint:            unitBodies[u],
 				Plane:           scene.PlaneUpright,
-				ShadowFootprint: math2d.Vec2{X: 1.8, Y: 0.8},
+				ShadowFootprint: math2d.Vec2{X: 1.8, Y: 1.8},
 				Src:             math2d.Rect{Min: math2d.Vec2{X: 0, Y: 0}, Max: math2d.Vec2{X: 124, Y: 62}},
 			},
 			Height: &scene.Height{},
 		})
+
+		// The stand shadow is the engine's contact shadow: ShadowStyle opts
+		// in, and the zero value takes the projection's light-derived look,
+		// so standing and airborne shadows come from one source.
+		ctx.World.SetShadowStyle(g.units[u], scene.ShadowStyle{Scale: 0.5, Offset: math2d.Vec2{X: 0.7, Y: -0.3}})
 
 		ctx.World.SpawnAttached(g.units[u], math2d.Vec2{X: -0.7, Y: -0.7}, 0, scene.Bundle{
 			CircleSprite: &scene.CircleSprite{
@@ -432,10 +436,11 @@ func (g *Game) appendCursor(cmds []render.Command) []render.Command {
 	})
 }
 
-// appendUnitGround draws what sits under each unit: a contact shadow while it
-// stands (the engine's projected shadow takes over the moment it lifts off)
-// and the selection ring. Both are ground marks, so layerMarks is all the
-// ordering they need: anything standing anywhere correctly draws over them.
+// appendUnitGround draws the selection ring under the selected unit. The
+// contact shadow that used to live here is the engine's now: ShadowStyle on
+// each unit keeps it on the ground and hands it over the moment the unit
+// lifts off. The ring is a ground mark, so layerMarks is all the ordering it
+// needs: anything standing anywhere correctly draws over it.
 func (g *Game) appendUnitGround(cmds []render.Command, ctx *runtime.RenderContext) []render.Command {
 	for u := range g.State.Units {
 		transform, ok := ctx.World.Transform(g.units[u])
@@ -443,17 +448,6 @@ func (g *Game) appendUnitGround(cmds []render.Command, ctx *runtime.RenderContex
 			continue
 		}
 		ground := transform.Position
-
-		height, _ := ctx.World.Height(g.units[u])
-		if height.Z <= 0.01 {
-			cmds = append(cmds, render.DrawEllipse{
-				Center:      ground.Add(math2d.Vec2{Y: 0.6}),
-				RadiusX:     2.4,
-				RadiusY:     2.4,
-				Fill:        standShadow,
-				BaseCommand: render.BaseCommand{LayerValue: layerMarks},
-			})
-		}
 
 		if g.State.Selected == u {
 			pulse := 0.55 + 0.25*math.Sin(ctx.Time*5)
