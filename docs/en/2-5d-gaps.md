@@ -88,22 +88,19 @@ buffer) and can stay out.
 
 ### 8. The shadow is a global blob, and only exists airborne
 
-The automatic shadow works for any sprite — including `ImageSprite` (the
-footprint covers circle, rect and image) — but has three limits:
+**Contact and style closed**: `scene.ShadowStyle` is the
+render-only opt-in for the contact shadow at `Z == 0` and the per-entity
+adjustment — `Scale`, `Alpha`, `Offset`, `Disable` — over the projection's
+emission. `examples/outpost` consumes it. What remains open:
 
-- **Only emitted with `Height.Z > 0`**: an entity standing on the ground has
-  no contact shadow at all, and that is the shadow that "glues" a character
-  to the world. Today every scene paints blobs by hand as decals.
-- **Zero per-entity customization**: shape (always an ellipse), color, alpha
-  and offset all derive from the global `Projection`. There is no way to
-  declare "this entity has a larger shadow", "none" or "a darker one".
 - **No projected silhouette**: the skewed, darkened copy of the sprite itself
   on the ground (the standard for textured art under directional light) is
   technically a `DrawImage` with a skew transform derived from the
   `LiftVector` + black tint — the material exists, the path does not.
+  Trigger: the first textured-art demo under strong directional light.
 
-The blob is the genre's right default for compact bodies; the gap is the lack
-of opt-out and of degree.
+The blob is the genre's right default for compact bodies; with style and
+contact in place, the remaining gap is silhouette only.
 
 ### 9. There is no light channel over sprites
 
