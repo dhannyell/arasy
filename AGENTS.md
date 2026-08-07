@@ -82,6 +82,9 @@ referenced documents when you need subsystem detail.
   transcendental is unavoidable.
 - Cast the product before a sum of products when cross-architecture results
   must match: `float64(a*b) + c`.
+- A product that feeds a sum includes a product held in a variable.
+  Assignment does not round, and the compiler can fuse across statements,
+  so write `v := float64(a*b)` when `v` later meets a `+` or `-`.
 - Follow the detailed policy in [testing](docs/en/testing.md).
 
 ## Recommended

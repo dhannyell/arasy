@@ -31,8 +31,9 @@ func (w *World) applyLocomotion(dt float64) {
 			if speed == 0 {
 				continue
 			}
-			// Decelerate toward zero
-			decelStep := l.Decel * dt
+			// Decelerate toward zero. The conversion rounds the product so
+			// the (speed - decelStep) below cannot fuse into an FMA.
+			decelStep := float64(l.Decel * dt)
 			if decelStep >= speed {
 				w.velocities.set(id, Velocity{})
 			} else {
@@ -65,7 +66,9 @@ func (w *World) applyLocomotion(dt float64) {
 			if spd > l.MaxSpeed {
 				spd = l.MaxSpeed
 			}
-			desiredVel = math2d.Vec2{X: dirX * spd, Y: dirY * spd}
+			// Rounded: these products reach the delta subtraction below, and
+			// an assignment alone does not round.
+			desiredVel = math2d.Vec2{X: float64(dirX * spd), Y: float64(dirY * spd)}
 		}
 
 		vel, hasVel := w.velocities.get(id)
@@ -108,7 +111,8 @@ func (w *World) applyLocomotion(dt float64) {
 				nx /= norm
 				ny /= norm
 			}
-			targetVel = math2d.Vec2{X: nx * desiredSpeed, Y: ny * desiredSpeed}
+			// Rounded for the same reason as desiredVel above.
+			targetVel = math2d.Vec2{X: float64(nx * desiredSpeed), Y: float64(ny * desiredSpeed)}
 		} else {
 			targetVel = desiredVel
 		}
