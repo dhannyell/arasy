@@ -77,14 +77,16 @@ func (c CubicBezier) Sample(progress float64) float64 {
 	return cubicCoordinate(u, c.y1, c.y2)
 }
 
+// The explicit float64 conversions in both polynomials round each product
+// before the sums, so arm64 cannot fuse them into FMAs and drift from x86-64.
 func cubicCoordinate(t, p1, p2 float64) float64 {
 	oneMinus := 1 - t
-	return 3*oneMinus*oneMinus*t*p1 + 3*oneMinus*t*t*p2 + t*t*t
+	return float64(3*oneMinus*oneMinus*t*p1) + float64(3*oneMinus*t*t*p2) + float64(t*t*t)
 }
 
 func cubicDerivative(t, p1, p2 float64) float64 {
 	oneMinus := 1 - t
-	return 3*oneMinus*oneMinus*p1 + 6*oneMinus*t*(p2-p1) + 3*t*t*(1-p2)
+	return float64(3*oneMinus*oneMinus*p1) + float64(6*oneMinus*t*(p2-p1)) + float64(3*t*t*(1-p2))
 }
 
 func finite(v float64) bool {
