@@ -13,20 +13,22 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/dhannyell/arasy/internal/simcheck"
 	"github.com/dhannyell/arasy/internal/wasmserve"
 	"github.com/spf13/cobra"
 )
 
 var (
-	buildPlatform      string
-	buildOutput        string
-	buildTitle         string
-	buildNoDefaultFont bool
-	buildDevTools      bool
-	buildMode          string
-	buildAssets        string
-	buildConsole       bool
-	buildBoot          webBootFlags
+	buildPlatform        string
+	buildOutput          string
+	buildTitle           string
+	buildNoDefaultFont   bool
+	buildDevTools        bool
+	buildMode            string
+	buildAssets          string
+	buildConsole         bool
+	buildSkipDeterminism bool
+	buildBoot            webBootFlags
 )
 
 var buildCmd = &cobra.Command{
@@ -41,6 +43,9 @@ var buildCmd = &cobra.Command{
 			return runBuildNative(cmd, args)
 		}
 		pkg := packageArg(args)
+		if err := checkDeterminism(pkg, cmd.ErrOrStderr()); err != nil {
+			return err
+		}
 		title := buildTitle
 		if title == "" {
 			title = defaultTitle(pkg)
@@ -63,6 +68,9 @@ func runBuildNative(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	pkg := nativePackageArg(args)
+	if err := checkDeterminism(pkg, cmd.ErrOrStderr()); err != nil {
+		return err
+	}
 	outDir := buildOutput
 	if !cmd.Flags().Changed("output") {
 		outDir = filepath.Join("dist", platformNative)
@@ -90,6 +98,7 @@ func init() {
 	buildCmd.Flags().StringVar(&buildMode, "mode", nativeModePortable, "native layout: portable (single executable) or bundle (executable plus an assets directory)")
 	buildCmd.Flags().StringVar(&buildAssets, "assets", "", "native bundle mode: directory copied next to the executable as assets/")
 	buildCmd.Flags().BoolVar(&buildConsole, "console", false, "native Windows release: keep the console window (releases link into the GUI subsystem)")
+	buildCmd.Flags().BoolVar(&buildSkipDeterminism, "skip-determinism-check", false, "build even with non-reproducible math in the simulation path (I know what I am doing)")
 	buildBoot.bind(buildCmd)
 	registerPlatformCompletion(buildCmd)
 	rootCmd.AddCommand(buildCmd)
@@ -131,6 +140,28 @@ func rejectWebOnlyFlags(cmd *cobra.Command, command string) error {
 		}
 	}
 	return nil
+}
+
+// checkDeterminism refuses a build when simulation code calls
+// architecture-dependent math functions. It prints the dmath replacement
+// for each finding. Direct go build does not run this check.
+func checkDeterminism(pkg string, out io.Writer) error {
+	if buildSkipDeterminism {
+		return nil
+	}
+	findings, err := simcheck.Check(".", pkg)
+	if err != nil {
+		return fmt.Errorf("determinism check: %w", err)
+	}
+	if len(findings) == 0 {
+		return nil
+	}
+	for _, finding := range findings {
+		if _, err := fmt.Fprintln(out, finding); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("build refused: %d non-reproducible call(s) in the simulation path; fix them or pass --skip-determinism-check", len(findings))
 }
 
 func packageArg(args []string) string {
