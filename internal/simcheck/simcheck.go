@@ -24,10 +24,18 @@ import (
 // check. It must appear before the package clause, like a build tag.
 const RenderDirective = "//arasy:render"
 
+// engineModule is the engine's own module path. Check skips its packages:
+// the repository guards itself with forbidigo at file granularity, with
+// deliberate exemptions for render-only files and platform backends, and
+// a second exemption map here would drift from the first. In a user
+// module the engine is a dependency, never the main module, so the skip
+// changes nothing for the audience this check exists for.
+const engineModule = "github.com/dhannyell/arasy"
+
 // engineRoots lists the engine packages that identify simulation code.
 var engineRoots = []string{
-	"github.com/dhannyell/arasy/scene",
-	"github.com/dhannyell/arasy/runtime",
+	engineModule + "/scene",
+	engineModule + "/runtime",
 }
 
 // forbidden lists math functions whose results can vary by architecture. It
@@ -201,7 +209,7 @@ func modulePackagePaths(roots []*packages.Package) []string {
 		if len(p.Errors) > 0 {
 			return
 		}
-		if p.Module != nil && p.Module.Main {
+		if p.Module != nil && p.Module.Main && p.Module.Path != engineModule {
 			paths = append(paths, p.PkgPath)
 		}
 		for _, imp := range p.Imports {
