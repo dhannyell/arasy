@@ -123,7 +123,9 @@ func loopProgress(elapsed, duration float64, loop LoopMode) (t float64, finished
 		if duration <= 0 {
 			return 1, false
 		}
-		cycle := math2d.Frac(elapsed/(2*duration)) * 2
+		// The conversion rounds the product so the (2 - cycle) below cannot
+		// fuse into an FMA; an assignment alone does not round.
+		cycle := float64(math2d.Frac(elapsed/(2*duration)) * 2)
 		if cycle > 1 {
 			cycle = 2 - cycle
 		}

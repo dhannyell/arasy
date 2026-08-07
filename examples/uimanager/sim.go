@@ -2,8 +2,8 @@ package uimanager
 
 import (
 	"fmt"
-	"math"
 
+	"github.com/dhannyell/arasy/dmath"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -49,7 +49,7 @@ func formFactor(c Club) float64 {
 
 // poissonSample draws a Poisson-distributed integer via Knuth's method.
 func poissonSample(rng *runtime.Rand, lambda float64) int {
-	limit := math.Exp(-lambda)
+	limit := dmath.Exp(-lambda)
 	k := 0
 	p := 1.0
 	for p > limit {

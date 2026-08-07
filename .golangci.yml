@@ -29,19 +29,34 @@ linters:
     forbidigo:
       analyze-types: true
       forbid:
-        # Only + - * / sqrt allowed in the simulation path.  Transcendentals
-        # produce arch-specific bits and break cross-arch determinism.  The
-        # ease/ and ui/ packages, platform backends, and demos are exempt.
-        - pattern: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10|Mod|Modf)$
-          msg: "forbidden in simulation path: use only + - * / and math.Sqrt"
+        # Simulation code may use only operations with reproducible results:
+        # + - * /, math.Sqrt, math.Mod, and math.Modf. Transcendentals can
+        # vary by architecture, so simulation code uses dmath instead. The
+        # ui/ package and platform backends are exempt.
+        - pattern: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10)$
+          msg: "forbidden in simulation path: use dmath, or only + - * / and math.Sqrt"
 
   exclusions:
     rules:
+      # Tests are outside the simulation path. The dmath suite compares its
+      # results with libm on purpose.
       - path: _test\.go
         linters:
           - errcheck
+          - forbidigo
 
-      # forbidigo only guards the simulation path
-      - path-except: '^(scene|runtime)/'
+      # The checker covers simulation packages. Examples and dmath contain
+      # deliberate exceptions: examples are presentation code, while dmath
+      # implements the replacements. ease is covered because scene tweens
+      # feed eased progress into checksummed simulation state.
+      - path-except: '^(scene|runtime|examples|dmath|ease)/'
+        linters:
+          - forbidigo
+
+      # These files call math only while building render commands or
+      # presentation offsets. That state never enters snapshots, checksums,
+      # or replay. Render code keeps math.* because dmath.Sin/Cos reject
+      # arguments beyond 2^20 and ctx.Time is unbounded.
+      - path: 'examples/(football/(game|world)|particles/game|outpost/game|uimanager/(game|screen_dashboard)|bench/shapebench/game)\.go'
         linters:
           - forbidigo

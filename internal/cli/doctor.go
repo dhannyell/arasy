@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dhannyell/arasy/internal/simcheck"
 	"github.com/dhannyell/arasy/internal/wasmserve"
 	"github.com/spf13/cobra"
 )
@@ -84,6 +85,28 @@ conventional directory (./wasm, ./native) and is skipped when there is none.`,
 				}
 			}
 		}
+		// Doctor reports determinism findings without blocking the diagnosis.
+		// The build command treats the same findings as errors.
+		if pkg != "" {
+			findings, checkErr := simcheck.Check(".", pkg)
+			switch {
+			case checkErr != nil:
+				if err := doctorPrintf(out, "warn determinism: %v\n", checkErr); err != nil {
+					return err
+				}
+			case len(findings) > 0:
+				for _, finding := range findings {
+					if err := doctorPrintf(out, "warn determinism: %s\n", finding); err != nil {
+						return err
+					}
+				}
+			default:
+				if err := doctorPrintf(out, "ok determinism: no non-reproducible math in the simulation path\n"); err != nil {
+					return err
+				}
+			}
+		}
+
 		nativeArgs := args
 		if doctorPlatform != platformNative {
 			nativeArgs = nil

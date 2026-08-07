@@ -198,6 +198,91 @@ func main() {
 	return dir
 }
 
+// TestCheckDeterminismGuardsTheBlessedPath checks that simulation calls are
+// refused, render-only files can opt out, and the explicit skip flag bypasses
+// the check.
+func TestCheckDeterminismGuardsTheBlessedPath(t *testing.T) {
+	module := writeSimViolationModule(t)
+	t.Chdir(module)
+
+	err := checkDeterminism("./native", io.Discard)
+	if err == nil {
+		t.Fatal("checkDeterminism accepted math.Sin in simulation code")
+	}
+	if !strings.Contains(err.Error(), "--skip-determinism-check") {
+		t.Fatalf("refusal %q does not mention the escape flag", err)
+	}
+
+	buildSkipDeterminism = true
+	skipErr := checkDeterminism("./native", io.Discard)
+	buildSkipDeterminism = false
+	if skipErr != nil {
+		t.Fatalf("with --skip-determinism-check: %v", skipErr)
+	}
+
+	// The render directive is the legitimate opt-out for presentation code.
+	game := filepath.Join(module, "game", "game.go")
+	body, readErr := os.ReadFile(game)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	directive := append([]byte("//arasy:render\n\n"), body...)
+	if err := os.WriteFile(game, directive, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkDeterminism("./native", io.Discard); err != nil {
+		t.Fatalf("with //arasy:render directive: %v", err)
+	}
+}
+
+// writeSimViolationModule creates a module that depends on the real engine
+// through replace and calls math.Sin from a package reachable by the native
+// target. This is the situation the build check must refuse.
+func writeSimViolationModule(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "simviolation")
+	write := func(path, body string) {
+		t.Helper()
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/simviolation\n\ngo "+strings.TrimPrefix(runtime.Version(), "go")+
+		"\n\nrequire github.com/dhannyell/arasy v0.0.0\n\nreplace github.com/dhannyell/arasy => "+
+		filepath.ToSlash(repoRoot(t))+"\n")
+	write("game/game.go", `package game
+
+import (
+	"math"
+
+	"github.com/dhannyell/arasy/runtime"
+)
+
+// Advance represents simulation code.
+func Advance(r *runtime.Rand, x float64) float64 {
+	_ = r
+	return math.Sin(x)
+}
+`)
+	write("native/main.go", `package main
+
+import (
+	"fmt"
+
+	"example.com/simviolation/game"
+)
+
+func main() {
+	fmt.Println(game.Advance(nil, 1))
+}
+`)
+	return dir
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	root, err := filepath.Abs(filepath.Join("..", ".."))
