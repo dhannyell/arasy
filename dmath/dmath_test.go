@@ -13,7 +13,12 @@ package dmath_test
 //    reproducibility, not libm's last bit.
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"math"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/dhannyell/arasy/dmath"
@@ -460,4 +465,48 @@ var acosGolden = []golden1{
 	{0.75, 0x3FE720A392C1D954},
 	{0.99, 0x3FC21DF72882BFD8},
 	{1, 0x0000000000000000},
+}
+
+// TestImplementationUsesOnlyAllowedMathHelpers gives the helper whitelist
+// from doc.go a machine guard. The forbidigo pattern only bans
+// transcendentals, so a future platform-dependent math helper would land
+// in dmath without tripping any gate. Every math reference in the
+// implementation files must be on this list.
+func TestImplementationUsesOnlyAllowedMathHelpers(t *testing.T) {
+	allowed := map[string]bool{
+		"Sqrt": true, "Pi": true,
+		"Abs": true, "IsNaN": true, "IsInf": true, "Signbit": true,
+		"Float64bits": true, "Float64frombits": true,
+		"NaN": true, "Inf": true,
+	}
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != "math" {
+				return true
+			}
+			if !allowed[sel.Sel.Name] {
+				t.Errorf("%s: math.%s is not on the allowed helper list in doc.go",
+					fset.Position(sel.Pos()), sel.Sel.Name)
+			}
+			return true
+		})
+	}
 }
