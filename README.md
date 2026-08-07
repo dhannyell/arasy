@@ -271,6 +271,30 @@ go run ./cmd/benchsave -suite runtime -compare baseline
 go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
 ```
 
+## Reproducible Math in Simulation
+
+Replays, rewind, and checksums only work when every machine computes the
+same bits. Standard-library transcendentals (`math.Sin`, `math.Exp`, ...)
+delegate to platform libm implementations, so their last bits vary per
+architecture. The `dmath` package provides reproducible replacements.
+
+The rule for game code:
+
+- If it runs in `Update` or `PostStep`, or mutates state that enters a
+  `StateSlot`, it is simulation code: use `dmath`, never `math`
+  transcendentals. Exact operations (`+ - * /`, `math.Sqrt`, `math.Mod`)
+  are always fine.
+- Render-only code may use `math` freely. If a whole file is render-only,
+  mark it with the `//arasy:render` directive before the package clause.
+
+`arasy build` enforces the rule and refuses a build that breaks it,
+pointing each site at its `dmath` substitute; `arasy doctor` reports the
+same findings as warnings. A direct `go build` compiles without this
+check — the guarantee only holds on the blessed path, because Go has no
+mechanism to forbid an import inside your own module. The
+`--skip-determinism-check` flag exists for the developer who knows a
+finding is safe.
+
 ## Design Goals
 
 - Keep engine packages independent from application-specific rules.

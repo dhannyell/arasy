@@ -38,6 +38,12 @@ referenced documents when you need subsystem detail.
 - Leave `Config.GameID`/`GameVersion` empty in tests and fixtures; shipped
   games set them so recordings carry provenance.
 - Treat `StateSlot[T]` reference fields as requiring `Clone() T`.
+- Use `dmath` for transcendental math in simulation code; `math`
+  transcendentals vary per architecture and break replay and checksums.
+- Mark render-only files that need `math` transcendentals with the
+  `//arasy:render` directive before the package clause.
+- `arasy build` refuses non-reproducible simulation math; a direct
+  `go build` does not check it.
 - Read [runtime](docs/en/runtime.md) and [scrubbing](docs/en/scrubbing.md) for
   the full replay contract.
 
@@ -71,8 +77,9 @@ referenced documents when you need subsystem detail.
 
 ### Float discipline
 
-- In `scene/`, `runtime/`, and `math2d/`, use only `+`, `-`, `*`, `/`, and
-  `math.Sqrt` for simulation math.
+- In `scene/`, `runtime/`, and `math2d/`, use only `+`, `-`, `*`, `/`,
+  `math.Sqrt`, and `math.Mod` for simulation math; use `dmath` when a
+  transcendental is unavoidable.
 - Cast the product before a sum of products when cross-architecture results
   must match: `float64(a*b) + c`.
 - Follow the detailed policy in [testing](docs/en/testing.md).
