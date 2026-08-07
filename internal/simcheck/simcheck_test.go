@@ -2,6 +2,7 @@ package simcheck_test
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"golang.org/x/tools/go/analysis/analysistest"
@@ -14,6 +15,27 @@ import (
 func TestAnalyzerGuardsOnlySimulationImporters(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), simcheck.New("simroot"),
 		"simgame", "rendergame", "pure")
+}
+
+// TestEngineSimulationPathHasNoDeterminismHazards self-scans the engine's
+// simulation packages for the hazards forbidigo cannot express: map
+// iteration, randomness outside ctx.Rand, and wall-clock reads. Every
+// legitimate map loop carries an //arasy:order-insensitive directive with
+// its justification; a new finding here is either a determinism bug or a
+// loop that needs that judgment call.
+func TestEngineSimulationPathHasNoDeterminismHazards(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, err := simcheck.CheckEngine(root, "./scene/...", "./runtime/...", "./examples/...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 {
+		t.Fatalf("engine self-scan reported %d finding(s):\n%s",
+			len(findings), strings.Join(findings, "\n"))
+	}
 }
 
 // TestCheckSkipsTheEngineOwnModule pins the regression where arasy build

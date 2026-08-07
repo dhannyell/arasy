@@ -37,6 +37,7 @@ func (t *driverTexture) consume() []TextureUpdate {
 		return nil
 	}
 	out := make([]TextureUpdate, 0, len(t.pending))
+	//arasy:order-insensitive: collected then sorted by ID below
 	for id, img := range t.pending {
 		out = append(out, TextureUpdate{ID: id, Image: img})
 	}
