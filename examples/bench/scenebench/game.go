@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/dmath"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -51,7 +52,7 @@ func spawnState(i int) initialState {
 	speed := 40 + math.Mod(fi*13.7, 120)
 	return initialState{
 		Pos: math2d.Vec2{X: x, Y: y},
-		Vel: math2d.Vec2{X: speed * math.Cos(angle), Y: speed * math.Sin(angle)},
+		Vel: math2d.Vec2{X: speed * dmath.Cos(angle), Y: speed * dmath.Sin(angle)},
 	}
 }
 
