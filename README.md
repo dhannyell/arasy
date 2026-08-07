@@ -287,9 +287,24 @@ The rule for game code:
 - Render-only code may use `math` freely. If a whole file is render-only,
   mark it with the `//arasy:render` directive before the package clause.
 
-`arasy build` enforces the rule and refuses a build that breaks it,
-pointing each site at its `dmath` substitute; `arasy doctor` reports the
-same findings as warnings. A direct `go build` compiles without this
+The same heuristic covers three more hazards in simulation code:
+
+- `range` over a map: iteration order is deliberately random in Go, so a
+  result that depends on it never replays. Iterate an ordered slice of
+  keys instead. A loop that provably does not depend on order (pure
+  membership work, commutative writes) can carry the
+  `//arasy:order-insensitive` directive on the comment line above it;
+  state the reason in the same comment.
+- Randomness outside `ctx.Rand` (`math/rand`, `math/rand/v2`,
+  `crypto/rand`): it bypasses the recorded stream.
+- Wall-clock reads (`time.Now`, `time.Since`, `time.Until`): simulation
+  time is the fixed tick; presentation time arrives through `ctx.Time`.
+  `time.Duration` in an API stays fine — only the clock reads are
+  forbidden.
+
+`arasy build` enforces these rules and refuses a build that breaks them,
+pointing each site at its way out (`dmath`, `ctx.Rand`, the tick, or a
+directive); `arasy doctor` reports the same findings as warnings. A direct `go build` compiles without this
 check — the guarantee only holds on the blessed path, because Go has no
 mechanism to forbid an import inside your own module. The
 `--skip-determinism-check` flag exists for the developer who knows a
