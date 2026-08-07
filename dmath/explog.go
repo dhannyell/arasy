@@ -32,7 +32,7 @@ func Exp(x float64) float64 {
 	}
 
 	// Reduce x to x = k*ln(2) + r with |r| <= ln(2)/2.
-	kr := x * log2E
+	kr := float64(x * log2E) // rounded so the +0.5 below cannot fuse
 	var k int64
 	if kr >= 0 {
 		k = int64(kr + 0.5)
@@ -106,7 +106,9 @@ func Log(x float64) float64 {
 	p = 2.0/7 + float64(z2*p)
 	p = 2.0/5 + float64(z2*p)
 	p = 2.0/3 + float64(z2*p)
-	logF := z * (2.0 + float64(z2*p))
+	// The conversion is load-bearing: assignment alone does not round, and
+	// arm64 would fuse this product into the sum on the return line.
+	logF := float64(z * (2.0 + float64(z2*p)))
 
 	kf := float64(exp)
 	return float64(kf*ln2Hi) + (logF + float64(kf*ln2Lo))
@@ -132,13 +134,13 @@ func Pow(x, y float64) float64 {
 		if !isInt {
 			return math.NaN()
 		}
-		r := Exp(y * Log(-x))
+		r := Exp(float64(y * Log(-x)))
 		if odd {
 			return -r
 		}
 		return r
 	}
-	return Exp(y * Log(x))
+	return Exp(float64(y * Log(x)))
 }
 
 // isOddInt reports whether y is an integer and whether it is odd.

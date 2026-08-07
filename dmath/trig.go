@@ -44,7 +44,7 @@ func trigInRange(x float64) bool {
 // remainder is in [-pi/4, pi/4] and the quadrant is in [0, 3]. Explicit
 // conversions prevent FMA fusion from changing the result across architectures.
 func reducePio2(x float64) (r float64, q int64) {
-	kf := x * invPio2
+	kf := float64(x * invPio2) // rounded so the +0.5 below cannot fuse
 	var k int64
 	if kf >= 0 {
 		k = int64(kf + 0.5)
