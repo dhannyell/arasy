@@ -18,6 +18,7 @@ linters:
     - staticcheck
     - unused
     - forbidigo
+    - depguard
 
   settings:
     staticcheck:
@@ -36,6 +37,18 @@ linters:
         - pattern: ^math\.(Sin|Cos|Tan|Asin|Acos|Atan|Atan2|Exp|Pow|Log|Log2|Log10)$
           msg: "forbidden in simulation path: use dmath, or only + - * / and math.Sqrt"
 
+    depguard:
+      # Cheap local layer for the RNG rule; the simcheck analyzer is the
+      # full guard (map iteration, RNG, and wall clock) and runs in the
+      # test suite and in arasy build.
+      rules:
+        simulation:
+          deny:
+            - pkg: math/rand
+              desc: "simulation code draws randomness from ctx.Rand; math/rand bypasses the recorded stream and breaks replay"
+            - pkg: math/rand/v2
+              desc: "simulation code draws randomness from ctx.Rand; math/rand/v2 bypasses the recorded stream and breaks replay"
+
   exclusions:
     rules:
       # Tests are outside the simulation path. The dmath suite compares its
@@ -44,6 +57,7 @@ linters:
         linters:
           - errcheck
           - forbidigo
+          - depguard
 
       # The checker covers simulation packages. Examples and dmath contain
       # deliberate exceptions: examples are presentation code, while dmath
@@ -52,6 +66,12 @@ linters:
       - path-except: '^(scene|runtime|examples|dmath|ease)/'
         linters:
           - forbidigo
+
+      # The depguard rule mirrors the analyzer's C2 check for the engine's
+      # own simulation packages only.
+      - path-except: '^(scene|runtime)/'
+        linters:
+          - depguard
 
       # These files call math only while building render commands or
       # presentation offsets. That state never enters snapshots, checksums,
