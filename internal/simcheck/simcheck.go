@@ -3,8 +3,8 @@
 //   - architecture-dependent math calls: the standard library delegates
 //     transcendentals to platform libm implementations, so their bits can
 //     vary by architecture; simulation code must use dmath instead;
-//   - range over a map: iteration order is deliberately random in Go, so a
-//     loop whose result depends on it never reproduces;
+//   - map iteration: Go deliberately randomizes map order, so a loop whose
+//     result depends on it cannot reproduce reliably;
 //   - randomness outside ctx.Rand (math/rand, math/rand/v2, crypto/rand);
 //   - wall-clock reads (time.Now, time.Since, time.Until): simulation time
 //     is the fixed tick.
@@ -13,9 +13,9 @@
 //
 // A package is treated as simulation code when it imports scene or runtime,
 // directly or transitively. A file opts out with the //arasy:render directive
-// before its package clause. Render-only code may use all of the above because
-// presentation state never enters snapshots, checksums, or replay. A single
-// map loop that is provably independent of iteration order opts out with the
+// before its package clause. Render-only code is exempt because presentation
+// state never enters snapshots, checksums, or replay. A single map loop that
+// is provably independent of iteration order opts out with the
 // //arasy:order-insensitive directive on the comment line above the for
 // statement; the directive is per loop, not per file, because order
 // insensitivity is a property of one loop body.
@@ -38,9 +38,8 @@ import (
 // check. It must appear before the package clause, like a build tag.
 const RenderDirective = "//arasy:render"
 
-// OrderInsensitiveDirective suppresses the map-iteration check for the one
-// range statement directly below it. The comment should carry the
-// justification; the reviewer owns the "why", the machine owns the "where".
+// OrderInsensitiveDirective suppresses the map-iteration check for the range
+// statement directly below it. Add the reason after the directive.
 const OrderInsensitiveDirective = "//arasy:order-insensitive"
 
 // engineModule is the engine's own module path. Check skips its packages:
@@ -82,15 +81,15 @@ var randPackages = map[string]bool{
 	"crypto/rand":  true,
 }
 
-// clockFuncs lists the wall-clock reads. The time package itself stays
-// importable: time.Duration in an API is legitimate.
+// clockFuncs lists the wall-clock reads. The time package remains allowed:
+// time.Duration in an API is legitimate.
 var clockFuncs = map[string]bool{
 	"Now": true, "Since": true, "Until": true,
 }
 
-// checkSet selects which hazard checks a pass runs. The transcendental
-// check is separable because inside this repository forbidigo owns it
-// (.golangci.yml); the other three have no linter equivalent.
+// checkSet selects which hazard checks a pass runs. The math check is
+// separate because forbidigo owns it inside this repository. The analyzer
+// keeps the remaining checks because import rules cannot express all of them.
 type checkSet struct {
 	math  bool
 	order bool
@@ -319,13 +318,10 @@ func Check(dir, pattern string) ([]string, error) {
 	return findings, nil
 }
 
-// CheckEngine runs the order, randomness, and clock checks over this
-// repository's own simulation packages and returns sorted findings. Check
-// skips the engine module because forbidigo owns the transcendental rule
-// here, but forbidigo cannot express these three hazards, so the engine
-// self-scans with the same analyzer. The simcheck test suite runs this in
-// CI. Unlike Check, a package that fails to load is an error: a self-scan
-// that silently skips proves nothing.
+// CheckEngine checks the repository's simulation packages for map iteration,
+// external randomness, and wall-clock reads, returning sorted findings. It
+// leaves the transcendental check to forbidigo. Unlike Check, it fails when
+// a package cannot be loaded, so the self-scan cannot silently skip code.
 func CheckEngine(dir string, patterns ...string) ([]string, error) {
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |

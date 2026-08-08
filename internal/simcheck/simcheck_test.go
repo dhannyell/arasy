@@ -21,8 +21,8 @@ func TestAnalyzerGuardsOnlySimulationImporters(t *testing.T) {
 // simulation packages for the hazards forbidigo cannot express: map
 // iteration, randomness outside ctx.Rand, and wall-clock reads. Every
 // legitimate map loop carries an //arasy:order-insensitive directive with
-// its justification; a new finding here is either a determinism bug or a
-// loop that needs that judgment call.
+// its justification. A new finding indicates either a determinism hazard or
+// a loop whose order independence must be documented.
 func TestEngineSimulationPathHasNoDeterminismHazards(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
@@ -38,10 +38,9 @@ func TestEngineSimulationPathHasNoDeterminismHazards(t *testing.T) {
 	}
 }
 
-// TestCheckSkipsTheEngineOwnModule pins the regression where arasy build
-// refused the repository's bundled examples: their render-only math is
-// exempted by forbidigo, the repository's own guard, so the blessed-path
-// check must not re-judge it with a second exemption map.
+// TestCheckSkipsTheEngineOwnModule verifies that the repository's own
+// render-only examples are not checked twice. Their render-only math is
+// already exempted by forbidigo.
 func TestCheckSkipsTheEngineOwnModule(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

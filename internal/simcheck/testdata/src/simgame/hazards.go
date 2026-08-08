@@ -35,10 +35,10 @@ func OrderedTotal(keys []int) float64 {
 	return sum
 }
 
-// Roll draws from a bypassing source; the import line carries the diagnostic.
+// Roll uses a random source outside the recorded stream.
 func Roll() int { return rand.Int() }
 
-// Fill draws from crypto/rand; the import line carries the diagnostic.
+// Fill uses crypto/rand outside the recorded stream.
 func Fill(b []byte) { _, _ = crand.Read(b) }
 
 // Stamp reads the wall clock.

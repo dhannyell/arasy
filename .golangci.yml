@@ -38,9 +38,8 @@ linters:
           msg: "forbidden in simulation path: use dmath, or only + - * / and math.Sqrt"
 
     depguard:
-      # Cheap local layer for the RNG rule; the simcheck analyzer is the
-      # full guard (map iteration, RNG, and wall clock) and runs in the
-      # test suite and in arasy build.
+      # Fast import-level check for math/rand imports. simcheck remains the
+      # complete guard for map iteration, randomness, and wall-clock reads.
       rules:
         simulation:
           deny:
@@ -67,8 +66,7 @@ linters:
         linters:
           - forbidigo
 
-      # The depguard rule mirrors the analyzer's C2 check for the engine's
-      # own simulation packages only.
+      # Apply this rule only to the engine's simulation packages.
       - path-except: '^(scene|runtime)/'
         linters:
           - depguard
