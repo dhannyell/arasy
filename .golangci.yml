@@ -62,12 +62,12 @@ linters:
       # deliberate exceptions: examples are presentation code, while dmath
       # implements the replacements. ease is covered because scene tweens
       # feed eased progress into checksummed simulation state.
-      - path-except: '^(scene|runtime|examples|dmath|ease)/'
+      - path-except: '^(scene|runtime|examples|dmath|ease|internal/utilityai)/'
         linters:
           - forbidigo
 
       # Apply this rule only to the engine's simulation packages.
-      - path-except: '^(scene|runtime)/'
+      - path-except: '^(scene|runtime|internal/utilityai)/'
         linters:
           - depguard
 

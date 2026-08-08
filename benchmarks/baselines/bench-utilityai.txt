@@ -1,0 +1,8 @@
+goos: windows
+goarch: amd64
+pkg: github.com/dhannyell/arasy/internal/utilityai
+cpu: AMD Ryzen 7 5800X3D 8-Core Processor
+BenchmarkEvaluateBatch-16         	     309	   3981747 ns/op	       0 B/op	       0 allocs/op
+BenchmarkEvaluateBatchTrace-16    	     310	   3859078 ns/op	    4655 B/op	      64 allocs/op
+PASS
+ok  	github.com/dhannyell/arasy/internal/utilityai	2.751s
