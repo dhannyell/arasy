@@ -40,6 +40,7 @@ var benchSuites = []benchSuite{
 		Pkg:   "./runtime",
 		Bench: "BenchmarkDriver(Step|ScrubToTick)$|BenchmarkReplay$",
 	},
+	{Name: "simbatch", Pkg: "./internal/simbatch", Bench: "BenchmarkSimbatch.*"},
 	{
 		Name:      "runtime-seek-back",
 		Pkg:       "./runtime",

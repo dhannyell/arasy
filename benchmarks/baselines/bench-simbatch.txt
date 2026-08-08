@@ -1,0 +1,8 @@
+goos: windows
+goarch: amd64
+pkg: github.com/dhannyell/arasy/internal/simbatch
+cpu: AMD Ryzen 7 5800X3D 8-Core Processor
+BenchmarkSimbatchSequential-16    	      34	  34882662 ns/op	  537499 B/op	    7339 allocs/op
+BenchmarkSimbatchParallel-16      	     198	   5681681 ns/op	  540364 B/op	    7363 allocs/op
+PASS
+ok  	github.com/dhannyell/arasy/internal/simbatch	2.693s
