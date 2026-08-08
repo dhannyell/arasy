@@ -66,6 +66,7 @@ func (g *spatialHashGrid) reset(cellSize float64) {
 		g.cells = make(map[gridCell][]EntityID)
 		return
 	}
+	//arasy:order-insensitive: per-key truncation, no order observed
 	for cell, entities := range g.cells {
 		g.cells[cell] = entities[:0]
 	}
@@ -625,6 +626,7 @@ func (g *spatialHashGrid) sortedCells() []gridCell {
 
 func (g *spatialHashGrid) sortedCellsInto(dst []gridCell) []gridCell {
 	cells := dst[:0]
+	//arasy:order-insensitive: collected then sorted below
 	for cell, entities := range g.cells {
 		if len(entities) > 0 {
 			cells = append(cells, cell)

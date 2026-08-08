@@ -34,6 +34,10 @@ referenced documents when you need subsystem detail.
 - Do not reorder the driver or world-step pipeline.
 - Use `ctx.Rand` in simulation code. Do not use random values during render.
 - Do not use unordered map iteration in simulation results.
+- Mark a provably order-independent map loop with the
+  `//arasy:order-insensitive` directive on the comment line above it, and
+  state the reason in the same comment. The directive is per loop; the
+  `//arasy:render` directive is per file.
 - Keep presentation state out of checksums, snapshots, recordings, and replay.
 - Leave `Config.GameID`/`GameVersion` empty in tests and fixtures; shipped
   games set them so recordings carry provenance.
@@ -42,8 +46,9 @@ referenced documents when you need subsystem detail.
   transcendentals vary per architecture and break replay and checksums.
 - Mark render-only files that need `math` transcendentals with the
   `//arasy:render` directive before the package clause.
-- `arasy build` refuses non-reproducible simulation math; a direct
-  `go build` does not check it.
+- `arasy build` refuses non-reproducible simulation code: `math`
+  transcendentals, map iteration, randomness outside `ctx.Rand`, and
+  wall-clock reads. A direct `go build` does not check them.
 - Read [runtime](docs/en/runtime.md) and [scrubbing](docs/en/scrubbing.md) for
   the full replay contract.
 

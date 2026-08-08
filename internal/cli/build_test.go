@@ -235,6 +235,119 @@ func TestCheckDeterminismGuardsTheBlessedPath(t *testing.T) {
 	}
 }
 
+// TestCheckDeterminismCoversOrderRandAndClock checks that the blessed path
+// refuses the three non-math hazards, names each one in the report, and
+// honors the per-loop order directive end to end.
+func TestCheckDeterminismCoversOrderRandAndClock(t *testing.T) {
+	module := writeHazardModule(t)
+	t.Chdir(module)
+
+	var report strings.Builder
+	err := checkDeterminism("./native", &report)
+	if err == nil {
+		t.Fatal("checkDeterminism accepted map iteration, math/rand, and time.Now in simulation code")
+	}
+	for _, fragment := range []string{
+		"map iteration order",
+		"math/rand bypasses the recorded random stream",
+		"time.Now reads the wall clock",
+	} {
+		if !strings.Contains(report.String(), fragment) {
+			t.Errorf("refusal report misses %q:\n%s", fragment, report.String())
+		}
+	}
+
+	buildSkipDeterminism = true
+	skipErr := checkDeterminism("./native", io.Discard)
+	buildSkipDeterminism = false
+	if skipErr != nil {
+		t.Fatalf("with --skip-determinism-check: %v", skipErr)
+	}
+
+	// With the RNG and the clock gone, the order directive is the
+	// legitimate opt-out for the one provably commutative loop.
+	game := filepath.Join(module, "game", "game.go")
+	if err := os.WriteFile(game, []byte(hazardModuleFixedGame), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkDeterminism("./native", io.Discard); err != nil {
+		t.Fatalf("with //arasy:order-insensitive directive: %v", err)
+	}
+}
+
+// writeHazardModule creates a module whose simulation package carries the
+// three non-math hazards: a map range, a math/rand import, and a wall-clock
+// read.
+func writeHazardModule(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "hazards")
+	write := func(path, body string) {
+		t.Helper()
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.com/hazards\n\ngo "+strings.TrimPrefix(runtime.Version(), "go")+
+		"\n\nrequire github.com/dhannyell/arasy v0.0.0\n\nreplace github.com/dhannyell/arasy => "+
+		filepath.ToSlash(repoRoot(t))+"\n")
+	write("game/game.go", `package game
+
+import (
+	"math/rand"
+	"time"
+
+	"github.com/dhannyell/arasy/runtime"
+)
+
+// Tally represents simulation code with the three hazards.
+func Tally(r *runtime.Rand, m map[int]int) int {
+	_ = r
+	total := rand.Int() + int(time.Now().Unix())
+	for _, v := range m {
+		total += v
+	}
+	return total
+}
+`)
+	write("native/main.go", `package main
+
+import (
+	"fmt"
+
+	"example.com/hazards/game"
+)
+
+func main() {
+	fmt.Println(game.Tally(nil, nil))
+}
+`)
+	return dir
+}
+
+// hazardModuleFixedGame is the same package after the fix: RNG and clock
+// removed, and the loop marked order-insensitive with its reason.
+const hazardModuleFixedGame = `package game
+
+import (
+	"github.com/dhannyell/arasy/runtime"
+)
+
+// Tally represents simulation code whose loop is order-independent.
+func Tally(r *runtime.Rand, m map[int]int) int {
+	_ = r
+	total := 0
+	//arasy:order-insensitive: integer sum is commutative
+	for _, v := range m {
+		total += v
+	}
+	return total
+}
+`
+
 // writeSimViolationModule creates a module that depends on the real engine
 // through replace and calls math.Sin from a package reachable by the native
 // target. This is the situation the build check must refuse.

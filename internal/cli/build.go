@@ -142,8 +142,9 @@ func rejectWebOnlyFlags(cmd *cobra.Command, command string) error {
 	return nil
 }
 
-// checkDeterminism refuses a build when simulation code calls
-// architecture-dependent math functions. It prints the dmath replacement
+// checkDeterminism refuses a build when simulation code carries a
+// determinism hazard: architecture-dependent math, map iteration,
+// randomness outside ctx.Rand, or wall-clock reads. It prints the way out
 // for each finding. Direct go build does not run this check.
 func checkDeterminism(pkg string, out io.Writer) error {
 	if buildSkipDeterminism {
@@ -161,7 +162,7 @@ func checkDeterminism(pkg string, out io.Writer) error {
 			return err
 		}
 	}
-	return fmt.Errorf("build refused: %d non-reproducible call(s) in the simulation path; fix them or pass --skip-determinism-check", len(findings))
+	return fmt.Errorf("build refused: %d determinism finding(s) in the simulation path; fix them or pass --skip-determinism-check", len(findings))
 }
 
 func packageArg(args []string) string {

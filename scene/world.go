@@ -739,6 +739,7 @@ func (w *World) Contacts() []Contact {
 func (w *World) Entities() []EntityID {
 	seen := w.collectEntityIDs()
 	ids := make([]EntityID, 0, len(seen))
+	//arasy:order-insensitive: collected then sorted below
 	for id := range seen {
 		ids = append(ids, id)
 	}

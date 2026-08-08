@@ -205,6 +205,7 @@ func debugRenderLayerLines(_ debugRenderer, ctx debugContext) []string {
 	}
 
 	layers := make([]int, 0, len(counts))
+	//arasy:order-insensitive: collected then sorted below
 	for layer := range counts {
 		layers = append(layers, layer)
 	}

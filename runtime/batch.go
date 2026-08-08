@@ -80,6 +80,7 @@ func (b *driverBatches) deleteText(id render.TextBatchID) {
 func (b *driverBatches) consume() (sprites []SpriteBatchUpdate, text []TextBatchUpdate) {
 	if len(b.sprites) > 0 {
 		sprites = make([]SpriteBatchUpdate, 0, len(b.sprites))
+		//arasy:order-insensitive: collected then sorted by ID below
 		for _, u := range b.sprites {
 			sprites = append(sprites, u)
 		}
@@ -87,6 +88,7 @@ func (b *driverBatches) consume() (sprites []SpriteBatchUpdate, text []TextBatch
 	}
 	if len(b.text) > 0 {
 		text = make([]TextBatchUpdate, 0, len(b.text))
+		//arasy:order-insensitive: collected then sorted by ID below
 		for _, u := range b.text {
 			text = append(text, u)
 		}
