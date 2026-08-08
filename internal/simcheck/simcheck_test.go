@@ -28,7 +28,7 @@ func TestEngineSimulationPathHasNoDeterminismHazards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	findings, err := simcheck.CheckEngine(root, "./scene/...", "./runtime/...", "./examples/...")
+	findings, err := simcheck.CheckEngine(root, "./scene/...", "./runtime/...", "./examples/...", "./internal/utilityai/...")
 	if err != nil {
 		t.Fatal(err)
 	}
