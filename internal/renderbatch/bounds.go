@@ -58,10 +58,9 @@ func SpriteBounds(inst render.SpriteInstance) (bounds math2d.Rect, ok bool) {
 	return bounds, true
 }
 
-// SpriteBoundsForCamera returns the world-space AABB of the screen-space
-// rotated quad drawn by the official backends. DrawImage first maps Dest to
-// screen pixels and then rotates it; mapping those rotated corners back to
-// world keeps culling conservative when ScaleX and ScaleY differ.
+// SpriteBoundsForCamera returns bounds for culling one sprite under camera.
+// It follows the renderer rule: map Dest to screen, rotate the billboard, and
+// map its corners back to world space.
 func SpriteBoundsForCamera(inst render.SpriteInstance, camera render.Camera) (bounds math2d.Rect, ok bool) {
 	if !IsFiniteSpriteGeometry(inst) {
 		return math2d.Rect{}, false
@@ -120,8 +119,7 @@ func BatchBounds(instances []render.SpriteInstance) (bounds math2d.Rect, ok bool
 	return bounds, ok
 }
 
-// BatchBoundsForCamera unions SpriteBoundsForCamera for every finite
-// instance, matching the scale-then-rotate semantics of the renderers.
+// BatchBoundsForCamera returns camera-aware bounds for a retained sprite batch.
 func BatchBoundsForCamera(instances []render.SpriteInstance, camera render.Camera) (bounds math2d.Rect, ok bool) {
 	for _, inst := range instances {
 		b, valid := SpriteBoundsForCamera(inst, camera)
@@ -168,8 +166,8 @@ func InflatedBatchBounds(instances []render.SpriteInstance, anim render.SpriteBa
 	return bounds, true
 }
 
-// InflatedBatchBoundsForCamera is InflatedBatchBounds with camera-aware
-// scale-then-rotate sprite bounds.
+// InflatedBatchBoundsForCamera returns animated batch bounds for camera-aware
+// culling.
 func InflatedBatchBoundsForCamera(instances []render.SpriteInstance, anim render.SpriteBatchAnimation, camera render.Camera) (bounds math2d.Rect, ok bool) {
 	inflation := 0.0
 	for _, inst := range instances {
@@ -193,10 +191,33 @@ func WorldBoundsPreserveScreenRotation(camera render.Camera) bool {
 	return math.Abs(resolved.ScaleX) == math.Abs(resolved.ScaleY)
 }
 
-// IntersectsView reports whether batch bounds overlap the rendered view
-// rect, for whole-batch culling. When the command carries a Clip, the
-// caller intersects view and clip first; this helper is a plain
-// rect-vs-rect overlap test.
+// BoundsForView returns bounds after the camera view is applied. It keeps an
+// axis-aligned box that contains all four transformed corners.
+func BoundsForView(bounds math2d.Rect, view math2d.Affine) math2d.Rect {
+	if view.IsIdentity() {
+		return bounds
+	}
+
+	corners := [4]math2d.Vec2{
+		bounds.Min,
+		{X: bounds.Max.X, Y: bounds.Min.Y},
+		bounds.Max,
+		{X: bounds.Min.X, Y: bounds.Max.Y},
+	}
+	transformed := view.Apply(corners[0])
+	result := math2d.Rect{Min: transformed, Max: transformed}
+	for _, corner := range corners[1:] {
+		transformed = view.Apply(corner)
+		result.Min.X = min(result.Min.X, transformed.X)
+		result.Min.Y = min(result.Min.Y, transformed.Y)
+		result.Max.X = max(result.Max.X, transformed.X)
+		result.Max.Y = max(result.Max.Y, transformed.Y)
+	}
+	return result
+}
+
+// IntersectsView reports whether two rectangles overlap. Renderers use it for
+// whole-batch culling after they combine the camera view and command clip.
 func IntersectsView(bounds, view math2d.Rect) bool {
 	return bounds.Overlaps(view)
 }

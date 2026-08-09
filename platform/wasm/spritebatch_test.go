@@ -257,7 +257,7 @@ func boundsOverlaps(a, b math2d.Rect) bool {
 func TestUniformArenaDistinctAlignedSlots(t *testing.T) {
 	arena := newUniformArena(spriteBatchAnimUniformSize, 256, 2)
 	if arena.slotSize != 256 {
-		t.Fatalf("slotSize = %d, want 256 (80 aligned up to 256)", arena.slotSize)
+		t.Fatalf("slotSize = %d, want 256 (96 aligned up to 256)", arena.slotSize)
 	}
 
 	first, ok := arena.alloc()
@@ -331,25 +331,24 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 	var cameraOnly [tess.SpriteUniformSize]byte
 	tess.PackSpriteUniforms(cameraOnly[:], camera, 16, 16)
 	if string(slot[:tess.SpriteUniformSize]) != string(cameraOnly[:]) {
-		t.Fatal("first 32 bytes must be the shared camera uniform")
+		t.Fatal("first 48 bytes must be the shared camera uniform")
 	}
-
 	fields := []struct {
 		offset int
 		want   float32
 	}{
-		{32, 0.5}, // wrapped time
-		{36, 1},   // bounce Hz
-		{40, 1},   // intensity
-		{44, 0},   // pad
-		{48, 17},  // pulse center X
-		{52, 47},  // pulse center Y
-		{56, 2},   // pulse radius
-		{60, 4},   // pulse width
-		{64, 1},   // pulse boost
-		{68, 0},   // pad
-		{72, 0},   // pad
-		{76, 0},   // pad
+		{48, 0.5}, // wrapped time
+		{52, 1},   // bounce Hz
+		{56, 1},   // intensity
+		{60, 0},   // pad
+		{64, 17},  // pulse center X
+		{68, 47},  // pulse center Y
+		{72, 2},   // pulse radius
+		{76, 4},   // pulse width
+		{80, 1},   // pulse boost
+		{84, 0},   // pad
+		{88, 0},   // pad
+		{92, 0},   // pad
 	}
 	for _, f := range fields {
 		got := math.Float32frombits(binary.LittleEndian.Uint32(slot[f.offset:]))

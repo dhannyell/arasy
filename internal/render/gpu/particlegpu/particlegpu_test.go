@@ -1,7 +1,9 @@
 package particlegpu
 
 import (
+	"encoding/binary"
 	"encoding/hex"
+	"math"
 	"testing"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -57,14 +59,76 @@ func TestPackUniformsLayoutGolden(t *testing.T) {
 		320,
 		240,
 	)
-	const want = "cdcccc3dcdcc4c3e9a99993ecdcccc3e0000003f9a99193f3333333fcdcc4c3f92762c3cb20159bcca6ba8bf698eb43f3" +
-		"694d73f9771cb3fcdcccc3b898808bc0000b8410000c0410000d0410000d84100004040000080c00000a0400000c040000000400" +
+	const want = "cdcccc3dcdcc4c3e9a99993ecdcccc3e0000003f9a99193f3333333fcdcc4c3f92762c3c0000008000000000b20159bcca6ba8bf698eb43f" +
+		"3694d73f9771cb3fcdcccc3b898808bc0000b8410000c0410000d0410000d84100004040000080c00000a0400000c040000000400" +
 		"0004040a46a57bf40510a3f8988883c000000001c0000001900000008070605040302010000803f0000003f0000e0400000004100" +
 		"00104100002041000030410000404100005041000060410000704100008041000088410000904100009841cdcc4c3e0000a8410300" +
-		"0000020000000000b0411d00000000000000"
+		"0000020000000000b0411d000000000000000000000000000000"
 	if hex.EncodeToString(got[:]) != want {
 		t.Fatalf("particle uniform layout changed:\n%s", hex.EncodeToString(got[:]))
 	}
+}
+
+func TestPackedParticlePositionMatchesWorldToScreen(t *testing.T) {
+	const width, height = 100, 100
+	point := math2d.Vec2{X: 10, Y: 10}
+	cameras := []struct {
+		name   string
+		camera render.Camera
+	}{
+		{name: "identity", camera: particleTestCamera()},
+		{name: "isometric view", camera: particleViewCamera()},
+		{name: "depth scale", camera: particleDepthCamera()},
+	}
+
+	for _, tc := range cameras {
+		t.Run(tc.name, func(t *testing.T) {
+			var packed [UniformSize]byte
+			PackUniforms(packed[:], particle.EffectDecl{}, render.DrawParticles{}, particle.EmissionFrame{}, 0, 0, 1, tc.camera, width, height)
+
+			worldToClip := [2]math2d.Vec2{
+				{X: float64(readUniformF32(packed[:], 32)), Y: float64(readUniformF32(packed[:], 36))},
+				{X: float64(readUniformF32(packed[:], 40)), Y: float64(readUniformF32(packed[:], 44))},
+			}
+			offset := math2d.Vec2{X: float64(readUniformF32(packed[:], 48)), Y: float64(readUniformF32(packed[:], 52))}
+			screenToClip := math2d.Vec2{X: float64(readUniformF32(packed[:], 64)), Y: float64(readUniformF32(packed[:], 68))}
+			clip := math2d.Vec2{
+				X: point.X*worldToClip[0].X + point.Y*worldToClip[1].X + offset.X,
+				Y: point.X*worldToClip[0].Y + point.Y*worldToClip[1].Y + offset.Y,
+			}
+			got := math2d.Vec2{
+				X: (clip.X + 1) / screenToClip.X,
+				Y: (clip.Y - 1) / screenToClip.Y,
+			}
+			want := tc.camera.WorldToScreen(point)
+			if math.Abs(got.X-want.X) > 1e-6 || math.Abs(got.Y-want.Y) > 1e-6 {
+				t.Fatalf("particle center = %v, want Camera.WorldToScreen %v", got, want)
+			}
+		})
+	}
+}
+
+func particleTestCamera() render.Camera {
+	return render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+	}
+}
+
+func particleViewCamera() render.Camera {
+	camera := particleTestCamera()
+	camera.View = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
+	return camera
+}
+
+func particleDepthCamera() render.Camera {
+	camera := particleTestCamera()
+	camera.DepthScale = 0.5
+	return camera
+}
+
+func readUniformF32(data []byte, offset int) float32 {
+	return math.Float32frombits(binary.LittleEndian.Uint32(data[offset:]))
 }
 
 func TestScissorRect(t *testing.T) {

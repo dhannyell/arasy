@@ -28,16 +28,14 @@ struct SpriteAnim {
   _pad1 : f32,
 }
 
-struct CameraUniforms {
-  to_clip_scale : vec2f,
-  to_clip_offset : vec2f,
-  world_to_screen_scale : vec2f,
-  screen_to_clip_scale : vec2f,
-}
-
 struct BatchUniforms {
-  camera : CameraUniforms,
-  time : f32,
+	world_to_clip_x : vec2f,
+	world_to_clip_y : vec2f,
+	to_clip_offset : vec2f,
+	world_to_screen_scale : vec2f,
+	screen_to_clip_scale : vec2f,
+	_camera_pad : vec2f,
+	time : f32,
   bounce_hz : f32,
   intensity : f32,
   _pad0 : f32,
@@ -109,21 +107,23 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
   // Match the legacy DrawImage path: size is scaled into screen pixels
   // before rotation so AspectStretch cannot skew the rotated sprite.
   let rotation = vec2f(cos(sprite.rotation), sin(sprite.rotation));
-  let screen_corner = corner * sprite.half_size * u.camera.world_to_screen_scale;
+	let screen_corner = corner * sprite.half_size * u.world_to_screen_scale;
   let rotated = vec2f(
     screen_corner.x * rotation.x - screen_corner.y * rotation.y,
     screen_corner.x * rotation.y + screen_corner.y * rotation.x,
   );
-  let clip_pos = sprite.center * u.camera.to_clip_scale + u.camera.to_clip_offset +
-    rotated * u.camera.screen_to_clip_scale;
+	let world_center = u.world_to_clip_x * sprite.center.x +
+		u.world_to_clip_y * sprite.center.y;
+	let clip_pos = world_center + u.to_clip_offset +
+		rotated * u.screen_to_clip_scale;
 
   var out : VSOut;
   out.position = vec4f(clip_pos, 0.0, 1.0);
   out.uv = mix(uv_min, uv_max, corner * 0.5 + vec2f(0.5));
   out.tint = unpack4x8unorm(sprite.tint);
   out.screen_pos = vec2f(
-    (clip_pos.x + 1.0) / u.camera.screen_to_clip_scale.x,
-    (clip_pos.y - 1.0) / u.camera.screen_to_clip_scale.y,
+		(clip_pos.x + 1.0) / u.screen_to_clip_scale.x,
+		(clip_pos.y - 1.0) / u.screen_to_clip_scale.y,
   );
   out.clip_min = sprite.clip_min;
   out.clip_max = sprite.clip_max;

@@ -29,7 +29,8 @@ struct DrawIndirect {
 
 struct EmitterUniforms {
   color_start : vec4f, color_end : vec4f,
-  to_clip_scale : vec2f, to_clip_offset : vec2f,
+  world_to_clip_x : vec2f, world_to_clip_y : vec2f,
+  to_clip_offset : vec2f,
   world_to_screen_scale : vec2f,
   screen_to_clip_scale : vec2f,
   pos : vec2f, prev_pos : vec2f,

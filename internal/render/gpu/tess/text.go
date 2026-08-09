@@ -310,15 +310,18 @@ type textTransform struct {
 
 func textScreenTransform(camera render.Camera, cmd render.DrawText) textTransform {
 	sin, cos := textRotation(cmd.Rotation)
+	screenPosition := camera.WorldToScreen(cmd.Position)
 	mapPoint := func(offset math2d.Vec2) math2d.Vec2 {
 		rotated := math2d.Vec2{
 			X: offset.X*cos - offset.Y*sin,
 			Y: offset.X*sin + offset.Y*cos,
 		}
-		world := camera.ScreenToWorld(camera.WorldToScreen(cmd.Position).Add(rotated))
+		world := camera.ScreenToWorld(screenPosition.Add(rotated))
 		return camera.WorldToScreen(cmd.Transform.Apply(world))
 	}
-	origin := mapPoint(math2d.Vec2{})
+	// Keep the label anchor in world space. Map only glyph offsets through the
+	// inverse camera so the text remains a screen-space billboard.
+	origin := camera.WorldToScreen(cmd.Transform.Apply(cmd.Position))
 	x := mapPoint(math2d.Vec2{X: 1}).Sub(origin)
 	y := mapPoint(math2d.Vec2{Y: 1}).Sub(origin)
 	return textTransform{position: origin, a: x.X, b: x.Y, c: y.X, d: y.Y}

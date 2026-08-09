@@ -1,6 +1,8 @@
 package gpu
 
 const (
-	ParticleStride      = 48  // must match the WGSL Particle struct
-	ParticleUniformSize = 224 // must match the WGSL EmitterUniforms struct
+	// ParticleStride is the byte stride of one WGSL Particle record.
+	ParticleStride = 48
+	// ParticleUniformSize is the byte size of the WGSL EmitterUniforms block.
+	ParticleUniformSize = 240
 )

@@ -59,3 +59,12 @@ test('renders retained sprite and text batches', async ({ page }, testInfo) => {
     'retained-batches.png',
   );
 });
+
+test('renders isometric batch and particle conformance', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'view',
+    'view.png',
+  );
+});

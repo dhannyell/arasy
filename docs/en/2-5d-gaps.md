@@ -25,14 +25,15 @@ game's problem:
 
 ## The gaps, in impact order
 
-### 1. Batched textures ignore the `View`
+### 1. Batched textures — closed 2026-08-09
 
-`DrawSpriteBatch`, `DrawTextBatch` and `DrawParticles` receive the camera as
-scale+offset and cannot carry a shear (an already documented limit). In
-practice: **an isometric game made of textured art — the most common case —
-cannot use the fast paths**; outpost works around it by being 100% vector.
-It is the gap that most restricts "which kind of 2.5D game can be built".
-It takes a full-matrix uniform in both GPU backends.
+`DrawSpriteBatch`, `DrawTextBatch` and `DrawParticles` now carry the complete
+camera matrix, including `View` and `DepthScale`, in both GPU backends. Their
+positions therefore follow `Camera.WorldToScreen`; the drawn quads remain
+screen-space billboards and do not shear. Batch culling transforms the four
+bound corners conservatively through the same `View`. The remaining exception
+is `DrawParticles.BaseCommand.Transform`, which is deliberately outside the
+camera contract.
 
 ### 2. There is no tilemap
 
@@ -126,8 +127,8 @@ decision:
 
 ## Recommended priority reading
 
-Item 1 is the only one that *blocks* a class of game; 2 and 3 are what every
-second 2.5D game will ask for; 4 and 5 turn 2.5D from visual into mechanics;
+Item 1 is closed; item 2 is now the next practical blocker, and item 3 is what
+every second 2.5D game will ask for; 4 and 5 turn 2.5D from visual into mechanics;
 6 and 7 are genre polish. 8 and 9 are what separates "sprite placed in the
 scene" from "sprite belonging to the scene", and both now have v1 solutions:
 styled contact shadows and declared light modulation. Projected silhouettes

@@ -121,6 +121,42 @@ func TestWorldBoundsPreserveScreenRotationWithUniformScale(t *testing.T) {
 	}
 }
 
+func TestBoundsForViewMakesVisibleIsometricBatchReachable(t *testing.T) {
+	camera := render.Camera{
+		World:    rect(0, 0, 100, 100),
+		Viewport: rect(0, 0, 100, 100),
+		View: math2d.Affine{
+			A: 1, B: 0.5, C: -1, D: 0.5, E: -50,
+		},
+	}
+	view := camera.Resolve().World
+	outsideWorld := rect(110, 10, 112, 12)
+	if renderbatch.IntersectsView(outsideWorld, view) {
+		t.Fatal("test premise: the untransformed batch must be outside the resolved view")
+	}
+
+	transformed := renderbatch.BoundsForView(outsideWorld, camera.View)
+	if !renderbatch.IntersectsView(transformed, view) {
+		t.Fatalf("transformed batch = %v must remain visible in %v", transformed, view)
+	}
+}
+
+func TestBoundsForViewKeepsGenuinelyOutsideBatchCulled(t *testing.T) {
+	view := rect(0, 0, 100, 100)
+	transform := math2d.Affine{A: 1, B: 0.5, C: -1, D: 0.5, E: -50}
+	outside := renderbatch.BoundsForView(rect(200, 200, 202, 202), transform)
+	if renderbatch.IntersectsView(outside, view) {
+		t.Fatalf("transformed genuinely outside batch = %v intersects %v", outside, view)
+	}
+}
+
+func TestBoundsForViewIdentityPreservesBounds(t *testing.T) {
+	want := rect(-3.25, 1.5, 7.75, 9.25)
+	if got := renderbatch.BoundsForView(want, math2d.Affine{}); got != want {
+		t.Fatalf("identity transform changed bounds: got %v, want %v", got, want)
+	}
+}
+
 func TestBatchBoundsUnionsFiniteInstances(t *testing.T) {
 	instances := []render.SpriteInstance{
 		{Dest: rect(0, 0, 10, 10)},
