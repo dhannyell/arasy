@@ -19,7 +19,9 @@ type Frame struct {
 // vertex count for mesh streams and a record count for DrawRunSprites and
 // DrawRunText.
 type StreamRun struct {
-	Kind        DrawRunKind
+	Kind DrawRunKind
+	// Layer is the painter layer whose camera was used to build this run.
+	Layer       int
 	Blend       render.Blend
 	Texture     render.TextureID
 	AtlasKey    AtlasKey
@@ -87,6 +89,7 @@ func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes Tex
 	sink := streamSink{
 		builder:  b,
 		ctx:      buildCtx,
+		baseCam:  frame.Camera,
 		atlases:  atlases,
 		fallback: fallback,
 		sizes:    sizes,
@@ -125,9 +128,12 @@ func (b *Builder) TextLabelStream() []byte {
 type streamSink struct {
 	builder  *Builder
 	ctx      ctx
+	baseCam  render.Camera
 	atlases  map[AtlasKey]*Atlas
 	fallback *Atlas
 	sizes    TexSizes
+	layer    int
+	hasLayer bool
 
 	lastRun streamRunIdentity
 	hasLast bool
@@ -135,6 +141,7 @@ type streamSink struct {
 
 type streamRunIdentity struct {
 	kind    DrawRunKind
+	layer   int
 	blend   render.Blend
 	texture render.TextureID
 	atlas   AtlasKey
@@ -243,7 +250,7 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 // can share a draw. Its narrow parameters avoid copying StreamRun's particle
 // payload for every ordinary mesh, sprite, or text command.
 func (s *streamSink) appendRun(kind DrawRunKind, blend render.Blend, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
-	identity := streamRunIdentity{kind: kind, blend: blend, texture: texture, atlas: atlas}
+	identity := streamRunIdentity{kind: kind, layer: s.runLayer(), blend: blend, texture: texture, atlas: atlas}
 	if s.hasLast && s.lastRun == identity {
 		s.builder.runs[len(s.builder.runs)-1].VertexCount += vertexCount
 		return
@@ -251,15 +258,32 @@ func (s *streamSink) appendRun(kind DrawRunKind, blend render.Blend, texture ren
 	s.startRun(identity, texture, atlas, byteOffset, vertexCount)
 }
 
+func (s *streamSink) runLayer() int {
+	if len(s.baseCam.Parallax) == 0 {
+		return 0
+	}
+	return s.layer
+}
+
 // startRun keeps the allocation-heavy cold path out of appendRun's merge
 // path, which executes once per command in large sprite and text streams.
 func (s *streamSink) startRun(identity streamRunIdentity, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
 	s.builder.runs = append(s.builder.runs, StreamRun{
-		Kind: identity.kind, Blend: identity.blend, Texture: texture, AtlasKey: atlas,
+		Kind: identity.kind, Layer: identity.layer, Blend: identity.blend, Texture: texture, AtlasKey: atlas,
 		ByteOffset: byteOffset, VertexCount: vertexCount,
 	})
 	s.lastRun = identity
 	s.hasLast = true
+}
+
+func (s *streamSink) prepare(command render.Command) {
+	layer := command.Layer()
+	if s.hasLayer && s.layer == layer {
+		return
+	}
+	s.layer = layer
+	s.hasLayer = true
+	s.ctx.cam = s.baseCam.ForLayer(layer)
 }
 
 func (s *streamSink) solidBegin(clip math2d.Rect) int {
@@ -289,73 +313,85 @@ func (s *streamSink) texEnd(texture render.TextureID, start int, blend render.Bl
 }
 
 func (s *streamSink) VisitRect(cmd render.DrawRect) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendRect(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitCircle(cmd render.DrawCircle) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendCircle(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitEllipse(cmd render.DrawEllipse) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendEllipse(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitPoint(cmd render.DrawPoint) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendPoint(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitLine(cmd render.DrawLine) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendLine(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitArc(cmd render.DrawArc) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendArc(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitPolygon(cmd render.DrawPolygon) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendPolygon(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitTriangles(cmd render.DrawTriangles) {
+	s.prepare(cmd)
 	start := s.solidBegin(cmd.Clip)
 	AppendTriangles(&s.builder.solidMesh, s.ctx, cmd)
 	s.solidEnd(start, cmd.BlendMode)
 }
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Particles: cmd})
+	s.prepare(cmd)
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Layer: s.layer, Particles: cmd})
 	s.hasLast = false
 }
 
 func (s *streamSink) VisitSpriteBatch(cmd render.DrawSpriteBatch) {
+	s.prepare(cmd)
 	// A retained batch owns GPU state and breaks painter-order merging, like
 	// a particle command: one command per run, no instance payload.
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, SpriteBatch: cmd})
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, Layer: s.layer, SpriteBatch: cmd})
 	s.hasLast = false
 }
 
 func (s *streamSink) VisitTextBatch(cmd render.DrawTextBatch) {
+	s.prepare(cmd)
 	// A retained text batch owns GPU state and breaks painter-order merging,
 	// like a particle/sprite-batch command: one command per run, no payload.
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, TextBatch: cmd})
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, Layer: s.layer, TextBatch: cmd})
 	s.hasLast = false
 }
 
 func (s *streamSink) VisitText(cmd render.DrawText) {
+	s.prepare(cmd)
 	size := cmd.Size
 	if size <= 0 {
 		size = glyphHeight
@@ -380,6 +416,7 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 }
 
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
+	s.prepare(cmd)
 	texW, texH, ok := s.sizes.Lookup(cmd.Texture)
 	if !ok {
 		if corners, ok := imageScreenCorners(s.ctx, cmd); ok {
@@ -413,6 +450,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {
+	s.prepare(cmd)
 	screen, _, valid := imageQuadProjection(s.ctx, transformedCorners(cmd.Transform, cmd.Corners))
 	if !valid {
 		return

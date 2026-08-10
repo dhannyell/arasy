@@ -134,7 +134,7 @@ func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sam
 			{Binding: 2, Buffer: r.glyphBuffer, Size: wgpu.WholeSize},
 			{Binding: 3, Buffer: r.labelBuffer, Size: wgpu.WholeSize},
 			{Binding: 4, Buffer: metrics, Size: wgpu.WholeSize},
-			{Binding: 5, Buffer: r.uniformBuffer, Size: wgpu.WholeSize},
+			{Binding: 5, Buffer: r.uniformBuffer, Size: tess.SpriteUniformSize},
 		},
 	})
 	if err != nil {

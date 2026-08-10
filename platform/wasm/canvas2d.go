@@ -206,7 +206,11 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
-	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
+	render.Each(frame.Commands, canvasSink{
+		canvas:     c,
+		baseCamera: frame.Camera,
+		camera:     frame.Camera,
+	})
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
@@ -214,8 +218,18 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 }
 
 type canvasSink struct {
-	canvas *Canvas2D
-	camera render.Camera
+	canvas     *Canvas2D
+	baseCamera render.Camera
+	camera     render.Camera
+}
+
+// forCommand selects the camera that owns command's layer. The empty
+// parallax configuration keeps the existing camera value without extra work.
+func (s canvasSink) forCommand(command render.Command) canvasSink {
+	if len(s.baseCamera.Parallax) > 0 {
+		s.camera = s.baseCamera.ForLayer(command.Layer())
+	}
+	return s
 }
 
 // withClipAndTransform wraps draw with ctx.save()/restore(), applying clip,
@@ -245,38 +259,47 @@ func (s canvasSink) withClipAndTransform(clip math2d.Rect, transform math2d.Affi
 }
 
 func (s canvasSink) VisitRect(command render.DrawRect) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawRect(command, s.camera) })
 }
 
 func (s canvasSink) VisitCircle(command render.DrawCircle) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawCircle(command, s.camera) })
 }
 
 func (s canvasSink) VisitEllipse(command render.DrawEllipse) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawEllipse(command, s.camera) })
 }
 
 func (s canvasSink) VisitPoint(command render.DrawPoint) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawPoint(command, s.camera) })
 }
 
 func (s canvasSink) VisitLine(command render.DrawLine) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawLine(command, s.camera) })
 }
 
 func (s canvasSink) VisitText(command render.DrawText) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawText(command, s.camera) })
 }
 
 func (s canvasSink) VisitArc(command render.DrawArc) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawArc(command, s.camera) })
 }
 
 func (s canvasSink) VisitPolygon(command render.DrawPolygon) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawPolygon(command, s.camera) })
 }
 
 func (s canvasSink) VisitTriangles(command render.DrawTriangles) {
+	s = s.forCommand(command)
 	if err := render.ValidateTriangles(command); err != nil {
 		s.canvas.diagnostics.Log(s.canvas.log, slog.LevelWarn,
 			diagnostic.Key{Code: "canvas-invalid-triangles"},
@@ -289,14 +312,17 @@ func (s canvasSink) VisitTriangles(command render.DrawTriangles) {
 }
 
 func (s canvasSink) VisitImage(command render.DrawImage) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawImage(command, s.camera) })
 }
 
 func (s canvasSink) VisitImageQuad(command render.DrawImageQuad) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, command.BlendMode, func() { s.canvas.drawImageQuad(command, s.camera) })
 }
 
 func (s canvasSink) VisitParticles(command render.DrawParticles) {
+	s = s.forCommand(command)
 	s.withClipAndTransform(command.Clip, command.Transform, render.BlendAlpha, func() { s.canvas.drawParticles(command, s.camera) })
 }
 

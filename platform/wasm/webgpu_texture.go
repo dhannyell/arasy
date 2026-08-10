@@ -130,7 +130,7 @@ func (r *webgpuRenderer) createGPUTexture(pix []byte, w, h int) gpuTexture {
 // and on the rare storage-buffer growth path.
 func (r *webgpuRenderer) rebuildSpriteBindGroups() {
 	if r.spriteArrayEnabled {
-		layout := r.spriteArrayPipeline.Call("getBindGroupLayout", 0)
+		layout := r.spriteArrayLayout
 		view := r.spriteArrayTexture.Call("createView", map[string]any{"dimension": "2d-array"})
 		r.spriteArrayBindGroup = r.device.Call("createBindGroup", map[string]any{
 			"layout": layout,
@@ -138,12 +138,12 @@ func (r *webgpuRenderer) rebuildSpriteBindGroups() {
 				map[string]any{"binding": 0, "resource": view},
 				map[string]any{"binding": 1, "resource": r.texSampler},
 				map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.spriteBuffer}},
-				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform}},
+				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
 			},
 		})
 		return
 	}
-	layout := r.spritePipeline.Call("getBindGroupLayout", 0)
+	layout := r.spriteLayout
 	for i := range r.textures {
 		texture := &r.textures[i]
 		if texture.view.IsUndefined() || texture.view.IsNull() {
@@ -155,7 +155,7 @@ func (r *webgpuRenderer) rebuildSpriteBindGroups() {
 				map[string]any{"binding": 0, "resource": texture.view},
 				map[string]any{"binding": 1, "resource": r.texSampler},
 				map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.spriteBuffer}},
-				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform}},
+				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
 			},
 		})
 	}

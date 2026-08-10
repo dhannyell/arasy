@@ -157,6 +157,33 @@ func TestBoundsForViewIdentityPreservesBounds(t *testing.T) {
 	}
 }
 
+func TestDerivedParallaxCameraKeepsVisibleBatchFromBeingCulled(t *testing.T) {
+	base := render.Camera{
+		World:    rect(0, 0, 10, 10),
+		Viewport: rect(0, 0, 100, 100),
+		Parallax: []render.LayerParallax{{FromLayer: 4, ToLayer: 4, Factor: math2d.Vec2{X: 0.3, Y: 0.3}}},
+	}
+	instances := []render.SpriteInstance{{Dest: rect(-4, 2, -2, 4)}}
+
+	baseView := base.Resolve().World
+	baseBounds, ok := renderbatch.BatchBoundsForCamera(instances, base)
+	if !ok {
+		t.Fatal("BatchBoundsForCamera rejected finite geometry")
+	}
+	if renderbatch.IntersectsView(baseBounds, baseView) {
+		t.Fatal("test premise: the batch must be outside the base camera")
+	}
+
+	derived := base.ForLayer(4)
+	derivedBounds, ok := renderbatch.BatchBoundsForCamera(instances, derived)
+	if !ok {
+		t.Fatal("derived BatchBoundsForCamera rejected finite geometry")
+	}
+	if !renderbatch.IntersectsView(derivedBounds, derived.Resolve().World) {
+		t.Fatalf("derived bounds %v must remain visible in %v", derivedBounds, derived.Resolve().World)
+	}
+}
+
 func TestBatchBoundsUnionsFiniteInstances(t *testing.T) {
 	instances := []render.SpriteInstance{
 		{Dest: rect(0, 0, 10, 10)},

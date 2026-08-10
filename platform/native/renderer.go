@@ -16,6 +16,7 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -72,11 +73,13 @@ type Renderer struct {
 	spriteBatches map[render.SpriteBatchID]*nativeSpriteBatch
 	tess          tess.Builder
 
-	solidPipeline     *wgpu.RenderPipeline
-	texturedPipeline  *wgpu.RenderPipeline
-	spritePipeline    *wgpu.RenderPipeline
-	textGlyphPipeline *wgpu.RenderPipeline
-	mipPipeline       *wgpu.RenderPipeline
+	solidPipeline           *wgpu.RenderPipeline
+	texturedPipeline        *wgpu.RenderPipeline
+	spritePipeline          *wgpu.RenderPipeline
+	textGlyphPipeline       *wgpu.RenderPipeline
+	spritePipelineLayout    *wgpu.PipelineLayout
+	textGlyphPipelineLayout *wgpu.PipelineLayout
+	mipPipeline             *wgpu.RenderPipeline
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
@@ -87,17 +90,21 @@ type Renderer struct {
 	textureSampler       *wgpu.Sampler
 	mipSampler           *wgpu.Sampler
 
-	solidBuffer     *wgpu.Buffer
-	solidCap        int
-	texBuffer       *wgpu.Buffer
-	texCap          int
-	spriteBuffer    *wgpu.Buffer
-	spriteCap       int
-	textGlyphBuffer *wgpu.Buffer
-	textGlyphCap    int
-	textLabelBuffer *wgpu.Buffer
-	textLabelCap    int
-	spriteUniform   *wgpu.Buffer
+	solidBuffer           *wgpu.Buffer
+	solidCap              int
+	texBuffer             *wgpu.Buffer
+	texCap                int
+	spriteBuffer          *wgpu.Buffer
+	spriteCap             int
+	textGlyphBuffer       *wgpu.Buffer
+	textGlyphCap          int
+	textLabelBuffer       *wgpu.Buffer
+	textLabelCap          int
+	spriteUniform         *wgpu.Buffer
+	spriteUniformCap      int
+	spriteUniformSlotSize int
+	spriteUniformOffsets  []uint32
+	spriteUniformEntries  []nativeUniformEntry
 
 	msaaTexture *wgpu.Texture
 	msaaView    *wgpu.TextureView
@@ -420,6 +427,7 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		phaseStart = time.Now()
 	}
 	runs := r.tess.Build(tess.Frame(frame), width, height, r.fontProvider, r.texSizes)
+	layerCameras := nativeLayerCameras(frame.Camera, runs)
 	solid, textured := r.tess.Streams()
 	sprites := r.tess.SpriteStream()
 	textGlyphs := r.tess.TextGlyphStream()
@@ -428,10 +436,12 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
 	}
-	if err := r.uploadStreams(
-		solid, textured, sprites, textGlyphs, textLabels,
-		runsContainSpriteBatch(runs), frame.Camera, width, height,
-	); err != nil {
+	uniformOffsets, err := r.prepareSpriteUniforms(runs, frame.Camera, layerCameras, width, height)
+	if err != nil {
+		r.recordErr(err)
+		return
+	}
+	if err := r.uploadStreams(solid, textured, sprites, textGlyphs, textLabels); err != nil {
 		r.recordErr(err)
 		return
 	}
@@ -482,7 +492,7 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	if r.timeCPU {
 		phaseStart = time.Now()
 	}
-	if err := r.encodeFrame(runs, surfaceView, frame.Camera, width, height); err != nil {
+	if err := r.encodeFrame(runs, uniformOffsets, layerCameras, surfaceView, frame.Camera, width, height); err != nil {
 		r.recordErr(err)
 		return
 	}
@@ -652,6 +662,14 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.spriteAddPipeline)
 	releasePipeline(&r.textGlyphAddPipeline)
 	releasePipeline(&r.mipPipeline)
+	if r.spritePipelineLayout != nil {
+		r.spritePipelineLayout.Release()
+		r.spritePipelineLayout = nil
+	}
+	if r.textGlyphPipelineLayout != nil {
+		r.textGlyphPipelineLayout.Release()
+		r.textGlyphPipelineLayout = nil
+	}
 	releaseSampler(&r.textureSampler)
 	releaseSampler(&r.mipSampler)
 	if r.device != nil {
@@ -662,6 +680,12 @@ func (r *Renderer) Close() {
 
 func (r *Renderer) createPipelines() error {
 	var err error
+	if r.spritePipelineLayout, err = r.createSpritePipelineLayout(); err != nil {
+		return err
+	}
+	if r.textGlyphPipelineLayout, err = r.createTextGlyphPipelineLayout(); err != nil {
+		return err
+	}
 	if r.solidPipeline, err = r.createPipeline(
 		"solid",
 		shaders.SolidWGSL,
@@ -669,6 +693,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		solidVertexLayout(),
 		alphaBlend(),
+		nil,
 	); err != nil {
 		return err
 	}
@@ -680,6 +705,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		texturedVertexLayout(),
 		premultipliedBlend(),
+		nil,
 	); err != nil {
 		return err
 	}
@@ -691,6 +717,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		nil,
 		premultipliedBlend(),
+		r.spritePipelineLayout,
 	); err != nil {
 		return err
 	}
@@ -702,6 +729,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		nil,
 		alphaBlend(),
+		r.textGlyphPipelineLayout,
 	); err != nil {
 		return err
 	}
@@ -713,6 +741,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		solidVertexLayout(),
 		additiveStraightBlend(),
+		nil,
 	); err != nil {
 		return err
 	}
@@ -724,6 +753,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		texturedVertexLayout(),
 		additiveBlend(),
+		nil,
 	); err != nil {
 		return err
 	}
@@ -735,6 +765,7 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		nil,
 		additiveBlend(),
+		r.spritePipelineLayout,
 	); err != nil {
 		return err
 	}
@@ -746,12 +777,79 @@ func (r *Renderer) createPipelines() error {
 		r.msaaSamples,
 		nil,
 		additiveStraightBlend(),
+		r.textGlyphPipelineLayout,
 	); err != nil {
 		return err
 	}
 
-	r.mipPipeline, err = r.createPipeline("mipmap", shaders.MipmapWGSL, wgpu.TextureFormatRGBA8Unorm, 1, nil, nil)
+	r.mipPipeline, err = r.createPipeline("mipmap", shaders.MipmapWGSL, wgpu.TextureFormatRGBA8Unorm, 1, nil, nil, nil)
 	return err
+}
+
+func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
+	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
+				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
+			}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: wgpu.SamplerBindingLayout{
+				Type: wgpu.SamplerBindingTypeFiltering,
+			}},
+			{Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+			{Binding: 3, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: tess.SpriteUniformSize,
+			}},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create sprite bind group layout: %w", err)
+	}
+	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
+	})
+	layout.Release()
+	if err != nil {
+		return nil, fmt.Errorf("create sprite pipeline layout: %w", err)
+	}
+	return pipelineLayout, nil
+}
+
+func (r *Renderer) createTextGlyphPipelineLayout() (*wgpu.PipelineLayout, error) {
+	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
+				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
+			}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: wgpu.SamplerBindingLayout{
+				Type: wgpu.SamplerBindingTypeFiltering,
+			}},
+			{Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+			{Binding: 3, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+			{Binding: 4, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+			{Binding: 5, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: tess.SpriteUniformSize,
+			}},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create text bind group layout: %w", err)
+	}
+	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
+	})
+	layout.Release()
+	if err != nil {
+		return nil, fmt.Errorf("create text pipeline layout: %w", err)
+	}
+	return pipelineLayout, nil
 }
 
 func (r *Renderer) createPipeline(
@@ -760,6 +858,7 @@ func (r *Renderer) createPipeline(
 	samples uint32,
 	buffers []wgpu.VertexBufferLayout,
 	blend *wgpu.BlendState,
+	layout *wgpu.PipelineLayout,
 ) (*wgpu.RenderPipeline, error) {
 	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "Arasy " + label + " shader",
@@ -771,7 +870,7 @@ func (r *Renderer) createPipeline(
 	defer module.Release()
 	pipeline, err := r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:       "Arasy " + label + " pipeline",
-		Layout:      nil,
+		Layout:      layout,
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main", Buffers: buffers},
 		Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		Multisample: wgpu.MultisampleState{Count: samples, Mask: ^uint32(0)},
@@ -848,12 +947,54 @@ func (r *Renderer) createBuffers() error {
 		return err
 	}
 	r.textLabelCap = gpubuffer.InitialCapacity
+	r.spriteUniformSlotSize = uniformSlotSize(tess.SpriteUniformSize, r.device.device.GetLimits().MinUniformBufferOffsetAlignment)
+	r.spriteUniformCap = 64
 	r.spriteUniform, err = r.newBuffer(
-		"sprite uniform",
-		tess.SpriteUniformSize,
+		"sprite uniforms",
+		r.spriteUniformSlotSize*r.spriteUniformCap,
 		wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst,
 	)
 	return err
+}
+
+func uniformSlotSize(size int, alignment uint32) int {
+	if alignment == 0 {
+		return size
+	}
+	a := int(alignment)
+	return (size + a - 1) / a * a
+}
+
+func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
+	if required <= r.spriteUniformCap {
+		return nil
+	}
+	next := gpubuffer.GrowCapacity(r.spriteUniformCap, required)
+	buffer, err := r.newBuffer(
+		"sprite uniforms",
+		r.spriteUniformSlotSize*next,
+		wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst,
+	)
+	if err != nil {
+		return err
+	}
+	old := r.spriteUniform
+	r.spriteUniform, r.spriteUniformCap = buffer, next
+	if old != nil {
+		old.Release()
+	}
+	if err := r.rebuildSpriteBindGroups(); err != nil {
+		return err
+	}
+	if err := r.rebuildTextGlyphBindGroups(); err != nil {
+		return err
+	}
+	for _, batch := range r.spriteBatches {
+		if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
@@ -870,9 +1011,6 @@ func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*w
 
 func (r *Renderer) uploadStreams(
 	solid, textured, sprites, glyphs, labels []byte,
-	hasSpriteBatch bool,
-	camera render.Camera,
-	width, height int,
 ) error {
 	if err := r.ensureBuffers(len(solid), len(textured), len(sprites), len(glyphs), len(labels)); err != nil {
 		return err
@@ -893,23 +1031,160 @@ func (r *Renderer) uploadStreams(
 			}
 		}
 	}
-	if len(sprites) > 0 || len(glyphs) > 0 || hasSpriteBatch {
-		var uniforms [tess.SpriteUniformSize]byte
-		tess.PackSpriteUniforms(uniforms[:], camera, width, height)
-		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, 0, uniforms[:]); err != nil {
-			return fmt.Errorf("upload sprite uniform: %w", err)
-		}
-	}
 	return nil
 }
 
-func runsContainSpriteBatch(runs []tess.StreamRun) bool {
+type nativeLayerCamera struct {
+	layer  int
+	camera render.Camera
+}
+
+type nativeUniformKind uint8
+
+const (
+	nativeUniformSprites nativeUniformKind = iota
+	nativeUniformText
+)
+
+// Uniform entries are keyed by the camera data they pack, not by draw run.
+// Text keeps a separate key because its shader consumes screen-space offsets.
+type nativeUniformKey struct {
+	kind    nativeUniformKind
+	layer   int
+	offsetX uint64
+	offsetY uint64
+}
+
+// noSpriteUniformEntry marks runs that draw without a camera uniform, so
+// prepareSpriteUniforms can map entry indices to byte offsets in one pass
+// without recomputing run keys.
+const noSpriteUniformEntry = ^uint32(0)
+
+type nativeUniformEntry struct {
+	key    nativeUniformKey
+	offset uint32
+}
+
+func nativeLayerCameras(base render.Camera, runs []tess.StreamRun) []nativeLayerCamera {
+	if len(base.Parallax) == 0 {
+		return nil
+	}
+	var cameras []nativeLayerCamera
 	for _, run := range runs {
-		if run.Kind == tess.DrawRunSpriteBatch {
-			return true
+		found := false
+		for _, entry := range cameras {
+			if entry.layer == run.Layer {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cameras = append(cameras, nativeLayerCamera{layer: run.Layer, camera: base.ForLayer(run.Layer)})
 		}
 	}
-	return false
+	return cameras
+}
+
+func nativeCameraForLayer(base render.Camera, cameras []nativeLayerCamera, layer int) render.Camera {
+	for _, entry := range cameras {
+		if entry.layer == layer {
+			return entry.camera
+		}
+	}
+	return base
+}
+
+func nativeUniformKeyForRun(run tess.StreamRun, base render.Camera, cameras []nativeLayerCamera) (nativeUniformKey, bool) {
+	switch run.Kind {
+	case tess.DrawRunSprites, tess.DrawRunSpriteBatch:
+		layer := run.Layer
+		if len(base.Parallax) == 0 {
+			layer = 0
+		}
+		return nativeUniformKey{kind: nativeUniformSprites, layer: layer}, true
+	case tess.DrawRunText:
+		return nativeUniformKey{kind: nativeUniformText}, true
+	case tess.DrawRunTextBatch:
+		effective := nativeCameraForLayer(base, cameras, run.Layer)
+		offset := tess.TextScreenOffset(base, effective)
+		return nativeUniformKey{
+			kind:    nativeUniformText,
+			offsetX: math.Float64bits(offset.X),
+			offsetY: math.Float64bits(offset.Y),
+		}, true
+	default:
+		return nativeUniformKey{}, false
+	}
+}
+
+func nativeUniformEntryIndex(entries []nativeUniformEntry, key nativeUniformKey) int {
+	for index, entry := range entries {
+		if entry.key == key {
+			return index
+		}
+	}
+	return -1
+}
+
+func packNativeUniform(dst []byte, key nativeUniformKey, base render.Camera, cameras []nativeLayerCamera, width, height int) {
+	switch key.kind {
+	case nativeUniformSprites:
+		tess.PackSpriteUniforms(dst, nativeCameraForLayer(base, cameras, key.layer), width, height)
+	case nativeUniformText:
+		tess.PackTextUniforms(dst, math2d.Vec2{
+			X: math.Float64frombits(key.offsetX),
+			Y: math.Float64frombits(key.offsetY),
+		}, width, height)
+	}
+}
+
+func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Camera, cameras []nativeLayerCamera, width, height int) ([]uint32, error) {
+	// A camera upload is shared by every run that uses the same packed view.
+	if cap(r.spriteUniformOffsets) < len(runs) {
+		r.spriteUniformOffsets = make([]uint32, len(runs))
+	} else {
+		r.spriteUniformOffsets = r.spriteUniformOffsets[:len(runs)]
+	}
+	offsets := r.spriteUniformOffsets
+	r.spriteUniformEntries = r.spriteUniformEntries[:0]
+	for index, run := range runs {
+		offsets[index] = noSpriteUniformEntry
+		key, ok := nativeUniformKeyForRun(run, base, cameras)
+		if !ok {
+			continue
+		}
+		entryIndex := nativeUniformEntryIndex(r.spriteUniformEntries, key)
+		if entryIndex < 0 {
+			r.spriteUniformEntries = append(r.spriteUniformEntries, nativeUniformEntry{key: key})
+			entryIndex = len(r.spriteUniformEntries) - 1
+		}
+		offsets[index] = uint32(entryIndex)
+	}
+	if len(r.spriteUniformEntries) == 0 {
+		clear(offsets)
+		return offsets, nil
+	}
+	if err := r.ensureSpriteUniformCapacity(len(r.spriteUniformEntries)); err != nil {
+		return nil, err
+	}
+	var packed [tess.SpriteUniformSize]byte
+	for entryIndex := range r.spriteUniformEntries {
+		entry := &r.spriteUniformEntries[entryIndex]
+		packNativeUniform(packed[:], entry.key, base, cameras, width, height)
+		offset := uint32(entryIndex * r.spriteUniformSlotSize)
+		entry.offset = offset
+		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, uint64(offset), packed[:]); err != nil {
+			return nil, fmt.Errorf("upload sprite uniform: %w", err)
+		}
+	}
+	for index := range offsets {
+		if offsets[index] == noSpriteUniformEntry {
+			offsets[index] = 0
+			continue
+		}
+		offsets[index] = r.spriteUniformEntries[offsets[index]].offset
+	}
+	return offsets, nil
 }
 
 func (r *Renderer) ensureBuffers(solid, textured, sprites, glyphs, labels int) error {
@@ -1016,7 +1291,7 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 				{Binding: 0, TextureView: texture.view},
 				{Binding: 1, Sampler: r.textureSampler},
 				{Binding: 2, Buffer: r.spriteBuffer, Size: wgpu.WholeSize},
-				{Binding: 3, Buffer: r.spriteUniform, Size: wgpu.WholeSize},
+				{Binding: 3, Buffer: r.spriteUniform, Size: tess.SpriteUniformSize},
 			},
 		})
 		if err != nil {
@@ -1080,6 +1355,8 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 
 func (r *Renderer) encodeFrame(
 	runs []tess.StreamRun,
+	uniformOffsets []uint32,
+	layerCameras []nativeLayerCamera,
 	surfaceView *wgpu.TextureView,
 	camera render.Camera,
 	width, height int,
@@ -1103,7 +1380,7 @@ func (r *Renderer) encodeFrame(
 			if run.Kind != tess.DrawRunParticles {
 				continue
 			}
-			if sim, ok := r.particles.prepare(run.Particles, camera, width, height); ok {
+			if sim, ok := r.particles.prepare(run.Particles, nativeCameraForLayer(camera, layerCameras, run.Layer), width, height); ok {
 				sims = append(sims, sim)
 			}
 		}
@@ -1120,8 +1397,8 @@ func (r *Renderer) encodeFrame(
 		// Contiguous particle runs form composite groups: with offscreen
 		// compositing enabled, each group renders into one pooled target and
 		// is composited once, at the painter-order position of its first run.
-		var groups [][]render.DrawParticles
-		groups, groupOf = groupParticleRuns(runs)
+		var groups [][]nativeParticleRun
+		groups, groupOf = groupParticleRuns(runs, camera, layerCameras)
 		offscreenParticles = r.particleScale > 0 && len(groups) > 0
 		if offscreenParticles {
 			ow, oh := particleTargetDims(width, height, r.particleScale)
@@ -1134,7 +1411,7 @@ func (r *Renderer) encodeFrame(
 				if sampling {
 					beginWrites = r.timing.renderBeginWrites()
 				}
-				if err := r.encodeParticleOffscreen(encoder, groups, camera, ow, oh, beginWrites); err != nil {
+				if err := r.encodeParticleOffscreen(encoder, groups, ow, oh, beginWrites); err != nil {
 					return err
 				}
 			}
@@ -1179,7 +1456,8 @@ func (r *Renderer) encodeFrame(
 		if groupOf != nil {
 			group = groupOf[i]
 		}
-		if err := r.drawRun(pass, run, camera, width, height, group, offscreenParticles, &lastComposited); err != nil {
+		effective := nativeCameraForLayer(camera, layerCameras, run.Layer)
+		if err := r.drawRun(pass, run, uniformOffsets[i], effective, width, height, group, offscreenParticles, &lastComposited); err != nil {
 			return err
 		}
 	}
@@ -1214,7 +1492,12 @@ func (r *Renderer) encodeFrame(
 // groupParticleRuns assigns each contiguous run of tess.DrawRunParticles
 // entries in runs to one composite group, mirroring the WASM backend's
 // grouping (platform/wasm/webgpu.go). groupOf[i] is -1 for non-particle runs.
-func groupParticleRuns(runs []tess.StreamRun) (groups [][]render.DrawParticles, groupOf []int) {
+type nativeParticleRun struct {
+	command render.DrawParticles
+	camera  render.Camera
+}
+
+func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []nativeLayerCamera) (groups [][]nativeParticleRun, groupOf []int) {
 	groupOf = make([]int, len(runs))
 	inGroup := false
 	for i, run := range runs {
@@ -1229,7 +1512,10 @@ func groupParticleRuns(runs []tess.StreamRun) (groups [][]render.DrawParticles, 
 		}
 		idx := len(groups) - 1
 		groupOf[i] = idx
-		groups[idx] = append(groups[idx], run.Particles)
+		groups[idx] = append(groups[idx], nativeParticleRun{
+			command: run.Particles,
+			camera:  nativeCameraForLayer(base, cameras, run.Layer),
+		})
 	}
 	return groups, groupOf
 }
@@ -1244,8 +1530,7 @@ func groupParticleRuns(runs []tess.StreamRun) (groups [][]render.DrawParticles, 
 // passes, not just the main pass.
 func (r *Renderer) encodeParticleOffscreen(
 	encoder *wgpu.CommandEncoder,
-	groups [][]render.DrawParticles,
-	camera render.Camera,
+	groups [][]nativeParticleRun,
 	ow, oh int,
 	beginWrites *wgpu.PassTimestampWrites,
 ) error {
@@ -1267,8 +1552,8 @@ func (r *Renderer) encodeParticleOffscreen(
 		if err != nil {
 			return fmt.Errorf("begin particle offscreen pass: %w", err)
 		}
-		for _, cmd := range cmds {
-			r.particles.drawTo(pass, cmd, camera, r.particleScale, ow, oh, true)
+		for _, run := range cmds {
+			r.particles.drawTo(pass, run.command, run.camera, r.particleScale, ow, oh, true)
 		}
 		if err := pass.TryEnd(); err != nil {
 			pass.Release()
@@ -1282,6 +1567,7 @@ func (r *Renderer) encodeParticleOffscreen(
 func (r *Renderer) drawRun(
 	pass *wgpu.RenderPassEncoder,
 	run tess.StreamRun,
+	uniformOffset uint32,
 	camera render.Camera,
 	width, height int,
 	group int,
@@ -1309,7 +1595,7 @@ func (r *Renderer) drawRun(
 			return nil
 		}
 		pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
-		pass.SetBindGroup(0, texture.spriteBindGroup, nil)
+		pass.SetBindGroup(0, texture.spriteBindGroup, []uint32{uniformOffset})
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.SpriteStride*6), 0)
 	case tess.DrawRunText:
 		atlas, ok, err := r.textAtlasResources().textAtlasFor(r.textAtlases, r.fontProvider, run.AtlasKey)
@@ -1320,7 +1606,7 @@ func (r *Renderer) drawRun(
 			return nil
 		}
 		pass.SetPipeline(pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline))
-		pass.SetBindGroup(0, atlas.glyphBindGroup, nil)
+		pass.SetBindGroup(0, atlas.glyphBindGroup, []uint32{uniformOffset})
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.TextGlyphStride*6), 0)
 	case tess.DrawRunParticles:
 		if r.particles == nil {
@@ -1356,7 +1642,7 @@ func (r *Renderer) drawRun(
 					continue
 				}
 				pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
-				pass.SetBindGroup(0, rg.bindGroup, nil)
+				pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
 				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
 			}
 		}

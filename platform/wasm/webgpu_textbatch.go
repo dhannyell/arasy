@@ -219,7 +219,7 @@ func (r *webgpuRenderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, 
 // batch (skipped at draw time) and for a batch culled against its
 // screen-space bounds. Must run after finalizeTextBatches so batch.bounds
 // reflects this frame's content.
-func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, camera render.Camera, w, h int) bool {
+func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base render.Camera, cameras []wasmLayerCamera, w, h int) bool {
 	hasDraw := false
 	r.frameVisibleLabels = 0
 	for i := range drawRuns {
@@ -237,8 +237,12 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, camera ren
 		if batch.count == 0 {
 			continue
 		}
-		if view, ok := textBatchScreenView(camera, w, h, cmd.Clip); ok && !renderbatch.IntersectsView(batch.bounds, view) {
-			continue
+		effective := wasmCameraForLayer(base, cameras, drawRuns[i].layer)
+		if view, ok := textBatchScreenView(effective, w, h, cmd.Clip); ok {
+			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(base, effective))
+			if !renderbatch.IntersectsView(bounds, view) {
+				continue
+			}
 		}
 		drawRuns[i].text = batch
 		hasDraw = true
@@ -246,4 +250,12 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, camera ren
 		r.frameRetainedDraws += len(batch.ranges)
 	}
 	return hasDraw
+}
+
+// offsetTextBatchBounds moves screen-space bounds by the displacement used by
+// the text shader when a retained batch follows a parallax layer.
+func offsetTextBatchBounds(bounds math2d.Rect, offset math2d.Vec2) math2d.Rect {
+	bounds.Min = bounds.Min.Add(offset)
+	bounds.Max = bounds.Max.Add(offset)
+	return bounds
 }

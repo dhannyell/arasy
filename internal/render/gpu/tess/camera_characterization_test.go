@@ -85,6 +85,81 @@ func TestRetainedSpriteBatchCameraCharacterization(t *testing.T) {
 	}
 }
 
+func TestStreamingSpriteCentersMatchLayerCamera(t *testing.T) {
+	const width, height = 640, 360
+	const layer = 7
+	cameras := []struct {
+		name   string
+		camera render.Camera
+	}{
+		{name: "identity", camera: characterizationCamera()},
+		{name: "isometric", camera: characterizationCamera()},
+		{name: "depth scale", camera: characterizationCamera()},
+	}
+	cameras[1].camera.View = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
+	cameras[2].camera.DepthScale = 0.5
+
+	for _, tt := range cameras {
+		for _, factor := range []float64{0, 0.5, 1} {
+			t.Run(tt.name+"/"+formatFactor(factor), func(t *testing.T) {
+				camera := tt.camera
+				camera.Parallax = []render.LayerParallax{{
+					FromLayer: layer, ToLayer: layer,
+					Factor: math2d.Vec2{X: factor, Y: factor},
+				}}
+				commands := make([]render.Command, 100)
+				for i := range commands {
+					center := math2d.Vec2{X: -40 + float64(i%10)*17, Y: -30 + float64(i/10)*11}
+					commands[i] = render.DrawImage{
+						BaseCommand: render.BaseCommand{LayerValue: layer},
+						Texture:     1,
+						Dest:        math2d.NewRect(center.Add(math2d.Vec2{X: -1, Y: -1}), center.Add(math2d.Vec2{X: 1, Y: 1})),
+					}
+				}
+
+				var builder tess.Builder
+				runs := builder.Build(tess.Frame{Camera: camera, Commands: commands}, width, height, nil, tess.TexSizes{{}, {8, 8}})
+				wantCount := len(commands)
+				if camera.Skews() {
+					wantCount *= 6
+				}
+				if len(runs) != 1 || runs[0].Layer != layer || runs[0].VertexCount != wantCount {
+					t.Fatalf("runs = %+v, want one layer-%d run with %d records", runs, layer, len(commands))
+				}
+				stream := builder.SpriteStream()
+				derived := camera.ForLayer(layer)
+				for i := range commands {
+					center := math2d.Vec2{X: -40 + float64(i%10)*17, Y: -30 + float64(i/10)*11}
+					if !camera.Skews() {
+						center = math2d.Vec2{
+							X: float64(readF32(stream, i*tess.SpriteStride)),
+							Y: float64(readF32(stream, i*tess.SpriteStride+4)),
+						}
+					}
+					got := packedUniformCenter(derived, center, width, height)
+					want := derived.WorldToScreen(center)
+					// Uniforms and shader arithmetic use float32, so the check
+					// includes the same small conversion error as the GPU path.
+					if math.Abs(got.X-want.X) > 2e-5 || math.Abs(got.Y-want.Y) > 2e-5 {
+						t.Fatalf("sprite %d center = %v, want %v", i, got, want)
+					}
+				}
+			})
+		}
+	}
+}
+
+func formatFactor(factor float64) string {
+	switch factor {
+	case 0:
+		return "zero"
+	case 0.5:
+		return "half"
+	default:
+		return "base"
+	}
+}
+
 func characterizationCamera() render.Camera {
 	return render.Camera{
 		World:    math2d.NewRect(math2d.Vec2{X: -50, Y: -50}, math2d.Vec2{X: 100, Y: 100}),

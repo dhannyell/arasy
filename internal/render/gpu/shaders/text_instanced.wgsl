@@ -71,8 +71,8 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
   );
   let screen_pos = label.position + transformed;
   let clip_pos = vec2f(
-    screen_pos.x * camera.screen_to_clip_scale.x - 1.0,
-    screen_pos.y * camera.screen_to_clip_scale.y + 1.0,
+    screen_pos.x * camera.screen_to_clip_scale.x - 1.0 + camera.world_to_clip_x.x,
+    screen_pos.y * camera.screen_to_clip_scale.y + 1.0 + camera.world_to_clip_x.y,
   );
 
   var out : VSOut;

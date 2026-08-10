@@ -100,12 +100,45 @@ func (r *Renderer) RenderInto(dst *image.RGBA, commands []render.Command) {
 
 	fillRect(dst, dst.Bounds(), toRGBA(r.Clear))
 
-	render.Each(commands, rasterSink{renderer: r, image: dst})
+	sink := rasterSink{renderer: r, image: dst}
+	if len(r.Camera.Parallax) == 0 {
+		render.Each(commands, sink)
+		return
+	}
+
+	baseCamera := r.Camera
+	defer func() { r.Camera = baseCamera }()
+
+	sink.layers = &rasterLayerState{renderer: r, base: baseCamera}
+	render.Each(commands, sink)
 }
 
 type rasterSink struct {
 	renderer *Renderer
 	image    *image.RGBA
+	layers   *rasterLayerState
+}
+
+type rasterLayerState struct {
+	renderer    *Renderer
+	base        render.Camera
+	active      int
+	initialized bool
+}
+
+func (s *rasterLayerState) use(layer int) {
+	if s.initialized && s.active == layer {
+		return
+	}
+	s.renderer.Camera = s.base.ForLayer(layer)
+	s.active = layer
+	s.initialized = true
+}
+
+func (s rasterSink) prepareLayer(layer int) {
+	if s.layers != nil {
+		s.layers.use(layer)
+	}
 }
 
 // compose routes a command to the frame directly or, when the command asks
@@ -120,57 +153,71 @@ func (s rasterSink) compose(mode render.Blend, draw func(*image.RGBA)) {
 }
 
 func (s rasterSink) VisitRect(command render.DrawRect) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawRect(img, command) })
 }
 
 func (s rasterSink) VisitCircle(command render.DrawCircle) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawCircle(img, command) })
 }
 
 func (s rasterSink) VisitEllipse(command render.DrawEllipse) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawEllipse(img, command) })
 }
 
 func (s rasterSink) VisitPoint(command render.DrawPoint) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawPoint(img, command) })
 }
 
 func (s rasterSink) VisitLine(command render.DrawLine) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawLine(img, command) })
 }
 
 func (s rasterSink) VisitText(command render.DrawText) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawText(img, command) })
 }
 
 func (s rasterSink) VisitArc(command render.DrawArc) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawArc(img, command) })
 }
 
 func (s rasterSink) VisitPolygon(command render.DrawPolygon) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawPolygon(img, command) })
 }
 
 func (s rasterSink) VisitTriangles(command render.DrawTriangles) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawTriangles(img, command) })
 }
 
 func (s rasterSink) VisitImage(command render.DrawImage) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawImage(img, command) })
 }
 
 func (s rasterSink) VisitImageQuad(command render.DrawImageQuad) {
+	s.prepareLayer(command.Layer())
 	s.compose(command.BlendMode, func(img *image.RGBA) { s.renderer.drawImageQuad(img, command) })
 }
 
 func (s rasterSink) VisitParticles(command render.DrawParticles) {
+	s.prepareLayer(command.Layer())
 	s.renderer.drawParticles(s.image, command)
 }
 
 func (s rasterSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
+	s.prepareLayer(command.Layer())
 	s.renderer.drawSpriteBatch(s.image, command)
 }
 
 func (s rasterSink) VisitTextBatch(command render.DrawTextBatch) {
+	s.prepareLayer(command.Layer())
 	s.renderer.drawTextBatch(s.image, command)
 }
