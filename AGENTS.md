@@ -28,9 +28,11 @@ referenced documents when you need subsystem detail.
 - Treat `render.PostChain` as render-only vocabulary with the seven fixed
   effects: `Vignette`, `ColorGrade`, `Pixelate`, `ChromaticAberration`,
   `Bloom`, `Shockwave`, and `LensRain`.
-- Raster is the canonical post-effect behavior; WebGPU and native consume the
-  shared WGSL shaders, while Canvas2D approximates or skips effects per its
-  documented capability table.
+- The render reference is tiered. Raster is the exact oracle for the 2D
+  command vocabulary. For screen effects the shared WGSL shaders define the
+  behavior; raster mirrors them as a reference inside a measured conformance
+  budget. Canvas2D approximates or skips effects per its documented
+  capability table. Do not build software mirrors of GPU shading.
 - Put game code in `cmd/` or `examples/`, not in engine packages.
 - See [architecture](docs/en/architecture.md) for package responsibilities.
 
