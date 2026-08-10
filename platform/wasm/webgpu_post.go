@@ -165,16 +165,18 @@ func (r *webgpuRenderer) ensureBloomTargets(passes int) error {
 	if passes < 1 {
 		passes = 1
 	}
-	if len(r.postBloom) == passes+1 && r.postBloom[0].width == r.postWidth && r.postBloom[0].height == r.postHeight {
+	// Grow-only: Bloom and Blur share this pyramid inside one frame, so
+	// recreating or shrinking it here would destroy textures a pass already
+	// encoded on this frame's encoder still references. Stale sizes are
+	// handled by ensurePostTargets, which releases the pyramid on resize.
+	if len(r.postBloom) >= passes+1 {
 		return nil
 	}
-	for index := range r.postBloom {
-		r.releasePostTarget(&r.postBloom[index])
-	}
-	r.postBloom = make([]webgpuPostTarget, 0, passes+1)
-	clear(r.postBindGroups)
 	width, height := r.postWidth, r.postHeight
-	for level := 0; level <= passes; level++ {
+	for range r.postBloom {
+		width, height = max(1, (width+1)/2), max(1, (height+1)/2)
+	}
+	for level := len(r.postBloom); level <= passes; level++ {
 		texture := r.device.Call("createTexture", map[string]any{
 			"size":   []any{width, height},
 			"format": r.format,
