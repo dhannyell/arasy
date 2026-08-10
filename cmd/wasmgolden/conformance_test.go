@@ -32,6 +32,7 @@ const (
 	particlesChannelTol     = 32
 	particlesCanvas2DBudget = 0.1520
 	particlesWebGPUBudget   = 0.0754
+	postWebGPUBudget        = 0.065
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -53,7 +54,7 @@ func TestConformanceParticlesWebGPU(t *testing.T) {
 func TestConformancePostWebGPU(t *testing.T) {
 	// Canvas2D intentionally uses documented approximations for this fixture;
 	// the tight conformance comparison is reserved for the GPU mirror.
-	assertConformance(t, "post", "webgpu", 2, frameChannelTol, 0.24)
+	assertConformance(t, "post", "webgpu", 2, frameChannelTol, postWebGPUBudget)
 }
 
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {

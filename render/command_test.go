@@ -177,6 +177,14 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 	}
 }
 
+func TestPostChainUsesConfiguredLayer(t *testing.T) {
+	command := render.PostChain{BaseCommand: render.BaseCommand{LayerValue: 12}}
+
+	if got := command.Layer(); got != 12 {
+		t.Fatalf("PostChain layer = %d, want 12", got)
+	}
+}
+
 func TestDrawTextHasExpectedZeroValue(t *testing.T) {
 	command := render.DrawText{}
 

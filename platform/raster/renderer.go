@@ -45,6 +45,9 @@ type Renderer struct {
 	// before being summed onto the frame. Lazily sized, reused across
 	// commands and frames.
 	additiveScratch *image.RGBA
+
+	// postScratch keeps post-effect buffers alive across frames.
+	postScratch *postScratch
 }
 
 // drawAdditive renders one command into a transparent scratch image and sums
@@ -138,10 +141,16 @@ func postChainPartitions(commands []render.Command, belowLayer int) (below, abov
 
 func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, chain render.PostChain) {
 	below, above := postChainPartitions(commands, chain.BelowLayer)
-	scene := image.NewRGBA(dst.Bounds())
+	if r.postScratch == nil {
+		r.postScratch = &postScratch{}
+	}
+	// The clear fill overwrites every pixel, so the frame-to-frame reuse of
+	// the scene image cannot leak previous content.
+	r.postScratch.scene = ensureImage(r.postScratch.scene, dst.Bounds())
+	scene := r.postScratch.scene
 	fillRect(scene, scene.Bounds(), toRGBA(r.Clear))
 	render.Each(below, rasterSink{renderer: r, image: scene})
-	applyPostChain(scene, chain, r.Camera)
+	applyPostChain(scene, chain, r.Camera, r.postScratch)
 	draw.Draw(dst, dst.Bounds(), scene, scene.Bounds().Min, draw.Src)
 	render.Each(above, rasterSink{renderer: r, image: dst})
 }
@@ -218,6 +227,6 @@ func (s rasterSink) VisitTextBatch(command render.DrawTextBatch) {
 	s.renderer.drawTextBatch(s.image, command)
 }
 
-// VisitPostChain is a placeholder until the raster target partition applies
-// the chain outside the ordinary command sink pass.
+// VisitPostChain is handled by renderPostChain outside the ordinary command
+// sink pass.
 func (s rasterSink) VisitPostChain(render.PostChain) {}

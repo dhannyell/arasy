@@ -10,17 +10,6 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-func TestClonePixelsDoesNotAliasTheSource(t *testing.T) {
-	source := image.NewRGBA(image.Rect(0, 0, 2, 1))
-	source.SetRGBA(0, 0, color.RGBA{R: 20, A: 255})
-	clone := clonePixels(source)
-	clone.SetRGBA(0, 0, color.RGBA{B: 30, A: 255})
-
-	if got := source.RGBAAt(0, 0); got != (color.RGBA{R: 20, A: 255}) {
-		t.Fatalf("source pixel changed through clone: %#v", got)
-	}
-}
-
 func TestSampleBilinearInterpolatesAndClampsToTheImage(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.SetRGBA(0, 0, color.RGBA{R: 0, A: 255})
@@ -170,7 +159,8 @@ func TestLensRainMovesWithTime(t *testing.T) {
 
 func TestLensRainN1DoesNotReadNeighborPixels(t *testing.T) {
 	source := solidPostImage(64, 64, color.RGBA{R: 80, G: 110, B: 140, A: 255})
-	changed := clonePixels(source)
+	changed := image.NewRGBA(source.Bounds())
+	copy(changed.Pix, source.Pix)
 	changed.SetRGBA(32, 32, color.RGBA{R: 255, G: 10, B: 20, A: 255})
 	effect := render.LensRain{Density: 1, Size: 16, Speed: 0.15, Seed: 44}
 	first := applyLensRain(source, effect, 0.5)

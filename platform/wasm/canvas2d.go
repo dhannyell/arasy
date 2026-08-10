@@ -47,6 +47,18 @@ type Canvas2D struct {
 	// postSurface is allocated only when a frame submits a PostChain and is
 	// reused across frames at the current canvas size.
 	postSurface *canvasPostSurface
+
+	// postVignette caches the radial gradient, which only depends on the
+	// canvas size and the vignette color.
+	postVignette    js.Value
+	postVignetteKey vignetteKey
+}
+
+// vignetteKey identifies the cached vignette gradient.
+type vignetteKey struct {
+	width  int
+	height int
+	color  render.Color
 }
 
 // dynamicTexture is the reusable upload target for one dynamic texture: an

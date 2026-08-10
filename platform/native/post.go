@@ -36,6 +36,31 @@ type nativePostTarget struct {
 	height  int
 }
 
+// Stable identifiers for the sampled post targets, used as bind group cache
+// keys: the scene ping-pong pair, then one slot per bloom level.
+const (
+	nativePostSourceSceneA = 0
+	nativePostSourceSceneB = 1
+	nativePostSourceBloom  = 2
+)
+
+// nativePostBindKey identifies one cached post bind group. bloom is the second
+// sampled target of the combine pass (-1 elsewhere); uniform is the
+// postUniforms slot (-1 for the uniform-less blit).
+type nativePostBindKey struct {
+	pipeline string
+	source   int
+	bloom    int
+	uniform  int
+}
+
+func (r *Renderer) releasePostBindGroups() {
+	for _, group := range r.postBindGroups {
+		group.Release()
+	}
+	clear(r.postBindGroups)
+}
+
 func (r *Renderer) createPostResources() error {
 	sampler, err := r.device.device.TryCreateSampler(&wgpu.SamplerDescriptor{
 		Label:         "Arasy post sampler",
@@ -97,6 +122,7 @@ func (r *Renderer) disablePost(err error) {
 	}
 	r.postDisabled = true
 	r.log.Warn("native post-processing disabled; drawing without chain", "err", err)
+	r.releasePostBindGroups()
 	r.releasePostTarget(&r.postSceneA)
 	r.releasePostTarget(&r.postSceneB)
 	for index := range r.postBloom {
@@ -126,6 +152,7 @@ func (r *Renderer) ensurePostTargets(width, height int) error {
 		r.releasePostTarget(&r.postBloom[index])
 	}
 	r.postBloom = nil
+	r.releasePostBindGroups()
 	create := func(w, h int) (nativePostTarget, error) {
 		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
 			Label:         "Arasy post target",
@@ -166,6 +193,7 @@ func (r *Renderer) ensurePostBloom(passes int) error {
 		r.releasePostTarget(&r.postBloom[index])
 	}
 	r.postBloom = make([]nativePostTarget, 0, passes+1)
+	r.releasePostBindGroups()
 	width, height := r.postWidth, r.postHeight
 	for level := 0; level <= passes; level++ {
 		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
@@ -229,22 +257,28 @@ func nativePostBloomPasses(effect render.Bloom) int {
 	return max(1, min(5, passes))
 }
 
-func (r *Renderer) writePostUniform(index int, write func([]byte)) (*wgpu.Buffer, error) {
+// writePostUniform stages one effect's parameters into the pooled uniform
+// buffer at index. The scratch is cleared first so unwritten fields keep the
+// deterministic zero the per-call allocation used to give them.
+func (r *Renderer) writePostUniform(index int, write func([]byte)) error {
 	if err := r.ensurePostUniforms(index + 1); err != nil {
-		return nil, err
+		return err
 	}
-	data := make([]byte, 64)
+	data := r.postUniformScratch[:]
+	clear(data)
 	write(data)
 	if err := r.device.queue.TryWriteBuffer(r.postUniforms[index], 0, data); err != nil {
-		return nil, fmt.Errorf("write post uniform: %w", err)
+		return fmt.Errorf("write post uniform: %w", err)
 	}
-	return r.postUniforms[index], nil
+	return nil
 }
 
-func (r *Renderer) postParams(index int, effect render.PostEffect, camera render.Camera, time float64, width, height int) (string, *wgpu.Buffer, error) {
+// postParams writes the effect's uniform at the given slot and returns the
+// pipeline that consumes it, or "" for an effect this backend does not encode.
+func (r *Renderer) postParams(index int, effect render.PostEffect, camera render.Camera, time float64, width, height int) (string, error) {
 	switch effect := effect.(type) {
 	case render.Vignette:
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, effect.Color.R)
 			nativePostF32(dst, 4, effect.Color.G)
 			nativePostF32(dst, 8, effect.Color.B)
@@ -252,13 +286,13 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostF32(dst, 16, effect.Strength)
 			nativePostF32(dst, 20, effect.Softness)
 		})
-		return nativePostVignette, buffer, err
+		return nativePostVignette, err
 	case render.ColorGrade:
 		tint := effect.Tint
 		if tint == (render.Color{}) {
 			tint = render.RGBA(1, 1, 1, 1)
 		}
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, effect.Brightness)
 			nativePostF32(dst, 4, effect.Contrast)
 			nativePostF32(dst, 8, effect.Saturation)
@@ -266,24 +300,24 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostF32(dst, 20, tint.G)
 			nativePostF32(dst, 24, tint.B)
 		})
-		return nativePostColorGrade, buffer, err
+		return nativePostColorGrade, err
 	case render.Pixelate:
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, effect.Size)
 			nativePostF32(dst, 4, float64(width))
 			nativePostF32(dst, 8, float64(height))
 		})
-		return nativePostPixelate, buffer, err
+		return nativePostPixelate, err
 	case render.ChromaticAberration:
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, effect.Strength)
 			nativePostF32(dst, 4, float64(width))
 			nativePostF32(dst, 8, float64(height))
 		})
-		return nativePostChromatic, buffer, err
+		return nativePostChromatic, err
 	case render.Shockwave:
 		center := camera.WorldToScreen(effect.Center)
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, center.X)
 			nativePostF32(dst, 4, center.Y)
 			nativePostF32(dst, 8, math.Abs(camera.WorldScalarToScreen(effect.Radius)))
@@ -292,9 +326,9 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostF32(dst, 20, float64(width))
 			nativePostF32(dst, 24, float64(height))
 		})
-		return nativePostShockwave, buffer, err
+		return nativePostShockwave, err
 	case render.LensRain:
-		buffer, err := r.writePostUniform(index, func(dst []byte) {
+		err := r.writePostUniform(index, func(dst []byte) {
 			nativePostF32(dst, 0, effect.Density)
 			nativePostF32(dst, 4, effect.Size)
 			nativePostF32(dst, 8, effect.Speed)
@@ -304,35 +338,56 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostF32(dst, 24, float64(height))
 			nativePostU32(dst, 28, uint32(effect.Seed))
 		})
-		return nativePostLensRain, buffer, err
+		return nativePostLensRain, err
 	default:
-		return "", nil, nil
+		return "", nil
 	}
 }
 
-func (r *Renderer) postBindGroup(pipeline *wgpu.RenderPipeline, source *wgpu.TextureView, uniform *wgpu.Buffer) (*wgpu.BindGroup, error) {
-	layout := pipeline.GetBindGroupLayout(0)
-	defer layout.Release()
-	entries := []wgpu.BindGroupEntry{{Binding: 0, TextureView: source}, {Binding: 1, Sampler: r.postSampler}}
-	if uniform != nil {
-		entries = append(entries, wgpu.BindGroupEntry{Binding: 2, Buffer: uniform, Size: wgpu.WholeSize})
+// cachedPostBindGroup returns the bind group for key, building it on the
+// first use of that combination. The cache owns the group; it is released
+// only when the targets are recreated or the renderer shuts down.
+func (r *Renderer) cachedPostBindGroup(key nativePostBindKey, build func() (*wgpu.BindGroup, error)) (*wgpu.BindGroup, error) {
+	if group, ok := r.postBindGroups[key]; ok {
+		return group, nil
 	}
-	return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
+	if r.postBindGroups == nil {
+		r.postBindGroups = map[nativePostBindKey]*wgpu.BindGroup{}
+	}
+	group, err := build()
+	if err != nil {
+		return nil, err
+	}
+	r.postBindGroups[key] = group
+	return group, nil
 }
 
-func (r *Renderer) encodePostPass(encoder *wgpu.CommandEncoder, source, destination *wgpu.TextureView, pipeline *wgpu.RenderPipeline, uniform *wgpu.Buffer) error {
+func (r *Renderer) postBindGroup(key nativePostBindKey, source *wgpu.TextureView) (*wgpu.BindGroup, error) {
+	return r.cachedPostBindGroup(key, func() (*wgpu.BindGroup, error) {
+		pipeline := r.postPipelines[key.pipeline]
+		layout := pipeline.GetBindGroupLayout(0)
+		defer layout.Release()
+		entries := []wgpu.BindGroupEntry{{Binding: 0, TextureView: source}, {Binding: 1, Sampler: r.postSampler}}
+		if key.uniform >= 0 {
+			entries = append(entries, wgpu.BindGroupEntry{Binding: 2, Buffer: r.postUniforms[key.uniform], Size: wgpu.WholeSize})
+		}
+		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
+	})
+}
+
+func (r *Renderer) encodePostPass(encoder *wgpu.CommandEncoder, pipelineName string, sourceID int, source, destination *wgpu.TextureView, uniformIndex int) error {
+	pipeline := r.postPipelines[pipelineName]
+	key := nativePostBindKey{pipeline: pipelineName, source: sourceID, bloom: -1, uniform: uniformIndex}
+	bindGroup, err := r.postBindGroup(key, source)
+	if err != nil {
+		return err
+	}
 	pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{
 		View: destination, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore, ClearValue: wgpu.Color{A: 1},
 	}}})
-	bindGroup, err := r.postBindGroup(pipeline, source, uniform)
-	if err != nil {
-		pass.Release()
-		return err
-	}
 	pass.SetPipeline(pipeline)
 	pass.SetBindGroup(0, bindGroup, nil)
 	pass.Draw(3, 1, 0, 0)
-	bindGroup.Release()
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
@@ -341,14 +396,17 @@ func (r *Renderer) encodePostPass(encoder *wgpu.CommandEncoder, source, destinat
 	return nil
 }
 
-func (r *Renderer) encodePostCombine(encoder *wgpu.CommandEncoder, source, bloom, destination *wgpu.TextureView, uniform *wgpu.Buffer) error {
+func (r *Renderer) encodePostCombine(encoder *wgpu.CommandEncoder, sourceID int, source, bloom, destination *wgpu.TextureView, uniformIndex int) error {
 	pipeline := r.postPipelines[nativePostBloomCombine]
-	layout := pipeline.GetBindGroupLayout(0)
-	defer layout.Release()
-	bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
-		{Binding: 0, TextureView: source}, {Binding: 1, TextureView: bloom}, {Binding: 2, Sampler: r.postSampler},
-		{Binding: 3, Buffer: uniform, Size: wgpu.WholeSize},
-	}})
+	key := nativePostBindKey{pipeline: nativePostBloomCombine, source: sourceID, bloom: nativePostSourceBloom, uniform: uniformIndex}
+	bindGroup, err := r.cachedPostBindGroup(key, func() (*wgpu.BindGroup, error) {
+		layout := pipeline.GetBindGroupLayout(0)
+		defer layout.Release()
+		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, TextureView: source}, {Binding: 1, TextureView: bloom}, {Binding: 2, Sampler: r.postSampler},
+			{Binding: 3, Buffer: r.postUniforms[uniformIndex], Size: wgpu.WholeSize},
+		}})
+	})
 	if err != nil {
 		return err
 	}
@@ -358,7 +416,6 @@ func (r *Renderer) encodePostCombine(encoder *wgpu.CommandEncoder, source, bloom
 	pass.SetPipeline(pipeline)
 	pass.SetBindGroup(0, bindGroup, nil)
 	pass.Draw(3, 1, 0, 0)
-	bindGroup.Release()
 	if err := pass.TryEnd(); err != nil {
 		pass.Release()
 		return err
@@ -367,7 +424,7 @@ func (r *Renderer) encodePostCombine(encoder *wgpu.CommandEncoder, source, bloom
 	return nil
 }
 
-func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source, destination nativePostTarget, effect render.Bloom, index int) error {
+func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source nativePostTarget, sourceID int, destination *wgpu.TextureView, effect render.Bloom, index int) error {
 	if effect.Intensity == 0 {
 		return nil
 	}
@@ -375,16 +432,16 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source, desti
 	if err := r.ensurePostBloom(passes); err != nil {
 		return err
 	}
-	bright, err := r.writePostUniform(index, func(dst []byte) { nativePostF32(dst, 0, effect.Threshold) })
-	if err != nil {
+	if err := r.writePostUniform(index, func(dst []byte) { nativePostF32(dst, 0, effect.Threshold) }); err != nil {
 		return err
 	}
-	if err := r.encodePostPass(encoder, source.view, r.postBloom[0].view, r.postPipelines[nativePostBloomBright], bright); err != nil {
+	if err := r.encodePostPass(encoder, nativePostBloomBright, sourceID, source.view, r.postBloom[0].view, index); err != nil {
 		return err
 	}
 	for level := 1; level <= passes; level++ {
 		src, dst := r.postBloom[level-1], r.postBloom[level]
-		uniform, err := r.writePostUniform(index+level, func(data []byte) {
+		uniformIndex := index + level
+		err := r.writePostUniform(uniformIndex, func(data []byte) {
 			nativePostF32(data, 0, float64(src.width))
 			nativePostF32(data, 4, float64(src.height))
 			nativePostF32(data, 8, float64(dst.width))
@@ -393,13 +450,14 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source, desti
 		if err != nil {
 			return err
 		}
-		if err := r.encodePostPass(encoder, src.view, dst.view, r.postPipelines[nativePostBloomDown], uniform); err != nil {
+		if err := r.encodePostPass(encoder, nativePostBloomDown, nativePostSourceBloom+level-1, src.view, dst.view, uniformIndex); err != nil {
 			return err
 		}
 	}
 	for level := passes - 1; level >= 0; level-- {
 		src, dst := r.postBloom[level+1], r.postBloom[level]
-		uniform, err := r.writePostUniform(index+passes+1+(passes-1-level), func(data []byte) {
+		uniformIndex := index + passes + 1 + (passes - 1 - level)
+		err := r.writePostUniform(uniformIndex, func(data []byte) {
 			nativePostF32(data, 0, float64(src.width))
 			nativePostF32(data, 4, float64(src.height))
 			nativePostF32(data, 8, float64(dst.width))
@@ -408,15 +466,15 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source, desti
 		if err != nil {
 			return err
 		}
-		if err := r.encodePostPass(encoder, src.view, dst.view, r.postPipelines[nativePostBloomUp], uniform); err != nil {
+		if err := r.encodePostPass(encoder, nativePostBloomUp, nativePostSourceBloom+level+1, src.view, dst.view, uniformIndex); err != nil {
 			return err
 		}
 	}
-	combine, err := r.writePostUniform(index+2*passes+1, func(data []byte) { nativePostF32(data, 0, effect.Intensity) })
-	if err != nil {
+	combineIndex := index + 2*passes + 1
+	if err := r.writePostUniform(combineIndex, func(data []byte) { nativePostF32(data, 0, effect.Intensity) }); err != nil {
 		return err
 	}
-	return r.encodePostCombine(encoder, source.view, r.postBloom[0].view, destination.view, combine)
+	return r.encodePostCombine(encoder, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 }
 
 func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
@@ -463,21 +521,38 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 	}
 	pass.Release()
 
+	// Without MSAA and without runs above the chain, the last active effect
+	// renders directly to the surface and the final blit pass disappears.
+	lastActive := -1
+	for i, effect := range chain.Effects {
+		if nativePostEffectEncodes(effect) {
+			lastActive = i
+		}
+	}
+	directFinal := r.msaaSamples <= 1 && lastActive >= 0 &&
+		!hasNativePostRuns(runs, chain.BelowLayer, false)
+
 	source, destination := r.postSceneA, r.postSceneB
+	sourceID, destID := nativePostSourceSceneA, nativePostSourceSceneB
 	uniformIndex := 0
-	for _, effect := range chain.Effects {
+	for i, effect := range chain.Effects {
+		destView := destination.view
+		if directFinal && i == lastActive {
+			destView = surfaceView
+		}
 		if bloom, ok := effect.(render.Bloom); ok {
 			if bloom.Intensity == 0 {
 				continue
 			}
-			if err := r.encodeNativeBloom(encoder, source, destination, bloom, uniformIndex); err != nil {
+			if err := r.encodeNativeBloom(encoder, source, sourceID, destView, bloom, uniformIndex); err != nil {
 				return err
 			}
 			uniformIndex += 16
 			source, destination = destination, source
+			sourceID, destID = destID, sourceID
 			continue
 		}
-		name, uniform, err := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, width, height)
+		name, err := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, width, height)
 		if err != nil {
 			return err
 		}
@@ -485,41 +560,44 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 		if name == "" {
 			continue
 		}
-		if err := r.encodePostPass(encoder, source.view, destination.view, r.postPipelines[name], uniform); err != nil {
+		if err := r.encodePostPass(encoder, name, sourceID, source.view, destView, uniformIndex-1); err != nil {
 			return err
 		}
 		source, destination = destination, source
+		sourceID, destID = destID, sourceID
 	}
-	final := wgpu.RenderPassColorAttachment{View: r.msaaView, ResolveTarget: surfaceView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpDiscard, ClearValue: clearColor(r.clear)}
-	if r.msaaSamples <= 1 {
-		final = wgpu.RenderPassColorAttachment{View: surfaceView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore, ClearValue: clearColor(r.clear)}
-	}
-	finalPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{final}})
-	blit := r.postPipelines[nativePostFinalBlit]
-	bindGroup, err := r.postBindGroup(blit, source.view, nil)
-	if err != nil {
-		finalPass.Release()
-		return err
-	}
-	finalPass.SetPipeline(blit)
-	finalPass.SetBindGroup(0, bindGroup, nil)
-	finalPass.Draw(3, 1, 0, 0)
-	bindGroup.Release()
-	last = -1
-	for _, run := range runs {
-		if !nativePostRunVisible(run, chain.BelowLayer, false) {
-			continue
+	if !directFinal {
+		final := wgpu.RenderPassColorAttachment{View: r.msaaView, ResolveTarget: surfaceView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpDiscard, ClearValue: clearColor(r.clear)}
+		if r.msaaSamples <= 1 {
+			final = wgpu.RenderPassColorAttachment{View: surfaceView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore, ClearValue: clearColor(r.clear)}
 		}
-		if err := r.drawRun(finalPass, run, frame.Camera, width, height, -1, false, &last); err != nil {
+		finalPass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{final}})
+		blit := r.postPipelines[nativePostFinalBlit]
+		key := nativePostBindKey{pipeline: nativePostFinalBlit, source: sourceID, bloom: -1, uniform: -1}
+		bindGroup, err := r.postBindGroup(key, source.view)
+		if err != nil {
 			finalPass.Release()
 			return err
 		}
-	}
-	if err := finalPass.TryEnd(); err != nil {
+		finalPass.SetPipeline(blit)
+		finalPass.SetBindGroup(0, bindGroup, nil)
+		finalPass.Draw(3, 1, 0, 0)
+		last = -1
+		for _, run := range runs {
+			if !nativePostRunVisible(run, chain.BelowLayer, false) {
+				continue
+			}
+			if err := r.drawRun(finalPass, run, frame.Camera, width, height, -1, false, &last); err != nil {
+				finalPass.Release()
+				return err
+			}
+		}
+		if err := finalPass.TryEnd(); err != nil {
+			finalPass.Release()
+			return err
+		}
 		finalPass.Release()
-		return err
 	}
-	finalPass.Release()
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {
 		return fmt.Errorf("finish post command encoder: %w", err)
@@ -527,6 +605,29 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
 	return nil
+}
+
+// nativePostEffectEncodes mirrors the skip rules of the encode loop: a
+// zero-intensity bloom and unknown effect types produce no pass.
+func nativePostEffectEncodes(effect render.PostEffect) bool {
+	switch effect := effect.(type) {
+	case render.Bloom:
+		return effect.Intensity != 0
+	case render.Vignette, render.ColorGrade, render.Pixelate,
+		render.ChromaticAberration, render.Shockwave, render.LensRain:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasNativePostRuns(runs []tess.StreamRun, belowLayer int, below bool) bool {
+	for _, run := range runs {
+		if nativePostRunVisible(run, belowLayer, below) {
+			return true
+		}
+	}
+	return false
 }
 
 func nativePostRunVisible(run tess.StreamRun, belowLayer int, below bool) bool {

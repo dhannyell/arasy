@@ -35,8 +35,7 @@ fn fs_bright(in: VertexOut) -> @location(0) vec4f {
 @fragment
 fn fs_down(in: VertexOut) -> @location(0) vec4f {
   let sourceDimensions = params.values.xy;
-  let destinationDimensions = params.values.zw;
-  let center = in.uv * destinationDimensions * sourceDimensions / destinationDimensions - vec2f(0.5);
+  let center = in.uv * sourceDimensions - vec2f(0.5);
   var sum = sampleAt(center, sourceDimensions) * 4.0;
   sum += sampleAt(center + vec2f(-0.5, -0.5), sourceDimensions);
   sum += sampleAt(center + vec2f(0.5, -0.5), sourceDimensions);
@@ -48,8 +47,7 @@ fn fs_down(in: VertexOut) -> @location(0) vec4f {
 @fragment
 fn fs_up(in: VertexOut) -> @location(0) vec4f {
   let sourceDimensions = params.values.xy;
-  let destinationDimensions = params.values.zw;
-  let center = in.uv * destinationDimensions * sourceDimensions / destinationDimensions - vec2f(0.5);
+  let center = in.uv * sourceDimensions - vec2f(0.5);
   var sum = sampleAt(center + vec2f(-1.0, 0.0), sourceDimensions) * 2.0;
   sum += sampleAt(center + vec2f(1.0, 0.0), sourceDimensions) * 2.0;
   sum += sampleAt(center + vec2f(0.0, -1.0), sourceDimensions) * 2.0;

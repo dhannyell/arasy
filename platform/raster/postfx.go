@@ -2,7 +2,6 @@ package raster
 
 import (
 	"image"
-	"image/color"
 	"math"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -14,36 +13,104 @@ type postPixel struct {
 	r, g, b, a float64
 }
 
-func applyPostChain(img *image.RGBA, chain render.PostChain, camera render.Camera) {
+// postScratch holds the reusable buffers of the post-effect chain. The
+// renderer keeps one across frames so a steady chain allocates nothing; every
+// buffer is fully overwritten before it is read.
+type postScratch struct {
+	scene    *image.RGBA
+	pingpong *image.RGBA
+	buffers  []*postBuffer
+}
+
+// buffer returns the pooled float buffer for slot, reallocating only when the
+// requested dimensions change.
+func (s *postScratch) buffer(slot, width, height int) *postBuffer {
+	for len(s.buffers) <= slot {
+		s.buffers = append(s.buffers, nil)
+	}
+	b := s.buffers[slot]
+	if b == nil || b.width != width || b.height != height {
+		b = newPostBuffer(width, height)
+		s.buffers[slot] = b
+	}
+	return b
+}
+
+func ensureImage(current *image.RGBA, bounds image.Rectangle) *image.RGBA {
+	if current != nil && current.Bounds() == bounds {
+		return current
+	}
+	return image.NewRGBA(bounds)
+}
+
+func applyPostChain(img *image.RGBA, chain render.PostChain, camera render.Camera, sc *postScratch) {
 	if len(chain.Effects) == 0 {
 		return
 	}
-
-	current := clonePixels(img)
-	for _, effect := range chain.Effects {
-		current = applyPostEffect(current, effect, camera, chain.Time)
+	if sc == nil {
+		sc = &postScratch{}
 	}
-	copyPixels(img, current)
+
+	current := img
+	var scratch *image.RGBA
+	for _, effect := range chain.Effects {
+		if postEffectIdentity(effect, camera) {
+			continue
+		}
+		if scratch == nil {
+			sc.pingpong = ensureImage(sc.pingpong, img.Bounds())
+			scratch = sc.pingpong
+		}
+		if !applyPostEffectInto(scratch, current, effect, camera, chain.Time, sc) {
+			continue
+		}
+		current, scratch = scratch, current
+	}
+	if current != img {
+		copyPixels(img, current)
+	}
 }
 
-func applyPostEffect(img *image.RGBA, effect render.PostEffect, camera render.Camera, time float64) *image.RGBA {
+func postEffectIdentity(effect render.PostEffect, camera render.Camera) bool {
 	switch effect := effect.(type) {
 	case render.Vignette:
-		return applyVignette(img, effect)
+		return effect.Strength == 0
 	case render.ColorGrade:
-		return applyColorGrade(img, effect)
+		return effect == (render.ColorGrade{})
 	case render.Pixelate:
-		return applyPixelate(img, effect)
+		return effect.Size <= 0
 	case render.ChromaticAberration:
-		return applyChromaticAberration(img, effect)
+		return effect.Strength == 0
 	case render.Bloom:
-		return applyBloom(img, effect)
+		return effect.Intensity == 0
 	case render.Shockwave:
-		return applyShockwave(img, effect, camera)
+		return effect.Width == 0 || effect.Strength == 0 ||
+			math.Abs(camera.WorldScalarToScreen(effect.Width)) == 0
 	case render.LensRain:
-		return applyLensRain(img, effect, time)
+		return clamp01(effect.Density) == 0
 	default:
-		return img
+		return false
+	}
+}
+
+func applyPostEffectInto(dst, src *image.RGBA, effect render.PostEffect, camera render.Camera, time float64, sc *postScratch) bool {
+	switch effect := effect.(type) {
+	case render.Vignette:
+		return applyVignetteInto(dst, src, effect)
+	case render.ColorGrade:
+		return applyColorGradeInto(dst, src, effect)
+	case render.Pixelate:
+		return applyPixelateInto(dst, src, effect)
+	case render.ChromaticAberration:
+		return applyChromaticAberrationInto(dst, src, effect)
+	case render.Bloom:
+		return applyBloomInto(dst, src, effect, sc)
+	case render.Shockwave:
+		return applyShockwaveInto(dst, src, effect, camera)
+	case render.LensRain:
+		return applyLensRainInto(dst, src, effect, time)
+	default:
+		return false
 	}
 }
 
@@ -53,6 +120,15 @@ func applyVignette(src *image.RGBA, effect render.Vignette) *image.RGBA {
 	}
 
 	dst := image.NewRGBA(src.Bounds())
+	applyVignetteInto(dst, src, effect)
+	return dst
+}
+
+func applyVignetteInto(dst, src *image.RGBA, effect render.Vignette) bool {
+	if effect.Strength == 0 {
+		return false
+	}
+
 	width := float64(src.Bounds().Dx())
 	height := float64(src.Bounds().Dy())
 	softness := clamp01(effect.Softness)
@@ -72,7 +148,7 @@ func applyVignette(src *image.RGBA, effect render.Vignette) *image.RGBA {
 			setPixel(dst, x, y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
 func applyColorGrade(src *image.RGBA, effect render.ColorGrade) *image.RGBA {
@@ -81,6 +157,15 @@ func applyColorGrade(src *image.RGBA, effect render.ColorGrade) *image.RGBA {
 	}
 
 	dst := image.NewRGBA(src.Bounds())
+	applyColorGradeInto(dst, src, effect)
+	return dst
+}
+
+func applyColorGradeInto(dst, src *image.RGBA, effect render.ColorGrade) bool {
+	if effect == (render.ColorGrade{}) {
+		return false
+	}
+
 	contrast := 1 + effect.Contrast
 	saturation := 1 + effect.Saturation
 	tint := effect.Tint
@@ -104,7 +189,7 @@ func applyColorGrade(src *image.RGBA, effect render.ColorGrade) *image.RGBA {
 			setPixel(dst, x, y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
 func applyPixelate(src *image.RGBA, effect render.Pixelate) *image.RGBA {
@@ -113,6 +198,15 @@ func applyPixelate(src *image.RGBA, effect render.Pixelate) *image.RGBA {
 	}
 
 	dst := image.NewRGBA(src.Bounds())
+	applyPixelateInto(dst, src, effect)
+	return dst
+}
+
+func applyPixelateInto(dst, src *image.RGBA, effect render.Pixelate) bool {
+	if effect.Size <= 0 {
+		return false
+	}
+
 	bounds := src.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -123,7 +217,7 @@ func applyPixelate(src *image.RGBA, effect render.Pixelate) *image.RGBA {
 			setPixel(dst, x, y, pixelAt(src, bounds.Min.X+int(sourceX), bounds.Min.Y+int(sourceY)))
 		}
 	}
-	return dst
+	return true
 }
 
 func applyChromaticAberration(src *image.RGBA, effect render.ChromaticAberration) *image.RGBA {
@@ -132,6 +226,15 @@ func applyChromaticAberration(src *image.RGBA, effect render.ChromaticAberration
 	}
 
 	dst := image.NewRGBA(src.Bounds())
+	applyChromaticAberrationInto(dst, src, effect)
+	return dst
+}
+
+func applyChromaticAberrationInto(dst, src *image.RGBA, effect render.ChromaticAberration) bool {
+	if effect.Strength == 0 {
+		return false
+	}
+
 	width := float64(src.Bounds().Dx())
 	height := float64(src.Bounds().Dy())
 	for y := src.Bounds().Min.Y; y < src.Bounds().Max.Y; y++ {
@@ -151,7 +254,7 @@ func applyChromaticAberration(src *image.RGBA, effect render.ChromaticAberration
 			setPixel(dst, x, y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
 type postBuffer struct {
@@ -174,15 +277,29 @@ func (b *postBuffer) at(x, y int) postPixel {
 }
 
 func (b *postBuffer) sample(x, y float64) postPixel {
-	x = math.Max(0, math.Min(float64(b.width-1), x))
-	y = math.Max(0, math.Min(float64(b.height-1), y))
+	// Comparison clamps replace math.Max/Min: the coordinates are always
+	// finite here, so the results are bit-identical and the calls disappear
+	// from the hottest loop of the bloom.
+	if x < 0 {
+		x = 0
+	} else if limit := float64(b.width - 1); x > limit {
+		x = limit
+	}
+	if y < 0 {
+		y = 0
+	} else if limit := float64(b.height - 1); y > limit {
+		y = limit
+	}
 	x0, y0 := int(math.Floor(x)), int(math.Floor(y))
 	x1, y1 := min(x0+1, b.width-1), min(y0+1, b.height-1)
 	tx, ty := x-float64(x0), y-float64(y0)
-	p0 := b.at(x0, y0)
-	p1 := b.at(x1, y0)
-	p2 := b.at(x0, y1)
-	p3 := b.at(x1, y1)
+	// The clamps above bound every index, so the pixels are read directly
+	// instead of through the re-clamping at helper.
+	row0, row1 := y0*b.width, y1*b.width
+	p0 := b.pixels[row0+x0]
+	p1 := b.pixels[row0+x1]
+	p2 := b.pixels[row1+x0]
+	p3 := b.pixels[row1+x1]
 	return postPixel{
 		r: bilerp(p0.r, p1.r, p2.r, p3.r, tx, ty),
 		g: bilerp(p0.g, p1.g, p2.g, p3.g, tx, ty),
@@ -196,37 +313,60 @@ func applyBloom(src *image.RGBA, effect render.Bloom) *image.RGBA {
 		return src
 	}
 
+	dst := image.NewRGBA(src.Bounds())
+	applyBloomInto(dst, src, effect, &postScratch{})
+	return dst
+}
+
+func applyBloomInto(dst, src *image.RGBA, effect render.Bloom, sc *postScratch) bool {
+	if effect.Intensity == 0 {
+		return false
+	}
+
 	passes := effect.Passes
 	if passes == 0 {
 		passes = 3
 	}
 	passes = max(1, min(5, passes))
 
-	bright := newPostBuffer(src.Bounds().Dx(), src.Bounds().Dy())
+	bright := sc.buffer(0, src.Bounds().Dx(), src.Bounds().Dy())
 	for y := 0; y < bright.height; y++ {
 		for x := 0; x < bright.width; x++ {
 			pixel := pixelAt(src, src.Bounds().Min.X+x, src.Bounds().Min.Y+y)
-			bright.set(x, y, postPixel{
-				r: math.Max(pixel.r-effect.Threshold, 0),
-				g: math.Max(pixel.g-effect.Threshold, 0),
-				b: math.Max(pixel.b-effect.Threshold, 0),
-				a: pixel.a,
-			})
+			// max(v-t, 0) written as comparisons; a-b of equal finite
+			// values is +0, so the result matches math.Max bit for bit.
+			r, g, b := pixel.r-effect.Threshold, pixel.g-effect.Threshold, pixel.b-effect.Threshold
+			if r < 0 {
+				r = 0
+			}
+			if g < 0 {
+				g = 0
+			}
+			if b < 0 {
+				b = 0
+			}
+			bright.set(x, y, postPixel{r: r, g: g, b: b, a: pixel.a})
 		}
 	}
 
+	// Slots 0..passes hold the downsample pyramid; slots passes+1..2*passes
+	// hold the upsample results, one per pyramid level above the smallest.
 	levels := make([]*postBuffer, passes+1)
 	levels[0] = bright
 	for level := 1; level <= passes; level++ {
-		levels[level] = downsampleKawase(levels[level-1])
+		source := levels[level-1]
+		levels[level] = sc.buffer(level, max(1, (source.width+1)/2), max(1, (source.height+1)/2))
+		downsampleKawase(levels[level], source)
 	}
 
 	bloom := levels[passes]
 	for level := passes - 1; level >= 0; level-- {
-		bloom = upsampleKawase(bloom, levels[level].width, levels[level].height)
+		up := sc.buffer(passes+1+level, levels[level].width, levels[level].height)
+		upsampleKawase(up, bloom)
+		bloom = up
 	}
 
-	dst := clonePixels(src)
+	copyPixels(dst, src)
 	for y := 0; y < bloom.height; y++ {
 		for x := 0; x < bloom.width; x++ {
 			pixel := pixelAt(dst, dst.Bounds().Min.X+x, dst.Bounds().Min.Y+y)
@@ -237,11 +377,19 @@ func applyBloom(src *image.RGBA, effect render.Bloom) *image.RGBA {
 			setPixel(dst, dst.Bounds().Min.X+x, dst.Bounds().Min.Y+y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
-func downsampleKawase(src *postBuffer) *postBuffer {
-	dst := newPostBuffer(max(1, (src.width+1)/2), max(1, (src.height+1)/2))
+// kawaseDownTaps and kawaseUpTaps live at package level so the sampling loops
+// do not rebuild the literals per pixel.
+var kawaseDownTaps = [4][2]float64{{-0.5, -0.5}, {0.5, -0.5}, {-0.5, 0.5}, {0.5, 0.5}}
+
+var kawaseUpTaps = [8][3]float64{
+	{-1, 0, 2}, {1, 0, 2}, {0, -1, 2}, {0, 1, 2},
+	{-1, -1, 1}, {1, -1, 1}, {-1, 1, 1}, {1, 1, 1},
+}
+
+func downsampleKawase(dst, src *postBuffer) {
 	for y := 0; y < dst.height; y++ {
 		for x := 0; x < dst.width; x++ {
 			centerX := (float64(x)+0.5)*float64(src.width)/float64(dst.width) - 0.5
@@ -253,7 +401,7 @@ func downsampleKawase(src *postBuffer) *postBuffer {
 				b: center.b * 4,
 				a: center.a * 4,
 			}
-			for _, offset := range [][2]float64{{-0.5, -0.5}, {0.5, -0.5}, {-0.5, 0.5}, {0.5, 0.5}} {
+			for _, offset := range kawaseDownTaps {
 				pixel := src.sample(centerX+offset[0], centerY+offset[1])
 				sum.r += pixel.r
 				sum.g += pixel.g
@@ -263,20 +411,15 @@ func downsampleKawase(src *postBuffer) *postBuffer {
 			dst.set(x, y, postPixel{r: sum.r / 8, g: sum.g / 8, b: sum.b / 8, a: sum.a / 8})
 		}
 	}
-	return dst
 }
 
-func upsampleKawase(src *postBuffer, width, height int) *postBuffer {
-	dst := newPostBuffer(width, height)
+func upsampleKawase(dst, src *postBuffer) {
 	for y := 0; y < dst.height; y++ {
 		for x := 0; x < dst.width; x++ {
 			centerX := (float64(x)+0.5)*float64(src.width)/float64(dst.width) - 0.5
 			centerY := (float64(y)+0.5)*float64(src.height)/float64(dst.height) - 0.5
 			sum := postPixel{}
-			for _, tap := range [][3]float64{
-				{-1, 0, 2}, {1, 0, 2}, {0, -1, 2}, {0, 1, 2},
-				{-1, -1, 1}, {1, -1, 1}, {-1, 1, 1}, {1, 1, 1},
-			} {
+			for _, tap := range kawaseUpTaps {
 				pixel := src.sample(centerX+tap[0], centerY+tap[1])
 				sum.r += pixel.r * tap[2]
 				sum.g += pixel.g * tap[2]
@@ -286,7 +429,6 @@ func upsampleKawase(src *postBuffer, width, height int) *postBuffer {
 			dst.set(x, y, postPixel{r: sum.r / 12, g: sum.g / 12, b: sum.b / 12, a: sum.a / 12})
 		}
 	}
-	return dst
 }
 
 func applyShockwave(src *image.RGBA, effect render.Shockwave, camera render.Camera) *image.RGBA {
@@ -294,14 +436,28 @@ func applyShockwave(src *image.RGBA, effect render.Shockwave, camera render.Came
 		return src
 	}
 
-	center := camera.WorldToScreen(effect.Center)
-	radius := math.Abs(camera.WorldScalarToScreen(effect.Radius))
 	width := math.Abs(camera.WorldScalarToScreen(effect.Width))
 	if width == 0 {
 		return src
 	}
 
 	dst := image.NewRGBA(src.Bounds())
+	applyShockwaveInto(dst, src, effect, camera)
+	return dst
+}
+
+func applyShockwaveInto(dst, src *image.RGBA, effect render.Shockwave, camera render.Camera) bool {
+	if effect.Width == 0 || effect.Strength == 0 {
+		return false
+	}
+
+	center := camera.WorldToScreen(effect.Center)
+	radius := math.Abs(camera.WorldScalarToScreen(effect.Radius))
+	width := math.Abs(camera.WorldScalarToScreen(effect.Width))
+	if width == 0 {
+		return false
+	}
+
 	for y := src.Bounds().Min.Y; y < src.Bounds().Max.Y; y++ {
 		for x := src.Bounds().Min.X; x < src.Bounds().Max.X; x++ {
 			direction := math2d.Vec2{X: float64(x) + 0.5 - center.X, Y: float64(y) + 0.5 - center.Y}
@@ -315,13 +471,24 @@ func applyShockwave(src *image.RGBA, effect render.Shockwave, camera render.Came
 			setPixel(dst, x, y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
 func applyLensRain(src *image.RGBA, effect render.LensRain, time float64) *image.RGBA {
 	density := clamp01(effect.Density)
 	if density == 0 {
 		return src
+	}
+
+	dst := image.NewRGBA(src.Bounds())
+	applyLensRainInto(dst, src, effect, time)
+	return dst
+}
+
+func applyLensRainInto(dst, src *image.RGBA, effect render.LensRain, time float64) bool {
+	density := clamp01(effect.Density)
+	if density == 0 {
+		return false
 	}
 
 	size := effect.Size
@@ -333,44 +500,155 @@ func applyLensRain(src *image.RGBA, effect render.LensRain, time float64) *image
 		speed = 0.15
 	}
 
-	dst := image.NewRGBA(src.Bounds())
-	for y := src.Bounds().Min.Y; y < src.Bounds().Max.Y; y++ {
-		for x := src.Bounds().Min.X; x < src.Bounds().Max.X; x++ {
-			setPixel(dst, x, y, lensRainPixel(src, x, y, density, size, speed, effect.Refraction, effect.Seed, time))
+	bounds := src.Bounds()
+	layers := [3]rainLayer{
+		buildRainLayer(bounds, density*0.70, size*0.70, speed*1.20,
+			effect.Refraction*0.70, effect.Seed+0x13, time, 0.18, 0.28, 0.85),
+		buildRainLayer(bounds, density*0.45, size*1.35, speed*0.80,
+			effect.Refraction, effect.Seed+0x29, time, 0.22, 0.34, 0.90),
+		buildRainLayer(bounds, density*0.18, size*3.00, speed*0.55,
+			effect.Refraction*1.25, effect.Seed+0x41, time, 0.13, 0.42, 0.65),
+	}
+
+	var rowBase [3]int
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for i := range layers {
+			rowBase[i] = layers[i].rows[y-bounds.Min.Y] * layers[i].colCount
+		}
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			pixel := pixelAt(src, x, y)
+			for i := range layers {
+				layer := &layers[i]
+				cell := &layer.cells[rowBase[i]+layer.cols[x-bounds.Min.X]]
+				if cell.active {
+					pixel = layer.applyCell(src, pixel, cell, x, y)
+				}
+			}
+			setPixel(dst, x, y, pixel)
 		}
 	}
-	return dst
+	return true
 }
 
-func lensRainPixel(src *image.RGBA, x, y int, density, size, speed, refraction float64, seed uint64, time float64) postPixel {
-	cellX := math.Floor(float64(x) / size)
-	cellY := math.Floor(float64(y) / size)
-	hash := particle.Hash3([3]uint32{uint32(int32(cellX)), uint32(int32(cellY)), uint32(seed)})
-	h := [3]float64{particle.Float01(hash[0]), particle.Float01(hash[1]), particle.Float01(hash[2])}
-	if h[0] >= density {
-		return pixelAt(src, x, y)
+// rainCell holds the droplet a grid cell contains, precomputed once per frame
+// instead of re-deriving it from the hash at every pixel.
+type rainCell struct {
+	active  bool
+	centerX float64
+	centerY float64
+	radiusX float64
+	radiusY float64
+	// skew is the X shear of the droplet shape, (h1-0.5)*0.20 — the same
+	// left-associated grouping the per-pixel formula used, so results match.
+	skew float64
+}
+
+// rainLayer holds one droplet layer's cell grid and the per-pixel cell index
+// maps for a frame.
+type rainLayer struct {
+	size       float64
+	refraction float64
+	opacity    float64
+	cols       []int
+	rows       []int
+	cells      []rainCell
+	colCount   int
+}
+
+// buildRainLayer evaluates the droplet hash once per grid cell. The cell
+// coordinate keeps the exact expression floor(coord/size) so the grid
+// boundaries land on the same pixels as the previous per-pixel evaluation.
+func buildRainLayer(bounds image.Rectangle, density, size, speed, refraction float64, seed uint64, time, radiusXScale, radiusYScale, opacity float64) rainLayer {
+	layer := rainLayer{size: size, refraction: refraction, opacity: opacity}
+
+	layer.cols = make([]int, bounds.Dx())
+	var colCells []float64
+	for i := range layer.cols {
+		cellX := math.Floor(float64(bounds.Min.X+i) / size)
+		if len(colCells) == 0 || cellX != colCells[len(colCells)-1] {
+			colCells = append(colCells, cellX)
+		}
+		layer.cols[i] = len(colCells) - 1
 	}
 
-	centerX := (cellX + h[1]) * size
-	fall := fract(h[0] - time*speed*(0.6+0.8*h[0]))
-	centerY := (cellY + fall) * size
-	radius := size * (0.12 + 0.08*h[2])
-	delta := math2d.Vec2{X: float64(x) + 0.5 - centerX, Y: float64(y) + 0.5 - centerY}
+	layer.rows = make([]int, bounds.Dy())
+	var rowCells []float64
+	for i := range layer.rows {
+		cellY := math.Floor(float64(bounds.Min.Y+i) / size)
+		if len(rowCells) == 0 || cellY != rowCells[len(rowCells)-1] {
+			rowCells = append(rowCells, cellY)
+		}
+		layer.rows[i] = len(rowCells) - 1
+	}
+
+	layer.colCount = len(colCells)
+	layer.cells = make([]rainCell, len(rowCells)*len(colCells))
+	for r, cellY := range rowCells {
+		for c, cellX := range colCells {
+			hash := particle.Hash3([3]uint32{uint32(int32(cellX)), uint32(int32(cellY)), uint32(seed)})
+			h := [3]float64{particle.Float01(hash[0]), particle.Float01(hash[1]), particle.Float01(hash[2])}
+			if h[0] >= density {
+				continue
+			}
+			fall := fract(h[0] - time*speed*(0.6+0.8*h[0]))
+			layer.cells[r*layer.colCount+c] = rainCell{
+				active:  true,
+				centerX: (cellX + h[1]) * size,
+				centerY: (cellY + fall) * size,
+				radiusX: size * (radiusXScale + 0.10*h[2]),
+				radiusY: size * (radiusYScale + 0.18*h[2]),
+				skew:    (h[1] - 0.5) * 0.20,
+			}
+		}
+	}
+	return layer
+}
+
+// applyCell blends one droplet into the pixel. The early exits are exact:
+// |dy| >= radiusY forces shapeY >= 1, and |dx| >= 1.2*radiusX forces
+// shapeX >= 1.1 - |skew| >= 1 (|skew| <= 0.10), so the mask is provably zero
+// in both cases and the previous per-pixel code returned unchanged too.
+func (l *rainLayer) applyCell(src *image.RGBA, pixel postPixel, cell *rainCell, x, y int) postPixel {
+	deltaY := float64(y) + 0.5 - cell.centerY
+	if deltaY >= cell.radiusY || -deltaY >= cell.radiusY {
+		return pixel
+	}
+	deltaX := float64(x) + 0.5 - cell.centerX
+	if deltaX >= 1.2*cell.radiusX || -deltaX >= 1.2*cell.radiusX {
+		return pixel
+	}
+
+	delta := math2d.Vec2{X: deltaX, Y: deltaY}
 	distance := delta.Len()
-	mask := smoothstep(radius, radius*0.8, distance)
-	pixel := pixelAt(src, x, y)
+	shapeX := delta.X/cell.radiusX - cell.skew*(delta.Y/cell.radiusY)
+	shapeY := delta.Y / cell.radiusY
+	normalizedDistance := math.Hypot(shapeX, shapeY)
+	mask := smoothstep(1, 0.80, normalizedDistance)
 	if mask == 0 {
 		return pixel
 	}
 
-	if refraction > 0 && distance > 0 {
-		offset := delta.Mul((1 - distance/radius) * refraction * size / distance)
-		pixel = sampleBilinear(src, float64(x)-offset.X, float64(y)-offset.Y)
+	result := pixelAt(src, x, y)
+	if l.refraction > 0 && distance > 0 {
+		offset := delta.Mul((1 - normalizedDistance) * l.refraction * l.size * 0.65 / distance)
+		result = sampleBilinear(src, float64(x)-offset.X, float64(y)-offset.Y)
 	}
 
-	pixel.r += (pixel.r*0.55 + 0.32 - pixel.r) * mask
-	pixel.g += (pixel.g*0.55 + 0.32 - pixel.g) * mask
-	pixel.b += (pixel.b*0.55 + 0.32 - pixel.b) * mask
+	highlightDistance := math.Hypot(shapeX+0.28, shapeY+0.34)
+	highlight := smoothstep(0.54, 0, highlightDistance) * mask
+	rim := smoothstep(0.48, 0.92, normalizedDistance) *
+		(1 - smoothstep(0.92, 1, normalizedDistance))
+	shadow := 0.10*mask + 0.48*rim
+	result.r *= 1 - shadow
+	result.g *= 1 - shadow
+	result.b *= 1 - shadow
+	result.r += highlight * 0.16
+	result.g += highlight * 0.19
+	result.b += highlight * 0.24
+	amount := mask * l.opacity
+	pixel.r += (result.r - pixel.r) * amount
+	pixel.g += (result.g - pixel.g) * amount
+	pixel.b += (result.b - pixel.b) * amount
 	return pixel
 }
 
@@ -387,12 +665,6 @@ func smoothstep(edge0, edge1, value float64) float64 {
 	}
 	t := clamp01((value - edge0) / (edge1 - edge0))
 	return t * t * (3 - 2*t)
-}
-
-func clonePixels(src *image.RGBA) *image.RGBA {
-	dst := image.NewRGBA(src.Bounds())
-	copyPixels(dst, src)
-	return dst
 }
 
 func copyPixels(dst, src *image.RGBA) {
@@ -438,22 +710,21 @@ func bilerp(a, b, c, d, tx, ty float64) float64 {
 }
 
 func pixelAt(img *image.RGBA, x, y int) postPixel {
-	c := img.RGBAAt(x, y)
+	i := img.PixOffset(x, y)
 	return postPixel{
-		r: float64(c.R) / 255,
-		g: float64(c.G) / 255,
-		b: float64(c.B) / 255,
-		a: float64(c.A) / 255,
+		r: float64(img.Pix[i]) / 255,
+		g: float64(img.Pix[i+1]) / 255,
+		b: float64(img.Pix[i+2]) / 255,
+		a: float64(img.Pix[i+3]) / 255,
 	}
 }
 
 func setPixel(img *image.RGBA, x, y int, p postPixel) {
-	img.SetRGBA(x, y, color.RGBA{
-		R: toByte(clamp01(p.r)),
-		G: toByte(clamp01(p.g)),
-		B: toByte(clamp01(p.b)),
-		A: toByte(clamp01(p.a)),
-	})
+	i := img.PixOffset(x, y)
+	img.Pix[i] = toByte(clamp01(p.r))
+	img.Pix[i+1] = toByte(clamp01(p.g))
+	img.Pix[i+2] = toByte(clamp01(p.b))
+	img.Pix[i+3] = toByte(clamp01(p.a))
 }
 
 func clamp01(value float64) float64 {

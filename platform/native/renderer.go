@@ -84,6 +84,13 @@ type Renderer struct {
 	postWidth         int
 	postHeight        int
 	postDisabled      bool
+	// postBindGroups caches one bind group per {pipeline, sampled targets,
+	// uniform slot}; a steady chain creates none per frame. Released whenever
+	// a post target is recreated.
+	postBindGroups map[nativePostBindKey]*wgpu.BindGroup
+	// postUniformScratch stages one 64-byte uniform write per effect without
+	// allocating.
+	postUniformScratch [64]byte
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
@@ -672,6 +679,7 @@ func (r *Renderer) Close() {
 		releaseBuffer(&r.postUniforms[index])
 	}
 	r.postUniforms = nil
+	r.releasePostBindGroups()
 	r.releasePostTarget(&r.postSceneA)
 	r.releasePostTarget(&r.postSceneB)
 	for index := range r.postBloom {

@@ -76,7 +76,7 @@ type Shockwave struct {
 // LensRain overlays deterministic camera droplets. Its output is a pure
 // function of the source pixel, Time from PostChain, and Seed.
 type LensRain struct {
-	// Density controls the number of droplet cells. Zero is identity. An
+	// Density controls the number of droplet cells. Zero is identity.
 	// The standard density is 0.4 when the caller wants the default active
 	// effect; zero remains the explicit disabled value.
 	Density float64

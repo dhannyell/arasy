@@ -40,6 +40,24 @@ type webgpuPostTarget struct {
 	height  int
 }
 
+// Stable identifiers for the sampled post targets, used as bind group cache
+// keys: the scene ping-pong pair, then one slot per bloom level.
+const (
+	postSourceSceneA = 0
+	postSourceSceneB = 1
+	postSourceBloom  = 2
+)
+
+// postBindKey identifies one cached post bind group. bloom is the second
+// sampled target of the combine pass (-1 elsewhere); uniform is the
+// postUniforms slot (-1 for the uniform-less blit).
+type postBindKey struct {
+	pipeline string
+	source   int
+	bloom    int
+	uniform  int
+}
+
 func (r *webgpuRenderer) initPostResources() {
 	r.postSampler = r.device.Call("createSampler", map[string]any{
 		"magFilter": "linear",
@@ -98,6 +116,7 @@ func (r *webgpuRenderer) ensurePostTargets(width, height int) error {
 		r.releasePostTarget(&r.postBloom[index])
 	}
 	r.postBloom = nil
+	clear(r.postBindGroups)
 	create := func() (webgpuPostTarget, error) {
 		texture := r.device.Call("createTexture", map[string]any{
 			"size":   []any{width, height},
@@ -133,6 +152,7 @@ func (r *webgpuRenderer) ensureBloomTargets(passes int) error {
 		r.releasePostTarget(&r.postBloom[index])
 	}
 	r.postBloom = make([]webgpuPostTarget, 0, passes+1)
+	clear(r.postBindGroups)
 	width, height := r.postWidth, r.postHeight
 	for level := 0; level <= passes; level++ {
 		texture := r.device.Call("createTexture", map[string]any{
@@ -170,6 +190,21 @@ func (r *webgpuRenderer) releasePostTarget(target *webgpuPostTarget) {
 	target.width, target.height = 0, 0
 }
 
+func (r *webgpuRenderer) disablePost(err error) {
+	if r.postDisabled {
+		return
+	}
+	r.postDisabled = true
+	r.log.Warn("webgpu post-processing disabled; drawing without chain", "err", err)
+	r.releasePostTarget(&r.postSceneA)
+	r.releasePostTarget(&r.postSceneB)
+	for index := range r.postBloom {
+		r.releasePostTarget(&r.postBloom[index])
+	}
+	r.postBloom = nil
+	clear(r.postBindGroups)
+}
+
 func lastWebGPUPostChain(commands []render.Command) (render.PostChain, bool) {
 	var chain render.PostChain
 	found := false
@@ -181,12 +216,19 @@ func lastWebGPUPostChain(commands []render.Command) (render.PostChain, bool) {
 	return chain, found
 }
 
-func postUniformBuffer(r *webgpuRenderer, index int, values func([]byte)) js.Value {
+// postUniformBuffer writes one effect's parameters into the pooled uniform
+// buffer at index. The scratch is cleared first so unwritten fields keep the
+// deterministic zero the per-call allocation used to give them.
+func postUniformBuffer(r *webgpuRenderer, index int, values func([]byte)) {
 	r.ensurePostUniforms(index + 1)
-	data := make([]byte, 64)
+	data := r.postUniformScratch[:]
+	clear(data)
 	values(data)
-	r.queue.Call("writeBuffer", r.postUniforms[index], 0, bytesToJS(data))
-	return r.postUniforms[index]
+	if r.postUniformJS.IsUndefined() {
+		r.postUniformJS = js.Global().Get("Uint8Array").New(len(data))
+	}
+	js.CopyBytesToJS(r.postUniformJS, data)
+	r.queue.Call("writeBuffer", r.postUniforms[index], 0, r.postUniformJS)
 }
 
 func putPostF32(dst []byte, index int, value float64) {
@@ -197,10 +239,12 @@ func putPostU32(dst []byte, index int, value uint32) {
 	binary.LittleEndian.PutUint32(dst[index:], value)
 }
 
-func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera render.Camera, time float64, width, height int) (string, js.Value) {
+// postParams writes the effect's uniform at the given slot and returns the
+// pipeline that consumes it, or "" for an effect this backend does not encode.
+func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera render.Camera, time float64, width, height int) string {
 	switch effect := effect.(type) {
 	case render.Vignette:
-		return postPipelineVignette, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, effect.Color.R)
 			putPostF32(dst, 4, effect.Color.G)
 			putPostF32(dst, 8, effect.Color.B)
@@ -208,12 +252,13 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostF32(dst, 16, effect.Strength)
 			putPostF32(dst, 20, effect.Softness)
 		})
+		return postPipelineVignette
 	case render.ColorGrade:
 		tint := effect.Tint
 		if tint == (render.Color{}) {
 			tint = render.RGBA(1, 1, 1, 1)
 		}
-		return postPipelineColorGrade, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, effect.Brightness)
 			putPostF32(dst, 4, effect.Contrast)
 			putPostF32(dst, 8, effect.Saturation)
@@ -221,21 +266,24 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostF32(dst, 20, tint.G)
 			putPostF32(dst, 24, tint.B)
 		})
+		return postPipelineColorGrade
 	case render.Pixelate:
-		return postPipelinePixelate, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, effect.Size)
 			putPostF32(dst, 4, float64(width))
 			putPostF32(dst, 8, float64(height))
 		})
+		return postPipelinePixelate
 	case render.ChromaticAberration:
-		return postPipelineChromatic, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, effect.Strength)
 			putPostF32(dst, 4, float64(width))
 			putPostF32(dst, 8, float64(height))
 		})
+		return postPipelineChromatic
 	case render.Shockwave:
 		center := camera.WorldToScreen(effect.Center)
-		return postPipelineShockwave, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, center.X)
 			putPostF32(dst, 4, center.Y)
 			putPostF32(dst, 8, math.Abs(camera.WorldScalarToScreen(effect.Radius)))
@@ -244,8 +292,9 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostF32(dst, 20, float64(width))
 			putPostF32(dst, 24, float64(height))
 		})
+		return postPipelineShockwave
 	case render.LensRain:
-		return postPipelineLensRain, postUniformBuffer(r, index, func(dst []byte) {
+		postUniformBuffer(r, index, func(dst []byte) {
 			putPostF32(dst, 0, effect.Density)
 			putPostF32(dst, 4, effect.Size)
 			putPostF32(dst, 8, effect.Speed)
@@ -255,26 +304,44 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostF32(dst, 24, float64(height))
 			putPostU32(dst, 28, uint32(effect.Seed))
 		})
+		return postPipelineLensRain
 	default:
-		return "", js.Undefined()
+		return ""
 	}
 }
 
-func (r *webgpuRenderer) postBindGroup(pipeline, source js.Value, uniform js.Value) js.Value {
-	entries := []any{
-		map[string]any{"binding": 0, "resource": source},
-		map[string]any{"binding": 1, "resource": r.postSampler},
+// cachedBindGroup returns the bind group for key, building it on the first
+// use of that combination. Every referenced object is stable between frames.
+func (r *webgpuRenderer) cachedBindGroup(key postBindKey, build func() js.Value) js.Value {
+	if group, ok := r.postBindGroups[key]; ok {
+		return group
 	}
-	if !uniform.IsUndefined() && !uniform.IsNull() {
-		entries = append(entries, map[string]any{"binding": 2, "resource": map[string]any{"buffer": uniform}})
+	if r.postBindGroups == nil {
+		r.postBindGroups = map[postBindKey]js.Value{}
 	}
-	return r.device.Call("createBindGroup", map[string]any{
-		"layout":  pipeline.Call("getBindGroupLayout", 0),
-		"entries": entries,
+	group := build()
+	r.postBindGroups[key] = group
+	return group
+}
+
+func (r *webgpuRenderer) postBindGroup(key postBindKey, source js.Value) js.Value {
+	return r.cachedBindGroup(key, func() js.Value {
+		pipeline := r.postPipelines[key.pipeline]
+		entries := []any{
+			map[string]any{"binding": 0, "resource": source},
+			map[string]any{"binding": 1, "resource": r.postSampler},
+		}
+		if key.uniform >= 0 {
+			entries = append(entries, map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.postUniforms[key.uniform]}})
+		}
+		return r.device.Call("createBindGroup", map[string]any{
+			"layout":  pipeline.Call("getBindGroupLayout", 0),
+			"entries": entries,
+		})
 	})
 }
 
-func (r *webgpuRenderer) encodePostPass(encoder, source, destination js.Value, pipeline, uniform js.Value) {
+func (r *webgpuRenderer) encodePostPass(encoder js.Value, pipelineName string, sourceID int, source, destination js.Value, uniformIndex int) {
 	pass := encoder.Call("beginRenderPass", map[string]any{
 		"colorAttachments": []any{map[string]any{
 			"view":       destination,
@@ -283,11 +350,11 @@ func (r *webgpuRenderer) encodePostPass(encoder, source, destination js.Value, p
 			"clearValue": map[string]any{"r": 0, "g": 0, "b": 0, "a": 1},
 		}},
 	})
-	r.drawPostFullscreen(pass, source, pipeline, uniform)
+	r.drawPostFullscreen(pass, pipelineName, sourceID, source, uniformIndex)
 	pass.Call("end")
 }
 
-func (r *webgpuRenderer) encodePostCombine(encoder, source, bloom, destination, uniform js.Value) {
+func (r *webgpuRenderer) encodePostCombine(encoder js.Value, sourceID int, source, bloom, destination js.Value, uniformIndex int) {
 	pass := encoder.Call("beginRenderPass", map[string]any{
 		"colorAttachments": []any{map[string]any{
 			"view":       destination,
@@ -297,14 +364,17 @@ func (r *webgpuRenderer) encodePostCombine(encoder, source, bloom, destination, 
 		}},
 	})
 	pipeline := r.postPipelines[postPipelineBloomCombine]
-	bindGroup := r.device.Call("createBindGroup", map[string]any{
-		"layout": pipeline.Call("getBindGroupLayout", 0),
-		"entries": []any{
-			map[string]any{"binding": 0, "resource": source},
-			map[string]any{"binding": 1, "resource": bloom},
-			map[string]any{"binding": 2, "resource": r.postSampler},
-			map[string]any{"binding": 3, "resource": map[string]any{"buffer": uniform}},
-		},
+	key := postBindKey{pipeline: postPipelineBloomCombine, source: sourceID, bloom: postSourceBloom, uniform: uniformIndex}
+	bindGroup := r.cachedBindGroup(key, func() js.Value {
+		return r.device.Call("createBindGroup", map[string]any{
+			"layout": pipeline.Call("getBindGroupLayout", 0),
+			"entries": []any{
+				map[string]any{"binding": 0, "resource": source},
+				map[string]any{"binding": 1, "resource": bloom},
+				map[string]any{"binding": 2, "resource": r.postSampler},
+				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.postUniforms[uniformIndex]}},
+			},
+		})
 	})
 	pass.Call("setPipeline", pipeline)
 	pass.Call("setBindGroup", 0, bindGroup)
@@ -320,7 +390,7 @@ func postBloomPasses(effect render.Bloom) int {
 	return max(1, min(5, passes))
 }
 
-func (r *webgpuRenderer) encodeBloom(encoder js.Value, source, destination webgpuPostTarget, effect render.Bloom, index int) error {
+func (r *webgpuRenderer) encodeBloom(encoder js.Value, source webgpuPostTarget, sourceID int, destination js.Value, effect render.Bloom, index int) error {
 	if effect.Intensity == 0 {
 		return nil
 	}
@@ -328,42 +398,47 @@ func (r *webgpuRenderer) encodeBloom(encoder js.Value, source, destination webgp
 	if err := r.ensureBloomTargets(passes); err != nil {
 		return err
 	}
-	brightUniform := postUniformBuffer(r, index, func(dst []byte) {
+	postUniformBuffer(r, index, func(dst []byte) {
 		putPostF32(dst, 0, effect.Threshold)
 	})
-	r.encodePostPass(encoder, source.view, r.postBloom[0].view, r.postPipelines[postPipelineBloomBright], brightUniform)
+	r.encodePostPass(encoder, postPipelineBloomBright, sourceID, source.view, r.postBloom[0].view, index)
 	for level := 1; level <= passes; level++ {
 		src := r.postBloom[level-1]
 		dst := r.postBloom[level]
-		uniform := postUniformBuffer(r, index+level, func(data []byte) {
+		uniformIndex := index + level
+		postUniformBuffer(r, uniformIndex, func(data []byte) {
 			putPostF32(data, 0, float64(src.width))
 			putPostF32(data, 4, float64(src.height))
 			putPostF32(data, 8, float64(dst.width))
 			putPostF32(data, 12, float64(dst.height))
 		})
-		r.encodePostPass(encoder, src.view, dst.view, r.postPipelines[postPipelineBloomDown], uniform)
+		r.encodePostPass(encoder, postPipelineBloomDown, postSourceBloom+level-1, src.view, dst.view, uniformIndex)
 	}
 	for level := passes - 1; level >= 0; level-- {
 		src := r.postBloom[level+1]
 		dst := r.postBloom[level]
-		uniform := postUniformBuffer(r, index+passes+1+(passes-1-level), func(data []byte) {
+		uniformIndex := index + passes + 1 + (passes - 1 - level)
+		postUniformBuffer(r, uniformIndex, func(data []byte) {
 			putPostF32(data, 0, float64(src.width))
 			putPostF32(data, 4, float64(src.height))
 			putPostF32(data, 8, float64(dst.width))
 			putPostF32(data, 12, float64(dst.height))
 		})
-		r.encodePostPass(encoder, src.view, dst.view, r.postPipelines[postPipelineBloomUp], uniform)
+		r.encodePostPass(encoder, postPipelineBloomUp, postSourceBloom+level+1, src.view, dst.view, uniformIndex)
 	}
-	combineUniform := postUniformBuffer(r, index+2*passes+1, func(data []byte) {
+	combineIndex := index + 2*passes + 1
+	postUniformBuffer(r, combineIndex, func(data []byte) {
 		putPostF32(data, 0, effect.Intensity)
 	})
-	r.encodePostCombine(encoder, source.view, r.postBloom[0].view, destination.view, combineUniform)
+	r.encodePostCombine(encoder, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 	return nil
 }
 
-func (r *webgpuRenderer) drawPostFullscreen(pass, source, pipeline, uniform js.Value) {
+func (r *webgpuRenderer) drawPostFullscreen(pass js.Value, pipelineName string, sourceID int, source js.Value, uniformIndex int) {
+	pipeline := r.postPipelines[pipelineName]
+	key := postBindKey{pipeline: pipelineName, source: sourceID, bloom: -1, uniform: uniformIndex}
 	pass.Call("setPipeline", pipeline)
-	pass.Call("setBindGroup", 0, r.postBindGroup(pipeline, source, uniform))
+	pass.Call("setBindGroup", 0, r.postBindGroup(key, source))
 	pass.Call("draw", 3, 1, 0, 0)
 }
 
@@ -407,48 +482,68 @@ func (r *webgpuRenderer) renderPostFrame(
 	r.drawPostRuns(pass, runs, frame, chain.BelowLayer, true, w, h)
 	pass.Call("end")
 
+	// Without MSAA and without runs above the chain, the last active effect
+	// renders directly to the swapchain and the final blit pass disappears.
+	lastActive := -1
+	for i, effect := range chain.Effects {
+		if postEffectEncodes(effect) {
+			lastActive = i
+		}
+	}
+	directFinal := r.msaaSamples <= 1 && lastActive >= 0 &&
+		!hasPostRuns(runs, false, chain.BelowLayer)
+
 	source, destination := r.postSceneA, r.postSceneB
+	sourceID, destID := postSourceSceneA, postSourceSceneB
 	uniformIndex := 0
-	for _, effect := range chain.Effects {
+	for i, effect := range chain.Effects {
+		destView := destination.view
+		if directFinal && i == lastActive {
+			destView = textureView
+		}
 		if bloom, ok := effect.(render.Bloom); ok {
 			if bloom.Intensity == 0 {
 				continue
 			}
-			if err := r.encodeBloom(encoder, source, destination, bloom, uniformIndex); err != nil {
+			if err := r.encodeBloom(encoder, source, sourceID, destView, bloom, uniformIndex); err != nil {
 				return err
 			}
 			uniformIndex += 16
 			source, destination = destination, source
+			sourceID, destID = destID, sourceID
 			continue
 		}
-		pipelineName, uniform := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, w, h)
+		pipelineName := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, w, h)
 		uniformIndex++
 		if pipelineName == "" {
 			continue
 		}
-		r.encodePostPass(encoder, source.view, destination.view, r.postPipelines[pipelineName], uniform)
+		r.encodePostPass(encoder, pipelineName, sourceID, source.view, destView, uniformIndex-1)
 		source, destination = destination, source
+		sourceID, destID = destID, sourceID
 	}
 
-	finalAttachment := map[string]any{
-		"view":          r.msaaView,
-		"resolveTarget": textureView,
-		"loadOp":        "clear",
-		"storeOp":       "discard",
-		"clearValue":    clearValue(r.clear),
-	}
-	if r.msaaSamples <= 1 {
-		finalAttachment = map[string]any{
-			"view":       textureView,
-			"loadOp":     "clear",
-			"storeOp":    "store",
-			"clearValue": clearValue(r.clear),
+	if !directFinal {
+		finalAttachment := map[string]any{
+			"view":          r.msaaView,
+			"resolveTarget": textureView,
+			"loadOp":        "clear",
+			"storeOp":       "discard",
+			"clearValue":    clearValue(r.clear),
 		}
+		if r.msaaSamples <= 1 {
+			finalAttachment = map[string]any{
+				"view":       textureView,
+				"loadOp":     "clear",
+				"storeOp":    "store",
+				"clearValue": clearValue(r.clear),
+			}
+		}
+		finalPass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{finalAttachment}})
+		r.drawPostFullscreen(finalPass, postPipelineFinalBlit, sourceID, source.view, -1)
+		r.drawPostRuns(finalPass, runs, frame, chain.BelowLayer, false, w, h)
+		finalPass.Call("end")
 	}
-	finalPass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{finalAttachment}})
-	r.drawPostFullscreen(finalPass, source.view, r.postPipelines[postPipelineFinalBlit], js.Undefined())
-	r.drawPostRuns(finalPass, runs, frame, chain.BelowLayer, false, w, h)
-	finalPass.Call("end")
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
 	if r.particles != nil {
@@ -456,6 +551,29 @@ func (r *webgpuRenderer) renderPostFrame(
 	}
 	r.signalReadyAfterPresent()
 	return nil
+}
+
+// postEffectEncodes mirrors the skip rules of the encode loop: a zero-intensity
+// bloom and unknown effect types produce no pass.
+func postEffectEncodes(effect render.PostEffect) bool {
+	switch effect := effect.(type) {
+	case render.Bloom:
+		return effect.Intensity != 0
+	case render.Vignette, render.ColorGrade, render.Pixelate,
+		render.ChromaticAberration, render.Shockwave, render.LensRain:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasPostRuns(runs []gpuDrawRun, below bool, belowLayer int) bool {
+	for _, run := range runs {
+		if postRunVisible(run, below, belowLayer) {
+			return true
+		}
+	}
+	return false
 }
 
 func postRunVisible(run gpuDrawRun, below bool, belowLayer int) bool {
@@ -480,95 +598,6 @@ func (r *webgpuRenderer) drawPostRuns(
 		if !postRunVisible(run, below, belowLayer) {
 			continue
 		}
-		switch run.kind {
-		case tess.DrawRunSolid:
-			pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
-			pass.Call("setVertexBuffer", 0, r.solidBuffer)
-			pass.Call("draw", run.count, 1, run.offset, 0)
-		case tess.DrawRunTextured:
-			texture, ok := r.textureFor(run.texture)
-			if !ok {
-				continue
-			}
-			pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
-			pass.Call("setVertexBuffer", 0, r.texBuffer)
-			pass.Call("setBindGroup", 0, texture.bindGroup)
-			pass.Call("draw", run.count, 1, run.offset, 0)
-		case tess.DrawRunSprites:
-			if r.spriteArrayEnabled {
-				pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
-				pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
-			} else {
-				texture, ok := r.textureFor(run.texture)
-				if !ok || texture.spriteBindGroup.IsUndefined() || texture.spriteBindGroup.IsNull() {
-					continue
-				}
-				pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
-				pass.Call("setBindGroup", 0, texture.spriteBindGroup)
-			}
-			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
-		case tess.DrawRunText:
-			atlas, ok := r.textAtlasFor(run.atlasKey)
-			if !ok {
-				continue
-			}
-			pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
-			pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
-			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
-		case tess.DrawRunParticles:
-			if r.particles != nil {
-				r.particles.draw(pass, run.particles, frame.Camera, w, h)
-			}
-		case tess.DrawRunSpriteBatch:
-			batch := run.batch
-			if batch == nil {
-				continue
-			}
-			cmd := run.spriteBatch
-			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
-				continue
-			}
-			for i, rg := range batch.ranges {
-				if batch.animated {
-					if r.spriteArrayEnabled && !rg.magenta {
-						pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
-					} else {
-						pass.Call("setPipeline", r.spriteBatchAnimPipeline)
-					}
-					pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
-				} else {
-					if r.spriteArrayEnabled && !rg.magenta {
-						pass.Call("setPipeline", r.spriteArrayPipeline)
-					} else {
-						pass.Call("setPipeline", r.spritePipeline)
-					}
-					pass.Call("setBindGroup", 0, batch.bindGroups[i])
-				}
-				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
-			}
-			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-				pass.Call("setScissorRect", 0, 0, w, h)
-			}
-		case tess.DrawRunTextBatch:
-			batch := run.text
-			if batch == nil {
-				continue
-			}
-			cmd := run.textBatch
-			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
-				continue
-			}
-			pass.Call("setPipeline", r.textGlyphPipeline)
-			for _, rg := range batch.ranges {
-				if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
-					continue
-				}
-				pass.Call("setBindGroup", 0, rg.bindGroup)
-				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
-			}
-			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-				pass.Call("setScissorRect", 0, 0, w, h)
-			}
-		}
+		r.drawRun(pass, run, frame.Camera, w, h, false, nil)
 	}
 }

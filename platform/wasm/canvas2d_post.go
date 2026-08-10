@@ -6,8 +6,8 @@ package wasm
 //   - Vignette uses a radial gradient overlay.
 //   - ColorGrade uses the browser filter pipeline and a multiply tint.
 //   - Pixelate uses a reduced self-copy with imageSmoothingEnabled=false.
-//   - LensRain N1 uses the same hash cells as the raster path and draws the
-//     same droplet locations; N2 degrades to N1 and logs once.
+//   - LensRain N1 uses the same hash cells as the raster path and draws
+//     translucent elliptical drops; N2 degrades to N1 and logs once.
 //   - Bloom, ChromaticAberration, and Shockwave are skipped with one
 //     post.effect_unsupported diagnostic because Canvas2D has no equivalent
 //     exact fullscreen sampling primitive.
@@ -92,7 +92,11 @@ func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Came
 	destinationCtx := oldContext
 	sourceIsMain := false
 	for _, effect := range chain.Effects {
-		c.applyCanvasPostEffect(source, destination, destinationCtx, effect, chain.Time, width, height)
+		// A skipped or identity effect keeps the current source instead of
+		// paying a fullscreen copy just to swap the pair.
+		if !c.applyCanvasPostEffect(source, destination, destinationCtx, effect, chain.Time, width, height) {
+			continue
+		}
 		source, destination = destination, source
 		sourceCtx, destinationCtx = destinationCtx, sourceCtx
 		sourceIsMain = !sourceIsMain
@@ -125,45 +129,65 @@ func copyCanvas(source, destination, destinationCtx js.Value, width, height int)
 	destinationCtx.Call("restore")
 }
 
-func (c *Canvas2D) applyCanvasPostEffect(source, destination, destinationCtx js.Value, effect render.PostEffect, time float64, width, height int) {
+// applyCanvasPostEffect runs one effect from source into destination and
+// reports whether destination now holds the frame; false means the effect was
+// an identity or a skip and the ping-pong must not swap.
+func (c *Canvas2D) applyCanvasPostEffect(source, destination, destinationCtx js.Value, effect render.PostEffect, time float64, width, height int) bool {
 	switch effect := effect.(type) {
 	case render.Vignette:
+		if effect.Strength == 0 {
+			return false
+		}
 		copyCanvas(source, destination, destinationCtx, width, height)
 		c.canvasVignette(destinationCtx, effect, width, height)
+		return true
 	case render.ColorGrade:
+		if effect == (render.ColorGrade{}) {
+			return false
+		}
 		c.canvasColorGrade(source, destination, destinationCtx, effect, width, height)
+		return true
 	case render.Pixelate:
+		if effect.Size <= 0 {
+			return false
+		}
 		c.canvasPixelate(source, destination, destinationCtx, effect, width, height)
+		return true
 	case render.LensRain:
+		if effect.Density <= 0 {
+			return false
+		}
 		copyCanvas(source, destination, destinationCtx, width, height)
 		c.canvasLensRain(destinationCtx, effect, time, width, height)
+		return true
 	case render.Bloom, render.ChromaticAberration, render.Shockwave:
-		copyCanvas(source, destination, destinationCtx, width, height)
 		c.warnUnsupportedPostEffect(effect)
+		return false
+	default:
+		return false
 	}
 }
 
 func (c *Canvas2D) canvasVignette(ctx js.Value, effect render.Vignette, width, height int) {
-	if effect.Strength == 0 {
-		return
-	}
 	strength := math.Max(0, math.Min(1, effect.Strength))
-	gradient := ctx.Call("createRadialGradient", width/2, height/2, 0,
-		width/2, height/2, math.Hypot(float64(width), float64(height))/math.Sqrt2)
-	gradient.Call("addColorStop", 0, "rgba(0,0,0,0)")
-	gradient.Call("addColorStop", 1, cssColor(render.Color{R: effect.Color.R, G: effect.Color.G, B: effect.Color.B, A: 1}))
+	key := vignetteKey{width: width, height: height,
+		color: render.Color{R: effect.Color.R, G: effect.Color.G, B: effect.Color.B, A: 1}}
+	if c.postVignette.IsUndefined() || c.postVignetteKey != key {
+		gradient := ctx.Call("createRadialGradient", width/2, height/2, 0,
+			width/2, height/2, math.Hypot(float64(width), float64(height))/math.Sqrt2)
+		gradient.Call("addColorStop", 0, "rgba(0,0,0,0)")
+		gradient.Call("addColorStop", 1, cssColor(key.color))
+		c.postVignette = gradient
+		c.postVignetteKey = key
+	}
 	ctx.Call("save")
 	ctx.Set("globalAlpha", strength)
-	ctx.Set("fillStyle", gradient)
+	ctx.Set("fillStyle", c.postVignette)
 	ctx.Call("fillRect", 0, 0, width, height)
 	ctx.Call("restore")
 }
 
 func (c *Canvas2D) canvasColorGrade(source, destination, destinationCtx js.Value, effect render.ColorGrade, width, height int) {
-	if effect == (render.ColorGrade{}) {
-		copyCanvas(source, destination, destinationCtx, width, height)
-		return
-	}
 	brightness := math.Max(0, 1+effect.Brightness) * 100
 	contrast := math.Max(0, 1+effect.Contrast) * 100
 	saturation := math.Max(0, 1+effect.Saturation) * 100
@@ -184,10 +208,6 @@ func (c *Canvas2D) canvasColorGrade(source, destination, destinationCtx js.Value
 }
 
 func (c *Canvas2D) canvasPixelate(source, destination js.Value, destinationCtx js.Value, effect render.Pixelate, width, height int) {
-	if effect.Size <= 0 {
-		copyCanvas(source, destination, destinationCtx, width, height)
-		return
-	}
 	smallWidth := math.Max(1, math.Ceil(float64(width)/effect.Size))
 	smallHeight := math.Max(1, math.Ceil(float64(height)/effect.Size))
 	destinationCtx.Call("save")
@@ -202,9 +222,6 @@ func (c *Canvas2D) canvasPixelate(source, destination js.Value, destinationCtx j
 
 func (c *Canvas2D) canvasLensRain(ctx js.Value, effect render.LensRain, time float64, width, height int) {
 	density := math.Max(0, math.Min(1, effect.Density))
-	if density == 0 {
-		return
-	}
 	size := effect.Size
 	if size <= 0 {
 		size = 48
@@ -218,11 +235,38 @@ func (c *Canvas2D) canvasLensRain(ctx js.Value, effect render.LensRain, time flo
 	}
 
 	ctx.Call("save")
-	ctx.Set("globalCompositeOperation", "screen")
-	ctx.Set("fillStyle", "rgba(255,255,255,0.32)")
+	ctx.Set("globalCompositeOperation", "source-over")
+	c.canvasLensRainLayer(ctx, density*0.70, size*0.70, speed*1.20, effect.Seed+0x13,
+		time, width, height, 0.18, 0.28, 0.85)
+	c.canvasLensRainLayer(ctx, density*0.45, size*1.35, speed*0.80, effect.Seed+0x29,
+		time, width, height, 0.22, 0.34, 0.90)
+	c.canvasLensRainLayer(ctx, density*0.18, size*3.00, speed*0.55, effect.Seed+0x41,
+		time, width, height, 0.13, 0.42, 0.65)
+	ctx.Call("restore")
+}
+
+// canvasLensRainLayer batches every droplet of one layer into four Path2D
+// objects and draws each once, instead of ~13 context calls per droplet. The
+// fills use one path per shade, so same-layer overlaps merge as a union
+// instead of compositing twice — an accepted Canvas2D approximation.
+func (c *Canvas2D) canvasLensRainLayer(ctx js.Value, density, size, speed float64, seed uint64,
+	time float64, width, height int, radiusXScale, radiusYScale, opacity float64) {
+	path2D := js.Global().Get("Path2D")
+	shadow := path2D.New()
+	inner := path2D.New()
+	rim := path2D.New()
+	highlight := path2D.New()
+	// addEllipse moves to the arc's start point first; without the moveTo the
+	// subpaths would be joined by stray connecting lines.
+	addEllipse := func(path js.Value, centerX, centerY, radiusX, radiusY, cosR, sinR, rotation float64) {
+		path.Call("moveTo", centerX+radiusX*cosR, centerY+radiusX*sinR)
+		path.Call("ellipse", centerX, centerY, radiusX, radiusY, rotation, 0, 2*math.Pi)
+	}
+
+	drops := 0
 	for cellY := math.Floor(0.0 / size); cellY < math.Ceil(float64(height)/size); cellY++ {
 		for cellX := math.Floor(0.0 / size); cellX < math.Ceil(float64(width)/size); cellX++ {
-			hash := particle.Hash3([3]uint32{uint32(int32(cellX)), uint32(int32(cellY)), uint32(effect.Seed)})
+			hash := particle.Hash3([3]uint32{uint32(int32(cellX)), uint32(int32(cellY)), uint32(seed)})
 			h := [3]float64{particle.Float01(hash[0]), particle.Float01(hash[1]), particle.Float01(hash[2])}
 			if h[0] >= density {
 				continue
@@ -230,18 +274,61 @@ func (c *Canvas2D) canvasLensRain(ctx js.Value, effect render.LensRain, time flo
 			centerX := (cellX + h[1]) * size
 			fall := h[0] - time*speed*(0.6+0.8*h[0])
 			centerY := (cellY + fall - math.Floor(fall)) * size
-			radius := size * (0.12 + 0.08*h[2])
-			ctx.Call("beginPath")
-			ctx.Call("arc", centerX, centerY, radius, 0, 2*math.Pi)
-			ctx.Call("fill")
+			radiusX := size * (radiusXScale + 0.10*h[2])
+			radiusY := size * (radiusYScale + 0.18*h[2])
+			rotation := (h[1] - 0.5) * 0.20
+			cosR, sinR := math.Cos(rotation), math.Sin(rotation)
+			addEllipse(shadow, centerX, centerY, radiusX, radiusY, cosR, sinR, rotation)
+			addEllipse(inner, centerX, centerY, radiusX*0.78, radiusY*0.78, cosR, sinR, rotation)
+			addEllipse(rim, centerX, centerY, radiusX*0.92, radiusY*0.92, cosR, sinR, rotation)
+			addEllipse(highlight, centerX-radiusX*0.28, centerY-radiusY*0.34,
+				radiusX*0.16, radiusY*0.18, cosR, sinR, rotation)
+			drops++
 		}
 	}
-	ctx.Call("restore")
+	if drops == 0 {
+		return
+	}
+
+	ctx.Set("globalAlpha", opacity)
+	ctx.Set("fillStyle", "rgba(8,16,26,0.32)")
+	ctx.Call("fill", shadow)
+	ctx.Set("fillStyle", "rgba(190,220,240,0.12)")
+	ctx.Call("fill", inner)
+	ctx.Set("strokeStyle", "rgba(225,245,255,0.38)")
+	ctx.Set("lineWidth", 0.6)
+	ctx.Call("stroke", rim)
+	ctx.Set("fillStyle", "rgba(255,255,255,0.48)")
+	ctx.Call("fill", highlight)
+	ctx.Set("globalAlpha", 1)
 }
 
 func (c *Canvas2D) warnUnsupportedPostEffect(effect render.PostEffect) {
 	name := fmt.Sprintf("%T", effect)
+	// The ID keys the once-filter per effect kind, so one skipped effect does
+	// not silence the warning for a different one.
 	c.diagnostics.Log(c.log, slog.LevelWarn,
-		diagnostic.Key{Code: "post.effect_unsupported"},
+		diagnostic.Key{Code: "post.effect_unsupported", ID: postEffectDiagnosticID(effect)},
 		"Canvas2D: post effect approximated or skipped", "effect", name)
+}
+
+func postEffectDiagnosticID(effect render.PostEffect) uint64 {
+	switch effect.(type) {
+	case render.Vignette:
+		return 1
+	case render.ColorGrade:
+		return 2
+	case render.Pixelate:
+		return 3
+	case render.Bloom:
+		return 4
+	case render.ChromaticAberration:
+		return 5
+	case render.Shockwave:
+		return 6
+	case render.LensRain:
+		return 7
+	default:
+		return 0
+	}
 }
