@@ -25,6 +25,12 @@ referenced documents when you need subsystem detail.
 - Use `runtime.Driver` as the behavioral API for games and platforms.
 - Keep `runtime` free of backend, browser, HTTP, image, and JSON concepts.
 - Keep render commands backend-agnostic.
+- Treat `render.PostChain` as render-only vocabulary with the seven fixed
+  effects: `Vignette`, `ColorGrade`, `Pixelate`, `ChromaticAberration`,
+  `Bloom`, `Shockwave`, and `LensRain`.
+- Raster is the canonical post-effect behavior; WebGPU and native consume the
+  shared WGSL shaders, while Canvas2D approximates or skips effects per its
+  documented capability table.
 - Put game code in `cmd/` or `examples/`, not in engine packages.
 - See [architecture](docs/en/architecture.md) for package responsibilities.
 
