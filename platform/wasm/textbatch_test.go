@@ -3,7 +3,6 @@ package wasm
 import (
 	"testing"
 
-	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -91,37 +90,5 @@ func TestCollectTextBatchIDsDedupesInFirstAppearanceOrder(t *testing.T) {
 func TestCollectTextBatchIDsEmptyWhenNoneReferenced(t *testing.T) {
 	if ids := collectTextBatchIDs([]render.Command{render.DrawRect{}}); ids != nil {
 		t.Fatalf("ids = %v, want nil", ids)
-	}
-}
-
-func TestWasmUniformKeysSeparateTextBatchesByScreenOffset(t *testing.T) {
-	base := layerCameraTestCamera()
-	base.Parallax = []render.LayerParallax{
-		{FromLayer: 3, ToLayer: 3, Factor: math2d.Vec2{X: 0.5, Y: 0.5}},
-	}
-	runs := []tess.StreamRun{
-		{Kind: tess.DrawRunTextBatch, Layer: 3},
-		{Kind: tess.DrawRunTextBatch, Layer: 4},
-	}
-	cameras := wasmLayerCameras(base, runs)
-
-	parallaxKey, ok := wasmUniformKeyForKind(runs[0].Kind, runs[0].Layer, base, cameras)
-	if !ok {
-		t.Fatal("text batch on a parallax layer got no key")
-	}
-	baseKey, ok := wasmUniformKeyForKind(runs[1].Kind, runs[1].Layer, base, cameras)
-	if !ok {
-		t.Fatal("text batch on the base layer got no key")
-	}
-	if parallaxKey == baseKey {
-		t.Fatal("text batches on different layers share a key; offsets must differ")
-	}
-
-	streamingKey, ok := wasmUniformKeyForKind(tess.DrawRunText, 3, base, cameras)
-	if !ok {
-		t.Fatal("streaming text got no key")
-	}
-	if streamingKey != baseKey {
-		t.Fatal("streaming text must share the zero-offset key of the base camera")
 	}
 }

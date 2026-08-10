@@ -24,11 +24,14 @@ struct Label {
   _pad : vec2u,
 }
 
+// Camera shares the sprite uniform's byte layout, but text is packed by
+// PackTextUniforms: labels are already in screen space, so only a constant
+// clip-space displacement (parallax) and the screen-to-clip scale are used.
 struct Camera {
-	world_to_clip_x : vec2f,
-	world_to_clip_y : vec2f,
-	to_clip_offset : vec2f,
-	world_to_screen_scale : vec2f,
+	parallax_clip_offset : vec2f,
+	_pad_world_to_clip_y : vec2f,
+	_pad_to_clip_offset : vec2f,
+	_pad_world_to_screen_scale : vec2f,
 	screen_to_clip_scale : vec2f,
 }
 
@@ -71,8 +74,8 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
   );
   let screen_pos = label.position + transformed;
   let clip_pos = vec2f(
-    screen_pos.x * camera.screen_to_clip_scale.x - 1.0 + camera.world_to_clip_x.x,
-    screen_pos.y * camera.screen_to_clip_scale.y + 1.0 + camera.world_to_clip_x.y,
+    screen_pos.x * camera.screen_to_clip_scale.x - 1.0 + camera.parallax_clip_offset.x,
+    screen_pos.y * camera.screen_to_clip_scale.y + 1.0 + camera.parallax_clip_offset.y,
   );
 
   var out : VSOut;

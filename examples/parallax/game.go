@@ -53,8 +53,8 @@ const (
 	playerStartY       = groundSurfaceY - playerRadius
 	playerRadius       = 2.4
 	playerMoveDistance = 100.0
-	playerDesiredSpeed = 18.0
-	playerAccel        = 56.0
+	playerDesiredSpeed = 36.0
+	playerAccel        = 130.0
 	playerDecel        = 72.0
 	playerAgility      = 72.0
 

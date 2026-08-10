@@ -219,8 +219,7 @@ func (r *webgpuRenderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, 
 // batch (skipped at draw time) and for a batch culled against its
 // screen-space bounds. Must run after finalizeTextBatches so batch.bounds
 // reflects this frame's content.
-func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base render.Camera, cameras []wasmLayerCamera, w, h int) bool {
-	hasDraw := false
+func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base render.Camera, cameras []tess.LayerCamera, w, h int) {
 	r.frameVisibleLabels = 0
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunTextBatch {
@@ -237,7 +236,7 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base rende
 		if batch.count == 0 {
 			continue
 		}
-		effective := wasmCameraForLayer(base, cameras, drawRuns[i].layer)
+		effective := tess.CameraForLayer(base, cameras, drawRuns[i].layer)
 		if view, ok := textBatchScreenView(effective, w, h, cmd.Clip); ok {
 			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(base, effective))
 			if !renderbatch.IntersectsView(bounds, view) {
@@ -245,11 +244,9 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base rende
 			}
 		}
 		drawRuns[i].text = batch
-		hasDraw = true
 		r.frameVisibleLabels += len(batch.labels)
 		r.frameRetainedDraws += len(batch.ranges)
 	}
-	return hasDraw
 }
 
 // offsetTextBatchBounds moves screen-space bounds by the displacement used by

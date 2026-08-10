@@ -16,7 +16,6 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
-	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -427,7 +426,7 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		phaseStart = time.Now()
 	}
 	runs := r.tess.Build(tess.Frame(frame), width, height, r.fontProvider, r.texSizes)
-	layerCameras := nativeLayerCameras(frame.Camera, runs)
+	layerCameras := tess.LayerCameras(frame.Camera, runs)
 	solid, textured := r.tess.Streams()
 	sprites := r.tess.SpriteStream()
 	textGlyphs := r.tess.TextGlyphStream()
@@ -1034,90 +1033,19 @@ func (r *Renderer) uploadStreams(
 	return nil
 }
 
-type nativeLayerCamera struct {
-	layer  int
-	camera render.Camera
-}
-
-type nativeUniformKind uint8
-
-const (
-	nativeUniformSprites nativeUniformKind = iota
-	nativeUniformText
-)
-
-// Uniform entries are keyed by the camera data they pack, not by draw run.
-// Text keeps a separate key because its shader consumes screen-space offsets.
-type nativeUniformKey struct {
-	kind    nativeUniformKind
-	layer   int
-	offsetX uint64
-	offsetY uint64
-}
-
 // noSpriteUniformEntry marks runs that draw without a camera uniform, so
 // prepareSpriteUniforms can map entry indices to byte offsets in one pass
 // without recomputing run keys.
 const noSpriteUniformEntry = ^uint32(0)
 
+// Uniform entries are keyed by the camera data they pack, not by draw run.
+// The key logic is shared with the wasm backend and lives in tess.
 type nativeUniformEntry struct {
-	key    nativeUniformKey
+	key    tess.UniformKey
 	offset uint32
 }
 
-func nativeLayerCameras(base render.Camera, runs []tess.StreamRun) []nativeLayerCamera {
-	if len(base.Parallax) == 0 {
-		return nil
-	}
-	var cameras []nativeLayerCamera
-	for _, run := range runs {
-		found := false
-		for _, entry := range cameras {
-			if entry.layer == run.Layer {
-				found = true
-				break
-			}
-		}
-		if !found {
-			cameras = append(cameras, nativeLayerCamera{layer: run.Layer, camera: base.ForLayer(run.Layer)})
-		}
-	}
-	return cameras
-}
-
-func nativeCameraForLayer(base render.Camera, cameras []nativeLayerCamera, layer int) render.Camera {
-	for _, entry := range cameras {
-		if entry.layer == layer {
-			return entry.camera
-		}
-	}
-	return base
-}
-
-func nativeUniformKeyForRun(run tess.StreamRun, base render.Camera, cameras []nativeLayerCamera) (nativeUniformKey, bool) {
-	switch run.Kind {
-	case tess.DrawRunSprites, tess.DrawRunSpriteBatch:
-		layer := run.Layer
-		if len(base.Parallax) == 0 {
-			layer = 0
-		}
-		return nativeUniformKey{kind: nativeUniformSprites, layer: layer}, true
-	case tess.DrawRunText:
-		return nativeUniformKey{kind: nativeUniformText}, true
-	case tess.DrawRunTextBatch:
-		effective := nativeCameraForLayer(base, cameras, run.Layer)
-		offset := tess.TextScreenOffset(base, effective)
-		return nativeUniformKey{
-			kind:    nativeUniformText,
-			offsetX: math.Float64bits(offset.X),
-			offsetY: math.Float64bits(offset.Y),
-		}, true
-	default:
-		return nativeUniformKey{}, false
-	}
-}
-
-func nativeUniformEntryIndex(entries []nativeUniformEntry, key nativeUniformKey) int {
+func nativeUniformEntryIndex(entries []nativeUniformEntry, key tess.UniformKey) int {
 	for index, entry := range entries {
 		if entry.key == key {
 			return index
@@ -1126,19 +1054,7 @@ func nativeUniformEntryIndex(entries []nativeUniformEntry, key nativeUniformKey)
 	return -1
 }
 
-func packNativeUniform(dst []byte, key nativeUniformKey, base render.Camera, cameras []nativeLayerCamera, width, height int) {
-	switch key.kind {
-	case nativeUniformSprites:
-		tess.PackSpriteUniforms(dst, nativeCameraForLayer(base, cameras, key.layer), width, height)
-	case nativeUniformText:
-		tess.PackTextUniforms(dst, math2d.Vec2{
-			X: math.Float64frombits(key.offsetX),
-			Y: math.Float64frombits(key.offsetY),
-		}, width, height)
-	}
-}
-
-func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Camera, cameras []nativeLayerCamera, width, height int) ([]uint32, error) {
+func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Camera, cameras []tess.LayerCamera, width, height int) ([]uint32, error) {
 	// A camera upload is shared by every run that uses the same packed view.
 	if cap(r.spriteUniformOffsets) < len(runs) {
 		r.spriteUniformOffsets = make([]uint32, len(runs))
@@ -1149,7 +1065,7 @@ func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Came
 	r.spriteUniformEntries = r.spriteUniformEntries[:0]
 	for index, run := range runs {
 		offsets[index] = noSpriteUniformEntry
-		key, ok := nativeUniformKeyForRun(run, base, cameras)
+		key, ok := tess.UniformKeyForKind(run.Kind, run.Layer, base, cameras)
 		if !ok {
 			continue
 		}
@@ -1170,7 +1086,7 @@ func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Came
 	var packed [tess.SpriteUniformSize]byte
 	for entryIndex := range r.spriteUniformEntries {
 		entry := &r.spriteUniformEntries[entryIndex]
-		packNativeUniform(packed[:], entry.key, base, cameras, width, height)
+		tess.PackUniform(packed[:], entry.key, base, cameras, width, height)
 		offset := uint32(entryIndex * r.spriteUniformSlotSize)
 		entry.offset = offset
 		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, uint64(offset), packed[:]); err != nil {
@@ -1356,7 +1272,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 func (r *Renderer) encodeFrame(
 	runs []tess.StreamRun,
 	uniformOffsets []uint32,
-	layerCameras []nativeLayerCamera,
+	layerCameras []tess.LayerCamera,
 	surfaceView *wgpu.TextureView,
 	camera render.Camera,
 	width, height int,
@@ -1380,7 +1296,7 @@ func (r *Renderer) encodeFrame(
 			if run.Kind != tess.DrawRunParticles {
 				continue
 			}
-			if sim, ok := r.particles.prepare(run.Particles, nativeCameraForLayer(camera, layerCameras, run.Layer), width, height); ok {
+			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(camera, layerCameras, run.Layer), width, height); ok {
 				sims = append(sims, sim)
 			}
 		}
@@ -1456,7 +1372,7 @@ func (r *Renderer) encodeFrame(
 		if groupOf != nil {
 			group = groupOf[i]
 		}
-		effective := nativeCameraForLayer(camera, layerCameras, run.Layer)
+		effective := tess.CameraForLayer(camera, layerCameras, run.Layer)
 		if err := r.drawRun(pass, run, uniformOffsets[i], effective, width, height, group, offscreenParticles, &lastComposited); err != nil {
 			return err
 		}
@@ -1497,7 +1413,7 @@ type nativeParticleRun struct {
 	camera  render.Camera
 }
 
-func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []nativeLayerCamera) (groups [][]nativeParticleRun, groupOf []int) {
+func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []tess.LayerCamera) (groups [][]nativeParticleRun, groupOf []int) {
 	groupOf = make([]int, len(runs))
 	inGroup := false
 	for i, run := range runs {
@@ -1514,7 +1430,7 @@ func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []nati
 		groupOf[i] = idx
 		groups[idx] = append(groups[idx], nativeParticleRun{
 			command: run.Particles,
-			camera:  nativeCameraForLayer(base, cameras, run.Layer),
+			camera:  tess.CameraForLayer(base, cameras, run.Layer),
 		})
 	}
 	return groups, groupOf

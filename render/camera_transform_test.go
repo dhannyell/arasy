@@ -313,6 +313,35 @@ func TestCameraParallaxPreservesProjectionRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCameraParallaxAnchorPinsLayerUnderView(t *testing.T) {
+	// Anchor is a pre-View world point: when the camera centres on it, the
+	// parallax layer draws exactly where the base camera would draw it.
+	view := math2d.Affine{A: 20, C: -20, B: 10, D: 10}
+	anchor := math2d.Vec2{X: 3, Y: -2}
+	camera := render.Camera{
+		World:      math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 200, Y: 100}),
+		Viewport:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 400}),
+		View:       view,
+		Parallax:   []render.LayerParallax{{FromLayer: 1, ToLayer: 1, Factor: math2d.Vec2{X: 0.5, Y: 0.5}, Anchor: anchor}},
+		DepthScale: 0.5,
+	}
+	viewAnchor := view.Apply(anchor)
+	camera.World = math2d.NewRect(
+		viewAnchor.Sub(math2d.Vec2{X: 100, Y: 50}),
+		math2d.Vec2{X: 200, Y: 100},
+	)
+
+	derived := camera.ForLayer(1)
+	assertVec2Near(t, derived.WorldToScreen(anchor), camera.WorldToScreen(anchor))
+
+	// Away from the anchor the layer must actually diverge, or the test
+	// would pass with a ForLayer that returns the base camera.
+	off := camera.Pan(math2d.Vec2{X: 40, Y: 0})
+	if off.ForLayer(1).WorldToScreen(anchor).Distance(off.WorldToScreen(anchor)) < 1e-6 {
+		t.Fatal("panned camera kept the parallax layer glued to the base camera")
+	}
+}
+
 func TestCameraPanAndZoomAt(t *testing.T) {
 	camera := render.Camera{
 		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 50}),
@@ -343,6 +372,31 @@ func TestCameraPanAndZoomAt(t *testing.T) {
 		if got := camera.ZoomAt(factor, anchor); !reflect.DeepEqual(got, camera) {
 			t.Fatalf("invalid factor %v changed camera: got %#v, want %#v", factor, got, camera)
 		}
+	}
+}
+
+func TestCameraZoomAtKeepsAnchorUnderViewDepthAndAspect(t *testing.T) {
+	// The anchor invariant must survive the full projection stack: View,
+	// DepthScale foreshortening and aspect-fit resolution.
+	camera := render.Camera{
+		World:      math2d.NewRect(math2d.Vec2{X: -60, Y: -10}, math2d.Vec2{X: 120, Y: 40}),
+		Viewport:   math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 400}),
+		Aspect:     render.AspectFit,
+		DepthScale: 0.5,
+		View:       math2d.Affine{A: 20, C: -20, B: 10, D: 10},
+	}
+
+	anchor := math2d.Vec2{X: 1.5, Y: -0.75}
+	before := camera.WorldToScreen(anchor)
+	for _, factor := range []float64{2, 0.5, 1.1} {
+		zoomed := camera.ZoomAt(factor, anchor)
+		assertVec2Near(t, zoomed.WorldToScreen(anchor), before)
+	}
+
+	panned := camera.Pan(math2d.Vec2{X: 7, Y: -3})
+	wantShift := math2d.Vec2{X: 7, Y: -3}
+	if got := panned.World.Min.Sub(camera.World.Min); got.Distance(wantShift) > 1e-9 {
+		t.Fatalf("Pan shifted World.Min by %v, want %v", got, wantShift)
 	}
 }
 

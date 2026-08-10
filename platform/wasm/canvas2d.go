@@ -206,11 +206,11 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
-	render.Each(frame.Commands, canvasSink{
-		canvas:     c,
-		baseCamera: frame.Camera,
-		camera:     frame.Camera,
-	})
+	sink := canvasSink{canvas: c, camera: frame.Camera}
+	if len(frame.Camera.Parallax) > 0 {
+		sink.layers = &canvasLayerState{base: frame.Camera}
+	}
+	render.Each(frame.Commands, sink)
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
@@ -218,16 +218,35 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 }
 
 type canvasSink struct {
-	canvas     *Canvas2D
-	baseCamera render.Camera
-	camera     render.Camera
+	canvas *Canvas2D
+	camera render.Camera
+	layers *canvasLayerState
+}
+
+// canvasLayerState caches the derived camera of the layer being drawn, so
+// the derivation runs once per layer boundary rather than once per command.
+// It is shared by pointer because the sink travels by value.
+type canvasLayerState struct {
+	base        render.Camera
+	camera      render.Camera
+	active      int
+	initialized bool
+}
+
+func (l *canvasLayerState) cameraFor(layer int) render.Camera {
+	if !l.initialized || l.active != layer {
+		l.camera = l.base.ForLayer(layer)
+		l.active = layer
+		l.initialized = true
+	}
+	return l.camera
 }
 
 // forCommand selects the camera that owns command's layer. The empty
 // parallax configuration keeps the existing camera value without extra work.
 func (s canvasSink) forCommand(command render.Command) canvasSink {
-	if len(s.baseCamera.Parallax) > 0 {
-		s.camera = s.baseCamera.ForLayer(command.Layer())
+	if s.layers != nil {
+		s.camera = s.layers.cameraFor(command.Layer())
 	}
 	return s
 }

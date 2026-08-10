@@ -38,7 +38,10 @@ type LayerParallax struct {
 	ToLayer int
 	// Factor scales the camera scroll independently on each axis.
 	Factor math2d.Vec2
-	// Anchor is the world point where this range lines up with the base camera.
+	// Anchor is the world point where this range lines up with the base
+	// camera: when the camera centres on it, the range draws exactly where
+	// the base camera would draw it. It is a pre-View point, like command
+	// geometry; ForLayer routes it through View before deriving.
 	Anchor math2d.Vec2
 }
 
@@ -93,9 +96,12 @@ func (c Camera) ForLayer(layer int) Camera {
 			return c
 		}
 
+		// World lives in post-View space, so the declared anchor crosses
+		// View before it can meet the resolved centre.
+		anchor := c.View.Apply(parallax.Anchor)
 		delta := math2d.Vec2{
-			X: (parallax.Factor.X - 1) * (center.X - parallax.Anchor.X),
-			Y: (parallax.Factor.Y - 1) * (center.Y - parallax.Anchor.Y),
+			X: (parallax.Factor.X - 1) * (center.X - anchor.X),
+			Y: (parallax.Factor.Y - 1) * (center.Y - anchor.Y),
 		}
 		derived := c
 		derived.World.Min = derived.World.Min.Add(delta)
@@ -106,7 +112,8 @@ func (c Camera) ForLayer(layer int) Camera {
 	return c
 }
 
-// Pan returns a camera whose visible world is shifted by a world-space delta.
+// Pan returns a camera whose visible world is shifted by delta. The delta is
+// in the same space as World: after View, before aspect resolution.
 func (c Camera) Pan(delta math2d.Vec2) Camera {
 	c.World.Min = c.World.Min.Add(delta)
 	c.World.Max = c.World.Max.Add(delta)

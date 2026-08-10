@@ -112,7 +112,7 @@ type webgpuRenderer struct {
 	spriteUniformScratch [tess.SpriteUniformSize]byte
 	spriteArena          uniformArena
 	spriteArenaAlignment int
-	spriteUniformKeys    []wasmUniformKey
+	spriteUniformKeys    []tess.UniformKey
 	spriteArrayTexture   js.Value
 	spriteArrayBindGroup js.Value
 	spriteArrayEnabled   bool
@@ -373,7 +373,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	textBatchIDs := collectTextBatchIDs(frame.Commands)
 	r.prepTextBatches(textBatchIDs, frame.Camera, w, h)
 	runs := r.tess.Build(tess.Frame(frame), w, h, r.fontProvider, r.texSizes)
-	layerCameras := wasmLayerCameras(frame.Camera, runs)
+	layerCameras := tess.LayerCameras(frame.Camera, runs)
 
 	// tess ends here: command building/packing and atlas-coverage growth are
 	// done. Retained-batch repack (finalizeTextBatches, the sprite-batch
@@ -490,7 +490,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		if batch.count == 0 {
 			continue
 		}
-		effective := wasmCameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
 		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(effective)
 		if view, ok := webgpuBatchView(effective, cmd.Clip); ok && canCull {
 			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
@@ -517,7 +517,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		if !ok {
 			panic("wasm: retained sprite uniform arena capacity miscalculated")
 		}
-		camera := wasmCameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
+		camera := tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
 		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, w, h, drawRuns[i].spriteBatch.Animation)
 		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
 		drawRuns[i].batchSlot = offset
@@ -581,7 +581,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		}
 		particleRuns = append(particleRuns, gpuParticleRun{
 			command: drawRuns[i].particles,
-			camera:  wasmCameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer),
+			camera:  tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer),
 		})
 		if !inGroup {
 			groupCmds = append(groupCmds, nil)
@@ -640,7 +640,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// records without relying on firstInstance.
 	lastComposited := -1
 	for _, run := range drawRuns {
-		effective := wasmCameraForLayer(frame.Camera, layerCameras, run.layer)
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.layer)
 		switch run.kind {
 		case tess.DrawRunSolid:
 			pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
@@ -934,19 +934,19 @@ type gpuDrawRun struct {
 
 // wasmUniformKeyForRun resolves the upload key of one draw run, skipping
 // runs whose retained content is missing or animated (animated batches use
-// their own per-draw uniforms). The pure key logic lives in layercamera.go.
-func wasmUniformKeyForRun(run *gpuDrawRun, base render.Camera, cameras []wasmLayerCamera) (wasmUniformKey, bool) {
+// their own per-draw uniforms). The pure key logic lives in tess.
+func wasmUniformKeyForRun(run *gpuDrawRun, base render.Camera, cameras []tess.LayerCamera) (tess.UniformKey, bool) {
 	switch run.kind {
 	case tess.DrawRunSpriteBatch:
 		if run.batch == nil || run.batch.animated {
-			return wasmUniformKey{}, false
+			return tess.UniformKey{}, false
 		}
 	case tess.DrawRunTextBatch:
 		if run.text == nil {
-			return wasmUniformKey{}, false
+			return tess.UniformKey{}, false
 		}
 	}
-	return wasmUniformKeyForKind(run.kind, run.layer, base, cameras)
+	return tess.UniformKeyForKind(run.kind, run.layer, base, cameras)
 }
 
 // webgpuBatchView returns the world area that can show a retained batch.
@@ -1244,7 +1244,7 @@ func (r *webgpuRenderer) ensureSpriteUniformArena(required int) {
 	}
 }
 
-func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Camera, cameras []wasmLayerCamera, width, height int) {
+func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Camera, cameras []tess.LayerCamera, width, height int) {
 	// A camera upload is shared by every run that uses the same packed view.
 	r.spriteUniformKeys = r.spriteUniformKeys[:0]
 	for i := range runs {
@@ -1254,7 +1254,7 @@ func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Ca
 		if !ok {
 			continue
 		}
-		keyIndex := wasmUniformKeyIndex(r.spriteUniformKeys, key)
+		keyIndex := tess.UniformKeyIndex(r.spriteUniformKeys, key)
 		if keyIndex < 0 {
 			r.spriteUniformKeys = append(r.spriteUniformKeys, key)
 			keyIndex = len(r.spriteUniformKeys) - 1
@@ -1271,7 +1271,7 @@ func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Ca
 		if !ok {
 			panic("wasm: sprite uniform arena capacity miscalculated")
 		}
-		packWasmUniform(r.spriteUniformScratch[:], key, base, cameras, width, height)
+		tess.PackUniform(r.spriteUniformScratch[:], key, base, cameras, width, height)
 		r.queue.Call("writeBuffer", r.spriteUniform, offset, bytesToJS(r.spriteUniformScratch[:]))
 	}
 	for i := range runs {
@@ -1279,18 +1279,6 @@ func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Ca
 		if run.uniformSlot >= 0 {
 			run.uniformSlot = run.uniformSlot * r.spriteArena.slotSize
 		}
-	}
-}
-
-func packWasmUniform(dst []byte, key wasmUniformKey, base render.Camera, cameras []wasmLayerCamera, width, height int) {
-	switch key.kind {
-	case wasmUniformSprites:
-		tess.PackSpriteUniforms(dst, wasmCameraForLayer(base, cameras, key.layer), width, height)
-	case wasmUniformText:
-		tess.PackTextUniforms(dst, math2d.Vec2{
-			X: math.Float64frombits(key.offsetX),
-			Y: math.Float64frombits(key.offsetY),
-		}, width, height)
 	}
 }
 
