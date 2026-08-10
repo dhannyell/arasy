@@ -2,7 +2,7 @@ struct Sprite {
   center : vec2f,
   half_size : vec2f,
   rotation : f32,
-  _pad : f32,
+  flags : u32,
   uv_min : vec2f,
   uv_max : vec2f,
   clip_min : vec2f,
@@ -37,24 +37,37 @@ const CORNERS = array<vec2f, 6>(
   vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
   vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0),
 );
+const PROJECT_CORNERS = 1u;
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
   let sprite = sprites[vertex_index / 6u];
   let corner = CORNERS[vertex_index % 6u];
 
-  // Match the legacy DrawImage path: size is scaled into screen pixels
-  // before rotation so AspectStretch cannot skew the rotated sprite.
   let rotation = vec2f(cos(sprite.rotation), sin(sprite.rotation));
-  let screen_corner = corner * sprite.half_size * camera.world_to_screen_scale;
-  let rotated = vec2f(
-    screen_corner.x * rotation.x - screen_corner.y * rotation.y,
-    screen_corner.x * rotation.y + screen_corner.y * rotation.x,
+  let local_corner = corner * sprite.half_size;
+  let rotated_world_corner = vec2f(
+    local_corner.x * rotation.x - local_corner.y * rotation.y,
+    local_corner.x * rotation.y + local_corner.y * rotation.x,
   );
-	let world_center = camera.world_to_clip_x * sprite.center.x +
-		camera.world_to_clip_y * sprite.center.y;
-	let clip_pos = world_center + camera.to_clip_offset +
-		rotated * camera.screen_to_clip_scale;
+  var clip_pos : vec2f;
+  if ((sprite.flags & PROJECT_CORNERS) != 0u) {
+    let world_corner = sprite.center + rotated_world_corner;
+    clip_pos = camera.world_to_clip_x * world_corner.x +
+      camera.world_to_clip_y * world_corner.y + camera.to_clip_offset;
+  } else {
+    // Preserve the upright-sprite rule: scale into screen pixels before
+    // rotating, so AspectStretch does not skew a rotated sprite.
+    let screen_corner = local_corner * camera.world_to_screen_scale;
+    let rotated_screen_corner = vec2f(
+      screen_corner.x * rotation.x - screen_corner.y * rotation.y,
+      screen_corner.x * rotation.y + screen_corner.y * rotation.x,
+    );
+    let world_center = camera.world_to_clip_x * sprite.center.x +
+      camera.world_to_clip_y * sprite.center.y;
+    clip_pos = world_center + camera.to_clip_offset +
+      rotated_screen_corner * camera.screen_to_clip_scale;
+  }
 
   var out : VSOut;
   out.position = vec4f(clip_pos, 0.0, 1.0);

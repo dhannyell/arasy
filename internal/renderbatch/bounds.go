@@ -22,6 +22,28 @@ func IsFiniteSpriteGeometry(inst render.SpriteInstance) bool {
 	return IsFiniteRect(inst.Dest) && isFinite(inst.Rotation)
 }
 
+// SpriteCorners returns the four world-space corners of inst after its local
+// rotation. Backends use this for ground tiles that opt out of billboard
+// expansion and follow the camera as world geometry.
+func SpriteCorners(inst render.SpriteInstance) [4]math2d.Vec2 {
+	center := inst.Dest.Center()
+	sin, cos := math.Sin(inst.Rotation), math.Cos(inst.Rotation)
+	local := [4]math2d.Vec2{
+		{X: inst.Dest.Min.X - center.X, Y: inst.Dest.Min.Y - center.Y},
+		{X: inst.Dest.Max.X - center.X, Y: inst.Dest.Min.Y - center.Y},
+		{X: inst.Dest.Max.X - center.X, Y: inst.Dest.Max.Y - center.Y},
+		{X: inst.Dest.Min.X - center.X, Y: inst.Dest.Max.Y - center.Y},
+	}
+	var corners [4]math2d.Vec2
+	for i, point := range local {
+		corners[i] = math2d.Vec2{
+			X: center.X + point.X*cos - point.Y*sin,
+			Y: center.Y + point.X*sin + point.Y*cos,
+		}
+	}
+	return corners
+}
+
 func isFinite(v float64) bool {
 	return !math.IsNaN(v) && !math.IsInf(v, 0)
 }
@@ -35,25 +57,13 @@ func SpriteBounds(inst render.SpriteInstance) (bounds math2d.Rect, ok bool) {
 		return math2d.Rect{}, false
 	}
 	center := inst.Dest.Center()
-	sin, cos := math.Sin(inst.Rotation), math.Cos(inst.Rotation)
-	corners := [4]math2d.Vec2{
-		inst.Dest.Min,
-		{X: inst.Dest.Max.X, Y: inst.Dest.Min.Y},
-		inst.Dest.Max,
-		{X: inst.Dest.Min.X, Y: inst.Dest.Max.Y},
-	}
+	corners := SpriteCorners(inst)
 	bounds = math2d.Rect{Min: center, Max: center}
 	for _, corner := range corners {
-		dx := corner.X - center.X
-		dy := corner.Y - center.Y
-		p := math2d.Vec2{
-			X: center.X + dx*cos - dy*sin,
-			Y: center.Y + dx*sin + dy*cos,
-		}
-		bounds.Min.X = min(bounds.Min.X, p.X)
-		bounds.Min.Y = min(bounds.Min.Y, p.Y)
-		bounds.Max.X = max(bounds.Max.X, p.X)
-		bounds.Max.Y = max(bounds.Max.Y, p.Y)
+		bounds.Min.X = min(bounds.Min.X, corner.X)
+		bounds.Min.Y = min(bounds.Min.Y, corner.Y)
+		bounds.Max.X = max(bounds.Max.X, corner.X)
+		bounds.Max.Y = max(bounds.Max.Y, corner.Y)
 	}
 	return bounds, true
 }
@@ -64,6 +74,9 @@ func SpriteBounds(inst render.SpriteInstance) (bounds math2d.Rect, ok bool) {
 func SpriteBoundsForCamera(inst render.SpriteInstance, camera render.Camera) (bounds math2d.Rect, ok bool) {
 	if !IsFiniteSpriteGeometry(inst) {
 		return math2d.Rect{}, false
+	}
+	if inst.ProjectCorners {
+		return SpriteBounds(inst)
 	}
 	screenMin := camera.WorldToScreen(inst.Dest.Min)
 	screenMax := camera.WorldToScreen(inst.Dest.Max)

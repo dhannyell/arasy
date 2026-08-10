@@ -83,6 +83,18 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 			dest.Min.Y += offsetY
 			dest.Max.Y += offsetY
 		}
+		if inst.ProjectCorners {
+			projected := inst
+			projected.Dest = dest
+			c.drawImageQuad(render.DrawImageQuad{
+				BaseCommand: render.BaseCommand{LayerValue: command.LayerValue},
+				Texture:     projected.Texture,
+				Corners:     renderbatch.SpriteCorners(projected),
+				Src:         src,
+				Tint:        projected.Tint,
+			}, camera)
+			continue
+		}
 
 		// The batch clip is already applied by withClip around this loop.
 		c.drawImage(render.DrawImage{

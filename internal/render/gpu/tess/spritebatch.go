@@ -13,11 +13,13 @@ import (
 var retainedSpriteClipMin = [2]float32{-math.MaxFloat32, -math.MaxFloat32}
 var retainedSpriteClipMax = [2]float32{math.MaxFloat32, math.MaxFloat32}
 
+const projectedSpriteFlag uint32 = 1
+
 // AppendRetainedSpriteRecord appends one 64-byte sprite storage record for a
 // retained batch instance, serialized exactly like the streaming records of
-// appendSpriteRecord: world center/half-size, rotation, UVs from the (base)
-// Src cell, packed tint and texture layer — but with the always-open clip
-// sentinel instead of a per-command clip.
+// appendSpriteRecord: world center/half-size, rotation, corner mode, UVs from
+// the (base) Src cell, packed tint and texture layer — but with the always-open
+// clip sentinel instead of a per-command clip.
 //
 // whiteTint forces the opaque-white tint used for missing textures, so the
 // backend's 1x1 magenta placeholder texture paints the same magenta the
@@ -56,14 +58,18 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 	if !whiteTint {
 		tint = packSpriteTint(inst.Tint)
 	}
+	flags := uint32(0)
+	if inst.ProjectCorners {
+		flags = projectedSpriteFlag
+	}
 
 	record := spriteRecord{
 		centerX:    float32((minX + maxX) * 0.5),
 		centerY:    float32((minY + maxY) * 0.5),
 		halfWidth:  halfWidth,
 		halfHeight: halfHeight,
-		rotation:   float32(inst.Rotation),
-		uvMinX:     uvMin[0], uvMinY: uvMin[1],
+		rotation:   float32(inst.Rotation), flags: flags,
+		uvMinX: uvMin[0], uvMinY: uvMin[1],
 		uvMaxX: uvMax[0], uvMaxY: uvMax[1],
 		clipMinX: retainedSpriteClipMin[0], clipMinY: retainedSpriteClipMin[1],
 		clipMaxX: retainedSpriteClipMax[0], clipMaxY: retainedSpriteClipMax[1],

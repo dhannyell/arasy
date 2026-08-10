@@ -51,8 +51,9 @@ type Camera struct {
 	// layout and the screen layout differ, such as for an isometric grid. The
 	// zero value is identity. ScreenToWorld applies the inverse mapping.
 	// Render backends use View for batch positions. Sprite, glyph and particle
-	// corners stay screen-space billboards. DrawParticles still ignores
-	// BaseCommand.Transform; this is a command rule, not a camera rule.
+	// corners stay screen-space billboards unless a sprite instance explicitly
+	// requests projected corners. DrawParticles still ignores BaseCommand.Transform;
+	// this is a command rule, not a camera rule.
 	View math2d.Affine
 }
 
