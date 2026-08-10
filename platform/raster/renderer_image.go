@@ -19,6 +19,7 @@ type resolvedImageDraw struct {
 	source   image.Rectangle
 	dest     math2d.Rect
 	rotation float64
+	flip     render.SpriteFlip
 	clip     math2d.Rect
 	tint     tintFactors
 	blend    particle.Blend
@@ -50,6 +51,7 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 		source:   srcRect,
 		dest:     command.Dest,
 		rotation: command.Rotation,
+		flip:     command.Flip,
 		clip:     command.Clip,
 		tint:     tintFrom(command.Tint),
 		blend:    particle.BlendAlpha,
@@ -79,6 +81,7 @@ func (r *Renderer) drawTransformedImage(img *image.RGBA, command render.DrawImag
 			corners[i] = math2d.Vec2{X: center.X + dx*cos - dy*sin, Y: center.Y + dx*sin + dy*cos}
 		}
 	}
+	corners = flipQuadCorners(corners, command.Flip)
 	r.drawImageQuad(img, render.DrawImageQuad{
 		BaseCommand: command.BaseCommand,
 		Texture:     command.Texture,
@@ -120,14 +123,14 @@ func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw)
 		bounds := r.clipBounds(img, image.Rect(
 			int(math.Floor(destX)), int(math.Floor(destY)),
 			int(math.Ceil(destX+destW)), int(math.Ceil(destY+destH))), command.clip)
-		blitScaledMode(img, command.texture, command.source, destX, destY, destW, destH, bounds, command.tint, command.blend)
+		blitScaledModeFlip(img, command.texture, command.source, destX, destY, destW, destH, bounds, command.tint, command.blend, command.flip)
 		return
 	}
 
 	anchor := math2d.Vec2{X: destX + destW/2, Y: destY + destH/2}
 	offsetX, offsetY := -destW/2, -destH/2
 	bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.rotation), command.clip)
-	blitScaledRotatedMode(
+	blitScaledRotatedModeFlip(
 		img,
 		command.texture,
 		command.source,
@@ -140,7 +143,20 @@ func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw)
 		bounds,
 		command.tint,
 		command.blend,
+		command.flip,
 	)
+}
+
+func flipQuadCorners(corners [4]math2d.Vec2, flip render.SpriteFlip) [4]math2d.Vec2 {
+	if flip&render.FlipX != 0 {
+		corners[0], corners[1] = corners[1], corners[0]
+		corners[3], corners[2] = corners[2], corners[3]
+	}
+	if flip&render.FlipY != 0 {
+		corners[0], corners[3] = corners[3], corners[0]
+		corners[1], corners[2] = corners[2], corners[1]
+	}
+	return corners
 }
 
 // Warnings below fire at most once per process: a bad DrawImageQuad command
@@ -270,6 +286,22 @@ func blitScaledMode(
 	tint tintFactors,
 	mode particle.Blend,
 ) {
+	blitScaledModeFlip(dst, src, srcRect, destX, destY, destWidth, destHeight, bounds, tint, mode, render.FlipNone)
+}
+
+func blitScaledModeFlip(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	destX,
+	destY,
+	destWidth,
+	destHeight float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+	mode particle.Blend,
+	flip render.SpriteFlip,
+) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
@@ -285,12 +317,20 @@ func blitScaledMode(
 	scaleY := float64(srcRect.Dy()) / destHeight
 
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
-		srcY := srcRect.Min.Y + int((float64(y)+0.5-destY)*scaleY)
+		sampleY := float64(y) + 0.5 - destY
+		if flip&render.FlipY != 0 {
+			sampleY = destHeight - sampleY
+		}
+		srcY := srcRect.Min.Y + int(sampleY*scaleY)
 		if srcY < srcRect.Min.Y || srcY >= srcRect.Max.Y {
 			continue
 		}
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
-			srcX := srcRect.Min.X + int((float64(x)+0.5-destX)*scaleX)
+			sampleX := float64(x) + 0.5 - destX
+			if flip&render.FlipX != 0 {
+				sampleX = destWidth - sampleX
+			}
+			srcX := srcRect.Min.X + int(sampleX*scaleX)
 			if srcX < srcRect.Min.X || srcX >= srcRect.Max.X {
 				continue
 			}
@@ -340,6 +380,20 @@ func blitScaledRotatedMode(
 	tint tintFactors,
 	mode particle.Blend,
 ) {
+	blitScaledRotatedModeFlip(dst, src, srcRect, anchor, offsetX, offsetY, destWidth, destHeight, angle, bounds, tint, mode, render.FlipNone)
+}
+
+func blitScaledRotatedModeFlip(
+	dst *image.RGBA,
+	src *image.RGBA,
+	srcRect image.Rectangle,
+	anchor math2d.Vec2,
+	offsetX, offsetY, destWidth, destHeight, angle float64,
+	bounds image.Rectangle,
+	tint tintFactors,
+	mode particle.Blend,
+	flip render.SpriteFlip,
+) {
 	if destWidth <= 0 || destHeight <= 0 {
 		return
 	}
@@ -358,6 +412,12 @@ func blitScaledRotatedMode(
 			localY := -dx*sinAngle + dy*cosAngle - offsetY
 			if localX < 0 || localX >= destWidth || localY < 0 || localY >= destHeight {
 				continue
+			}
+			if flip&render.FlipX != 0 {
+				localX = destWidth - localX
+			}
+			if flip&render.FlipY != 0 {
+				localY = destHeight - localY
 			}
 
 			srcX := srcRect.Min.X + int(localX*scaleX)

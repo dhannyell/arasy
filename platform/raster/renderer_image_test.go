@@ -25,6 +25,29 @@ func makeTex2x2() *image.RGBA {
 	return img
 }
 
+// makeTexFlipSheet builds two 2×2 frames for flip-book tests.
+func makeTexFlipSheet() *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, 4, 2))
+	frames := [2][2][2]color.RGBA{
+		{
+			{{R: 255, A: 255}, {G: 255, A: 255}},
+			{{B: 255, A: 255}, {R: 255, G: 255, A: 255}},
+		},
+		{
+			{{R: 255, B: 255, A: 255}, {G: 255, B: 255, A: 255}},
+			{{R: 255, G: 255, B: 255, A: 255}, {A: 255}},
+		},
+	}
+	for frame, pixels := range frames {
+		for y, row := range pixels {
+			for x, pixel := range row {
+				img.SetRGBA(frame*2+x, y, pixel)
+			}
+		}
+	}
+	return img
+}
+
 // makeTex4x4Quadrants builds a 4×4 texture with four distinct quadrants.
 //
 //	red   red   green  green
@@ -97,6 +120,106 @@ func TestDrawImageBlit1to1(t *testing.T) {
 	// Pixels outside the dest stay clear.
 	assertPixel(t, img.At(0, 0), color.RGBA{R: 0, G: 0, B: 0, A: 255})
 	assertPixel(t, img.At(3, 3), color.RGBA{R: 0, G: 0, B: 0, A: 255})
+}
+
+func TestSpriteFlipMatchesRotationAndFlipBookOrder(t *testing.T) {
+	red := color.RGBA{R: 255, A: 255}
+	green := color.RGBA{G: 255, A: 255}
+	blue := color.RGBA{B: 255, A: 255}
+	yellow := color.RGBA{R: 255, G: 255, A: 255}
+	magenta := color.RGBA{R: 255, B: 255, A: 255}
+	cyan := color.RGBA{G: 255, B: 255, A: 255}
+	white := color.RGBA{R: 255, G: 255, B: 255, A: 255}
+	black := color.RGBA{A: 255}
+
+	cases := []struct {
+		name         string
+		flip         render.SpriteFlip
+		static       [2][2]color.RGBA
+		staticTurn   [2][2]color.RGBA
+		animated     [2][2]color.RGBA
+		animatedTurn [2][2]color.RGBA
+	}{
+		{
+			name:         "none",
+			flip:         render.FlipNone,
+			static:       [2][2]color.RGBA{{red, green}, {blue, yellow}},
+			staticTurn:   [2][2]color.RGBA{{blue, red}, {yellow, green}},
+			animated:     [2][2]color.RGBA{{magenta, cyan}, {white, black}},
+			animatedTurn: [2][2]color.RGBA{{white, magenta}, {black, cyan}},
+		},
+		{
+			name:         "horizontal",
+			flip:         render.FlipX,
+			static:       [2][2]color.RGBA{{green, red}, {yellow, blue}},
+			staticTurn:   [2][2]color.RGBA{{yellow, green}, {blue, red}},
+			animated:     [2][2]color.RGBA{{cyan, magenta}, {black, white}},
+			animatedTurn: [2][2]color.RGBA{{black, cyan}, {white, magenta}},
+		},
+		{
+			name:         "vertical",
+			flip:         render.FlipY,
+			static:       [2][2]color.RGBA{{blue, yellow}, {red, green}},
+			staticTurn:   [2][2]color.RGBA{{red, blue}, {green, yellow}},
+			animated:     [2][2]color.RGBA{{white, black}, {magenta, cyan}},
+			animatedTurn: [2][2]color.RGBA{{magenta, white}, {cyan, black}},
+		},
+		{
+			name:         "both",
+			flip:         render.FlipX | render.FlipY,
+			static:       [2][2]color.RGBA{{yellow, blue}, {green, red}},
+			staticTurn:   [2][2]color.RGBA{{green, yellow}, {red, blue}},
+			animated:     [2][2]color.RGBA{{black, white}, {cyan, magenta}},
+			animatedTurn: [2][2]color.RGBA{{cyan, black}, {magenta, white}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertFlipPixels(t, renderFlipImage(tc.flip, 0, false), tc.static)
+			assertFlipPixels(t, renderFlipImage(tc.flip, math.Pi/2, false), tc.staticTurn)
+			assertFlipPixels(t, renderFlipImage(tc.flip, 0, true), tc.animated)
+			assertFlipPixels(t, renderFlipImage(tc.flip, math.Pi/2, true), tc.animatedTurn)
+		})
+	}
+}
+
+func renderFlipImage(flip render.SpriteFlip, rotation float64, animated bool) *image.RGBA {
+	renderer := imageRenderer(2, 2)
+	renderer.Textures = pixel.Registry{nil, makeTexFlipSheet()}
+	dest := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2})
+	if !animated {
+		return renderer.Render([]render.Command{render.DrawImage{
+			Texture:  1,
+			Dest:     dest,
+			Src:      math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+			Rotation: rotation,
+			Flip:     flip,
+		}})
+	}
+	renderer.ReplaceSpriteBatch(1, []render.SpriteInstance{{
+		Texture:   1,
+		Dest:      dest,
+		Src:       math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+		Rotation:  rotation,
+		Flip:      flip,
+		Animation: render.SpriteAnimation{Frames: 2, Rate: 1},
+	}})
+	return renderer.Render([]render.Command{render.DrawSpriteBatch{
+		Batch:     1,
+		Animation: render.SpriteBatchAnimation{Time: 1},
+	}})
+}
+
+func assertFlipPixels(t *testing.T, img *image.RGBA, want [2][2]color.RGBA) {
+	t.Helper()
+	for y, row := range want {
+		for x, pixel := range row {
+			if got := img.RGBAAt(x, y); got != pixel {
+				t.Fatalf("pixel (%d,%d) = %v, want %v", x, y, got, pixel)
+			}
+		}
+	}
 }
 
 // TestDrawImageTransformRotatesTexturedQuad proves a DrawImage carrying a

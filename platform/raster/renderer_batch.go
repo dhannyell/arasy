@@ -108,6 +108,7 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 			Src:         src,
 			Tint:        inst.Tint,
 			Rotation:    inst.Rotation,
+			Flip:        inst.Flip,
 		})
 	}
 }

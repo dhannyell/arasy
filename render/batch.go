@@ -14,6 +14,18 @@ type SpriteBatchID uint32
 // TextBatchID.
 type TextBatchID uint32
 
+// SpriteFlip mirrors the sampled sprite content inside its destination.
+type SpriteFlip uint8
+
+const (
+	// FlipNone keeps the sampled sprite orientation unchanged.
+	FlipNone SpriteFlip = 0
+	// FlipX mirrors the sampled sprite horizontally.
+	FlipX SpriteFlip = 1 << 0
+	// FlipY mirrors the sampled sprite vertically.
+	FlipY SpriteFlip = 1 << 1
+)
+
 // SpriteInstance is one retained DrawImage-style quad. Coordinates and Src
 // use the same world/pixel conventions as DrawImage. Content is render-only:
 // it never enters checksums, snapshots, replays or recordings.
@@ -31,6 +43,8 @@ type SpriteInstance struct {
 	// Rotation is applied around the center of Dest, in radians. Zero
 	// keeps the sprite axis-aligned.
 	Rotation float64
+	// Flip mirrors the sampled Src content inside Dest before Rotation.
+	Flip SpriteFlip
 	// ProjectCorners makes the backend transform all four Dest corners through
 	// the camera. Use it for ground content, such as tilemaps, whose shape must
 	// follow an isometric or tilted world view. The zero value keeps the sprite
