@@ -2,6 +2,7 @@ package outpost
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"math"
 
@@ -11,14 +12,16 @@ import (
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/scene"
+	"github.com/dhannyell/arasy/tilemap"
 )
 
 //go:embed assets
 var embeddedAssets embed.FS
 
 const (
-	viewportWidth  = 1600
-	viewportHeight = 960
+	viewportWidth   = 1600
+	viewportHeight  = 960
+	groundBatchBase = render.SpriteBatchID(100)
 
 	// cameraAir is the margin FrameGround adds around the board: enough for
 	// the peaks above it and the cliffs below without dwarfing the island.
@@ -93,11 +96,15 @@ type Game struct {
 	units [unitCount]scene.EntityID
 
 	// Presentation-only, rebuilt or refreshed without entering State.
-	static     []render.Command
-	projection render.Projection
-	hoverI     int
-	hoverJ     int
-	hovered    bool
+	static          []render.Command
+	projection      render.Projection
+	ground          tilemap.Layer
+	groundAtlas     tilemap.Atlas
+	groundBuffer    []render.SpriteInstance
+	terrainUploaded bool
+	hoverI          int
+	hoverJ          int
+	hovered         bool
 
 	commands []render.Command
 
@@ -113,7 +120,21 @@ func NewGame() (*Game, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Game{assets: m}, nil
+	ground, err := tilemap.ParseASCII(boardMap[:], groundLegend)
+	if err != nil {
+		return nil, fmt.Errorf("parse outpost ground: %w", err)
+	}
+	ground.Origin = math2d.Vec2{}
+	ground.CellSize = math2d.Vec2{X: tileSize, Y: tileSize}
+	return &Game{
+		assets: m,
+		ground: ground,
+		groundAtlas: tilemap.Atlas{
+			Texture:  m.Texture("terrain_atlas"),
+			TileSize: math2d.Vec2{X: terrainAtlasCell, Y: terrainAtlasCell},
+			Columns:  terrainAtlasColumns,
+		},
+	}, nil
 }
 
 func (g *Game) Setup() runtime.Config {
@@ -192,6 +213,7 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	// which way up is.
 	g.projection = projection
 
+	g.publishAllGround(ctx.Batches)
 	g.static = buildStaticBoard(projection)
 	spawnProps(ctx.World, projection)
 
@@ -239,6 +261,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	g.trackHover(ctx)
 	g.handleClicks(ctx)
 	g.steerCursor(ctx, dt)
+	g.publishDirtyGround(ctx.Batches)
 }
 
 func (g *Game) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
@@ -352,7 +375,13 @@ func hopFlight(from, to math2d.Vec2) (duration, apex float64) {
 }
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	cmds := append(g.commands[:0], g.static...)
+	if !g.terrainUploaded {
+		ctx.UpdateTexture(g.groundAtlas.Texture, terrainAtlasImage())
+		g.terrainUploaded = true
+	}
+
+	cmds := g.appendGroundBatches(g.commands[:0], ctx.Camera())
+	cmds = append(cmds, g.static...)
 	cmds = g.appendClouds(cmds, ctx.Time)
 	cmds = g.appendWater(cmds, ctx.Time)
 	cmds = g.appendHover(cmds)
@@ -364,6 +393,40 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 
 	g.commands = cmds
 	return cmds
+}
+
+func (g *Game) appendGroundBatches(cmds []render.Command, cam render.Camera) []render.Command {
+	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam) {
+		cmds = append(cmds, render.DrawSpriteBatch{
+			BaseCommand: render.BaseCommand{LayerValue: layerGround},
+			Batch:       groundBatchID(chunk),
+		})
+	}
+	return cmds
+}
+
+func (g *Game) publishAllGround(batches *runtime.BatchPort) {
+	for y := 0; y < g.ground.H; y += tilemap.ChunkSize {
+		for x := 0; x < g.ground.W; x += tilemap.ChunkSize {
+			g.publishGroundChunk(batches, tilemap.ChunkCoord{X: x / tilemap.ChunkSize, Y: y / tilemap.ChunkSize})
+		}
+	}
+}
+
+func (g *Game) publishDirtyGround(batches *runtime.BatchPort) {
+	for _, chunk := range g.ground.DirtyChunks() {
+		g.publishGroundChunk(batches, chunk)
+	}
+}
+
+func (g *Game) publishGroundChunk(batches *runtime.BatchPort, chunk tilemap.ChunkCoord) {
+	instances := g.ground.Chunk(chunk.X, chunk.Y, g.groundAtlas, g.groundBuffer)
+	g.groundBuffer = instances
+	batches.UpdateSprites(groundBatchID(chunk), instances)
+}
+
+func groundBatchID(chunk tilemap.ChunkCoord) render.SpriteBatchID {
+	return groundBatchBase + render.SpriteBatchID(chunk.Y*256+chunk.X)
 }
 
 // appendClouds drifts soft shadow blobs across the island interior. They are
