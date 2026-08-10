@@ -28,6 +28,11 @@ func pcg3d(v [3]uint32) [3]uint32 {
 	return v
 }
 
+// Hash3 exposes the canonical three-lane hash to other render-only systems.
+// The particle simulator and post-processing effects therefore share one
+// deterministic sequence instead of carrying duplicate implementations.
+func Hash3(v [3]uint32) [3]uint32 { return pcg3d(v) }
+
 // Float01 maps one hashed lane to [0,1). Divide by 2^32, not 2^32-1, so 1.0
 // is never produced; the WGSL shader must use the same constant.
 func Float01(x uint32) float64 { return float64(x) / (1 << 32) }

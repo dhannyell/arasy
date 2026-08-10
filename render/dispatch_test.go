@@ -37,6 +37,9 @@ func (s *recordingSink) VisitSpriteBatch(render.DrawSpriteBatch) {
 func (s *recordingSink) VisitTextBatch(render.DrawTextBatch) {
 	s.visits = append(s.visits, "textBatch")
 }
+func (s *recordingSink) VisitPostChain(render.PostChain) {
+	s.visits = append(s.visits, "postChain")
+}
 
 func layered(layer int) render.BaseCommand {
 	return render.BaseCommand{LayerValue: layer}
@@ -97,6 +100,7 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 		render.DrawParticles{},
 		render.DrawSpriteBatch{},
 		render.DrawTextBatch{},
+		render.PostChain{},
 	}
 
 	sink := &recordingSink{}
@@ -104,7 +108,7 @@ func TestEachDispatchesEveryCommandKindExactlyOnce(t *testing.T) {
 
 	want := []string{
 		"rect", "circle", "ellipse", "point", "line", "text", "arc", "polygon", "triangles", "image", "imageQuad", "particles",
-		"spriteBatch", "textBatch",
+		"spriteBatch", "textBatch", "postChain",
 	}
 	if !reflect.DeepEqual(sink.visits, want) {
 		t.Fatalf("visits = %v, want %v (each command kind must dispatch exactly once)", sink.visits, want)

@@ -68,3 +68,7 @@ test('renders isometric batch and particle conformance', async ({ page }, testIn
     'view.png',
   );
 });
+
+test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
+});

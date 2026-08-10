@@ -92,6 +92,25 @@ type webgpuRenderer struct {
 	// single source level at a time.
 	mipSampler js.Value
 
+	postSampler   js.Value
+	postPipelines map[string]js.Value
+	postUniforms  []js.Value
+	postSceneA    webgpuPostTarget
+	postSceneB    webgpuPostTarget
+	postBloom     []webgpuPostTarget
+	postWidth     int
+	postHeight    int
+	postDisabled  bool
+	// postBindGroups caches one bind group per {pipeline, sampled targets,
+	// uniform slot}. The cached entries reference stable GPU objects, so a
+	// steady chain creates zero bind groups per frame. Cleared whenever a
+	// post target is recreated.
+	postBindGroups map[postBindKey]js.Value
+	// postUniformScratch and postUniformJS stage one 64-byte uniform write
+	// so writeBuffer does not allocate a Go slice and a JS array per effect.
+	postUniformScratch [64]byte
+	postUniformJS      js.Value
+
 	solidBuffer          js.Value
 	textGlyphBuffer      js.Value
 	textLabelBuffer      js.Value
@@ -248,6 +267,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	}
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
+	r.initPostResources()
 
 	r.solidPipeline, r.solidAddPipeline = r.createSolidPipelines()
 	r.textGlyphPipeline, r.textGlyphAddPipeline = r.createTextGlyphPipelines()
@@ -385,6 +405,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:   tess.DrawRunSolid,
 				blend:  run.Blend,
+				layer:  run.Layer,
 				offset: run.ByteOffset / tess.SolidVertexStride,
 				count:  run.VertexCount,
 			})
@@ -395,6 +416,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunTextured,
 				blend:   run.Blend,
+				layer:   run.Layer,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.TexVertexStride,
 				count:   run.VertexCount,
@@ -406,6 +428,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunSprites,
 				blend:   run.Blend,
+				layer:   run.Layer,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.SpriteStride,
 				count:   run.VertexCount,
@@ -417,6 +440,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
 				blend:    run.Blend,
+				layer:    run.Layer,
 				atlasKey: run.AtlasKey,
 				offset:   run.ByteOffset / tess.TextGlyphStride,
 				count:    run.VertexCount,
@@ -424,17 +448,20 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		case tess.DrawRunParticles:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:      tess.DrawRunParticles,
+				layer:     run.Layer,
 				particles: run.Particles,
 			})
 		case tess.DrawRunSpriteBatch:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:        tess.DrawRunSpriteBatch,
+				layer:       run.Layer,
 				spriteBatch: run.SpriteBatch,
 				batchSlot:   -1,
 			})
 		case tess.DrawRunTextBatch:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:      tess.DrawRunTextBatch,
+				layer:     run.Layer,
 				textBatch: run.TextBatch,
 			})
 		}
@@ -537,6 +564,13 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 
 	r.ensureMSAATarget(w, h)
+	if chain, ok := lastWebGPUPostChain(frame.Commands); ok && !r.postDisabled {
+		if err := r.renderPostFrame(frame, drawRuns, chain, w, h); err != nil {
+			r.disablePost(err)
+		} else {
+			return
+		}
+	}
 
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
@@ -616,104 +650,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// records without relying on firstInstance.
 	lastComposited := -1
 	for _, run := range drawRuns {
-		switch run.kind {
-		case tess.DrawRunSolid:
-			pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
-			pass.Call("setVertexBuffer", 0, r.solidBuffer)
-			pass.Call("draw", run.count, 1, run.offset, 0)
-		case tess.DrawRunTextured:
-			gt, ok := r.textureFor(run.texture)
-			if !ok {
-				continue
-			}
-			pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
-			pass.Call("setVertexBuffer", 0, r.texBuffer)
-			pass.Call("setBindGroup", 0, gt.bindGroup)
-			pass.Call("draw", run.count, 1, run.offset, 0)
-		case tess.DrawRunSprites:
-			if r.spriteArrayEnabled {
-				pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
-				pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
-			} else {
-				gt, ok := r.textureFor(run.texture)
-				if !ok || gt.spriteBindGroup.IsUndefined() || gt.spriteBindGroup.IsNull() {
-					continue
-				}
-				pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
-				pass.Call("setBindGroup", 0, gt.spriteBindGroup)
-			}
-			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
-		case tess.DrawRunText:
-			atlas, ok := r.textAtlasFor(run.atlasKey)
-			if !ok {
-				continue
-			}
-			pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
-			pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
-			pass.Call("draw", run.count*6, 1, run.offset*6, 0)
-		case tess.DrawRunParticles:
-			if !offscreenParticles {
-				r.particles.draw(pass, run.particles, frame.Camera, w, h)
-				continue
-			}
-			if run.group == lastComposited {
-				continue
-			}
-			lastComposited = run.group
-			pass.Call("setPipeline", r.compositePipeline)
-			pass.Call("setBindGroup", 0, r.particleTargets[run.group].bindGroup)
-			pass.Call("draw", 3, 1, 0, 0)
-		case tess.DrawRunSpriteBatch:
-			batch := run.batch
-			if batch == nil {
-				continue
-			}
-			cmd := run.spriteBatch
-			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
-				continue
-			}
-			for i, rg := range batch.ranges {
-				if batch.animated {
-					if r.spriteArrayEnabled && !rg.magenta {
-						pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
-					} else {
-						pass.Call("setPipeline", r.spriteBatchAnimPipeline)
-					}
-					pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
-				} else {
-					if r.spriteArrayEnabled && !rg.magenta {
-						pass.Call("setPipeline", r.spriteArrayPipeline)
-					} else {
-						pass.Call("setPipeline", r.spritePipeline)
-					}
-					pass.Call("setBindGroup", 0, batch.bindGroups[i])
-				}
-				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
-			}
-			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-				pass.Call("setScissorRect", 0, 0, w, h)
-			}
-		case tess.DrawRunTextBatch:
-			batch := run.text
-			if batch == nil {
-				continue
-			}
-			cmd := run.textBatch
-			if !applyClipScissor(pass, cmd.Clip, frame.Camera, 1, w, h) {
-				continue
-			}
-			pass.Call("setPipeline", r.textGlyphPipeline)
-			for _, rg := range batch.ranges {
-				if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
-					continue
-				}
-				pass.Call("setBindGroup", 0, rg.bindGroup)
-				pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
-			}
-			if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-				pass.Call("setScissorRect", 0, 0, w, h)
-			}
-		}
+		r.drawRun(pass, run, frame.Camera, w, h, offscreenParticles, &lastComposited)
 	}
 
 	pass.Call("end")
@@ -883,9 +820,121 @@ func pickJS(blend render.Blend, add, alpha js.Value) js.Value {
 	return alpha
 }
 
+func (r *webgpuRenderer) drawRun(
+	pass js.Value,
+	run gpuDrawRun,
+	camera render.Camera,
+	w, h int,
+	offscreenParticles bool,
+	lastComposited *int,
+) {
+	switch run.kind {
+	case tess.DrawRunSolid:
+		pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
+		pass.Call("setVertexBuffer", 0, r.solidBuffer)
+		pass.Call("draw", run.count, 1, run.offset, 0)
+	case tess.DrawRunTextured:
+		texture, ok := r.textureFor(run.texture)
+		if !ok {
+			return
+		}
+		pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
+		pass.Call("setVertexBuffer", 0, r.texBuffer)
+		pass.Call("setBindGroup", 0, texture.bindGroup)
+		pass.Call("draw", run.count, 1, run.offset, 0)
+	case tess.DrawRunSprites:
+		if r.spriteArrayEnabled {
+			pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
+			pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
+		} else {
+			texture, ok := r.textureFor(run.texture)
+			if !ok || texture.spriteBindGroup.IsUndefined() || texture.spriteBindGroup.IsNull() {
+				return
+			}
+			pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
+			pass.Call("setBindGroup", 0, texture.spriteBindGroup)
+		}
+		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
+	case tess.DrawRunText:
+		atlas, ok := r.textAtlasFor(run.atlasKey)
+		if !ok {
+			return
+		}
+		pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
+		pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
+		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
+	case tess.DrawRunParticles:
+		if r.particles == nil {
+			return
+		}
+		if !offscreenParticles {
+			r.particles.draw(pass, run.particles, camera, w, h)
+			return
+		}
+		if lastComposited == nil || run.group == *lastComposited {
+			return
+		}
+		*lastComposited = run.group
+		pass.Call("setPipeline", r.compositePipeline)
+		pass.Call("setBindGroup", 0, r.particleTargets[run.group].bindGroup)
+		pass.Call("draw", 3, 1, 0, 0)
+	case tess.DrawRunSpriteBatch:
+		batch := run.batch
+		if batch == nil {
+			return
+		}
+		cmd := run.spriteBatch
+		if !applyClipScissor(pass, cmd.Clip, camera, 1, w, h) {
+			return
+		}
+		for i, rg := range batch.ranges {
+			if batch.animated {
+				if r.spriteArrayEnabled && !rg.magenta {
+					pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
+				} else {
+					pass.Call("setPipeline", r.spriteBatchAnimPipeline)
+				}
+				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
+			} else {
+				if r.spriteArrayEnabled && !rg.magenta {
+					pass.Call("setPipeline", r.spriteArrayPipeline)
+				} else {
+					pass.Call("setPipeline", r.spritePipeline)
+				}
+				pass.Call("setBindGroup", 0, batch.bindGroups[i])
+			}
+			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
+		}
+		if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+			pass.Call("setScissorRect", 0, 0, w, h)
+		}
+	case tess.DrawRunTextBatch:
+		batch := run.text
+		if batch == nil {
+			return
+		}
+		cmd := run.textBatch
+		if !applyClipScissor(pass, cmd.Clip, camera, 1, w, h) {
+			return
+		}
+		pass.Call("setPipeline", r.textGlyphPipeline)
+		for _, rg := range batch.ranges {
+			if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
+				continue
+			}
+			pass.Call("setBindGroup", 0, rg.bindGroup)
+			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
+		}
+		if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
+			pass.Call("setScissorRect", 0, 0, w, h)
+		}
+	}
+}
+
 type gpuDrawRun struct {
 	kind      tess.DrawRunKind
 	blend     render.Blend
+	layer     int
 	texture   render.TextureID
 	atlasKey  tess.AtlasKey
 	particles render.DrawParticles

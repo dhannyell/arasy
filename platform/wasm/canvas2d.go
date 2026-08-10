@@ -43,6 +43,32 @@ type Canvas2D struct {
 
 	// batches holds retained sprite/text batch content (render-only).
 	batches canvasBatchRegistry
+
+	// postSurface is allocated only when a frame submits a PostChain and is
+	// reused across frames at the current canvas size.
+	postSurface *canvasPostSurface
+
+	// postVignette caches the radial gradient, which only depends on the
+	// canvas size and the vignette color.
+	postVignette    js.Value
+	postVignetteKey vignetteKey
+
+	// postGrainTile caches one small noise canvas per FilmGrain seed so the
+	// tile is generated once, not regenerated every frame.
+	postGrainTile    js.Value
+	postGrainTileKey uint64
+
+	// postGrilleTile caches the 3x1 aperture-grille multiply tile per
+	// Scanlines mask strength.
+	postGrilleTile    js.Value
+	postGrilleTileKey float64
+}
+
+// vignetteKey identifies the cached vignette gradient.
+type vignetteKey struct {
+	width  int
+	height int
+	color  render.Color
 }
 
 // dynamicTexture is the reusable upload target for one dynamic texture: an
@@ -206,7 +232,11 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
-	render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
+	if chain, ok := lastCanvasPostChain(frame.Commands); ok {
+		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h))
+	} else {
+		render.Each(frame.Commands, canvasSink{canvas: c, camera: frame.Camera})
+	}
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
@@ -299,6 +329,10 @@ func (s canvasSink) VisitImageQuad(command render.DrawImageQuad) {
 func (s canvasSink) VisitParticles(command render.DrawParticles) {
 	s.withClipAndTransform(command.Clip, command.Transform, render.BlendAlpha, func() { s.canvas.drawParticles(command, s.camera) })
 }
+
+// VisitPostChain is a placeholder until Canvas2D applies the chain through
+// its reusable offscreen surface.
+func (s canvasSink) VisitPostChain(render.PostChain) {}
 
 // drawImage is the Canvas2D fallback implementation of DrawImage. It matches
 // the raster/WebGPU backends' full RGB tint (not just alpha) via
