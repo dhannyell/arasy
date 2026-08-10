@@ -417,18 +417,23 @@ func (r *webgpuRenderer) encodeBlur(encoder js.Value, source webgpuPostTarget, s
 	if err := r.ensureBloomTargets(passes); err != nil {
 		return err
 	}
-	r.encodePostPass(encoder, postPipelineBlit, sourceID, source.view, r.postBloom[0].view, -1)
+	// The first downsample reads the scene directly instead of blitting it
+	// into level zero first: the output is identical and one fullscreen pass
+	// cheaper. Level zero is still written by the final upsample below.
+	srcView, srcID := source.view, sourceID
+	srcWidth, srcHeight := source.width, source.height
 	for level := 1; level <= passes; level++ {
-		src := r.postBloom[level-1]
 		dst := r.postBloom[level]
 		uniformIndex := index + level
 		postUniformBuffer(r, uniformIndex, func(data []byte) {
-			putPostF32(data, 0, float64(src.width))
-			putPostF32(data, 4, float64(src.height))
+			putPostF32(data, 0, float64(srcWidth))
+			putPostF32(data, 4, float64(srcHeight))
 			putPostF32(data, 8, float64(dst.width))
 			putPostF32(data, 12, float64(dst.height))
 		})
-		r.encodePostPass(encoder, postPipelineBlurDown, postSourceBloom+level-1, src.view, dst.view, uniformIndex)
+		r.encodePostPass(encoder, postPipelineBlurDown, srcID, srcView, dst.view, uniformIndex)
+		srcView, srcID = dst.view, postSourceBloom+level
+		srcWidth, srcHeight = dst.width, dst.height
 	}
 	for level := passes - 1; level >= 0; level-- {
 		src := r.postBloom[level+1]

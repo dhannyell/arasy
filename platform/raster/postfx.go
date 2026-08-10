@@ -1031,6 +1031,11 @@ func applyRainDrop(src *image.RGBA, pixel postPixel, x, y int, centerX, centerY,
 	} else {
 		ny *= 1.12
 	}
+	// The wobble shrinks n by at most x0.86, so 0.86^2 * 1.36 > 1: past this
+	// bound the mask is provably zero and the atan2/sin work can be skipped.
+	if nx*nx+ny*ny >= 1.36 {
+		return pixel
+	}
 	// Angular wobble breaks the perfect circle; shape picks the per-drop phase.
 	angle := math.Atan2(ny, nx)
 	wobble := 1 + 0.09*math.Sin(3*angle+shape*6.2832) + 0.05*math.Sin(5*angle+shape*12.9)

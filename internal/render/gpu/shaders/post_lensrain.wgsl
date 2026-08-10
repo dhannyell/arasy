@@ -59,6 +59,11 @@ fn rainDrop(uv: vec2f, pp: vec2f, pixel: vec3f, center: vec2f, radii: vec2f,
   var n = delta / radii;
   // Gravity asymmetry: the drop bulges below its center and thins above it.
   n.y = select(n.y * 1.12, n.y * 0.82, n.y > 0.0);
+  // The wobble shrinks n by at most x0.86, so 0.86^2 * 1.36 > 1: past this
+  // bound the mask is provably zero and the atan2/sin work can be skipped.
+  if (dot(n, n) >= 1.36) {
+    return pixel;
+  }
   // Angular wobble breaks the perfect circle; shape picks the per-drop phase.
   let angle = atan2(n.y, n.x);
   n *= 1.0 + 0.09 * sin(3.0 * angle + shape * 6.2832) + 0.05 * sin(5.0 * angle + shape * 12.9);

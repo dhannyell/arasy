@@ -451,24 +451,28 @@ func (r *Renderer) encodeNativeBlur(encoder *wgpu.CommandEncoder, source nativeP
 	if err := r.ensurePostBloom(passes); err != nil {
 		return err
 	}
-	if err := r.encodePostPass(encoder, nativePostBlit, sourceID, source.view, r.postBloom[0].view, -1); err != nil {
-		return err
-	}
+	// The first downsample reads the scene directly instead of blitting it
+	// into level zero first: the output is identical and one fullscreen pass
+	// cheaper. Level zero is still written by the final upsample below.
+	srcView, srcID := source.view, sourceID
+	srcWidth, srcHeight := source.width, source.height
 	for level := 1; level <= passes; level++ {
-		src, dst := r.postBloom[level-1], r.postBloom[level]
+		dst := r.postBloom[level]
 		uniformIndex := index + level
 		err := r.writePostUniform(uniformIndex, func(data []byte) {
-			nativePostF32(data, 0, float64(src.width))
-			nativePostF32(data, 4, float64(src.height))
+			nativePostF32(data, 0, float64(srcWidth))
+			nativePostF32(data, 4, float64(srcHeight))
 			nativePostF32(data, 8, float64(dst.width))
 			nativePostF32(data, 12, float64(dst.height))
 		})
 		if err != nil {
 			return err
 		}
-		if err := r.encodePostPass(encoder, nativePostBlurDown, nativePostSourceBloom+level-1, src.view, dst.view, uniformIndex); err != nil {
+		if err := r.encodePostPass(encoder, nativePostBlurDown, srcID, srcView, dst.view, uniformIndex); err != nil {
 			return err
 		}
+		srcView, srcID = dst.view, nativePostSourceBloom+level
+		srcWidth, srcHeight = dst.width, dst.height
 	}
 	for level := passes - 1; level >= 0; level-- {
 		src, dst := r.postBloom[level+1], r.postBloom[level]
