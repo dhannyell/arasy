@@ -3,6 +3,7 @@ package raster
 import (
 	"fmt"
 	"image"
+	"image/draw"
 	"log/slog"
 
 	"github.com/dhannyell/arasy/asset"
@@ -100,7 +101,49 @@ func (r *Renderer) RenderInto(dst *image.RGBA, commands []render.Command) {
 
 	fillRect(dst, dst.Bounds(), toRGBA(r.Clear))
 
+	chain, ok := lastPostChain(commands)
+	if ok {
+		r.renderPostChain(dst, commands, chain)
+		return
+	}
+
 	render.Each(commands, rasterSink{renderer: r, image: dst})
+}
+
+func lastPostChain(commands []render.Command) (render.PostChain, bool) {
+	var chain render.PostChain
+	found := false
+	for _, command := range commands {
+		if candidate, ok := command.(render.PostChain); ok {
+			chain = candidate
+			found = true
+		}
+	}
+	return chain, found
+}
+
+func postChainPartitions(commands []render.Command, belowLayer int) (below, above []render.Command) {
+	for _, command := range commands {
+		if _, ok := command.(render.PostChain); ok {
+			continue
+		}
+		if belowLayer == 0 || command.Layer() < belowLayer {
+			below = append(below, command)
+			continue
+		}
+		above = append(above, command)
+	}
+	return below, above
+}
+
+func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, chain render.PostChain) {
+	below, above := postChainPartitions(commands, chain.BelowLayer)
+	scene := image.NewRGBA(dst.Bounds())
+	fillRect(scene, scene.Bounds(), toRGBA(r.Clear))
+	render.Each(below, rasterSink{renderer: r, image: scene})
+	applyPostChain(scene, chain, r.Camera)
+	draw.Draw(dst, dst.Bounds(), scene, scene.Bounds().Min, draw.Src)
+	render.Each(above, rasterSink{renderer: r, image: dst})
 }
 
 type rasterSink struct {
@@ -174,3 +217,7 @@ func (s rasterSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
 func (s rasterSink) VisitTextBatch(command render.DrawTextBatch) {
 	s.renderer.drawTextBatch(s.image, command)
 }
+
+// VisitPostChain is a placeholder until the raster target partition applies
+// the chain outside the ordinary command sink pass.
+func (s rasterSink) VisitPostChain(render.PostChain) {}
