@@ -1,0 +1,4 @@
+{
+  "version": 1,
+  "dynamic": [{"name":"ground_atlas", "w":32, "h":16}]
+}
