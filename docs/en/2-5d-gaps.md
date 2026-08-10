@@ -29,19 +29,20 @@ game's problem:
 
 `DrawSpriteBatch`, `DrawTextBatch` and `DrawParticles` now carry the complete
 camera matrix, including `View` and `DepthScale`, in both GPU backends. Their
-positions therefore follow `Camera.WorldToScreen`; the drawn quads remain
-screen-space billboards and do not shear. Batch culling transforms the four
-bound corners conservatively through the same `View`. The remaining exception
+positions therefore follow `Camera.WorldToScreen`. Sprite instances remain
+screen-space billboards by default; ground tiles set `ProjectCorners` so all
+four destination corners follow the same camera projection. Batch culling
+transforms bounds conservatively through that `View`. The remaining exception
 is `DrawParticles.BaseCommand.Transform`, which is deliberately outside the
 camera contract.
 
-### 2. There is no tilemap
+### 2. There is no Tiled import
 
-No tilemap support at all — no renderer, no autotile, no import of the map
-editor formats games already use (Tiled, LDtk). For 2.5D this weighs double,
-because the ground is always a tilemap. Outpost's text `boardMap` is the
-embryo of what a minimal API could be: grid + atlas + layers, with the `View`
-doing the rest.
+The engine has a retained grid-and-atlas tilemap path, but it does not yet
+import map editor formats such as Tiled or LDtk. For 2.5D this still weighs
+double, because hand-maintaining the grid is content work. Plan the import
+around the existing square world grid, atlas layers, and `ProjectCorners`
+ground path.
 
 ### 3. Height does not enter picking
 

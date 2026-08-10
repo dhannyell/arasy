@@ -29,19 +29,20 @@ jogo:
 
 `DrawSpriteBatch`, `DrawTextBatch` e `DrawParticles` agora carregam a matriz
 completa da câmera, incluindo `View` e `DepthScale`, nos dois backends GPU. As
-posições passam a seguir `Camera.WorldToScreen`; os quads desenhados continuam
-billboards em espaço de tela e não sofrem cisalhamento. O culling de batches
-transforma conservadoramente os quatro cantos dos bounds pela mesma `View`. A
+posições passam a seguir `Camera.WorldToScreen`. Por padrão, as instâncias de
+sprites continuam billboards em espaço de tela; tiles de chão usam
+`ProjectCorners` para que os quatro cantos sigam a mesma projeção da câmera. O
+culling de batches transforma bounds conservadoramente pela mesma `View`. A
 exceção restante é `DrawParticles.BaseCommand.Transform`, deliberadamente fora
 do contrato da câmera.
 
-### 2. Não existe tilemap
+### 2. Não existe importação do Tiled
 
-Nenhum suporte a mapa de tiles — nem renderer, nem autotile, nem import dos
-formatos de editor de mapa que os jogos já usam (Tiled, LDtk). Para 2.5D
-isso pesa dobrado, porque o chão é sempre um tilemap. O `boardMap` de texto
-do outpost é o embrião do que uma API mínima poderia ser: grid + atlas +
-camadas, com a `View` fazendo o resto.
+O engine já tem um caminho retido de grid e atlas, mas ainda não importa
+formatos de editor como Tiled ou LDtk. Para 2.5D isso ainda pesa dobrado,
+porque manter o grid manualmente é trabalho de conteúdo. A importação deve
+usar o grid quadrado do mundo, as camadas de atlas existentes e o caminho de
+chão com `ProjectCorners`.
 
 ### 3. Altura não entra no picking
 

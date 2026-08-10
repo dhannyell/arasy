@@ -13,7 +13,8 @@ import (
 const SpriteUniformSize = 48
 
 // PackSpriteUniforms writes camera data for the sprite and text shaders.
-// Positions use the full camera mapping. Quad corners keep screen-space size.
+// Positions use the full camera mapping. Sprite records choose between
+// screen-space billboard corners and projected world corners.
 func PackSpriteUniforms(dst []byte, camera render.Camera, w, h int) {
 	worldToClip, offset, screenScale, screenToClipScale := WorldToClip(camera, w, h)
 	values := [12]float64{

@@ -31,6 +31,11 @@ type SpriteInstance struct {
 	// Rotation is applied around the center of Dest, in radians. Zero
 	// keeps the sprite axis-aligned.
 	Rotation float64
+	// ProjectCorners makes the backend transform all four Dest corners through
+	// the camera. Use it for ground content, such as tilemaps, whose shape must
+	// follow an isometric or tilted world view. The zero value keeps the sprite
+	// corners screen-space billboards.
+	ProjectCorners bool
 	// Animation is optional presentation data; the zero value is inert.
 	Animation SpriteAnimation
 }

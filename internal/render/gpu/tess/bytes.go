@@ -21,7 +21,8 @@ const (
 // little-endian byte layout WebGPU receives on every supported host.
 type spriteRecord struct {
 	centerX, centerY, halfWidth, halfHeight float32
-	rotation, pad                           float32
+	rotation                                float32
+	flags                                   uint32
 	uvMinX, uvMinY, uvMaxX, uvMaxY          float32
 	clipMinX, clipMinY, clipMaxX, clipMaxY  float32
 	tint, textureLayer                      uint32

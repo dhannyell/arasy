@@ -88,6 +88,18 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 			dest.Min.Y += offsetY
 			dest.Max.Y += offsetY
 		}
+		if inst.ProjectCorners {
+			projected := inst
+			projected.Dest = dest
+			r.drawImageQuad(img, render.DrawImageQuad{
+				BaseCommand: render.BaseCommand{LayerValue: command.LayerValue, Clip: command.Clip},
+				Texture:     projected.Texture,
+				Corners:     renderbatch.SpriteCorners(projected),
+				Src:         src,
+				Tint:        projected.Tint,
+			})
+			continue
+		}
 
 		r.drawImage(img, render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: command.LayerValue, Clip: command.Clip},

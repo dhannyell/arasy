@@ -36,14 +36,19 @@ Raster, Canvas2D, and WGSL evaluate these animations through
 `internal/renderbatch`. The system does not accept arbitrary shaders, does not
 reorder instances, and does not run per-instance culling or compute work.
 
+`SpriteInstance.ProjectCorners` is the retained ground-geometry option. It
+projects all four destination corners through `Camera.View`, so a square tile
+becomes the same ground-plane shape as a `DrawImageQuad`. Leave it false for
+characters, props, and other upright sprites that should remain billboards.
+
 ### Host behavior
 
 WebGPU reuses the streaming storage-buffer pipelines. Stable content uploads
 zero bytes per frame. Raster is the reference. The development Canvas2D host
 caps retained content at 2,000 sprites and 500 labels.
 
-Retained batches and particles do not support a skewing `Camera.View`. The GPU
-tessellation path passes them a scale and an offset, not a general shear.
+Retained sprites use screen-space billboard corners by default. Projected
+sprites use the complete `Camera.View`; text and particles remain billboards.
 
 ## Render interpolation
 
@@ -69,6 +74,6 @@ immediately so a teleport or reset does not smear across a frame.
 ## Camera limits
 
 Immediate shapes, images, and text walk geometry through `WorldToScreen` and
-honor the camera view. Retained batches and particles do not carry a general
-shear through the GPU stream. See [2.5D](2-5d.md) for projection, plane, and
-depth-order rules.
+honor the camera view. Ground tiles in retained batches opt into the same
+four-corner projection; upright sprites and particles remain billboards. See
+[2.5D](2-5d.md) for projection, plane, and depth-order rules.

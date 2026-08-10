@@ -32,6 +32,9 @@ func TestAppendRetainedSpriteRecordLayout(t *testing.T) {
 	if got := retainedF32(records, 16); got != 0.25 {
 		t.Fatalf("rotation = %v, want 0.25", got)
 	}
+	if got := binary.LittleEndian.Uint32(records[20:]); got != 0 {
+		t.Fatalf("flags = %d, want zero for a billboard sprite", got)
+	}
 	// Src (2,0)-(4,2) in a 4x4 texture → uv (0.5,0)-(1,0.5).
 	if got := retainedF32(records, 24); got != 0.5 {
 		t.Fatalf("uvMinX = %v, want 0.5", got)
@@ -51,6 +54,17 @@ func TestAppendRetainedSpriteRecordLayout(t *testing.T) {
 	}
 	if got := binary.LittleEndian.Uint32(records[60:]); got != 2 {
 		t.Fatalf("layer = %d, want 2", got)
+	}
+}
+
+func TestAppendRetainedSpriteRecordProjectsCorners(t *testing.T) {
+	inst := render.SpriteInstance{
+		Dest:           math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 8, Y: 6}),
+		ProjectCorners: true,
+	}
+	records := AppendRetainedSpriteRecord(nil, inst, 8, 6, 0, false)
+	if got := binary.LittleEndian.Uint32(records[20:]); got != 1 {
+		t.Fatalf("flags = %d, want projected-corners flag", got)
 	}
 }
 
