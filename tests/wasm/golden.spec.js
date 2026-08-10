@@ -68,3 +68,12 @@ test('renders isometric batch and particle conformance', async ({ page }, testIn
     'view.png',
   );
 });
+
+test('renders layer parallax across retained and streaming content', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'parallax',
+    'parallax.png',
+  );
+});

@@ -25,6 +25,8 @@ func main() {
 		game, err = wasmgolden.NewRetainedBatchesGolden()
 	case "view":
 		game, err = wasmgolden.NewViewConformanceGolden()
+	case "parallax":
+		game, err = wasmgolden.NewParallaxConformanceGolden()
 	case "boot":
 		game, err = wasmgolden.NewBoot()
 	default:

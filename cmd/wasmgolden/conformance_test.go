@@ -34,6 +34,9 @@ const (
 	viewChannelTol          = 32
 	viewCanvas2DBudget      = 0.0186
 	viewWebGPUBudget        = 0.0509
+	parallaxChannelTol      = 32
+	parallaxCanvas2DBudget  = 0.0200
+	parallaxWebGPUBudget    = 0.0150
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -58,6 +61,14 @@ func TestConformanceViewCanvas2D(t *testing.T) {
 
 func TestConformanceViewWebGPU(t *testing.T) {
 	assertConformance(t, "view", "webgpu", 3, viewChannelTol, viewWebGPUBudget)
+}
+
+func TestConformanceParallaxCanvas2D(t *testing.T) {
+	assertConformance(t, "parallax", "canvas2d", 1, parallaxChannelTol, parallaxCanvas2DBudget)
+}
+
+func TestConformanceParallaxWebGPU(t *testing.T) {
+	assertConformance(t, "parallax", "webgpu", 1, parallaxChannelTol, parallaxWebGPUBudget)
 }
 
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
@@ -89,6 +100,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return NewParticleGolden()
 	case "view":
 		return NewViewConformanceGolden()
+	case "parallax":
+		return NewParallaxConformanceGolden()
 	default:
 		return nil, fmt.Errorf("unknown fixture %q", fixture)
 	}
