@@ -88,8 +88,8 @@ func TestTextureAndParticleBufferDescriptors(t *testing.T) {
 	if got, want := particle["usage"], gpu.BufferUsageStorage|gpu.BufferUsageCopyDst; got != want {
 		t.Fatalf("particle buffer usage = %v, want %v", got, want)
 	}
-	if gpu.ParticleUniformSize != 224 {
-		t.Fatalf("particle uniform size = %d, want 224", gpu.ParticleUniformSize)
+	if gpu.ParticleUniformSize != 240 {
+		t.Fatalf("particle uniform size = %d, want 240", gpu.ParticleUniformSize)
 	}
 }
 

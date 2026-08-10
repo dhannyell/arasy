@@ -11,16 +11,15 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-// canvasBatchView returns the world-space rect a batch must intersect to
-// produce pixels: the camera's resolved visible world, tightened by the
-// command clip when set. ok is false when the camera has no usable world
-// area, in which case the caller draws without culling.
+// canvasBatchView returns the world area that can show a retained batch.
+// A false result tells the caller to keep drawing without batch culling.
 func canvasBatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool) {
 	view := camera.Resolve().World
 	if view.Width() <= 0 || view.Height() <= 0 {
 		return math2d.Rect{}, false
 	}
 	if clip != (math2d.Rect{}) {
+		clip = renderbatch.BoundsForView(clip, camera.View)
 		view.Min.X = max(view.Min.X, clip.Min.X)
 		view.Min.Y = max(view.Min.Y, clip.Min.Y)
 		view.Max.X = min(view.Max.X, clip.Max.X)
@@ -47,9 +46,8 @@ func (s canvasSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
 	})
 }
 
-// drawSpriteBatch mirrors the raster reference: whole-batch culling against
-// the animation-inflated bounds, then one drawImage per instance in slice
-// order through the same code path as streaming DrawImage.
+// drawSpriteBatch renders a retained batch in stored order. It uses the same
+// culling and image path as the raster backend.
 func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpriteBatch, instances []render.SpriteInstance) {
 	if view, ok := canvasBatchView(camera, command.Clip); ok {
 		bounds, boundsOK := renderbatch.InflatedBatchBoundsForCamera(instances, command.Animation, camera)
@@ -59,6 +57,7 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 				"Canvas2D: sprite batch has non-finite geometry; command skipped")
 			return
 		}
+		bounds = renderbatch.BoundsForView(bounds, camera.View)
 		if !renderbatch.IntersectsView(bounds, view) {
 			return
 		}

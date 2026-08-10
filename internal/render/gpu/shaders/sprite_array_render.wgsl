@@ -12,10 +12,11 @@ struct Sprite {
 }
 
 struct SpriteUniforms {
-  to_clip_scale : vec2f,
-  to_clip_offset : vec2f,
-  world_to_screen_scale : vec2f,
-  screen_to_clip_scale : vec2f,
+	world_to_clip_x : vec2f,
+	world_to_clip_y : vec2f,
+	to_clip_offset : vec2f,
+	world_to_screen_scale : vec2f,
+	screen_to_clip_scale : vec2f,
 }
 
 struct VSOut {
@@ -48,8 +49,10 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
     screen_corner.x * rotation.x - screen_corner.y * rotation.y,
     screen_corner.x * rotation.y + screen_corner.y * rotation.x,
   );
-  let clip_pos = sprite.center * camera.to_clip_scale + camera.to_clip_offset +
-    rotated * camera.screen_to_clip_scale;
+	let world_center = camera.world_to_clip_x * sprite.center.x +
+		camera.world_to_clip_y * sprite.center.y;
+	let clip_pos = world_center + camera.to_clip_offset +
+		rotated * camera.screen_to_clip_scale;
 
   var out : VSOut;
   out.position = vec4f(clip_pos, 0.0, 1.0);

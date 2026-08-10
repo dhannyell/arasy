@@ -25,10 +25,11 @@ struct Label {
 }
 
 struct Camera {
-  to_clip_scale : vec2f,
-  to_clip_offset : vec2f,
-  world_to_screen_scale : vec2f,
-  screen_to_clip_scale : vec2f,
+	world_to_clip_x : vec2f,
+	world_to_clip_y : vec2f,
+	to_clip_offset : vec2f,
+	world_to_screen_scale : vec2f,
+	screen_to_clip_scale : vec2f,
 }
 
 struct VSOut {

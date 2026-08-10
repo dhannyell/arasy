@@ -25,14 +25,15 @@ jogo:
 
 ## Lacunas, em ordem de impacto
 
-### 1. Texturas em lote ignoram a `View`
+### 1. Texturas em lote — fechada em 2026-08-09
 
-`DrawSpriteBatch`, `DrawTextBatch` e `DrawParticles` recebem a câmera como
-escala+offset e não carregam cisalhamento (limite já documentado). Efeito
-prático: **um jogo isométrico feito de arte em textura — o caso mais comum —
-não pode usar os caminhos rápidos**; o outpost contorna sendo 100% vetorial.
-É a lacuna que mais restringe "que tipo de jogo 2.5D dá para fazer". Exige
-uniform de matriz completa nos dois backends de GPU.
+`DrawSpriteBatch`, `DrawTextBatch` e `DrawParticles` agora carregam a matriz
+completa da câmera, incluindo `View` e `DepthScale`, nos dois backends GPU. As
+posições passam a seguir `Camera.WorldToScreen`; os quads desenhados continuam
+billboards em espaço de tela e não sofrem cisalhamento. O culling de batches
+transforma conservadoramente os quatro cantos dos bounds pela mesma `View`. A
+exceção restante é `DrawParticles.BaseCommand.Transform`, deliberadamente fora
+do contrato da câmera.
 
 ### 2. Não existe tilemap
 
@@ -124,8 +125,8 @@ praça; a seção de luz do `2-5d.md` documenta o design. Fora por decisão:
 
 ## Leitura recomendada de prioridade
 
-O item 1 é o único que *bloqueia* uma classe de jogo; 2 e 3 são os que todo
-segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
+O item 1 está fechado; o item 2 é agora o próximo bloqueador prático, e o 3 é
+o que todo segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
 6 e 7 são polimento de gênero. 8 e 9 são o que separa "sprite colocado na
 cena" de "sprite pertencente à cena", e os dois agora têm soluções v1:
 sombra de contato com estilo e modulação de luz declarada. A silhueta

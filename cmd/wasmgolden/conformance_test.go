@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"image/png"
 	"io"
 	"log/slog"
@@ -21,10 +22,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
-// Cross-backend conformance: render the canonical fixtures through the
-// raster reference in-process and diff them against the committed browser
-// goldens. Divergence beyond budget means a backend drifted; the failure
-// names which one.
+// These tests compare the raster reference with the repository browser
+// goldens. A difference above the budget reports the fixture and backend.
 const (
 	frameChannelTol         = 32
 	frameCanvas2DBudget     = 0.2454
@@ -32,6 +31,9 @@ const (
 	particlesChannelTol     = 32
 	particlesCanvas2DBudget = 0.1520
 	particlesWebGPUBudget   = 0.0754
+	viewChannelTol          = 32
+	viewCanvas2DBudget      = 0.0186
+	viewWebGPUBudget        = 0.0509
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -48,6 +50,14 @@ func TestConformanceParticlesCanvas2D(t *testing.T) {
 
 func TestConformanceParticlesWebGPU(t *testing.T) {
 	assertConformance(t, "particles", "webgpu", 3, particlesChannelTol, particlesWebGPUBudget)
+}
+
+func TestConformanceViewCanvas2D(t *testing.T) {
+	assertConformance(t, "view", "canvas2d", 3, viewChannelTol, viewCanvas2DBudget)
+}
+
+func TestConformanceViewWebGPU(t *testing.T) {
+	assertConformance(t, "view", "webgpu", 3, viewChannelTol, viewWebGPUBudget)
 }
 
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
@@ -77,14 +87,15 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return New()
 	case "particles":
 		return NewParticleGolden()
+	case "view":
+		return NewViewConformanceGolden()
 	default:
 		return nil, fmt.Errorf("unknown fixture %q", fixture)
 	}
 }
 
-// rasterFrame drives the game through frames Driver.Frame calls on a single
-// raster.Renderer (particle fixtures need the same renderer across calls:
-// emitter state lives there) and returns the last rendered image.
+// rasterFrame renders a fixture for the requested number of frames. It keeps
+// one renderer so particle state survives between frames.
 func rasterFrame(t *testing.T, game runtime.Game, frames int) *image.RGBA {
 	t.Helper()
 
@@ -117,9 +128,32 @@ func rasterFrame(t *testing.T, game runtime.Game, frames int) *image.RGBA {
 	var img *image.RGBA
 	for i := 0; i < frames; i++ {
 		frame := driver.Frame(time.Duration(0))
+		applyRasterUpdates(renderer, driver.ConsumeFrameUpdates())
 		img = renderer.Render(frame.Commands)
 	}
 	return img
+}
+
+func applyRasterUpdates(renderer *raster.Renderer, updates runtime.FrameUpdates) {
+	for _, update := range updates.Textures {
+		if int(update.ID) < len(renderer.Textures) && renderer.Textures[update.ID] != nil && update.Image != nil {
+			draw.Draw(renderer.Textures[update.ID], renderer.Textures[update.ID].Bounds(), update.Image, image.Point{}, draw.Src)
+		}
+	}
+	for _, update := range updates.SpriteBatches {
+		if update.Op == runtime.BatchDelete {
+			renderer.DeleteSpriteBatch(update.ID)
+		} else {
+			renderer.ReplaceSpriteBatch(update.ID, update.Instances)
+		}
+	}
+	for _, update := range updates.TextBatches {
+		if update.Op == runtime.BatchDelete {
+			renderer.DeleteTextBatch(update.ID)
+		} else {
+			renderer.ReplaceTextBatch(update.ID, update.Labels)
+		}
+	}
 }
 
 func loadGolden(t *testing.T, backend, name string) *image.RGBA {
@@ -153,10 +187,8 @@ func loadGolden(t *testing.T, backend, name string) *image.RGBA {
 	return out
 }
 
-// diffRatio mirrors platform/raster/golden_helpers_test.go's countPixelDiff
-// (per-channel tolerance), returning the fraction of pixels that differ
-// instead of a raw count, since the two backends being compared are never
-// pixel-identical (AA, gradient quantization, MSAA).
+// diffRatio returns the fraction of pixels outside the channel tolerance.
+// The raster and browser paths can differ because of AA, gradients, and MSAA.
 func diffRatio(a, b *image.RGBA, channelTol uint8) (ratio float64, first image.Point) {
 	if a.Bounds() != b.Bounds() {
 		return 1, a.Bounds().Min
