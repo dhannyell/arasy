@@ -92,6 +92,15 @@ type webgpuRenderer struct {
 	// single source level at a time.
 	mipSampler js.Value
 
+	postSampler   js.Value
+	postPipelines map[string]js.Value
+	postUniforms  []js.Value
+	postSceneA    webgpuPostTarget
+	postSceneB    webgpuPostTarget
+	postBloom     []webgpuPostTarget
+	postWidth     int
+	postHeight    int
+
 	solidBuffer          js.Value
 	textGlyphBuffer      js.Value
 	textLabelBuffer      js.Value
@@ -248,6 +257,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	}
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
+	r.initPostResources()
 
 	r.solidPipeline, r.solidAddPipeline = r.createSolidPipelines()
 	r.textGlyphPipeline, r.textGlyphAddPipeline = r.createTextGlyphPipelines()
@@ -385,6 +395,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:   tess.DrawRunSolid,
 				blend:  run.Blend,
+				layer:  run.Layer,
 				offset: run.ByteOffset / tess.SolidVertexStride,
 				count:  run.VertexCount,
 			})
@@ -395,6 +406,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunTextured,
 				blend:   run.Blend,
+				layer:   run.Layer,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.TexVertexStride,
 				count:   run.VertexCount,
@@ -406,6 +418,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunSprites,
 				blend:   run.Blend,
+				layer:   run.Layer,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.SpriteStride,
 				count:   run.VertexCount,
@@ -417,6 +430,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
 				blend:    run.Blend,
+				layer:    run.Layer,
 				atlasKey: run.AtlasKey,
 				offset:   run.ByteOffset / tess.TextGlyphStride,
 				count:    run.VertexCount,
@@ -424,17 +438,20 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		case tess.DrawRunParticles:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:      tess.DrawRunParticles,
+				layer:     run.Layer,
 				particles: run.Particles,
 			})
 		case tess.DrawRunSpriteBatch:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:        tess.DrawRunSpriteBatch,
+				layer:       run.Layer,
 				spriteBatch: run.SpriteBatch,
 				batchSlot:   -1,
 			})
 		case tess.DrawRunTextBatch:
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:      tess.DrawRunTextBatch,
+				layer:     run.Layer,
 				textBatch: run.TextBatch,
 			})
 		}
@@ -536,6 +553,13 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	}
 
 	r.ensureMSAATarget(w, h)
+	if chain, ok := lastWebGPUPostChain(frame.Commands); ok {
+		if err := r.renderPostFrame(frame, drawRuns, chain, w, h); err != nil {
+			r.log.Error("webgpu post-processing disabled for frame", "err", err)
+		} else {
+			return
+		}
+	}
 
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
@@ -885,6 +909,7 @@ func pickJS(blend render.Blend, add, alpha js.Value) js.Value {
 type gpuDrawRun struct {
 	kind      tess.DrawRunKind
 	blend     render.Blend
+	layer     int
 	texture   render.TextureID
 	atlasKey  tess.AtlasKey
 	particles render.DrawParticles

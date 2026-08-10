@@ -73,3 +73,49 @@ var ParticlesRenderWGSL string
 //
 //go:embed particle_composite.wgsl
 var ParticlesCompositeWGSL string
+
+// PostBlitWGSL copies a post-process target into another render attachment.
+//
+//go:embed post_blit.wgsl
+var PostBlitWGSL string
+
+// PostVignetteWGSL mirrors platform/raster/postfx.go applyVignette.
+//
+//go:embed post_vignette.wgsl
+var PostVignetteWGSL string
+
+// PostColorGradeWGSL mirrors platform/raster/postfx.go applyColorGrade.
+//
+//go:embed post_colorgrade.wgsl
+var PostColorGradeWGSL string
+
+// PostPixelateWGSL mirrors platform/raster/postfx.go applyPixelate.
+//
+//go:embed post_pixelate.wgsl
+var PostPixelateWGSL string
+
+// PostChromaticWGSL mirrors platform/raster/postfx.go applyChromaticAberration.
+//
+//go:embed post_chromatic.wgsl
+var PostChromaticWGSL string
+
+// PostBloomWGSL mirrors platform/raster/postfx.go bloom bright, downsample,
+// and upsample passes.
+//
+//go:embed post_bloom.wgsl
+var PostBloomWGSL string
+
+// PostBloomCombineWGSL mirrors the final bloom combine pass.
+//
+//go:embed post_bloom_combine.wgsl
+var PostBloomCombineWGSL string
+
+// PostShockwaveWGSL mirrors platform/raster/postfx.go applyShockwave.
+//
+//go:embed post_shockwave.wgsl
+var PostShockwaveWGSL string
+
+// PostLensRainWGSL mirrors platform/raster/postfx.go applyLensRain.
+//
+//go:embed post_lensrain.wgsl
+var PostLensRainWGSL string

@@ -75,6 +75,15 @@ type Renderer struct {
 	spritePipeline    *wgpu.RenderPipeline
 	textGlyphPipeline *wgpu.RenderPipeline
 	mipPipeline       *wgpu.RenderPipeline
+	postSampler       *wgpu.Sampler
+	postPipelines     map[string]*wgpu.RenderPipeline
+	postUniforms      []*wgpu.Buffer
+	postSceneA        nativePostTarget
+	postSceneB        nativePostTarget
+	postBloom         []nativePostTarget
+	postWidth         int
+	postHeight        int
+	postDisabled      bool
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
@@ -181,6 +190,10 @@ func NewRenderer(
 
 	if err = renderer.createPipelines(); err != nil {
 		return nil, err
+	}
+	if err = renderer.createPostResources(); err != nil {
+		log.Warn("native post-processing disabled", "err", err)
+		renderer.postDisabled = true
 	}
 	if err = renderer.createSamplers(); err != nil {
 		return nil, err
@@ -476,8 +489,18 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	if r.timeCPU {
 		phaseStart = time.Now()
 	}
-	if err := r.encodeFrame(runs, surfaceView, frame.Camera, width, height); err != nil {
-		r.recordErr(err)
+	var encodeErr error
+	if chain, ok := lastNativePostChain(frame.Commands); ok && !r.postDisabled {
+		encodeErr = r.encodePostFrame(runs, surfaceView, frame, chain, width, height)
+		if encodeErr != nil {
+			r.disablePost(encodeErr)
+			encodeErr = r.encodeFrame(runs, surfaceView, frame.Camera, width, height)
+		}
+	} else {
+		encodeErr = r.encodeFrame(runs, surfaceView, frame.Camera, width, height)
+	}
+	if encodeErr != nil {
+		r.recordErr(encodeErr)
 		return
 	}
 	if r.timeCPU {
@@ -641,6 +664,21 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.spriteAddPipeline)
 	releasePipeline(&r.textGlyphAddPipeline)
 	releasePipeline(&r.mipPipeline)
+	for _, pipeline := range r.postPipelines {
+		releasePipeline(&pipeline)
+	}
+	r.postPipelines = nil
+	for index := range r.postUniforms {
+		releaseBuffer(&r.postUniforms[index])
+	}
+	r.postUniforms = nil
+	r.releasePostTarget(&r.postSceneA)
+	r.releasePostTarget(&r.postSceneB)
+	for index := range r.postBloom {
+		r.releasePostTarget(&r.postBloom[index])
+	}
+	r.postBloom = nil
+	releaseSampler(&r.postSampler)
 	releaseSampler(&r.textureSampler)
 	releaseSampler(&r.mipSampler)
 	if r.device != nil {
@@ -750,6 +788,16 @@ func (r *Renderer) createPipeline(
 	buffers []wgpu.VertexBufferLayout,
 	blend *wgpu.BlendState,
 ) (*wgpu.RenderPipeline, error) {
+	return r.createPipelineEntry(label, source, "fs_main", format, samples, buffers, blend)
+}
+
+func (r *Renderer) createPipelineEntry(
+	label, source, fragmentEntry string,
+	format wgpu.TextureFormat,
+	samples uint32,
+	buffers []wgpu.VertexBufferLayout,
+	blend *wgpu.BlendState,
+) (*wgpu.RenderPipeline, error) {
 	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "Arasy " + label + " shader",
 		WGSLSource: &wgpu.ShaderSourceWGSL{Code: source},
@@ -764,7 +812,7 @@ func (r *Renderer) createPipeline(
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main", Buffers: buffers},
 		Primitive:   wgpu.PrimitiveState{Topology: wgpu.PrimitiveTopologyTriangleList},
 		Multisample: wgpu.MultisampleState{Count: samples, Mask: ^uint32(0)},
-		Fragment: &wgpu.FragmentState{Module: module, EntryPoint: "fs_main", Targets: []wgpu.ColorTargetState{{
+		Fragment: &wgpu.FragmentState{Module: module, EntryPoint: fragmentEntry, Targets: []wgpu.ColorTargetState{{
 			Format: format, Blend: blend, WriteMask: wgpu.ColorWriteMaskAll,
 		}}},
 	})
