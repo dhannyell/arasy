@@ -54,6 +54,27 @@ func TestSpriteBatchStaticMatchesDrawImage(t *testing.T) {
 	assertImagesIdentical(t, direct, retained)
 }
 
+func TestProjectedSpriteBatchMatchesDrawImageQuad(t *testing.T) {
+	renderer := imageRenderer(32, 32)
+	renderer.Textures = pixel.Registry{nil, makeTexWhite()}
+	renderer.Camera.View = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
+	instance := render.SpriteInstance{
+		Texture:        1,
+		Dest:           worldRect(12, 12, 8, 8),
+		ProjectCorners: true,
+	}
+
+	direct := renderer.Render([]render.Command{
+		render.DrawImageQuad{Texture: 1, Corners: renderbatch.SpriteCorners(instance)},
+	})
+	renderer.ReplaceSpriteBatch(1, []render.SpriteInstance{instance})
+	retained := renderer.Render([]render.Command{
+		render.DrawSpriteBatch{Batch: 1},
+	})
+
+	assertImagesIdentical(t, direct, retained)
+}
+
 // TestSpriteBatchPreservesSliceOrder draws two overlapping translucent
 // sprites: the batch must blend them in slice order, like two DrawImages.
 func TestSpriteBatchPreservesSliceOrder(t *testing.T) {

@@ -14,7 +14,8 @@ struct ParticleCold {
 
 struct EmitterUniforms {
   color_start : vec4f, color_end : vec4f,
-  to_clip_scale : vec2f, to_clip_offset : vec2f,
+  world_to_clip_x : vec2f, world_to_clip_y : vec2f,
+  to_clip_offset : vec2f,
   world_to_screen_scale : vec2f,
   screen_to_clip_scale : vec2f,
   pos : vec2f, prev_pos : vec2f,
@@ -86,7 +87,8 @@ fn vs_main(@builtin(vertex_index) vi : u32,
   let screen_corner = corner * u.world_to_screen_scale;
   let rotated_screen = vec2f(screen_corner.x * c - screen_corner.y * s,
                              screen_corner.x * s + screen_corner.y * c);
-  let center_clip = center * u.to_clip_scale + u.to_clip_offset;
+  let center_clip = center.x * u.world_to_clip_x +
+                    center.y * u.world_to_clip_y + u.to_clip_offset;
   let local_clip = rotated_screen * u.screen_to_clip_scale;
 
   var color = mix(u.color_start, u.color_end, progress);

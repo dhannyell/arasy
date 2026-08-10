@@ -40,11 +40,8 @@ func (r *Renderer) DeleteTextBatch(id render.TextBatchID) {
 	delete(r.textBatches, id)
 }
 
-// drawSpriteBatch draws one retained sprite batch at the command's painter
-// position. The whole batch is culled when its animation-inflated bounds do
-// not intersect the rendered view (composed with the command clip); visible
-// instances convert to the same drawImage path as streaming DrawImage, in
-// slice order, so retained and streamed sprites are pixel-equivalent.
+// drawSpriteBatch renders one retained sprite batch in stored order. It skips
+// a batch that cannot reach the camera view, then uses the regular image path.
 func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBatch) {
 	instances, ok := r.spriteBatches[command.Batch]
 	if !ok {
@@ -65,6 +62,7 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 				"raster: sprite batch has non-finite geometry; command skipped")
 			return
 		}
+		bounds = renderbatch.BoundsForView(bounds, r.Camera.View)
 		if !renderbatch.IntersectsView(bounds, view) {
 			return
 		}
@@ -90,6 +88,18 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 			dest.Min.Y += offsetY
 			dest.Max.Y += offsetY
 		}
+		if inst.ProjectCorners {
+			projected := inst
+			projected.Dest = dest
+			r.drawImageQuad(img, render.DrawImageQuad{
+				BaseCommand: render.BaseCommand{LayerValue: command.LayerValue, Clip: command.Clip},
+				Texture:     projected.Texture,
+				Corners:     renderbatch.SpriteCorners(projected),
+				Src:         src,
+				Tint:        projected.Tint,
+			})
+			continue
+		}
 
 		r.drawImage(img, render.DrawImage{
 			BaseCommand: render.BaseCommand{LayerValue: command.LayerValue, Clip: command.Clip},
@@ -102,9 +112,8 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 	}
 }
 
-// drawTextBatch draws one retained text batch at the command's painter
-// position: each label converts to the same drawText path as streaming
-// DrawText, in slice order, sharing the batch's layer and clip.
+// drawTextBatch renders each retained label in stored order through the regular
+// text path. All labels use the batch layer and clip.
 func (r *Renderer) drawTextBatch(img *image.RGBA, command render.DrawTextBatch) {
 	labels, ok := r.textBatches[command.Batch]
 	if !ok {
@@ -130,16 +139,15 @@ func (r *Renderer) drawTextBatch(img *image.RGBA, command render.DrawTextBatch) 
 	}
 }
 
-// batchView returns the world-space rect a batch must intersect to produce
-// pixels: the camera's resolved visible world, tightened by the command clip
-// when set. ok is false when the camera has no usable world area, in which
-// case the caller draws without culling.
+// batchView returns the world area that can show a retained batch. A false
+// result tells the caller to keep drawing without batch culling.
 func (r *Renderer) batchView(clip math2d.Rect) (math2d.Rect, bool) {
 	view := r.Camera.Resolve().World
 	if view.Width() <= 0 || view.Height() <= 0 {
 		return math2d.Rect{}, false
 	}
 	if clip != (math2d.Rect{}) {
+		clip = renderbatch.BoundsForView(clip, r.Camera.View)
 		view.Min.X = max(view.Min.X, clip.Min.X)
 		view.Min.Y = max(view.Min.Y, clip.Min.Y)
 		view.Max.X = min(view.Max.X, clip.Max.X)

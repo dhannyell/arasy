@@ -1,4 +1,5 @@
 {
   "version": 1,
-  "textures": [{"name":"sheep", "file": "sheep.png"}]
+  "textures": [{"name":"sheep", "file": "sheep.png"}],
+  "dynamic": [{"name":"terrain_atlas", "w":128, "h":32}]
 }

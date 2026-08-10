@@ -219,6 +219,8 @@ Rhythm also has an offline smoke render:
 go run ./examples/rhythm/raster
 ```
 
+The 2.5D showcase renders offline the same way: `examples/outpost` is an
+isometric island with a retained tilemap, extruded volumes, and hopping units:
 The post-processing example exposes all seven fullscreen effects behind one
 interactive control panel. Its scene is procedural, so it needs no assets:
 
@@ -232,7 +234,6 @@ tilted court with a bouncing ball) and `examples/outpost` (an isometric
 island of extruded volumes with hopping units):
 
 ```powershell
-go run ./examples/groundplane/raster
 go run ./examples/outpost/raster
 ```
 

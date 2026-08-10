@@ -24,6 +24,8 @@ func main() {
 		game, err = wasmgolden.NewSpriteArrayGolden()
 	case "retained-batches":
 		game, err = wasmgolden.NewRetainedBatchesGolden()
+	case "view":
+		game, err = wasmgolden.NewViewConformanceGolden()
 	case "post":
 		game, err = wasmgolden.NewPostGolden()
 	case "boot":

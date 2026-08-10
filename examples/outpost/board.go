@@ -76,6 +76,18 @@ var boardMap = [boardRows]string{
 	".f....f...",
 }
 
+// groundLegend turns the authored board into the presentation layer. Water
+// remains a recessed vector surface; the other terrain types use atlas cells.
+var groundLegend = map[rune]int16{
+	'.': 0,  // grass
+	'f': 1,  // forest floor
+	'M': 2,  // rock
+	'm': 2,  // rock
+	'B': 3,  // path
+	'L': 3,  // path
+	'~': -1, // water is painted below the ground layer
+}
+
 func terrainAt(i, j int) terrain {
 	if i < 0 || j < 0 || i >= boardCols || j >= boardRows {
 		return terrainGrass
@@ -131,11 +143,6 @@ func tileAt(world math2d.Vec2) (int, int, bool) {
 // The palette. Muted and flat on purpose: the scene's depth comes from the
 // projection, and flat fills keep every face's angle legible.
 var (
-	grassA       = render.RGBA8(126, 156, 90, 255)
-	grassB       = render.RGBA8(116, 146, 83, 255)
-	forestGround = render.RGBA8(103, 133, 75, 255)
-	tileStroke   = render.RGBA(0.18, 0.26, 0.12, 0.16)
-
 	cliffSouth     = render.RGBA8(121, 94, 72, 255)
 	cliffSouthDeep = render.RGBA8(95, 71, 54, 255)
 	cliffEast      = render.RGBA8(98, 74, 58, 255)
@@ -210,27 +217,8 @@ func buildStaticBoard(p render.Projection) []render.Command {
 
 	commands = waterCommands(commands, p)
 
-	for j := range boardRows {
-		for i := range boardCols {
-			if terrainAt(i, j) == terrainWater {
-				continue // painted by waterCommands
-			}
-			fill := grassA
-			if (i+j)%2 == 1 {
-				fill = grassB
-			}
-			if terrainAt(i, j) == terrainForest {
-				fill = forestGround
-			}
-			commands = append(commands, render.DrawRect{
-				Rect:        tileRect(i, j),
-				Fill:        fill,
-				Stroke:      tileStroke,
-				StrokeWidth: 0.18,
-				BaseCommand: render.BaseCommand{LayerValue: layerGround},
-			})
-		}
-	}
+	// Ground tiles are published as retained sprite batches. Water and its
+	// banks stay here because they sit below the tilemap and form the recess.
 
 	// The outer cliffs: one south face under the front edge, one east face
 	// down the right edge. Two tones per face, because a lit band over a

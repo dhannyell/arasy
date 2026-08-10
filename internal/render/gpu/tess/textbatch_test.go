@@ -48,6 +48,32 @@ func TestPlanTextBatchBoundsMatchShaderCorners(t *testing.T) {
 	}
 }
 
+func TestPlanTextBatchAnchorUsesWorldToScreenUnderView(t *testing.T) {
+	camera := testCamera()
+	camera.View = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
+	position := math2d.Vec2{X: 60, Y: 30}
+	plan := PlanTextBatch(camera, 100, 100, []render.TextLabel{{
+		Position: position,
+		Text:     "A",
+		Size:     10,
+		Font:     1,
+		Color:    render.RGBA(1, 1, 1, 1),
+	}}, func(render.FontID, int) *Atlas {
+		return customTextAtlas(1, 10)
+	})
+
+	if len(plan.Labels) != TextLabelStride {
+		t.Fatalf("label stream length = %d, want %d", len(plan.Labels), TextLabelStride)
+	}
+	label := decodeTextLabel(t, plan.Labels, 0)
+	want := camera.WorldToScreen(position)
+	assertFloat32(t, label.position[0], float32(want.X))
+	assertFloat32(t, label.position[1], float32(want.Y))
+	if label.transformAB != [2]float32{1, 0} || label.transformCD != [2]float32{0, 1} {
+		t.Fatalf("glyph transform = %v/%v, want screen-space billboard", label.transformAB, label.transformCD)
+	}
+}
+
 func TestPlanTextBatchGroupsOnlyConsecutiveSameAtlas(t *testing.T) {
 	builtin := NewAtlas()
 	custom := customTextAtlas(1, 10)

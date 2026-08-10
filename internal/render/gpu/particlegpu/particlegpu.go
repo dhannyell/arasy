@@ -12,16 +12,25 @@ import (
 )
 
 const (
-	HotStride           = 24
-	ColdStride          = 32
-	UniformSize         = 224
-	Workgroup           = 64
-	DrawArgsSize        = 16
+	// HotStride is the byte stride of the frequently updated particle data.
+	HotStride = 24
+	// ColdStride is the byte stride of the stable particle data.
+	ColdStride = 32
+	// UniformSize is the byte size of the emitter uniform block.
+	UniformSize = 240
+	// Workgroup is the compute workgroup size used by the particle pass.
+	Workgroup = 64
+	// DrawArgsSize is the byte size of the indirect draw arguments.
+	DrawArgsSize = 16
+	// CountersAliveOffset is the byte offset of the live-particle counter.
 	CountersAliveOffset = 4
-	DrawInstanceOffset  = 4
-	TTL                 = 300
+	// DrawInstanceOffset is the byte offset of the instance count in draw args.
+	DrawInstanceOffset = 4
+	// TTL is the number of frames kept by the particle timing ring.
+	TTL = 300
 )
 
+// EmitterKey identifies one emitter in a particle effect.
 type EmitterKey struct {
 	Effect  render.ParticleEffectID
 	Emitter render.EmitterID
@@ -47,12 +56,12 @@ func (w *uniformWriter) vec4(v [4]float64) {
 	}
 }
 
-// PackUniforms writes the EmitterUniforms WGSL declaration byte-for-byte.
+// PackUniforms writes the emitter data in the layout expected by WGSL.
 func PackUniforms(dst []byte, d particle.EffectDecl, cmd render.DrawParticles, frame particle.EmissionFrame, emitCount int, seed uint64, capacity int, camera render.Camera, width, height int) {
 	if len(dst) < UniformSize {
 		panic("particle uniform buffer is too small")
 	}
-	scale, offset, screenScale := tess.WorldToClip(camera, width, height)
+	worldToClip, offset, screenScale, screenToClipScale := tess.WorldToClip(camera, width, height)
 	wobbleAxis := math2d.Vec2{}
 	if d.WobbleAmp != 0 {
 		angle := d.Direction + cmd.Dir
@@ -61,10 +70,11 @@ func PackUniforms(dst []byte, d particle.EffectDecl, cmd render.DrawParticles, f
 	w := uniformWriter{dst: dst}
 	w.vec4(d.ColorStart)
 	w.vec4(d.ColorEnd)
-	w.vec2(scale)
+	w.vec2(worldToClip[0])
+	w.vec2(worldToClip[1])
 	w.vec2(offset)
 	w.vec2(screenScale)
-	w.vec2(math2d.Vec2{X: 2 / float64(width), Y: -2 / float64(height)})
+	w.vec2(screenToClipScale)
 	w.vec2(cmd.Pos)
 	w.vec2(frame.PrevPos)
 	w.vec2(d.Gravity)
@@ -98,8 +108,15 @@ func PackUniforms(dst []byte, d particle.EffectDecl, cmd render.DrawParticles, f
 	w.u32(uint32(d.VelMode))
 	w.f32(d.EmitRadius)
 	w.u32(uint32(capacity))
+	// WebGPU rounds this uniform struct up to a 16-byte boundary. Keep the
+	// trailing padding deterministic when the scratch buffer is reused.
+	for w.offset < UniformSize {
+		w.dst[w.offset] = 0
+		w.offset++
+	}
 }
 
+// EmitScale replaces a zero component with the default scale of one.
 func EmitScale(scale math2d.Vec2) math2d.Vec2 {
 	if scale.X == 0 {
 		scale.X = 1
@@ -110,6 +127,7 @@ func EmitScale(scale math2d.Vec2) math2d.Vec2 {
 	return scale
 }
 
+// ScissorRect converts a world clip to a pixel scissor rectangle.
 func ScissorRect(clip math2d.Rect, camera render.Camera, scale float64, width, height int) (x, y, w, h int, ok bool) {
 	if width <= 0 || height <= 0 {
 		return 0, 0, 0, 0, false

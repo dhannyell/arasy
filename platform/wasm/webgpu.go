@@ -496,6 +496,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(frame.Camera)
 		if view, ok := webgpuBatchView(frame.Camera, cmd.Clip); ok && canCull {
 			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
+			bounds = renderbatch.BoundsForView(bounds, frame.Camera.View)
 			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
 				continue
 			}
@@ -954,16 +955,15 @@ type gpuDrawRun struct {
 	text      *gpuTextBatch
 }
 
-// webgpuBatchView returns the world-space rect a retained batch must
-// intersect to produce pixels: the camera's resolved visible world,
-// tightened by the command clip when set. ok is false when the camera has no
-// usable world area, in which case the caller draws without culling.
+// webgpuBatchView returns the world area that can show a retained batch.
+// A false result tells the caller to keep drawing without batch culling.
 func webgpuBatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool) {
 	view := camera.Resolve().World
 	if view.Width() <= 0 || view.Height() <= 0 {
 		return math2d.Rect{}, false
 	}
 	if clip != (math2d.Rect{}) {
+		clip = renderbatch.BoundsForView(clip, camera.View)
 		view.Min.X = max(view.Min.X, clip.Min.X)
 		view.Min.Y = max(view.Min.Y, clip.Min.Y)
 		view.Max.X = min(view.Max.X, clip.Max.X)

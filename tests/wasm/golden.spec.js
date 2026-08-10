@@ -60,6 +60,15 @@ test('renders retained sprite and text batches', async ({ page }, testInfo) => {
   );
 });
 
+test('renders isometric batch and particle conformance', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'view',
+    'view.png',
+  );
+});
+
 test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
   await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
 });

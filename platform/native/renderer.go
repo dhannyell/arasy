@@ -13,6 +13,7 @@ import (
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
+	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/render"
@@ -63,12 +64,13 @@ type Renderer struct {
 	clear  render.Color
 	log    *slog.Logger
 
-	fontProvider *fontatlas.Provider
-	particles    *gpuParticles
-	textures     []gpuTexture
-	texSizes     tess.TexSizes
-	textAtlases  map[tess.AtlasKey]gpuTextAtlas
-	tess         tess.Builder
+	fontProvider  *fontatlas.Provider
+	particles     *gpuParticles
+	textures      []gpuTexture
+	texSizes      tess.TexSizes
+	textAtlases   map[tess.AtlasKey]gpuTextAtlas
+	spriteBatches map[render.SpriteBatchID]*nativeSpriteBatch
+	tess          tess.Builder
 
 	solidPipeline     *wgpu.RenderPipeline
 	texturedPipeline  *wgpu.RenderPipeline
@@ -185,6 +187,7 @@ func NewRenderer(
 		log:           log,
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
+		spriteBatches: make(map[render.SpriteBatchID]*nativeSpriteBatch),
 		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
 	}
@@ -391,8 +394,7 @@ func (r *Renderer) releaseParticleTargets() {
 	r.particleTargets = nil
 }
 
-// UpdateResources applies dynamic texture updates. Retained batches are not
-// part of the native streaming renderer and are deliberately skipped.
+// UpdateResources applies dynamic texture and retained sprite batch updates.
 func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 	if r == nil || r.err != nil {
 		return
@@ -402,9 +404,10 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 		return
 	}
 	if len(updates.SpriteBatches) > 0 {
-		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "native-sprite-batches-unsupported"},
-			"native renderer skips retained sprite batches")
+		if err := r.applySpriteBatchUpdates(updates.SpriteBatches); err != nil {
+			r.recordErr(err)
+			return
+		}
 	}
 	if len(updates.TextBatches) > 0 {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
@@ -445,7 +448,10 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
 	}
-	if err := r.uploadStreams(solid, textured, sprites, textGlyphs, textLabels, frame.Camera, width, height); err != nil {
+	if err := r.uploadStreams(
+		solid, textured, sprites, textGlyphs, textLabels,
+		runsContainSpriteBatch(runs), frame.Camera, width, height,
+	); err != nil {
 		r.recordErr(err)
 		return
 	}
@@ -639,6 +645,11 @@ func (r *Renderer) Close() {
 		r.particles.close()
 		r.particles = nil
 	}
+	for id, batch := range r.spriteBatches {
+		batch.release()
+		delete(r.spriteBatches, id)
+	}
+	r.spriteBatches = nil
 	for _, texture := range r.textures {
 		texture.release()
 	}
@@ -915,6 +926,7 @@ func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*w
 
 func (r *Renderer) uploadStreams(
 	solid, textured, sprites, glyphs, labels []byte,
+	hasSpriteBatch bool,
 	camera render.Camera,
 	width, height int,
 ) error {
@@ -937,7 +949,7 @@ func (r *Renderer) uploadStreams(
 			}
 		}
 	}
-	if len(sprites) > 0 || len(glyphs) > 0 {
+	if len(sprites) > 0 || len(glyphs) > 0 || hasSpriteBatch {
 		var uniforms [tess.SpriteUniformSize]byte
 		tess.PackSpriteUniforms(uniforms[:], camera, width, height)
 		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, 0, uniforms[:]); err != nil {
@@ -945,6 +957,15 @@ func (r *Renderer) uploadStreams(
 		}
 	}
 	return nil
+}
+
+func runsContainSpriteBatch(runs []tess.StreamRun) bool {
+	for _, run := range runs {
+		if run.Kind == tess.DrawRunSpriteBatch {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Renderer) ensureBuffers(solid, textured, sprites, glyphs, labels int) error {
@@ -1373,7 +1394,31 @@ func (r *Renderer) drawRun(
 		pass.SetBindGroup(0, r.particleTargets[group].bindGroup, nil)
 		pass.Draw(3, 1, 0, 0)
 	case tess.DrawRunSpriteBatch:
-		r.warnSkipped("sprite batches")
+		batch, ok := r.spriteBatches[run.SpriteBatch.Batch]
+		if !ok {
+			r.diagnostics.Log(r.log, slog.LevelWarn,
+				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(run.SpriteBatch.Batch)},
+				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
+			return nil
+		}
+		if batch.count == 0 {
+			return nil
+		}
+		x, y, sw, sh, visible := particlegpu.ScissorRect(run.SpriteBatch.Clip, camera, 1, width, height)
+		pass.SetScissorRect(uint32(x), uint32(y), uint32(sw), uint32(sh))
+		if visible {
+			for _, rg := range batch.ranges {
+				if rg.bindGroup == nil || rg.count == 0 {
+					continue
+				}
+				pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
+				pass.SetBindGroup(0, rg.bindGroup, nil)
+				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
+			}
+		}
+		if run.SpriteBatch.Clip.Width() > 0 && run.SpriteBatch.Clip.Height() > 0 {
+			pass.SetScissorRect(0, 0, uint32(width), uint32(height))
+		}
 	case tess.DrawRunTextBatch:
 		r.warnSkipped("text batches")
 	}

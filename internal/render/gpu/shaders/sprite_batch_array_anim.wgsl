@@ -8,7 +8,7 @@ struct Sprite {
   center : vec2f,
   half_size : vec2f,
   rotation : f32,
-  _pad : f32,
+  flags : u32,
   uv_min : vec2f,
   uv_max : vec2f,
   clip_min : vec2f,
@@ -28,16 +28,14 @@ struct SpriteAnim {
   _pad1 : f32,
 }
 
-struct CameraUniforms {
-  to_clip_scale : vec2f,
-  to_clip_offset : vec2f,
-  world_to_screen_scale : vec2f,
-  screen_to_clip_scale : vec2f,
-}
-
 struct BatchUniforms {
-  camera : CameraUniforms,
-  time : f32,
+	world_to_clip_x : vec2f,
+	world_to_clip_y : vec2f,
+	to_clip_offset : vec2f,
+	world_to_screen_scale : vec2f,
+	screen_to_clip_scale : vec2f,
+	_camera_pad : vec2f,
+	time : f32,
   bounce_hz : f32,
   intensity : f32,
   _pad0 : f32,
@@ -70,6 +68,7 @@ const CORNERS = array<vec2f, 6>(
   vec2f(-1.0, -1.0), vec2f(1.0, -1.0), vec2f(1.0, 1.0),
   vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0),
 );
+const PROJECT_CORNERS = 1u;
 
 const TWO_PI = 6.283185307179586;
 
@@ -106,24 +105,38 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
     sprite.center.y = sprite.center.y - anim.bounce * u.intensity * boost * s;
   }
 
-  // Match the legacy DrawImage path: size is scaled into screen pixels
-  // before rotation so AspectStretch cannot skew the rotated sprite.
   let rotation = vec2f(cos(sprite.rotation), sin(sprite.rotation));
-  let screen_corner = corner * sprite.half_size * u.camera.world_to_screen_scale;
-  let rotated = vec2f(
-    screen_corner.x * rotation.x - screen_corner.y * rotation.y,
-    screen_corner.x * rotation.y + screen_corner.y * rotation.x,
+	let local_corner = corner * sprite.half_size;
+  let rotated_world_corner = vec2f(
+    local_corner.x * rotation.x - local_corner.y * rotation.y,
+    local_corner.x * rotation.y + local_corner.y * rotation.x,
   );
-  let clip_pos = sprite.center * u.camera.to_clip_scale + u.camera.to_clip_offset +
-    rotated * u.camera.screen_to_clip_scale;
+  var clip_pos : vec2f;
+  if ((sprite.flags & PROJECT_CORNERS) != 0u) {
+    let world_corner = sprite.center + rotated_world_corner;
+    clip_pos = u.world_to_clip_x * world_corner.x +
+      u.world_to_clip_y * world_corner.y + u.to_clip_offset;
+  } else {
+    // Preserve the upright-sprite rule: scale into screen pixels before
+    // rotating, so AspectStretch does not skew a rotated sprite.
+    let screen_corner = local_corner * u.world_to_screen_scale;
+    let rotated_screen_corner = vec2f(
+      screen_corner.x * rotation.x - screen_corner.y * rotation.y,
+      screen_corner.x * rotation.y + screen_corner.y * rotation.x,
+    );
+    let world_center = u.world_to_clip_x * sprite.center.x +
+      u.world_to_clip_y * sprite.center.y;
+    clip_pos = world_center + u.to_clip_offset +
+      rotated_screen_corner * u.screen_to_clip_scale;
+  }
 
   var out : VSOut;
   out.position = vec4f(clip_pos, 0.0, 1.0);
   out.uv = mix(uv_min, uv_max, corner * 0.5 + vec2f(0.5));
   out.tint = unpack4x8unorm(sprite.tint);
   out.screen_pos = vec2f(
-    (clip_pos.x + 1.0) / u.camera.screen_to_clip_scale.x,
-    (clip_pos.y - 1.0) / u.camera.screen_to_clip_scale.y,
+		(clip_pos.x + 1.0) / u.screen_to_clip_scale.x,
+		(clip_pos.y - 1.0) / u.screen_to_clip_scale.y,
   );
   out.clip_min = sprite.clip_min;
   out.clip_max = sprite.clip_max;

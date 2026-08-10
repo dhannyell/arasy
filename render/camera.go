@@ -21,6 +21,7 @@ const (
 	AspectExpand
 )
 
+// ResolvedCamera contains the camera values used for one render pass.
 type ResolvedCamera struct {
 	World    math2d.Rect
 	Viewport math2d.Rect
@@ -36,61 +37,29 @@ type Camera struct {
 	// Viewport is the target area in screen or image coordinates.
 	Viewport math2d.Rect
 
-	// Aspect controls how the camera handles aspect-ratio differences
+	// Aspect controls how the camera handles aspect-ratio differences.
 	Aspect AspectMode
 
-	// DepthScale foreshortens the world's depth axis (Y) on screen, which is
-	// what a camera tilted away from straight-down does to the ground plane.
-	// 1 is the default and means no tilt: a top-down camera, the engine's
-	// behaviour before this field existed. 0.5 is the classic 2:1 view of
-	// pixel-art dimetric projection.
-	//
-	// It is the cosine of the camera's tilt from vertical, so 0.5 is a 60
-	// degree tilt and one unit of height is worth tan(60) ~= 1.73 units of
-	// depth on screen. Values outside (0, 1] are clamped.
-	//
-	// The foreshortening happens around the centre of the visible world, so
-	// changing it never drags the scene out of frame. It moves where things
-	// are drawn, not how big the world is: collision, physics and every other
-	// world-space measurement stay in unforeshortened units.
+	// DepthScale controls how much world Y contributes to screen position.
+	// Use it for a tilted top-down or dimetric view. Zero uses 1. Values above
+	// 1 and NaN also use 1. Smaller values are clamped to a usable minimum.
+	// The setting changes rendering only. World units and simulation stay the
+	// same.
 	DepthScale float64
 
-	// View is a world-to-view affine applied before everything else, for a
-	// game whose world is not laid out the way it is drawn. An isometric grid
-	// is the case it exists for: the world is a square grid the simulation can
-	// reason about, and the screen shows it as diamonds. The zero value is
-	// identity, so a game that never asks for one is unaffected.
-	//
-	// It belongs on the camera and not on each sprite because a projection is
-	// a fact about the viewer. Put it on the sprites and every consumer of the
-	// camera keeps working in the unprojected space and quietly disagrees with
-	// the picture: debug overlays land in the wrong place, ScreenToWorld
-	// answers in a space nothing else uses, and every entity has to be
-	// re-placed whenever it moves. Declared here, one line reaches all of it,
-	// and -- because an affine is invertible -- ScreenToWorld inverts it, so
-	// hit-testing and recorded pointer coordinates stay honest.
-	//
-	// DepthScale is the special case of the same idea for the one projection
-	// common enough to deserve a scalar. The two compose: View is applied
-	// first, then the tilt. Setting both means an isometric grid seen from a
-	// camera that is also tilted, which is rarely what anyone wants -- an
-	// isometric view already encodes its own tilt.
-	//
-	// Backend coverage: every backend draws it for shapes, images and text,
-	// because each of those walks its geometry through WorldToScreen. What
-	// does not follow it are the paths that hand the camera to the GPU as a
-	// scale and an offset, which cannot carry a shear: DrawSpriteBatch,
-	// DrawTextBatch and DrawParticles. Those keep drawing as though View were
-	// identity, which puts them in the wrong place rather than merely the
-	// wrong shape. (DrawParticles already ignores BaseCommand.Transform for
-	// the same reason.)
+	// View maps world coordinates before DepthScale. Use it when the world
+	// layout and the screen layout differ, such as for an isometric grid. The
+	// zero value is identity. ScreenToWorld applies the inverse mapping.
+	// Render backends use View for batch positions. Sprite, glyph and particle
+	// corners stay screen-space billboards unless a sprite instance explicitly
+	// requests projected corners. DrawParticles still ignores BaseCommand.Transform;
+	// this is a command rule, not a camera rule.
 	View math2d.Affine
 }
 
 // Skews reports whether View does anything, so a backend can route shape
-// geometry through its per-vertex path instead of rebuilding a shape from a
-// centre and a radius. A sheared square is a parallelogram and no pair of
-// corners describes it.
+// geometry through its per-vertex path. A sheared shape cannot be represented
+// by its centre and axis-aligned size alone.
 func (c Camera) Skews() bool {
 	return !c.View.IsIdentity()
 }

@@ -25,22 +25,24 @@ jogo:
 
 ## Lacunas, em ordem de impacto
 
-### 1. Texturas em lote ignoram a `View`
+### 1. Texturas em lote — fechada em 2026-08-09
 
-`DrawSpriteBatch`, `DrawTextBatch` e `DrawParticles` recebem a câmera como
-escala+offset e não carregam cisalhamento (limite já documentado). Efeito
-prático: **um jogo isométrico feito de arte em textura — o caso mais comum —
-não pode usar os caminhos rápidos**; o outpost contorna sendo 100% vetorial.
-É a lacuna que mais restringe "que tipo de jogo 2.5D dá para fazer". Exige
-uniform de matriz completa nos dois backends de GPU.
+`DrawSpriteBatch`, `DrawTextBatch` e `DrawParticles` agora carregam a matriz
+completa da câmera, incluindo `View` e `DepthScale`, nos dois backends GPU. As
+posições passam a seguir `Camera.WorldToScreen`. Por padrão, as instâncias de
+sprites continuam billboards em espaço de tela; tiles de chão usam
+`ProjectCorners` para que os quatro cantos sigam a mesma projeção da câmera. O
+culling de batches transforma bounds conservadoramente pela mesma `View`. A
+exceção restante é `DrawParticles.BaseCommand.Transform`, deliberadamente fora
+do contrato da câmera.
 
-### 2. Não existe tilemap
+### 2. Não existe importação do Tiled
 
-Nenhum suporte a mapa de tiles — nem renderer, nem autotile, nem import dos
-formatos de editor de mapa que os jogos já usam (Tiled, LDtk). Para 2.5D
-isso pesa dobrado, porque o chão é sempre um tilemap. O `boardMap` de texto
-do outpost é o embrião do que uma API mínima poderia ser: grid + atlas +
-camadas, com a `View` fazendo o resto.
+O engine já tem um caminho retido de grid e atlas, mas ainda não importa
+formatos de editor como Tiled ou LDtk. Para 2.5D isso ainda pesa dobrado,
+porque manter o grid manualmente é trabalho de conteúdo. A importação deve
+usar o grid quadrado do mundo, as camadas de atlas existentes e o caminho de
+chão com `ProjectCorners`.
 
 ### 3. Altura não entra no picking
 
@@ -124,8 +126,8 @@ praça; a seção de luz do `2-5d.md` documenta o design. Fora por decisão:
 
 ## Leitura recomendada de prioridade
 
-O item 1 é o único que *bloqueia* uma classe de jogo; 2 e 3 são os que todo
-segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
+O item 1 está fechado; o item 2 é agora o próximo bloqueador prático, e o 3 é
+o que todo segundo jogo 2.5D vai pedir; 4 e 5 transformam o 2.5D de visual em mecânica;
 6 e 7 são polimento de gênero. 8 e 9 são o que separa "sprite colocado na
 cena" de "sprite pertencente à cena", e os dois agora têm soluções v1:
 sombra de contato com estilo e modulação de luz declarada. A silhueta

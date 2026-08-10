@@ -16,7 +16,7 @@ import (
 // camera uniform layout used by every sprite/text pipeline.
 const (
 	spriteBatchAnimStride      = 32
-	spriteBatchAnimUniformSize = 80
+	spriteBatchAnimUniformSize = 96
 )
 
 type spriteUniformWriter struct {
@@ -230,9 +230,9 @@ func uniformArenaSlotCapacity(current, required int) int {
 	return current
 }
 
-// packSpriteBatchAnimUniforms packs one arena slot: the shared 32-byte
-// camera uniform followed by the 48-byte animation uniform block (wrapped
-// time, bounce parameters, pulse) consumed by the animated sprite shaders.
+// packSpriteBatchAnimUniforms packs one arena slot: the shared camera uniform
+// followed by the animation uniform block consumed by the animated sprite
+// shaders.
 func packSpriteBatchAnimUniforms(dst []byte, camera render.Camera, w, h int, anim render.SpriteBatchAnimation) {
 	tess.PackSpriteUniforms(dst, camera, w, h)
 	writer := spriteUniformWriter{dst: dst, offset: tess.SpriteUniformSize}
