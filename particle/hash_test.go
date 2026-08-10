@@ -64,6 +64,14 @@ func TestPcg3dIsDeterministicAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestHash3MatchesCanonicalParticleHash(t *testing.T) {
+	in := [3]uint32{42, 1337, 7}
+
+	if got, want := Hash3(in), pcg3d(in); got != want {
+		t.Fatalf("Hash3(%v) = %v, want %v", in, got, want)
+	}
+}
+
 func TestPcg3dDoesNotMutateItsInputArray(t *testing.T) {
 	in := [3]uint32{5, 9, 1}
 	original := in

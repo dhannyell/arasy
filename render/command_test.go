@@ -47,6 +47,7 @@ var withLightExemptions = map[reflect.Type]string{
 	reflect.TypeOf(render.DrawParticles{}):   "particles declare their own blend (153 decision)",
 	reflect.TypeOf(render.DrawSpriteBatch{}): "retained content: lit via a per-batch uniform when that extension lands",
 	reflect.TypeOf(render.DrawTextBatch{}):   "retained content: same as DrawSpriteBatch",
+	reflect.TypeOf(render.PostChain{}):       "post effects own their image-space colors and are not scene lighting",
 }
 
 // WithLight has the same silent-fallthrough shape as WithLayer, plus a
@@ -166,6 +167,7 @@ func TestDrawCommandsImplementCommand(t *testing.T) {
 		render.DrawTriangles{},
 		render.DrawImage{},
 		render.DrawImageQuad{},
+		render.PostChain{},
 	}
 
 	for _, command := range commands {

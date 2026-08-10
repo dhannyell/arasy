@@ -355,6 +355,11 @@ func (s *streamSink) VisitTextBatch(cmd render.DrawTextBatch) {
 	s.hasLast = false
 }
 
+// VisitPostChain is handled by the host renderer outside tessellation. The
+// command must still be accepted by this sink so the dispatch contract stays
+// exhaustive while the host extracts the chain from the frame.
+func (s *streamSink) VisitPostChain(render.PostChain) {}
+
 func (s *streamSink) VisitText(cmd render.DrawText) {
 	size := cmd.Size
 	if size <= 0 {
