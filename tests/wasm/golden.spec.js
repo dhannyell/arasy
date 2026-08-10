@@ -59,3 +59,7 @@ test('renders retained sprite and text batches', async ({ page }, testInfo) => {
     'retained-batches.png',
   );
 });
+
+test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
+});

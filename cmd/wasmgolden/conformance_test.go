@@ -50,6 +50,12 @@ func TestConformanceParticlesWebGPU(t *testing.T) {
 	assertConformance(t, "particles", "webgpu", 3, particlesChannelTol, particlesWebGPUBudget)
 }
 
+func TestConformancePostWebGPU(t *testing.T) {
+	// Canvas2D intentionally uses documented approximations for this fixture;
+	// the tight conformance comparison is reserved for the GPU mirror.
+	assertConformance(t, "post", "webgpu", 2, frameChannelTol, 0.24)
+}
+
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
 	t.Helper()
 
@@ -77,6 +83,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return New()
 	case "particles":
 		return NewParticleGolden()
+	case "post":
+		return NewPostGolden()
 	default:
 		return nil, fmt.Errorf("unknown fixture %q", fixture)
 	}
