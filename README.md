@@ -219,6 +219,14 @@ Rhythm also has an offline smoke render:
 go run ./examples/rhythm/raster
 ```
 
+The post-processing example exposes all seven fullscreen effects behind one
+interactive control panel. Its scene is procedural, so it needs no assets:
+
+```powershell
+go run ./examples/postfx/raster
+go run -tags arr_dev ./examples/postfx/native
+```
+
 The 2.5D examples render offline the same way: `examples/groundplane` (a
 tilted court with a bouncing ball) and `examples/outpost` (an isometric
 island of extruded volumes with hopping units):
