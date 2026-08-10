@@ -28,6 +28,13 @@ const (
 	effectBloom
 	effectShockwave
 	effectLensRain
+	effectBlur
+	effectFade
+	effectCircleWipe
+	effectDissolve
+	effectFilmGrain
+	effectScanlines
+	effectRadialBlur
 	effectCount
 )
 
@@ -39,6 +46,13 @@ var effectLabels = [...]string{
 	"Bloom",
 	"Shockwave",
 	"Lens rain",
+	"Blur",
+	"Fade",
+	"Circle wipe",
+	"Dissolve",
+	"Film grain",
+	"Scanlines",
+	"Radial blur",
 }
 
 var effectMenuLabels = [...]string{
@@ -49,6 +63,13 @@ var effectMenuLabels = [...]string{
 	"Bloom",
 	"Shockwave",
 	"Lens rain",
+	"Blur",
+	"Fade",
+	"Circle wipe",
+	"Dissolve",
+	"Film grain",
+	"Scanlines",
+	"Radial blur",
 }
 
 type demoState struct {
@@ -80,6 +101,35 @@ type demoState struct {
 	LensRainRefraction float64
 	LensRainSeed       uint64
 	LensRainSeedText   string
+
+	BlurStrength float64
+	BlurPasses   int
+
+	FadeColor  render.Color
+	FadeAmount float64
+
+	CircleWipeCenter   math2d.Vec2
+	CircleWipeColor    render.Color
+	CircleWipeProgress float64
+	CircleWipeSoftness float64
+
+	DissolveColor    render.Color
+	DissolveAmount   float64
+	DissolveCellSize float64
+	DissolveSeed     uint64
+	DissolveSeedText string
+
+	FilmGrainIntensity float64
+	FilmGrainSize      float64
+	FilmGrainSeed      uint64
+	FilmGrainSeedText  string
+
+	ScanlinesIntensity float64
+	ScanlinesThickness float64
+	ScanlinesMask      float64
+
+	RadialBlurCenter   math2d.Vec2
+	RadialBlurStrength float64
 }
 
 // Game is the interactive post-processing showcase.
@@ -137,6 +187,28 @@ func (g *Game) Init(*runtime.UpdateContext) {
 	g.State.LensRainRefraction = 0.75
 	g.State.LensRainSeed = 0x504f5354
 	g.State.LensRainSeedText = fmt.Sprintf("0x%X", g.State.LensRainSeed)
+	g.State.BlurStrength = 0.6
+	g.State.BlurPasses = 3
+	g.State.FadeColor = render.RGBA(0.02, 0.01, 0.05, 1)
+	g.State.FadeAmount = 0.4
+	g.State.CircleWipeCenter = math2d.Vec2{X: viewW / 2, Y: viewH / 2}
+	g.State.CircleWipeColor = render.RGBA(0, 0, 0, 1)
+	g.State.CircleWipeProgress = 0.4
+	g.State.CircleWipeSoftness = 0.2
+	g.State.DissolveColor = render.RGBA(0, 0, 0, 1)
+	g.State.DissolveAmount = 0.35
+	g.State.DissolveCellSize = 12
+	g.State.DissolveSeed = 0x44534c56
+	g.State.DissolveSeedText = fmt.Sprintf("0x%X", g.State.DissolveSeed)
+	g.State.FilmGrainIntensity = 0.12
+	g.State.FilmGrainSize = 2
+	g.State.FilmGrainSeed = 0x4652414d
+	g.State.FilmGrainSeedText = fmt.Sprintf("0x%X", g.State.FilmGrainSeed)
+	g.State.ScanlinesIntensity = 0.25
+	g.State.ScanlinesThickness = 3
+	g.State.ScanlinesMask = 0.4
+	g.State.RadialBlurCenter = math2d.Vec2{X: viewW / 2, Y: viewH / 2}
+	g.State.RadialBlurStrength = 0.3
 }
 
 // Update applies the control panel's caller-owned values to the game state.
@@ -219,6 +291,22 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 
 func (g *Game) effects(_ float64) []render.PostEffect {
 	effects := make([]render.PostEffect, 0, effectCount)
+	if g.State.Enabled[effectCircleWipe] {
+		effects = append(effects, render.CircleWipe{
+			Center:   g.State.CircleWipeCenter,
+			Color:    g.State.CircleWipeColor,
+			Progress: g.State.CircleWipeProgress,
+			Softness: g.State.CircleWipeSoftness,
+		})
+	}
+	if g.State.Enabled[effectDissolve] {
+		effects = append(effects, render.Dissolve{
+			Color:    g.State.DissolveColor,
+			Amount:   g.State.DissolveAmount,
+			CellSize: g.State.DissolveCellSize,
+			Seed:     g.State.DissolveSeed,
+		})
+	}
 	if g.State.Enabled[effectShockwave] {
 		effects = append(effects, render.Shockwave{
 			Center:   g.State.ShockwaveCenter,
@@ -242,6 +330,22 @@ func (g *Game) effects(_ float64) []render.PostEffect {
 	if g.State.Enabled[effectPixelate] {
 		effects = append(effects, render.Pixelate{Size: g.State.PixelateSize})
 	}
+	if g.State.Enabled[effectBlur] {
+		effects = append(effects, render.Blur{Strength: g.State.BlurStrength, Passes: g.State.BlurPasses})
+	}
+	if g.State.Enabled[effectRadialBlur] {
+		effects = append(effects, render.RadialBlur{Center: g.State.RadialBlurCenter, Strength: g.State.RadialBlurStrength})
+	}
+	if g.State.Enabled[effectFilmGrain] {
+		effects = append(effects, render.FilmGrain{Intensity: g.State.FilmGrainIntensity, Size: g.State.FilmGrainSize, Seed: g.State.FilmGrainSeed})
+	}
+	if g.State.Enabled[effectScanlines] {
+		effects = append(effects, render.Scanlines{
+			Intensity:    g.State.ScanlinesIntensity,
+			Thickness:    g.State.ScanlinesThickness,
+			MaskStrength: g.State.ScanlinesMask,
+		})
+	}
 	if g.State.Enabled[effectBloom] {
 		effects = append(effects, render.Bloom{
 			Passes:    g.State.BloomPasses,
@@ -263,6 +367,9 @@ func (g *Game) effects(_ float64) []render.PostEffect {
 			Strength: g.State.VignetteStrength,
 			Softness: g.State.VignetteSoftness,
 		})
+	}
+	if g.State.Enabled[effectFade] {
+		effects = append(effects, render.Fade{Color: g.State.FadeColor, Amount: g.State.FadeAmount})
 	}
 	return effects
 }
@@ -319,6 +426,55 @@ func (g *Game) updateSelected(in ui.InteractScope, layout postfxHUDLayout) {
 				g.State.LensRainSeed = parsed
 			}
 		}
+	case effectBlur:
+		g.State.BlurStrength = slider("postfx_blur_strength", layout.parametersSlots[0], g.State.BlurStrength, 0, 1, 0.01)
+		passes := slider("postfx_blur_passes", layout.parametersSlots[1], float64(g.State.BlurPasses), 0, 5, 1)
+		g.State.BlurPasses = int(math.Round(passes))
+	case effectFade:
+		g.State.FadeAmount = slider("postfx_fade_amount", layout.parametersSlots[0], g.State.FadeAmount, 0, 1, 0.01)
+		colorSlider("postfx_fade_color_r", layout.parametersSlots[1], &g.State.FadeColor.R)
+		colorSlider("postfx_fade_color_g", layout.parametersSlots[2], &g.State.FadeColor.G)
+		colorSlider("postfx_fade_color_b", layout.parametersSlots[3], &g.State.FadeColor.B)
+		colorSlider("postfx_fade_color_a", layout.parametersSlots[4], &g.State.FadeColor.A)
+	case effectCircleWipe:
+		g.State.CircleWipeProgress = slider("postfx_circlewipe_progress", layout.parametersSlots[0], g.State.CircleWipeProgress, 0, 1, 0.01)
+		g.State.CircleWipeSoftness = slider("postfx_circlewipe_softness", layout.parametersSlots[1], g.State.CircleWipeSoftness, 0, 1, 0.01)
+		g.State.CircleWipeCenter.X = slider("postfx_circlewipe_center_x", layout.parametersSlots[2], g.State.CircleWipeCenter.X, 0, viewW, 1)
+		g.State.CircleWipeCenter.Y = slider("postfx_circlewipe_center_y", layout.parametersSlots[3], g.State.CircleWipeCenter.Y, 0, viewH, 1)
+		colorSlider("postfx_circlewipe_color_r", layout.parametersSlots[4], &g.State.CircleWipeColor.R)
+		colorSlider("postfx_circlewipe_color_g", layout.parametersSlots[5], &g.State.CircleWipeColor.G)
+		colorSlider("postfx_circlewipe_color_b", layout.parametersSlots[6], &g.State.CircleWipeColor.B)
+	case effectDissolve:
+		g.State.DissolveAmount = slider("postfx_dissolve_amount", layout.parametersSlots[0], g.State.DissolveAmount, 0, 1, 0.01)
+		g.State.DissolveCellSize = slider("postfx_dissolve_cellsize", layout.parametersSlots[1], g.State.DissolveCellSize, 1, 64, 1)
+		colorSlider("postfx_dissolve_color_r", layout.parametersSlots[2], &g.State.DissolveColor.R)
+		colorSlider("postfx_dissolve_color_g", layout.parametersSlots[3], &g.State.DissolveColor.G)
+		colorSlider("postfx_dissolve_color_b", layout.parametersSlots[4], &g.State.DissolveColor.B)
+		seed := in.TextInput("postfx_dissolve_seed", layout.parametersSlots[5], g.State.DissolveSeedText, ui.TextInputOptions{Placeholder: "0x44534C56", MaxRunes: 18})
+		if seed.Changed {
+			g.State.DissolveSeedText = seed.Text
+			if parsed, err := strconv.ParseUint(strings.TrimSpace(seed.Text), 0, 64); err == nil {
+				g.State.DissolveSeed = parsed
+			}
+		}
+	case effectFilmGrain:
+		g.State.FilmGrainIntensity = slider("postfx_filmgrain_intensity", layout.parametersSlots[0], g.State.FilmGrainIntensity, 0, 1, 0.01)
+		g.State.FilmGrainSize = slider("postfx_filmgrain_size", layout.parametersSlots[1], g.State.FilmGrainSize, 1, 8, 1)
+		seed := in.TextInput("postfx_filmgrain_seed", layout.parametersSlots[2], g.State.FilmGrainSeedText, ui.TextInputOptions{Placeholder: "0x4652414D", MaxRunes: 18})
+		if seed.Changed {
+			g.State.FilmGrainSeedText = seed.Text
+			if parsed, err := strconv.ParseUint(strings.TrimSpace(seed.Text), 0, 64); err == nil {
+				g.State.FilmGrainSeed = parsed
+			}
+		}
+	case effectScanlines:
+		g.State.ScanlinesIntensity = slider("postfx_scanlines_intensity", layout.parametersSlots[0], g.State.ScanlinesIntensity, 0, 1, 0.01)
+		g.State.ScanlinesThickness = slider("postfx_scanlines_thickness", layout.parametersSlots[1], g.State.ScanlinesThickness, 2, 12, 1)
+		g.State.ScanlinesMask = slider("postfx_scanlines_mask", layout.parametersSlots[2], g.State.ScanlinesMask, 0, 1, 0.01)
+	case effectRadialBlur:
+		g.State.RadialBlurStrength = slider("postfx_radialblur_strength", layout.parametersSlots[0], g.State.RadialBlurStrength, 0, 1, 0.01)
+		g.State.RadialBlurCenter.X = slider("postfx_radialblur_center_x", layout.parametersSlots[1], g.State.RadialBlurCenter.X, 0, viewW, 4)
+		g.State.RadialBlurCenter.Y = slider("postfx_radialblur_center_y", layout.parametersSlots[2], g.State.RadialBlurCenter.Y, 0, viewH, 4)
 	}
 }
 
@@ -368,6 +524,44 @@ func (g *Game) drawSelectedParameters(draw ui.DrawScope, layout postfxHUDLayout)
 		drawSlider("postfx_lensrain_refraction", "refraction", layout.parametersSlots[3], g.State.LensRainRefraction, 0, 2, 0.01, "%.2f")
 		draw.DrawText("seed (decimal or 0x hex)", math2d.Vec2{X: layout.parametersSlots[4].Min.X, Y: layout.parametersSlots[4].Min.Y - 10}, render.RGBA8(215, 225, 240, 255), 14, render.AlignLeft, render.BaselineMiddle)
 		draw.TextInput("postfx_lensrain_seed", layout.parametersSlots[4], g.State.LensRainSeedText, ui.TextInputOptions{Placeholder: "0x504F5354", MaxRunes: 18})
+	case effectBlur:
+		drawSlider("postfx_blur_strength", "strength", layout.parametersSlots[0], g.State.BlurStrength, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_blur_passes", "passes (0 = default)", layout.parametersSlots[1], float64(g.State.BlurPasses), 0, 5, 1, "%.0f")
+	case effectFade:
+		drawSlider("postfx_fade_amount", "amount", layout.parametersSlots[0], g.State.FadeAmount, 0, 1, 0.01, "%.2f")
+		drawColor("postfx_fade_color_r", "color R", layout.parametersSlots[1], g.State.FadeColor.R)
+		drawColor("postfx_fade_color_g", "color G", layout.parametersSlots[2], g.State.FadeColor.G)
+		drawColor("postfx_fade_color_b", "color B", layout.parametersSlots[3], g.State.FadeColor.B)
+		drawColor("postfx_fade_color_a", "color A", layout.parametersSlots[4], g.State.FadeColor.A)
+	case effectCircleWipe:
+		drawSlider("postfx_circlewipe_progress", "progress", layout.parametersSlots[0], g.State.CircleWipeProgress, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_circlewipe_softness", "softness", layout.parametersSlots[1], g.State.CircleWipeSoftness, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_circlewipe_center_x", "center X", layout.parametersSlots[2], g.State.CircleWipeCenter.X, 0, viewW, 1, "%.0f")
+		drawSlider("postfx_circlewipe_center_y", "center Y", layout.parametersSlots[3], g.State.CircleWipeCenter.Y, 0, viewH, 1, "%.0f")
+		drawColor("postfx_circlewipe_color_r", "color R", layout.parametersSlots[4], g.State.CircleWipeColor.R)
+		drawColor("postfx_circlewipe_color_g", "color G", layout.parametersSlots[5], g.State.CircleWipeColor.G)
+		drawColor("postfx_circlewipe_color_b", "color B", layout.parametersSlots[6], g.State.CircleWipeColor.B)
+	case effectDissolve:
+		drawSlider("postfx_dissolve_amount", "amount", layout.parametersSlots[0], g.State.DissolveAmount, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_dissolve_cellsize", "cell size (pixels)", layout.parametersSlots[1], g.State.DissolveCellSize, 1, 64, 1, "%.0f")
+		drawColor("postfx_dissolve_color_r", "color R", layout.parametersSlots[2], g.State.DissolveColor.R)
+		drawColor("postfx_dissolve_color_g", "color G", layout.parametersSlots[3], g.State.DissolveColor.G)
+		drawColor("postfx_dissolve_color_b", "color B", layout.parametersSlots[4], g.State.DissolveColor.B)
+		draw.DrawText("seed (decimal or 0x hex)", math2d.Vec2{X: layout.parametersSlots[5].Min.X, Y: layout.parametersSlots[5].Min.Y - 10}, render.RGBA8(215, 225, 240, 255), 14, render.AlignLeft, render.BaselineMiddle)
+		draw.TextInput("postfx_dissolve_seed", layout.parametersSlots[5], g.State.DissolveSeedText, ui.TextInputOptions{Placeholder: "0x44534C56", MaxRunes: 18})
+	case effectFilmGrain:
+		drawSlider("postfx_filmgrain_intensity", "intensity", layout.parametersSlots[0], g.State.FilmGrainIntensity, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_filmgrain_size", "grain size (pixels)", layout.parametersSlots[1], g.State.FilmGrainSize, 1, 8, 1, "%.0f")
+		draw.DrawText("seed (decimal or 0x hex)", math2d.Vec2{X: layout.parametersSlots[2].Min.X, Y: layout.parametersSlots[2].Min.Y - 10}, render.RGBA8(215, 225, 240, 255), 14, render.AlignLeft, render.BaselineMiddle)
+		draw.TextInput("postfx_filmgrain_seed", layout.parametersSlots[2], g.State.FilmGrainSeedText, ui.TextInputOptions{Placeholder: "0x4652414D", MaxRunes: 18})
+	case effectScanlines:
+		drawSlider("postfx_scanlines_intensity", "intensity", layout.parametersSlots[0], g.State.ScanlinesIntensity, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_scanlines_thickness", "thickness (pixels)", layout.parametersSlots[1], g.State.ScanlinesThickness, 2, 12, 1, "%.0f")
+		drawSlider("postfx_scanlines_mask", "mask strength", layout.parametersSlots[2], g.State.ScanlinesMask, 0, 1, 0.01, "%.2f")
+	case effectRadialBlur:
+		drawSlider("postfx_radialblur_strength", "strength", layout.parametersSlots[0], g.State.RadialBlurStrength, 0, 1, 0.01, "%.2f")
+		drawSlider("postfx_radialblur_center_x", "center X", layout.parametersSlots[1], g.State.RadialBlurCenter.X, 0, viewW, 4, "%.0f")
+		drawSlider("postfx_radialblur_center_y", "center Y", layout.parametersSlots[2], g.State.RadialBlurCenter.Y, 0, viewH, 4, "%.0f")
 	}
 }
 
@@ -387,6 +581,20 @@ func effectDescription(id effectID) string {
 		return "center / radius / width / strength"
 	case effectLensRain:
 		return "density / size / speed / refraction / seed"
+	case effectBlur:
+		return "strength / passes"
+	case effectFade:
+		return "amount / color"
+	case effectCircleWipe:
+		return "progress / softness / center / color"
+	case effectDissolve:
+		return "amount / cell size / color / seed"
+	case effectFilmGrain:
+		return "intensity / size / seed"
+	case effectScanlines:
+		return "intensity / thickness / mask"
+	case effectRadialBlur:
+		return "strength / center"
 	default:
 		return ""
 	}
@@ -408,6 +616,20 @@ func effectTitle(id effectID) string {
 		return "SHOCKWAVE"
 	case effectLensRain:
 		return "LENS RAIN"
+	case effectBlur:
+		return "BLUR"
+	case effectFade:
+		return "FADE"
+	case effectCircleWipe:
+		return "CIRCLE WIPE"
+	case effectDissolve:
+		return "DISSOLVE"
+	case effectFilmGrain:
+		return "FILM GRAIN"
+	case effectScanlines:
+		return "SCANLINES"
+	case effectRadialBlur:
+		return "RADIAL BLUR"
 	default:
 		return "POST FX"
 	}
@@ -570,25 +792,29 @@ type postfxHUDLayout struct {
 }
 
 func postfxLayout() postfxHUDLayout {
+	const rowStart, rowStep = 92, 34
+	toggleRows := float64(effectCount)
+	buttonsY := rowStart + toggleRows*rowStep + 12
+
 	controls := math2d.NewRect(math2d.Vec2{X: 24, Y: 24}, math2d.Vec2{X: 260, Y: 672})
 	parameters := math2d.NewRect(math2d.Vec2{X: 1028, Y: 24}, math2d.Vec2{X: 228, Y: 566})
 	layout := postfxHUDLayout{
 		controls:        controls,
 		parameters:      parameters,
-		allButton:       math2d.NewRect(math2d.Vec2{X: 40, Y: 380}, math2d.Vec2{X: 105, Y: 30}),
-		noneButton:      math2d.NewRect(math2d.Vec2{X: 155, Y: 380}, math2d.Vec2{X: 105, Y: 30}),
+		allButton:       math2d.NewRect(math2d.Vec2{X: 40, Y: buttonsY}, math2d.Vec2{X: 105, Y: 30}),
+		noneButton:      math2d.NewRect(math2d.Vec2{X: 155, Y: buttonsY}, math2d.Vec2{X: 105, Y: 30}),
 		parameterToggle: math2d.NewRect(math2d.Vec2{X: 1182, Y: 31}, math2d.Vec2{X: 60, Y: 22}),
-		showParameters:  math2d.NewRect(math2d.Vec2{X: 40, Y: 430}, math2d.Vec2{X: 220, Y: 30}),
+		showParameters:  math2d.NewRect(math2d.Vec2{X: 40, Y: buttonsY + 40}, math2d.Vec2{X: 220, Y: 30}),
 	}
 	for i := range layout.selectors {
-		y := 100 + float64(i)*38
+		y := rowStart + float64(i)*rowStep
 		layout.toggles[i] = math2d.NewRect(
 			math2d.Vec2{X: 40, Y: y},
-			math2d.Vec2{X: 162, Y: 30},
+			math2d.Vec2{X: 162, Y: 26},
 		)
 		layout.selectors[i] = math2d.NewRect(
 			math2d.Vec2{X: 206, Y: y},
-			math2d.Vec2{X: 54, Y: 30},
+			math2d.Vec2{X: 54, Y: 26},
 		)
 	}
 	for i := range layout.parametersSlots {

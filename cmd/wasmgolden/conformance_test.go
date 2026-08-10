@@ -32,7 +32,9 @@ const (
 	particlesChannelTol     = 32
 	particlesCanvas2DBudget = 0.1520
 	particlesWebGPUBudget   = 0.0754
-	postWebGPUBudget        = 0.065
+	// LensRain's wobbled rim runs sin/atan2 in f32 on the GPU and f64 on the
+	// raster reference; measured 6.78%, budgeted with headroom.
+	postWebGPUBudget = 0.075
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {

@@ -119,3 +119,39 @@ var PostShockwaveWGSL string
 //
 //go:embed post_lensrain.wgsl
 var PostLensRainWGSL string
+
+// PostBlurWGSL mirrors platform/raster/postfx.go applyBlurInto's final
+// sharp/blurred mix. The pyramid passes reuse PostBloomWGSL's fs_down/fs_up.
+//
+//go:embed post_blur.wgsl
+var PostBlurWGSL string
+
+// PostFadeWGSL mirrors platform/raster/postfx.go applyFadeInto.
+//
+//go:embed post_fade.wgsl
+var PostFadeWGSL string
+
+// PostCircleWipeWGSL mirrors platform/raster/postfx.go applyCircleWipeInto.
+//
+//go:embed post_circlewipe.wgsl
+var PostCircleWipeWGSL string
+
+// PostDissolveWGSL mirrors platform/raster/postfx.go applyDissolveInto.
+//
+//go:embed post_dissolve.wgsl
+var PostDissolveWGSL string
+
+// PostGrainWGSL mirrors platform/raster/postfx.go applyFilmGrainInto.
+//
+//go:embed post_grain.wgsl
+var PostGrainWGSL string
+
+// PostScanlinesWGSL mirrors platform/raster/postfx.go applyScanlinesInto.
+//
+//go:embed post_scanlines.wgsl
+var PostScanlinesWGSL string
+
+// PostRadialBlurWGSL mirrors platform/raster/postfx.go applyRadialBlurInto.
+//
+//go:embed post_radialblur.wgsl
+var PostRadialBlurWGSL string

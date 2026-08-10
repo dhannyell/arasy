@@ -28,6 +28,15 @@ const (
 	postPipelineBloomCombine = "bloom-combine"
 	postPipelineShockwave    = "shockwave"
 	postPipelineLensRain     = "lens-rain"
+	postPipelineBlurDown     = "blur-down"
+	postPipelineBlurUp       = "blur-up"
+	postPipelineBlurCombine  = "blur-combine"
+	postPipelineFade         = "fade"
+	postPipelineCircleWipe   = "circle-wipe"
+	postPipelineDissolve     = "dissolve"
+	postPipelineGrain        = "grain"
+	postPipelineScanlines    = "scanlines"
+	postPipelineRadialBlur   = "radial-blur"
 )
 
 // webgpuPostTarget is a single-sample texture used by the post-process
@@ -76,6 +85,17 @@ func (r *webgpuRenderer) initPostResources() {
 		postPipelineBloomCombine: r.createPostPipeline(postPipelineBloomCombine, shaders.PostBloomCombineWGSL, "fs_main", 1),
 		postPipelineShockwave:    r.createPostPipeline(postPipelineShockwave, shaders.PostShockwaveWGSL, "fs_main", 1),
 		postPipelineLensRain:     r.createPostPipeline(postPipelineLensRain, shaders.PostLensRainWGSL, "fs_main", 1),
+		// Blur reuses the bloom pyramid's fs_down/fs_up entry points (same
+		// taps and weights) and only owns the final sharp/blurred mix.
+		postPipelineBlurDown:    r.createPostPipeline(postPipelineBlurDown, shaders.PostBloomWGSL, "fs_down", 1),
+		postPipelineBlurUp:      r.createPostPipeline(postPipelineBlurUp, shaders.PostBloomWGSL, "fs_up", 1),
+		postPipelineBlurCombine: r.createPostPipeline(postPipelineBlurCombine, shaders.PostBlurWGSL, "fs_main", 1),
+		postPipelineFade:        r.createPostPipeline(postPipelineFade, shaders.PostFadeWGSL, "fs_main", 1),
+		postPipelineCircleWipe:  r.createPostPipeline(postPipelineCircleWipe, shaders.PostCircleWipeWGSL, "fs_main", 1),
+		postPipelineDissolve:    r.createPostPipeline(postPipelineDissolve, shaders.PostDissolveWGSL, "fs_main", 1),
+		postPipelineGrain:       r.createPostPipeline(postPipelineGrain, shaders.PostGrainWGSL, "fs_main", 1),
+		postPipelineScanlines:   r.createPostPipeline(postPipelineScanlines, shaders.PostScanlinesWGSL, "fs_main", 1),
+		postPipelineRadialBlur:  r.createPostPipeline(postPipelineRadialBlur, shaders.PostRadialBlurWGSL, "fs_main", 1),
 	}
 }
 
@@ -305,9 +325,156 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostU32(dst, 28, uint32(effect.Seed))
 		})
 		return postPipelineLensRain
+	case render.Fade:
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, effect.Color.R)
+			putPostF32(dst, 4, effect.Color.G)
+			putPostF32(dst, 8, effect.Color.B)
+			putPostF32(dst, 12, effect.Color.A)
+			putPostF32(dst, 16, effect.Amount)
+		})
+		return postPipelineFade
+	case render.CircleWipe:
+		center := camera.WorldToScreen(effect.Center)
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, effect.Color.R)
+			putPostF32(dst, 4, effect.Color.G)
+			putPostF32(dst, 8, effect.Color.B)
+			putPostF32(dst, 12, effect.Color.A)
+			putPostF32(dst, 16, center.X)
+			putPostF32(dst, 20, center.Y)
+			putPostF32(dst, 24, effect.Progress)
+			putPostF32(dst, 28, effect.Softness)
+			putPostF32(dst, 32, float64(width))
+			putPostF32(dst, 36, float64(height))
+		})
+		return postPipelineCircleWipe
+	case render.Dissolve:
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, effect.Color.R)
+			putPostF32(dst, 4, effect.Color.G)
+			putPostF32(dst, 8, effect.Color.B)
+			putPostF32(dst, 12, effect.Color.A)
+			putPostF32(dst, 16, effect.Amount)
+			putPostF32(dst, 20, effect.CellSize)
+			putPostF32(dst, 36, float64(width))
+			putPostF32(dst, 40, float64(height))
+			putPostU32(dst, 44, uint32(effect.Seed))
+		})
+		return postPipelineDissolve
+	case render.FilmGrain:
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, effect.Intensity)
+			putPostF32(dst, 4, effect.Size)
+			putPostF32(dst, 20, float64(width))
+			putPostF32(dst, 24, float64(height))
+			putPostU32(dst, 28, uint32(effect.Seed)+uint32(time*60))
+		})
+		return postPipelineGrain
+	case render.Scanlines:
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, effect.Intensity)
+			putPostF32(dst, 4, effect.Thickness)
+			putPostF32(dst, 8, effect.MaskStrength)
+			putPostF32(dst, 20, float64(width))
+			putPostF32(dst, 24, float64(height))
+		})
+		return postPipelineScanlines
+	case render.RadialBlur:
+		center := camera.WorldToScreen(effect.Center)
+		postUniformBuffer(r, index, func(dst []byte) {
+			putPostF32(dst, 0, center.X)
+			putPostF32(dst, 4, center.Y)
+			putPostF32(dst, 8, effect.Strength)
+			putPostF32(dst, 20, float64(width))
+			putPostF32(dst, 24, float64(height))
+		})
+		return postPipelineRadialBlur
 	default:
 		return ""
 	}
+}
+
+func postBlurPasses(effect render.Blur) int {
+	passes := effect.Passes
+	if passes == 0 {
+		passes = 3
+	}
+	return max(1, min(5, passes))
+}
+
+// encodeBlur mirrors encodeBloom's pyramid but seeds level zero directly from
+// the scene (no bright pass) and combines with a sharp/blurred mix instead of
+// an additive combine.
+func (r *webgpuRenderer) encodeBlur(encoder js.Value, source webgpuPostTarget, sourceID int, destination js.Value, effect render.Blur, index int) error {
+	strength := effect.Strength
+	if strength <= 0 {
+		return nil
+	}
+	passes := postBlurPasses(effect)
+	if err := r.ensureBloomTargets(passes); err != nil {
+		return err
+	}
+	r.encodePostPass(encoder, postPipelineBlit, sourceID, source.view, r.postBloom[0].view, -1)
+	for level := 1; level <= passes; level++ {
+		src := r.postBloom[level-1]
+		dst := r.postBloom[level]
+		uniformIndex := index + level
+		postUniformBuffer(r, uniformIndex, func(data []byte) {
+			putPostF32(data, 0, float64(src.width))
+			putPostF32(data, 4, float64(src.height))
+			putPostF32(data, 8, float64(dst.width))
+			putPostF32(data, 12, float64(dst.height))
+		})
+		r.encodePostPass(encoder, postPipelineBlurDown, postSourceBloom+level-1, src.view, dst.view, uniformIndex)
+	}
+	for level := passes - 1; level >= 0; level-- {
+		src := r.postBloom[level+1]
+		dst := r.postBloom[level]
+		uniformIndex := index + passes + 1 + (passes - 1 - level)
+		postUniformBuffer(r, uniformIndex, func(data []byte) {
+			putPostF32(data, 0, float64(src.width))
+			putPostF32(data, 4, float64(src.height))
+			putPostF32(data, 8, float64(dst.width))
+			putPostF32(data, 12, float64(dst.height))
+		})
+		r.encodePostPass(encoder, postPipelineBlurUp, postSourceBloom+level+1, src.view, dst.view, uniformIndex)
+	}
+	combineIndex := index + 2*passes + 1
+	postUniformBuffer(r, combineIndex, func(data []byte) { putPostF32(data, 0, strength) })
+	r.encodePostCombine2(encoder, postPipelineBlurCombine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
+	return nil
+}
+
+// encodePostCombine2 is encodePostCombine generalized over the pipeline name,
+// since Blur's combine shares the two-texture bind layout but a different
+// pipeline than bloom's combine.
+func (r *webgpuRenderer) encodePostCombine2(encoder js.Value, pipelineName string, sourceID int, source, second, destination js.Value, uniformIndex int) {
+	pass := encoder.Call("beginRenderPass", map[string]any{
+		"colorAttachments": []any{map[string]any{
+			"view":       destination,
+			"loadOp":     "clear",
+			"storeOp":    "store",
+			"clearValue": map[string]any{"r": 0, "g": 0, "b": 0, "a": 1},
+		}},
+	})
+	pipeline := r.postPipelines[pipelineName]
+	key := postBindKey{pipeline: pipelineName, source: sourceID, bloom: postSourceBloom, uniform: uniformIndex}
+	bindGroup := r.cachedBindGroup(key, func() js.Value {
+		return r.device.Call("createBindGroup", map[string]any{
+			"layout": pipeline.Call("getBindGroupLayout", 0),
+			"entries": []any{
+				map[string]any{"binding": 0, "resource": source},
+				map[string]any{"binding": 1, "resource": second},
+				map[string]any{"binding": 2, "resource": r.postSampler},
+				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.postUniforms[uniformIndex]}},
+			},
+		})
+	})
+	pass.Call("setPipeline", pipeline)
+	pass.Call("setBindGroup", 0, bindGroup)
+	pass.Call("draw", 3, 1, 0, 0)
+	pass.Call("end")
 }
 
 // cachedBindGroup returns the bind group for key, building it on the first
@@ -513,6 +680,18 @@ func (r *webgpuRenderer) renderPostFrame(
 			sourceID, destID = destID, sourceID
 			continue
 		}
+		if blur, ok := effect.(render.Blur); ok {
+			if clampPostStrength(blur.Strength) == 0 {
+				continue
+			}
+			if err := r.encodeBlur(encoder, source, sourceID, destView, blur, uniformIndex); err != nil {
+				return err
+			}
+			uniformIndex += 16
+			source, destination = destination, source
+			sourceID, destID = destID, sourceID
+			continue
+		}
 		pipelineName := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, w, h)
 		uniformIndex++
 		if pipelineName == "" {
@@ -559,12 +738,28 @@ func postEffectEncodes(effect render.PostEffect) bool {
 	switch effect := effect.(type) {
 	case render.Bloom:
 		return effect.Intensity != 0
+	case render.Blur:
+		return clampPostStrength(effect.Strength) != 0
 	case render.Vignette, render.ColorGrade, render.Pixelate,
-		render.ChromaticAberration, render.Shockwave, render.LensRain:
+		render.ChromaticAberration, render.Shockwave, render.LensRain,
+		render.Fade, render.CircleWipe, render.Dissolve, render.FilmGrain,
+		render.Scanlines, render.RadialBlur:
 		return true
 	default:
 		return false
 	}
+}
+
+// clampPostStrength mirrors platform/raster/postfx.go clamp01 for the one
+// Blur field the encode loop must gate on before spending a pyramid pass.
+func clampPostStrength(value float64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 1
+	}
+	return value
 }
 
 func hasPostRuns(runs []gpuDrawRun, below bool, belowLayer int) bool {

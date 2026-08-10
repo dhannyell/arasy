@@ -73,8 +73,10 @@ type Shockwave struct {
 	Strength float64
 }
 
-// LensRain overlays deterministic camera droplets. Its output is a pure
-// function of the source pixel, Time from PostChain, and Seed.
+// LensRain overlays deterministic camera droplets: two static layers of
+// condensation plus larger splash droplets that appear, hold and gradually
+// erode away, landing at a new position every lifecycle. Its output is a
+// pure function of the source pixel, Time from PostChain, and Seed.
 type LensRain struct {
 	// Density controls the number of droplet cells. Zero is identity.
 	// The standard density is 0.4 when the caller wants the default active
@@ -88,6 +90,84 @@ type LensRain struct {
 	Refraction float64
 	// Seed selects the deterministic droplet layout.
 	Seed uint64
+}
+
+// Blur softens the image with a fullscreen Kawase blur pyramid.
+type Blur struct {
+	// Strength is the mix between the sharp and blurred image, clamped to
+	// [0, 1]. Zero is identity.
+	Strength float64
+	// Passes controls the dual-Kawase pyramid. Zero uses the default of three;
+	// active values are clamped to the range [1, 5].
+	Passes int
+}
+
+// Fade mixes the whole image toward a solid Color, for screen transitions.
+type Fade struct {
+	// Color is the color the image fades toward.
+	Color Color
+	// Amount is the mix with Color, clamped to [0, 1]. Zero is identity.
+	Amount float64
+}
+
+// CircleWipe reveals or covers the screen with a circle centered in world
+// coordinates, for iris-style transitions.
+type CircleWipe struct {
+	// Center is the circle center in world coordinates.
+	Center math2d.Vec2
+	// Color fills the covered area.
+	Color Color
+	// Progress goes from 0 (fully visible) to 1 (fully covered by Color).
+	// Values at or below zero are identity.
+	Progress float64
+	// Softness feathers the circle edge, clamped to [0, 1].
+	Softness float64
+}
+
+// Dissolve covers the screen with Color one cell at a time, in a
+// deterministic pattern keyed by Seed.
+type Dissolve struct {
+	// Color fills a covered cell.
+	Color Color
+	// Amount is the covered fraction of cells, clamped to [0, 1]. Values at or
+	// below zero are identity.
+	Amount float64
+	// CellSize is the cell width and height in pixels. Zero or less uses 8.
+	CellSize float64
+	// Seed selects the deterministic cell pattern.
+	Seed uint64
+}
+
+// FilmGrain adds animated per-pixel luminance noise.
+type FilmGrain struct {
+	// Intensity controls the noise amplitude. Zero is identity.
+	Intensity float64
+	// Size is the grain width and height in pixels. Zero or less uses 1.
+	Size float64
+	// Seed selects the deterministic noise pattern.
+	Seed uint64
+}
+
+// Scanlines darkens periodic horizontal lines, for a CRT monitor look.
+type Scanlines struct {
+	// Intensity is how dark each line gets, clamped to [0, 1]. Zero is
+	// identity.
+	Intensity float64
+	// Thickness is the line period in pixels. Zero or less uses 3.
+	Thickness float64
+	// MaskStrength dims the two off-triad channels of each pixel column,
+	// like a CRT aperture grille, clamped to [0, 1]. Zero disables the mask.
+	MaskStrength float64
+}
+
+// RadialBlur streaks the image toward a focus point, for speed or warp
+// emphasis.
+type RadialBlur struct {
+	// Center is the blur focus in world coordinates.
+	Center math2d.Vec2
+	// Strength is the streak length factor, clamped to [0, 1]. Zero is
+	// identity.
+	Strength float64
 }
 
 // PostChain applies a user-authored chain of fullscreen effects to the frame.
@@ -118,5 +198,12 @@ func (Bloom) isPostEffect()               {}
 func (ChromaticAberration) isPostEffect() {}
 func (Shockwave) isPostEffect()           {}
 func (LensRain) isPostEffect()            {}
+func (Blur) isPostEffect()                {}
+func (Fade) isPostEffect()                {}
+func (CircleWipe) isPostEffect()          {}
+func (Dissolve) isPostEffect()            {}
+func (FilmGrain) isPostEffect()           {}
+func (Scanlines) isPostEffect()           {}
+func (RadialBlur) isPostEffect()          {}
 
 func (PostChain) isRenderCommand() {}

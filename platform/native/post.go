@@ -27,6 +27,15 @@ const (
 	nativePostBloomCombine = "bloom-combine"
 	nativePostShockwave    = "shockwave"
 	nativePostLensRain     = "lens-rain"
+	nativePostBlurDown     = "blur-down"
+	nativePostBlurUp       = "blur-up"
+	nativePostBlurCombine  = "blur-combine"
+	nativePostFade         = "fade"
+	nativePostCircleWipe   = "circle-wipe"
+	nativePostDissolve     = "dissolve"
+	nativePostGrain        = "grain"
+	nativePostScanlines    = "scanlines"
+	nativePostRadialBlur   = "radial-blur"
 )
 
 type nativePostTarget struct {
@@ -91,6 +100,17 @@ func (r *Renderer) createPostResources() error {
 		nativePostBloomCombine: {"post bloom combine", shaders.PostBloomCombineWGSL, "fs_main"},
 		nativePostShockwave:    {"post shockwave", shaders.PostShockwaveWGSL, "fs_main"},
 		nativePostLensRain:     {"post lens rain", shaders.PostLensRainWGSL, "fs_main"},
+		// Blur reuses the bloom pyramid's fs_down/fs_up entry points (same
+		// taps and weights) and only owns the final sharp/blurred mix.
+		nativePostBlurDown:    {"post blur down", shaders.PostBloomWGSL, "fs_down"},
+		nativePostBlurUp:      {"post blur up", shaders.PostBloomWGSL, "fs_up"},
+		nativePostBlurCombine: {"post blur combine", shaders.PostBlurWGSL, "fs_main"},
+		nativePostFade:        {"post fade", shaders.PostFadeWGSL, "fs_main"},
+		nativePostCircleWipe:  {"post circle wipe", shaders.PostCircleWipeWGSL, "fs_main"},
+		nativePostDissolve:    {"post dissolve", shaders.PostDissolveWGSL, "fs_main"},
+		nativePostGrain:       {"post grain", shaders.PostGrainWGSL, "fs_main"},
+		nativePostScanlines:   {"post scanlines", shaders.PostScanlinesWGSL, "fs_main"},
+		nativePostRadialBlur:  {"post radial blur", shaders.PostRadialBlurWGSL, "fs_main"},
 	} {
 		samples := uint32(1)
 		if key == nativePostFinalBlit {
@@ -339,9 +359,179 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostU32(dst, 28, uint32(effect.Seed))
 		})
 		return nativePostLensRain, err
+	case render.Fade:
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, effect.Color.R)
+			nativePostF32(dst, 4, effect.Color.G)
+			nativePostF32(dst, 8, effect.Color.B)
+			nativePostF32(dst, 12, effect.Color.A)
+			nativePostF32(dst, 16, effect.Amount)
+		})
+		return nativePostFade, err
+	case render.CircleWipe:
+		center := camera.WorldToScreen(effect.Center)
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, effect.Color.R)
+			nativePostF32(dst, 4, effect.Color.G)
+			nativePostF32(dst, 8, effect.Color.B)
+			nativePostF32(dst, 12, effect.Color.A)
+			nativePostF32(dst, 16, center.X)
+			nativePostF32(dst, 20, center.Y)
+			nativePostF32(dst, 24, effect.Progress)
+			nativePostF32(dst, 28, effect.Softness)
+			nativePostF32(dst, 32, float64(width))
+			nativePostF32(dst, 36, float64(height))
+		})
+		return nativePostCircleWipe, err
+	case render.Dissolve:
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, effect.Color.R)
+			nativePostF32(dst, 4, effect.Color.G)
+			nativePostF32(dst, 8, effect.Color.B)
+			nativePostF32(dst, 12, effect.Color.A)
+			nativePostF32(dst, 16, effect.Amount)
+			nativePostF32(dst, 20, effect.CellSize)
+			nativePostF32(dst, 36, float64(width))
+			nativePostF32(dst, 40, float64(height))
+			nativePostU32(dst, 44, uint32(effect.Seed))
+		})
+		return nativePostDissolve, err
+	case render.FilmGrain:
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, effect.Intensity)
+			nativePostF32(dst, 4, effect.Size)
+			nativePostF32(dst, 20, float64(width))
+			nativePostF32(dst, 24, float64(height))
+			nativePostU32(dst, 28, uint32(effect.Seed)+uint32(time*60))
+		})
+		return nativePostGrain, err
+	case render.Scanlines:
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, effect.Intensity)
+			nativePostF32(dst, 4, effect.Thickness)
+			nativePostF32(dst, 8, effect.MaskStrength)
+			nativePostF32(dst, 20, float64(width))
+			nativePostF32(dst, 24, float64(height))
+		})
+		return nativePostScanlines, err
+	case render.RadialBlur:
+		center := camera.WorldToScreen(effect.Center)
+		err := r.writePostUniform(index, func(dst []byte) {
+			nativePostF32(dst, 0, center.X)
+			nativePostF32(dst, 4, center.Y)
+			nativePostF32(dst, 8, effect.Strength)
+			nativePostF32(dst, 20, float64(width))
+			nativePostF32(dst, 24, float64(height))
+		})
+		return nativePostRadialBlur, err
 	default:
 		return "", nil
 	}
+}
+
+func nativePostBlurPasses(effect render.Blur) int {
+	passes := effect.Passes
+	if passes == 0 {
+		passes = 3
+	}
+	return max(1, min(5, passes))
+}
+
+// encodeNativeBlur mirrors encodeNativeBloom's pyramid but seeds level zero
+// directly from the scene (no bright pass) and combines with a
+// sharp/blurred mix instead of an additive combine.
+func (r *Renderer) encodeNativeBlur(encoder *wgpu.CommandEncoder, source nativePostTarget, sourceID int, destination *wgpu.TextureView, effect render.Blur, index int) error {
+	strength := nativeClampPostStrength(effect.Strength)
+	if strength == 0 {
+		return nil
+	}
+	passes := nativePostBlurPasses(effect)
+	if err := r.ensurePostBloom(passes); err != nil {
+		return err
+	}
+	if err := r.encodePostPass(encoder, nativePostBlit, sourceID, source.view, r.postBloom[0].view, -1); err != nil {
+		return err
+	}
+	for level := 1; level <= passes; level++ {
+		src, dst := r.postBloom[level-1], r.postBloom[level]
+		uniformIndex := index + level
+		err := r.writePostUniform(uniformIndex, func(data []byte) {
+			nativePostF32(data, 0, float64(src.width))
+			nativePostF32(data, 4, float64(src.height))
+			nativePostF32(data, 8, float64(dst.width))
+			nativePostF32(data, 12, float64(dst.height))
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.encodePostPass(encoder, nativePostBlurDown, nativePostSourceBloom+level-1, src.view, dst.view, uniformIndex); err != nil {
+			return err
+		}
+	}
+	for level := passes - 1; level >= 0; level-- {
+		src, dst := r.postBloom[level+1], r.postBloom[level]
+		uniformIndex := index + passes + 1 + (passes - 1 - level)
+		err := r.writePostUniform(uniformIndex, func(data []byte) {
+			nativePostF32(data, 0, float64(src.width))
+			nativePostF32(data, 4, float64(src.height))
+			nativePostF32(data, 8, float64(dst.width))
+			nativePostF32(data, 12, float64(dst.height))
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.encodePostPass(encoder, nativePostBlurUp, nativePostSourceBloom+level+1, src.view, dst.view, uniformIndex); err != nil {
+			return err
+		}
+	}
+	combineIndex := index + 2*passes + 1
+	if err := r.writePostUniform(combineIndex, func(data []byte) { nativePostF32(data, 0, strength) }); err != nil {
+		return err
+	}
+	return r.encodeNativePostCombine2(encoder, nativePostBlurCombine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
+}
+
+// encodeNativePostCombine2 is encodePostCombine generalized over the
+// pipeline name, since Blur's combine shares the two-texture bind layout but
+// a different pipeline than bloom's combine.
+func (r *Renderer) encodeNativePostCombine2(encoder *wgpu.CommandEncoder, pipelineName string, sourceID int, source, second, destination *wgpu.TextureView, uniformIndex int) error {
+	pipeline := r.postPipelines[pipelineName]
+	key := nativePostBindKey{pipeline: pipelineName, source: sourceID, bloom: nativePostSourceBloom, uniform: uniformIndex}
+	bindGroup, err := r.cachedPostBindGroup(key, func() (*wgpu.BindGroup, error) {
+		layout := pipeline.GetBindGroupLayout(0)
+		defer layout.Release()
+		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, TextureView: source}, {Binding: 1, TextureView: second}, {Binding: 2, Sampler: r.postSampler},
+			{Binding: 3, Buffer: r.postUniforms[uniformIndex], Size: wgpu.WholeSize},
+		}})
+	})
+	if err != nil {
+		return err
+	}
+	pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{{
+		View: destination, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore, ClearValue: wgpu.Color{A: 1},
+	}}})
+	pass.SetPipeline(pipeline)
+	pass.SetBindGroup(0, bindGroup, nil)
+	pass.Draw(3, 1, 0, 0)
+	if err := pass.TryEnd(); err != nil {
+		pass.Release()
+		return err
+	}
+	pass.Release()
+	return nil
+}
+
+// nativeClampPostStrength mirrors platform/raster/postfx.go clamp01 for the
+// one Blur field the encode loop must gate on before spending a pyramid pass.
+func nativeClampPostStrength(value float64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 1
+	}
+	return value
 }
 
 // cachedPostBindGroup returns the bind group for key, building it on the
@@ -552,6 +742,18 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 			sourceID, destID = destID, sourceID
 			continue
 		}
+		if blur, ok := effect.(render.Blur); ok {
+			if nativeClampPostStrength(blur.Strength) == 0 {
+				continue
+			}
+			if err := r.encodeNativeBlur(encoder, source, sourceID, destView, blur, uniformIndex); err != nil {
+				return err
+			}
+			uniformIndex += 16
+			source, destination = destination, source
+			sourceID, destID = destID, sourceID
+			continue
+		}
 		name, err := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, width, height)
 		if err != nil {
 			return err
@@ -613,8 +815,12 @@ func nativePostEffectEncodes(effect render.PostEffect) bool {
 	switch effect := effect.(type) {
 	case render.Bloom:
 		return effect.Intensity != 0
+	case render.Blur:
+		return nativeClampPostStrength(effect.Strength) != 0
 	case render.Vignette, render.ColorGrade, render.Pixelate,
-		render.ChromaticAberration, render.Shockwave, render.LensRain:
+		render.ChromaticAberration, render.Shockwave, render.LensRain,
+		render.Fade, render.CircleWipe, render.Dissolve, render.FilmGrain,
+		render.Scanlines, render.RadialBlur:
 		return true
 	default:
 		return false

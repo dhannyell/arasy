@@ -47,6 +47,48 @@ func TestGoldenPostLensRain(t *testing.T) {
 	)))
 }
 
+// Goldens for the five effects added alongside Blur/Fade/CircleWipe/
+// Dissolve/FilmGrain: same intentional-fixture pattern as the other seven.
+func TestGoldenPostBlur(t *testing.T) {
+	assertGolden(t, "post_blur", postRenderer().Render(postCommands(render.Blur{Strength: 0.8, Passes: 3})))
+}
+
+func TestGoldenPostFade(t *testing.T) {
+	assertGolden(t, "post_fade", postRenderer().Render(postCommands(render.Fade{
+		Color: render.RGBA(0.02, 0.01, 0.05, 1), Amount: 0.5,
+	})))
+}
+
+func TestGoldenPostCircleWipe(t *testing.T) {
+	assertGolden(t, "post_circlewipe", postRenderer().Render(postCommands(render.CircleWipe{
+		Center: math2d.Vec2{X: 50, Y: 37}, Color: render.RGBA(0, 0, 0, 1), Progress: 0.5, Softness: 0.3,
+	})))
+}
+
+func TestGoldenPostDissolve(t *testing.T) {
+	assertGolden(t, "post_dissolve", postRenderer().Render(postCommands(render.Dissolve{
+		Amount: 0.5, CellSize: 6, Seed: 12, Color: render.RGBA(0, 0, 0, 1),
+	})))
+}
+
+func TestGoldenPostFilmGrain(t *testing.T) {
+	assertGolden(t, "post_filmgrain", postRenderer().Render(postCommandsAt(
+		render.FilmGrain{Intensity: 0.15, Seed: 5}, 0.5,
+	)))
+}
+
+func TestGoldenPostScanlines(t *testing.T) {
+	assertGolden(t, "post_scanlines", postRenderer().Render(postCommands(
+		render.Scanlines{Intensity: 0.35, Thickness: 3, MaskStrength: 0.5},
+	)))
+}
+
+func TestGoldenPostRadialBlur(t *testing.T) {
+	assertGolden(t, "post_radialblur", postRenderer().Render(postCommands(
+		render.RadialBlur{Center: math2d.Vec2{X: 40, Y: 30}, Strength: 0.5},
+	)))
+}
+
 func TestGoldenPostChainAndBelowLayer(t *testing.T) {
 	commands := []render.Command{
 		render.DrawRect{

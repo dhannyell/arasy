@@ -52,6 +52,16 @@ type Canvas2D struct {
 	// canvas size and the vignette color.
 	postVignette    js.Value
 	postVignetteKey vignetteKey
+
+	// postGrainTile caches one small noise canvas per FilmGrain seed so the
+	// tile is generated once, not regenerated every frame.
+	postGrainTile    js.Value
+	postGrainTileKey uint64
+
+	// postGrilleTile caches the 3x1 aperture-grille multiply tile per
+	// Scanlines mask strength.
+	postGrilleTile    js.Value
+	postGrilleTileKey float64
 }
 
 // vignetteKey identifies the cached vignette gradient.
