@@ -195,6 +195,18 @@ Ela responde:
 onde esse ponto do jogo fica na tela?
 ```
 
+Para uma câmera que se move, mantenha a simulação em coordenadas do mundo e
+mova a própria câmera:
+
+```go
+camera = camera.Pan(playerPosition.Sub(camera.World.Center()))
+camera = camera.ZoomAt(1.1, playerPosition)
+```
+
+Quando a cena tem parallax, `Camera.Parallax` deriva uma câmera para cada
+layer de comando. A mesma regra vale para conteúdo manual e culling de
+tilemap: `camera.ForLayer(layer)` é a câmera daquela layer.
+
 ## WorldToScreen
 
 `WorldToScreen` converte uma posicao do mundo para uma posicao na tela.

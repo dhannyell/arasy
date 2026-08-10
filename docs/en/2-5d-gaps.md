@@ -77,11 +77,14 @@ one". A cheap query (compare depth key + screen-footprint overlap) would let
 the game draw the silhouette; the per-pixel cutout is another problem (depth
 buffer) and can stay out.
 
-### 7. 2.5D styles still without a path
+### 7. 2.5D styles
 
-- **Layer parallax** (side-view 2.5D): one camera only; missing a parallax
-  factor per layer or cameras per command group. The engine that declares
-  projection could declare this too.
+- **Layer parallax — closed.** `Camera.Parallax` declares inclusive layer
+  ranges and a per-axis factor. `Camera.ForLayer` is the public escape hatch
+  for manual passes, `WrapOffsets` supports repeated scenery, and retained
+  tilemap chunks use the derived camera for culling. Lighting remains a
+  render-only world-space concern; factor-1 gameplay layers are the supported
+  place for lit content.
 - **Perspective ground (Mode-7 style)**: `View` is affine; perspective wants
   a homography. `DrawImageQuad` already interpolates with perspective
   correction, so the material exists — the camera does not know how to use
