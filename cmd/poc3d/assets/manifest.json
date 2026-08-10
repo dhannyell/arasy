@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "textures": [
+    { "name": "checker", "file": "textures/checker.png" }
+  ]
+}
