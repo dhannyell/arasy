@@ -31,6 +31,27 @@ func BenchmarkRendererRenderInto(b *testing.B) {
 	}
 }
 
+// BenchmarkRendererRenderPostChain measures the CPU and allocation cost of a
+// representative four-effect post-processing chain at 1280x720.
+func BenchmarkRendererRenderPostChain(b *testing.B) {
+	renderer, commands := benchmarkRendererCommands()
+	commands = append(commands, render.PostChain{
+		Effects: []render.PostEffect{
+			render.ColorGrade{Contrast: 0.08, Saturation: 0.1},
+			render.Bloom{Threshold: 0.62, Intensity: 0.45, Passes: 2},
+			render.Vignette{Strength: 0.35, Softness: 0.6},
+			render.LensRain{Density: 0.4, Size: 32, Speed: 0.15, Seed: 0x0885eed},
+		},
+	})
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_ = renderer.Render(commands)
+	}
+}
+
 func benchmarkRendererCommands() (raster.Renderer, []render.Command) {
 	renderer := raster.Renderer{
 		Width:  1280,

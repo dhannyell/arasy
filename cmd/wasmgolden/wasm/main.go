@@ -8,6 +8,7 @@ import (
 
 	"github.com/dhannyell/arasy/cmd/wasmgolden"
 	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -27,6 +28,8 @@ func main() {
 		game, err = wasmgolden.NewViewConformanceGolden()
 	case "parallax":
 		game, err = wasmgolden.NewParallaxConformanceGolden()
+	case "post":
+		game, err = wasmgolden.NewPostGolden()
 	case "boot":
 		game, err = wasmgolden.NewBoot()
 	default:
@@ -37,8 +40,12 @@ func main() {
 	}
 
 	forceCanvas2D := params.Call("get", "renderer").String() == "canvas2d"
+	msaa := render.MSAADefault
+	if params.Call("get", "msaa").String() == "off" {
+		msaa = render.MSAAOff
+	}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
-	if err := wasm.Run(game, wasm.Options{ForceCanvas2D: forceCanvas2D, Log: log}); err != nil {
+	if err := wasm.Run(game, wasm.Options{ForceCanvas2D: forceCanvas2D, Log: log, MSAA: msaa}); err != nil {
 		log.Error("wasm golden host failed", "err", err)
 	}
 }

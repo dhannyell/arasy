@@ -23,6 +23,7 @@ func (discardSink) VisitImageQuad(render.DrawImageQuad)     {}
 func (discardSink) VisitParticles(render.DrawParticles)     {}
 func (discardSink) VisitSpriteBatch(render.DrawSpriteBatch) {}
 func (discardSink) VisitTextBatch(render.DrawTextBatch)     {}
+func (discardSink) VisitPostChain(render.PostChain)         {}
 
 func BenchmarkDispatchOrderedCommands(b *testing.B) {
 	for _, count := range []int{1_000, 32_000} {

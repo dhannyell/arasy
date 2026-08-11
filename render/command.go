@@ -312,6 +312,9 @@ func WithLayer(c Command, layer int) Command {
 	case DrawTextBatch:
 		cmd.LayerValue = layer
 		return cmd
+	case PostChain:
+		cmd.LayerValue = layer
+		return cmd
 	}
 	return c
 }
@@ -371,6 +374,8 @@ func WithLight(c Command, l Color) Command {
 	case DrawSpriteBatch:
 		return cmd
 	case DrawTextBatch:
+		return cmd
+	case PostChain:
 		return cmd
 	}
 	return c

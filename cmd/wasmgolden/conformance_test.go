@@ -37,6 +37,7 @@ const (
 	parallaxChannelTol      = 32
 	parallaxCanvas2DBudget  = 0.0200
 	parallaxWebGPUBudget    = 0.0150
+	postWebGPUBudget = 0.075
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -53,6 +54,12 @@ func TestConformanceParticlesCanvas2D(t *testing.T) {
 
 func TestConformanceParticlesWebGPU(t *testing.T) {
 	assertConformance(t, "particles", "webgpu", 3, particlesChannelTol, particlesWebGPUBudget)
+}
+
+func TestConformancePostWebGPU(t *testing.T) {
+	// Canvas2D intentionally uses documented approximations for this fixture;
+	// the tight conformance comparison is reserved for the GPU mirror.
+	assertConformance(t, "post", "webgpu", 2, frameChannelTol, postWebGPUBudget)
 }
 
 func TestConformanceViewCanvas2D(t *testing.T) {
@@ -98,6 +105,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return New()
 	case "particles":
 		return NewParticleGolden()
+	case "post":
+		return NewPostGolden()
 	case "view":
 		return NewViewConformanceGolden()
 	case "parallax":

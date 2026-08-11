@@ -21,6 +21,7 @@ type CommandSink interface {
 	VisitParticles(DrawParticles)
 	VisitSpriteBatch(DrawSpriteBatch)
 	VisitTextBatch(DrawTextBatch)
+	VisitPostChain(PostChain)
 }
 
 // Each stable-sorts commands by layer and dispatches each command exactly
@@ -79,6 +80,8 @@ func EachOrdered(commands []Command, sink CommandSink) {
 			sink.VisitSpriteBatch(command)
 		case DrawTextBatch:
 			sink.VisitTextBatch(command)
+		case PostChain:
+			sink.VisitPostChain(command)
 		}
 	}
 }

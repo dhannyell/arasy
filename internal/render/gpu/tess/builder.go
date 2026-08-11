@@ -19,10 +19,12 @@ type Frame struct {
 // vertex count for mesh streams and a record count for DrawRunSprites and
 // DrawRunText.
 type StreamRun struct {
-	Kind DrawRunKind
-	// Layer is the painter layer whose camera was used to build this run.
+	Kind  DrawRunKind
+	Blend render.Blend
+	// Layer is the command layer shared by every draw merged into this run.
+	// It selects the per-layer parallax camera and lets post-process passes
+	// split the painter stream without rebuilding the vertex buffers.
 	Layer       int
-	Blend       render.Blend
 	Texture     render.TextureID
 	AtlasKey    AtlasKey
 	Particles   render.DrawParticles
@@ -87,12 +89,13 @@ func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes Tex
 		atlases, ordered = resolveFrameAtlases(frame.Commands, buildCtx, provider)
 	}
 	sink := streamSink{
-		builder:  b,
-		ctx:      buildCtx,
-		baseCam:  frame.Camera,
-		atlases:  atlases,
-		fallback: fallback,
-		sizes:    sizes,
+		builder:        b,
+		ctx:            buildCtx,
+		baseCam:        frame.Camera,
+		atlases:        atlases,
+		fallback:       fallback,
+		sizes:          sizes,
+		preserveLayers: hasPostChain(frame.Commands),
 	}
 	if ordered {
 		render.EachOrdered(frame.Commands, &sink)
@@ -135,8 +138,18 @@ type streamSink struct {
 	layer    int
 	hasLayer bool
 
-	lastRun streamRunIdentity
-	hasLast bool
+	lastRun        streamRunIdentity
+	hasLast        bool
+	preserveLayers bool
+}
+
+func hasPostChain(commands []render.Command) bool {
+	for _, command := range commands {
+		if _, ok := command.(render.PostChain); ok {
+			return true
+		}
+	}
+	return false
 }
 
 type streamRunIdentity struct {
@@ -258,8 +271,11 @@ func (s *streamSink) appendRun(kind DrawRunKind, blend render.Blend, texture ren
 	s.startRun(identity, texture, atlas, byteOffset, vertexCount)
 }
 
+// runLayer collapses every run onto layer zero when nothing downstream needs
+// the split: parallax selects a camera per layer, a post chain cuts the
+// stream between passes. Collapsing keeps painter-order merging effective.
 func (s *streamSink) runLayer() int {
-	if len(s.baseCam.Parallax) == 0 {
+	if len(s.baseCam.Parallax) == 0 && !s.preserveLayers {
 		return 0
 	}
 	return s.layer
@@ -269,13 +285,15 @@ func (s *streamSink) runLayer() int {
 // path, which executes once per command in large sprite and text streams.
 func (s *streamSink) startRun(identity streamRunIdentity, texture render.TextureID, atlas AtlasKey, byteOffset, vertexCount int) {
 	s.builder.runs = append(s.builder.runs, StreamRun{
-		Kind: identity.kind, Layer: identity.layer, Blend: identity.blend, Texture: texture, AtlasKey: atlas,
+		Kind: identity.kind, Blend: identity.blend, Layer: identity.layer, Texture: texture, AtlasKey: atlas,
 		ByteOffset: byteOffset, VertexCount: vertexCount,
 	})
 	s.lastRun = identity
 	s.hasLast = true
 }
 
+// prepare is the only place a visitor reads a command's layer: it records
+// the layer for runLayer and swaps in that layer's parallax camera.
 func (s *streamSink) prepare(command render.Command) {
 	layer := command.Layer()
 	if s.hasLayer && s.layer == layer {
@@ -370,7 +388,7 @@ func (s *streamSink) VisitTriangles(cmd render.DrawTriangles) {
 
 func (s *streamSink) VisitParticles(cmd render.DrawParticles) {
 	s.prepare(cmd)
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Layer: s.layer, Particles: cmd})
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunParticles, Layer: s.runLayer(), Particles: cmd})
 	s.hasLast = false
 }
 
@@ -378,7 +396,7 @@ func (s *streamSink) VisitSpriteBatch(cmd render.DrawSpriteBatch) {
 	s.prepare(cmd)
 	// A retained batch owns GPU state and breaks painter-order merging, like
 	// a particle command: one command per run, no instance payload.
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, Layer: s.layer, SpriteBatch: cmd})
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunSpriteBatch, Layer: s.runLayer(), SpriteBatch: cmd})
 	s.hasLast = false
 }
 
@@ -386,9 +404,14 @@ func (s *streamSink) VisitTextBatch(cmd render.DrawTextBatch) {
 	s.prepare(cmd)
 	// A retained text batch owns GPU state and breaks painter-order merging,
 	// like a particle/sprite-batch command: one command per run, no payload.
-	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, Layer: s.layer, TextBatch: cmd})
+	s.builder.runs = append(s.builder.runs, StreamRun{Kind: DrawRunTextBatch, Layer: s.runLayer(), TextBatch: cmd})
 	s.hasLast = false
 }
+
+// VisitPostChain is handled by the host renderer outside tessellation. The
+// command must still be accepted by this sink so the dispatch contract stays
+// exhaustive while the host extracts the chain from the frame.
+func (s *streamSink) VisitPostChain(render.PostChain) {}
 
 func (s *streamSink) VisitText(cmd render.DrawText) {
 	s.prepare(cmd)
@@ -412,7 +435,7 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 	if count == 0 {
 		return
 	}
-	s.appendRun(DrawRunText, cmd.BlendMode, 0, atlas.Key, start, count)
+		s.appendRun(DrawRunText, cmd.BlendMode, 0, atlas.Key, start, count)
 }
 
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
@@ -446,7 +469,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 	if s.builder.spriteArray {
 		runTexture = 0
 	}
-	s.appendRun(DrawRunSprites, cmd.BlendMode, runTexture, AtlasKey{}, start, 1)
+		s.appendRun(DrawRunSprites, cmd.BlendMode, runTexture, AtlasKey{}, start, 1)
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {

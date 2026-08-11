@@ -73,3 +73,85 @@ var ParticlesRenderWGSL string
 //
 //go:embed particle_composite.wgsl
 var ParticlesCompositeWGSL string
+
+// PostBlitWGSL copies a post-process target into another render attachment.
+//
+//go:embed post_blit.wgsl
+var PostBlitWGSL string
+
+// PostVignetteWGSL mirrors platform/raster/postfx.go applyVignette.
+//
+//go:embed post_vignette.wgsl
+var PostVignetteWGSL string
+
+// PostColorGradeWGSL mirrors platform/raster/postfx.go applyColorGrade.
+//
+//go:embed post_colorgrade.wgsl
+var PostColorGradeWGSL string
+
+// PostPixelateWGSL mirrors platform/raster/postfx.go applyPixelate.
+//
+//go:embed post_pixelate.wgsl
+var PostPixelateWGSL string
+
+// PostChromaticWGSL mirrors platform/raster/postfx.go applyChromaticAberration.
+//
+//go:embed post_chromatic.wgsl
+var PostChromaticWGSL string
+
+// PostBloomWGSL mirrors platform/raster/postfx.go bloom bright, downsample,
+// and upsample passes.
+//
+//go:embed post_bloom.wgsl
+var PostBloomWGSL string
+
+// PostBloomCombineWGSL mirrors the final bloom combine pass.
+//
+//go:embed post_bloom_combine.wgsl
+var PostBloomCombineWGSL string
+
+// PostShockwaveWGSL mirrors platform/raster/postfx.go applyShockwave.
+//
+//go:embed post_shockwave.wgsl
+var PostShockwaveWGSL string
+
+// PostLensRainWGSL mirrors platform/raster/postfx.go applyLensRain.
+//
+//go:embed post_lensrain.wgsl
+var PostLensRainWGSL string
+
+// PostBlurWGSL mirrors platform/raster/postfx.go applyBlurInto's final
+// sharp/blurred mix. The pyramid passes reuse PostBloomWGSL's fs_down/fs_up.
+//
+//go:embed post_blur.wgsl
+var PostBlurWGSL string
+
+// PostFadeWGSL mirrors platform/raster/postfx.go applyFadeInto.
+//
+//go:embed post_fade.wgsl
+var PostFadeWGSL string
+
+// PostCircleWipeWGSL mirrors platform/raster/postfx.go applyCircleWipeInto.
+//
+//go:embed post_circlewipe.wgsl
+var PostCircleWipeWGSL string
+
+// PostDissolveWGSL mirrors platform/raster/postfx.go applyDissolveInto.
+//
+//go:embed post_dissolve.wgsl
+var PostDissolveWGSL string
+
+// PostGrainWGSL mirrors platform/raster/postfx.go applyFilmGrainInto.
+//
+//go:embed post_grain.wgsl
+var PostGrainWGSL string
+
+// PostScanlinesWGSL mirrors platform/raster/postfx.go applyScanlinesInto.
+//
+//go:embed post_scanlines.wgsl
+var PostScanlinesWGSL string
+
+// PostRadialBlurWGSL mirrors platform/raster/postfx.go applyRadialBlurInto.
+//
+//go:embed post_radialblur.wgsl
+var PostRadialBlurWGSL string

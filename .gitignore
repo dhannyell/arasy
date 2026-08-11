@@ -37,6 +37,7 @@ cmd/demos/*/wasm/web/app.wasm
 cmd/demos/*/wasm/web/wasm_exec.js
 plans/
 platform/raster/testdata/failures/
+cmd/wasmgolden/testdata/failures/
 test-results/
 playwright-report/
 

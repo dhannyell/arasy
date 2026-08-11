@@ -76,4 +76,6 @@ test('renders layer parallax across retained and streaming content', async ({ pa
     'parallax',
     'parallax.png',
   );
+test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
 });
