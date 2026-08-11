@@ -16,6 +16,7 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -440,26 +441,56 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	if width <= 0 || height <= 0 {
 		return
 	}
-	r.tess.SetSpriteArray(false)
+	r.renderPasses(frame, width, height)
+}
+
+type nativePassPlan struct {
+	camera       render.Camera
+	layerCameras []tess.LayerCamera
+	extra        bool
+}
+
+func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	var phaseStart time.Time
 	if r.timeCPU {
 		phaseStart = time.Now()
 	}
-	runs := r.tess.Build(tess.Frame(frame), width, height, r.fontProvider, r.texSizes)
-	layerCameras := tess.LayerCameras(frame.Camera, runs)
-	solid, textured := r.tess.Streams()
-	sprites := r.tess.SpriteStream()
-	textGlyphs := r.tess.TextGlyphStream()
-	textLabels := r.tess.TextLabelStream()
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
+	passes := make([]render.Pass, 0, len(frame.Passes)+1)
+	for _, pass := range frame.Passes {
+		passes = append(passes, pass.ResolveViewport(viewport))
+	}
+	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
+
+	r.tess.SetSpriteArray(false)
+	frames := make([]tess.Frame, len(passes))
+	for i, pass := range passes {
+		frames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands}
+	}
+	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
+	plans := make([]nativePassPlan, len(built))
+	var runs []tess.StreamRun
+	for i, builtPass := range built {
+		plans[i] = nativePassPlan{
+			camera:       builtPass.Camera,
+			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
+			extra:        i < len(frame.Passes),
+		}
+		runs = append(runs, builtPass.Runs...)
+	}
 	if r.timeCPU {
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
 	}
-	uniformOffsets, err := r.prepareSpriteUniforms(runs, frame.Camera, layerCameras, width, height)
+	uniformOffsets, err := r.prepareSpriteUniformsForPasses(runs, plans, width, height)
 	if err != nil {
 		r.recordErr(err)
 		return
 	}
+	solid, textured := r.tess.Streams()
+	sprites := r.tess.SpriteStream()
+	textGlyphs := r.tess.TextGlyphStream()
+	textLabels := r.tess.TextLabelStream()
 	if err := r.uploadStreams(solid, textured, sprites, textGlyphs, textLabels); err != nil {
 		r.recordErr(err)
 		return
@@ -512,14 +543,17 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		phaseStart = time.Now()
 	}
 	var encodeErr error
+	postEncoded := false
 	if chain, ok := lastNativePostChain(frame.Commands); ok && !r.postDisabled {
-		encodeErr = r.encodePostFrame(runs, uniformOffsets, layerCameras, surfaceView, frame, chain, width, height)
+		encodeErr = r.encodePostFramePasses(runs, uniformOffsets, plans, surfaceView, frame, chain, width, height)
 		if encodeErr != nil {
 			r.disablePost(encodeErr)
-			encodeErr = r.encodeFrame(runs, uniformOffsets, layerCameras, surfaceView, frame.Camera, width, height)
+		} else {
+			postEncoded = true
 		}
-	} else {
-		encodeErr = r.encodeFrame(runs, uniformOffsets, layerCameras, surfaceView, frame.Camera, width, height)
+	}
+	if !postEncoded {
+		encodeErr = r.encodeFramePasses(runs, uniformOffsets, plans, surfaceView, width, height)
 	}
 	if encodeErr != nil {
 		r.recordErr(encodeErr)
@@ -530,8 +564,6 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		r.cpuEncode = r.cpuFrame.cpuEndAt.Sub(phaseStart)
 		r.cpuPhasesSet = true
 		r.cpuFrame.valid = !r.cpuFrame.submittedAt.IsZero()
-	}
-	if r.timeCPU {
 		phaseStart = r.cpuFrame.cpuEndAt
 	}
 	r.device.surface.Present()
@@ -1112,8 +1144,7 @@ func nativeUniformEntryIndex(entries []nativeUniformEntry, key tess.UniformKey) 
 	return -1
 }
 
-func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Camera, cameras []tess.LayerCamera, width, height int) ([]uint32, error) {
-	// A camera upload is shared by every run that uses the same packed view.
+func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans []nativePassPlan, width, height int) ([]uint32, error) {
 	if cap(r.spriteUniformOffsets) < len(runs) {
 		r.spriteUniformOffsets = make([]uint32, len(runs))
 	} else {
@@ -1123,10 +1154,12 @@ func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Came
 	r.spriteUniformEntries = r.spriteUniformEntries[:0]
 	for index, run := range runs {
 		offsets[index] = noSpriteUniformEntry
-		key, ok := tess.UniformKeyForKind(run.Kind, run.Layer, base, cameras)
+		plan := plans[run.Pass]
+		key, ok := tess.UniformKeyForKind(run.Kind, run.Layer, plan.camera, plan.layerCameras)
 		if !ok {
 			continue
 		}
+		key.Pass = run.Pass
 		entryIndex := nativeUniformEntryIndex(r.spriteUniformEntries, key)
 		if entryIndex < 0 {
 			r.spriteUniformEntries = append(r.spriteUniformEntries, nativeUniformEntry{key: key})
@@ -1144,7 +1177,8 @@ func (r *Renderer) prepareSpriteUniforms(runs []tess.StreamRun, base render.Came
 	var packed [tess.SpriteUniformSize]byte
 	for entryIndex := range r.spriteUniformEntries {
 		entry := &r.spriteUniformEntries[entryIndex]
-		tess.PackUniform(packed[:], entry.key, base, cameras, width, height)
+		plan := plans[entry.key.Pass]
+		tess.PackUniform(packed[:], entry.key, plan.camera, plan.layerCameras, width, height)
 		offset := uint32(entryIndex * r.spriteUniformSlotSize)
 		entry.offset = offset
 		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, uint64(offset), packed[:]); err != nil {
@@ -1327,12 +1361,11 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	return nil
 }
 
-func (r *Renderer) encodeFrame(
+func (r *Renderer) encodeFramePasses(
 	runs []tess.StreamRun,
 	uniformOffsets []uint32,
-	layerCameras []tess.LayerCamera,
+	plans []nativePassPlan,
 	surfaceView *wgpu.TextureView,
-	camera render.Camera,
 	width, height int,
 ) error {
 	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
@@ -1340,21 +1373,21 @@ func (r *Renderer) encodeFrame(
 		return fmt.Errorf("create render command encoder: %w", err)
 	}
 	defer encoder.Release()
-	var groupOf []int
-	offscreenParticles := false
-	// timedCompute records whether the particle compute passes ran, which
-	// decides how much of the query set is safe to resolve: a pass that never
-	// ran wrote no timestamp, and resolving one that was never written loses
-	// the device on Vulkan.
 	sampling := r.timeGPU && r.timing.sampleFrame()
-	timedCompute := false
+	groupOf := make([]int, len(runs))
+	for index := range groupOf {
+		groupOf[index] = -1
+	}
+	offscreenParticles := false
+	var timedCompute bool
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
 			if run.Kind != tess.DrawRunParticles {
 				continue
 			}
-			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(camera, layerCameras, run.Layer), width, height); ok {
+			plan := plans[run.Pass]
+			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer), width, height); ok {
 				sims = append(sims, sim)
 			}
 		}
@@ -1367,25 +1400,22 @@ func (r *Renderer) encodeFrame(
 		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return fmt.Errorf("encode particle simulation: %w", err)
 		}
-
-		// Contiguous particle runs form composite groups: with offscreen
-		// compositing enabled, each group renders into one pooled target and
-		// is composited once, at the painter-order position of its first run.
-		var groups [][]nativeParticleRun
-		groups, groupOf = groupParticleRuns(runs, camera, layerCameras)
+		groups := groupParticleRunsForPasses(runs, plans, &groupOf)
 		offscreenParticles = r.particleScale > 0 && len(groups) > 0
 		if offscreenParticles {
 			ow, oh := particleTargetDims(width, height, r.particleScale)
 			if err := r.ensureParticleTargets(len(groups), ow, oh); err != nil {
 				r.disableParticleOffscreen(err)
 				offscreenParticles = false
-				groupOf = nil
+				for index := range groupOf {
+					groupOf[index] = -1
+				}
 			} else {
 				var beginWrites *wgpu.PassTimestampWrites
 				if sampling {
 					beginWrites = r.timing.renderBeginWrites()
 				}
-				if err := r.encodeParticleOffscreen(encoder, groups, ow, oh, beginWrites); err != nil {
+				if err := r.encodeParticleOffscreen(encoder, groups, width, height, ow, oh, beginWrites); err != nil {
 					return err
 				}
 			}
@@ -1399,14 +1429,10 @@ func (r *Renderer) encodeFrame(
 		ClearValue:    clearColor(r.clear),
 	}
 	if r.msaaSamples <= 1 {
-		// No multi-sampling: draw straight into the surface and keep the
-		// result — there is no resolve target to carry it for us.
 		attachment.View = surfaceView
 		attachment.ResolveTarget = nil
 		attachment.StoreOp = wgpu.StoreOpStore
 	}
-	// With offscreen compositing the interval already opened on the first
-	// offscreen pass, so the main pass only closes it.
 	var mainWrites *wgpu.PassTimestampWrites
 	if sampling {
 		if offscreenParticles {
@@ -1416,7 +1442,7 @@ func (r *Renderer) encodeFrame(
 		}
 	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label:            "Arasy render pass",
+		Label:            "Arasy multi-camera render pass",
 		ColorAttachments: []wgpu.RenderPassColorAttachment{attachment},
 		TimestampWrites:  mainWrites,
 	})
@@ -1425,13 +1451,12 @@ func (r *Renderer) encodeFrame(
 	}
 	defer pass.Release()
 	lastComposited := -1
-	for i, run := range runs {
-		group := -1
-		if groupOf != nil {
-			group = groupOf[i]
-		}
-		effective := tess.CameraForLayer(camera, layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[i], effective, width, height, group, offscreenParticles, &lastComposited); err != nil {
+	scissor := nativeScissorState{}
+	for index, run := range runs {
+		plan := plans[run.Pass]
+		group := groupOf[index]
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		if err := r.drawRun(pass, run, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, group, offscreenParticles, &lastComposited); err != nil {
 			return err
 		}
 	}
@@ -1452,10 +1477,6 @@ func (r *Renderer) encodeFrame(
 		r.cpuFrame.submittedAt = time.Now()
 	}
 	if r.timeGPU {
-		// Map after submit, pump whatever completed since the last frame, then
-		// read the slots those callbacks marked. None of it blocks: the sample
-		// lands a frame or more later — which is why the pumping runs on every
-		// frame and not only on the ones that sampled.
 		r.timing.readback(slot)
 		r.timing.poll()
 		r.timing.drain()
@@ -1463,20 +1484,12 @@ func (r *Renderer) encodeFrame(
 	return nil
 }
 
-// groupParticleRuns assigns each contiguous run of tess.DrawRunParticles
-// entries in runs to one composite group, mirroring the WASM backend's
-// grouping (platform/wasm/webgpu.go). groupOf[i] is -1 for non-particle runs.
-type nativeParticleRun struct {
-	command render.DrawParticles
-	camera  render.Camera
-}
-
-func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []tess.LayerCamera) (groups [][]nativeParticleRun, groupOf []int) {
-	groupOf = make([]int, len(runs))
+func groupParticleRunsForPasses(runs []tess.StreamRun, plans []nativePassPlan, groupOf *[]int) [][]nativeParticleRun {
+	groups := make([][]nativeParticleRun, 0)
 	inGroup := false
-	for i, run := range runs {
-		if run.Kind != tess.DrawRunParticles {
-			groupOf[i] = -1
+	basePass := len(plans) - 1
+	for index, run := range runs {
+		if run.Kind != tess.DrawRunParticles || run.Pass != basePass {
 			inGroup = false
 			continue
 		}
@@ -1484,14 +1497,40 @@ func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []tess
 			groups = append(groups, nil)
 			inGroup = true
 		}
-		idx := len(groups) - 1
-		groupOf[i] = idx
-		groups[idx] = append(groups[idx], nativeParticleRun{
+		group := len(groups) - 1
+		(*groupOf)[index] = group
+		plan := plans[run.Pass]
+		groups[group] = append(groups[group], nativeParticleRun{
 			command: run.Particles,
-			camera:  tess.CameraForLayer(base, cameras, run.Layer),
+			camera:  tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer),
 		})
 	}
-	return groups, groupOf
+	return groups
+}
+
+func nativePassViewport(camera render.Camera, extra bool, width, height int) math2d.Rect {
+	if extra {
+		return camera.Viewport
+	}
+	return math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
+}
+
+type nativeScissorState struct {
+	x, y, width, height uint32
+	set                 bool
+}
+
+func setNativeScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, x, y, width, height uint32) {
+	if state.set && state.x == x && state.y == y && state.width == width && state.height == height {
+		return
+	}
+	pass.SetScissorRect(x, y, width, height)
+	state.x, state.y, state.width, state.height, state.set = x, y, width, height, true
+}
+
+type nativeParticleRun struct {
+	command render.DrawParticles
+	camera  render.Camera
 }
 
 // encodeParticleOffscreen records one single-sample render pass per composite
@@ -1505,6 +1544,7 @@ func groupParticleRuns(runs []tess.StreamRun, base render.Camera, cameras []tess
 func (r *Renderer) encodeParticleOffscreen(
 	encoder *wgpu.CommandEncoder,
 	groups [][]nativeParticleRun,
+	width, height int,
 	ow, oh int,
 	beginWrites *wgpu.PassTimestampWrites,
 ) error {
@@ -1526,8 +1566,9 @@ func (r *Renderer) encodeParticleOffscreen(
 		if err != nil {
 			return fmt.Errorf("begin particle offscreen pass: %w", err)
 		}
+		scissor := nativeScissorState{}
 		for _, run := range cmds {
-			r.particles.drawTo(pass, run.command, run.camera, r.particleScale, ow, oh, true)
+			r.particles.drawTo(pass, run.command, run.camera, nativePassViewport(render.Camera{}, false, width, height), &scissor, width, height, r.particleScale, ow, oh, true)
 		}
 		if err := pass.TryEnd(); err != nil {
 			pass.Release()
@@ -1543,11 +1584,18 @@ func (r *Renderer) drawRun(
 	run tess.StreamRun,
 	uniformOffset uint32,
 	camera render.Camera,
+	viewport math2d.Rect,
+	scissor *nativeScissorState,
 	width, height int,
 	group int,
 	offscreenParticles bool,
 	lastComposited *int,
 ) error {
+	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
+	setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	if !visible {
+		return nil
+	}
 	additive := run.Blend == render.BlendAdditive
 	switch run.Kind {
 	case tess.DrawRunSolid:
@@ -1586,8 +1634,8 @@ func (r *Renderer) drawRun(
 		if r.particles == nil {
 			return nil
 		}
-		if !offscreenParticles {
-			r.particles.draw(pass, run.Particles, camera, width, height)
+		if !offscreenParticles || group < 0 {
+			r.particles.draw(pass, run.Particles, camera, viewport, scissor, width, height)
 			return nil
 		}
 		if group == *lastComposited {
@@ -1608,8 +1656,8 @@ func (r *Renderer) drawRun(
 		if batch.count == 0 {
 			return nil
 		}
-		x, y, sw, sh, visible := particlegpu.ScissorRect(run.SpriteBatch.Clip, camera, 1, width, height)
-		pass.SetScissorRect(uint32(x), uint32(y), uint32(sw), uint32(sh))
+		x, y, sw, sh, visible := particlegpu.ScissorRectWithin(run.SpriteBatch.Clip, camera, viewport, 1, width, height)
+		setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 		if visible {
 			for _, rg := range batch.ranges {
 				if rg.bindGroup == nil || rg.count == 0 {
@@ -1621,7 +1669,8 @@ func (r *Renderer) drawRun(
 			}
 		}
 		if run.SpriteBatch.Clip.Width() > 0 && run.SpriteBatch.Clip.Height() > 0 {
-			pass.SetScissorRect(0, 0, uint32(width), uint32(height))
+			x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
+			setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 		}
 	case tess.DrawRunTextBatch:
 		r.warnSkipped("text batches")

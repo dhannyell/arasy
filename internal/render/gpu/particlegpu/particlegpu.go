@@ -132,16 +132,32 @@ func ScissorRect(clip math2d.Rect, camera render.Camera, scale float64, width, h
 	if width <= 0 || height <= 0 {
 		return 0, 0, 0, 0, false
 	}
-	if clip.Width() <= 0 || clip.Height() <= 0 {
-		return 0, 0, width, height, true
-	}
-	minPoint, maxPoint := camera.WorldToScreen(clip.Min), camera.WorldToScreen(clip.Max)
-	x0 := max(0, min(width, int(math.Floor(math.Min(minPoint.X, maxPoint.X)*scale))))
-	y0 := max(0, min(height, int(math.Floor(math.Min(minPoint.Y, maxPoint.Y)*scale))))
-	x1 := max(0, min(width, int(math.Ceil(math.Max(minPoint.X, maxPoint.X)*scale))))
-	y1 := max(0, min(height, int(math.Ceil(math.Max(minPoint.Y, maxPoint.Y)*scale))))
-	if x1 <= x0 || y1 <= y0 {
+	x, y, w, h, ok = ScissorRectWithin(clip, camera, math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)}), scale, width, height)
+	if !ok {
 		return 0, 0, width, height, false
+	}
+	return x, y, w, h, true
+}
+
+// ScissorRectWithin converts a world clip to a pixel scissor rectangle inside
+// viewport. It keeps camera passes from widening command-specific clipping.
+func ScissorRectWithin(clip math2d.Rect, camera render.Camera, viewport math2d.Rect, scale float64, width, height int) (x, y, w, h int, ok bool) {
+	if width <= 0 || height <= 0 {
+		return 0, 0, 0, 0, false
+	}
+	x0 := max(0, min(width, int(math.Floor(viewport.Min.X*scale))))
+	y0 := max(0, min(height, int(math.Floor(viewport.Min.Y*scale))))
+	x1 := max(0, min(width, int(math.Ceil(viewport.Max.X*scale))))
+	y1 := max(0, min(height, int(math.Ceil(viewport.Max.Y*scale))))
+	if clip.Width() > 0 && clip.Height() > 0 {
+		minPoint, maxPoint := camera.WorldToScreen(clip.Min), camera.WorldToScreen(clip.Max)
+		x0 = max(x0, int(math.Floor(math.Min(minPoint.X, maxPoint.X)*scale)))
+		y0 = max(y0, int(math.Floor(math.Min(minPoint.Y, maxPoint.Y)*scale)))
+		x1 = min(x1, int(math.Ceil(math.Max(minPoint.X, maxPoint.X)*scale)))
+		y1 = min(y1, int(math.Ceil(math.Max(minPoint.Y, maxPoint.Y)*scale)))
+	}
+	if x1 <= x0 || y1 <= y0 {
+		return x0, y0, 0, 0, false
 	}
 	return x0, y0, x1 - x0, y1 - y0, true
 }

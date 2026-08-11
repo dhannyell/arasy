@@ -673,7 +673,7 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source native
 	return r.encodePostCombine(encoder, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 }
 
-func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint32, layerCameras []tess.LayerCamera, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
+func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets []uint32, plans []nativePassPlan, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
 	if err := r.ensurePostTargets(width, height); err != nil {
 		return err
 	}
@@ -688,7 +688,8 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint3
 			if run.Kind != tess.DrawRunParticles {
 				continue
 			}
-			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(frame.Camera, layerCameras, run.Layer), width, height); ok {
+			plan := plans[run.Pass]
+			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer), width, height); ok {
 				sims = append(sims, sim)
 			}
 		}
@@ -702,12 +703,14 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint3
 	}
 	pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}})
 	last := -1
+	scissor := nativeScissorState{}
 	for i, run := range runs {
-		if !nativePostRunVisible(run, chain.BelowLayer, true) {
+		if !nativePostRunVisible(run, len(plans)-1, chain.BelowLayer, true) {
 			continue
 		}
-		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[i], effective, width, height, -1, false, &last); err != nil {
+		plan := plans[run.Pass]
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		if err := r.drawRun(pass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, &last); err != nil {
 			pass.Release()
 			return err
 		}
@@ -727,7 +730,7 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint3
 		}
 	}
 	directFinal := r.msaaSamples <= 1 && lastActive >= 0 &&
-		!hasNativePostRuns(runs, chain.BelowLayer, false)
+		!hasNativePostRuns(runs, plans, chain.BelowLayer, false)
 
 	source, destination := r.postSceneA, r.postSceneB
 	sourceID, destID := nativePostSourceSceneA, nativePostSourceSceneB
@@ -792,12 +795,14 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint3
 		finalPass.SetBindGroup(0, bindGroup, nil)
 		finalPass.Draw(3, 1, 0, 0)
 		last = -1
+		scissor = nativeScissorState{}
 		for i, run := range runs {
-			if !nativePostRunVisible(run, chain.BelowLayer, false) {
+			if !nativePostRunVisible(run, len(plans)-1, chain.BelowLayer, false) {
 				continue
 			}
-			effective := tess.CameraForLayer(frame.Camera, layerCameras, run.Layer)
-			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, width, height, -1, false, &last); err != nil {
+			plan := plans[run.Pass]
+			effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, &last); err != nil {
 				finalPass.Release()
 				return err
 			}
@@ -835,16 +840,19 @@ func nativePostEffectEncodes(effect render.PostEffect) bool {
 	}
 }
 
-func hasNativePostRuns(runs []tess.StreamRun, belowLayer int, below bool) bool {
+func hasNativePostRuns(runs []tess.StreamRun, plans []nativePassPlan, belowLayer int, below bool) bool {
 	for _, run := range runs {
-		if nativePostRunVisible(run, belowLayer, below) {
+		if nativePostRunVisible(run, len(plans)-1, belowLayer, below) {
 			return true
 		}
 	}
 	return false
 }
 
-func nativePostRunVisible(run tess.StreamRun, belowLayer int, below bool) bool {
+func nativePostRunVisible(run tess.StreamRun, basePass, belowLayer int, below bool) bool {
+	if run.Pass < basePass {
+		return below
+	}
 	if belowLayer == 0 {
 		return below
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -18,13 +19,29 @@ type gpuEmitter struct {
 	decl                                                     particle.EffectDecl
 	seed                                                     uint64
 	emission                                                 particle.EmissionState
+	emissionFrame                                            particle.EmissionFrame
+	command                                                  render.DrawParticles
+	emitCount                                                int
 	capacity                                                 int
 	lastSeen                                                 uint64
 	missingTexture                                           bool
 	bufferBytes                                              uint64
 	hot, cold, alive, dead, counters, drawIndirect, uniforms *wgpu.Buffer
-	computeBind, renderBind, textureBind                     *wgpu.BindGroup
+	computeBind, textureBind                                 *wgpu.BindGroup
 	scratch                                                  [particlegpu.UniformSize]byte
+	views                                                    map[gpuParticleViewKey]*gpuParticleView
+}
+
+type gpuParticleViewKey struct {
+	camera render.ResolvedCamera
+	width  int
+	height int
+}
+
+type gpuParticleView struct {
+	uniform  *wgpu.Buffer
+	bind     *wgpu.BindGroup
+	lastSeen uint64
 }
 type particleSim struct {
 	e    *gpuEmitter
@@ -280,13 +297,13 @@ func (g *gpuParticles) solidTexture(px [4]byte) (*wgpu.Texture, *wgpu.TextureVie
 func (g *gpuParticles) bufferBytes() uint64 {
 	var total uint64
 	for _, emitter := range g.emitters {
-		total += emitter.bufferBytes
+		total += emitter.bufferBytes + uint64(len(emitter.views)*particlegpu.UniformSize)
 	}
 	return total
 }
 
 func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitter, error) {
-	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity}
+	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity, views: make(map[gpuParticleViewKey]*gpuParticleView)}
 	mk := func(size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
 		e.bufferBytes += uint64(size)
 		return g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(size), Usage: usage})
@@ -344,11 +361,6 @@ func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitt
 		e.destroy()
 		return nil, err
 	}
-	e.renderBind, err = g.bindRender(e)
-	if err != nil {
-		e.destroy()
-		return nil, err
-	}
 	e.textureBind, e.missingTexture, err = g.bindTexture(d)
 	if err != nil {
 		e.destroy()
@@ -373,12 +385,12 @@ func (g *gpuParticles) bindCompute(e *gpuEmitter) (*wgpu.BindGroup, error) {
 	)
 }
 
-func (g *gpuParticles) bindRender(e *gpuEmitter) (*wgpu.BindGroup, error) {
+func (g *gpuParticles) bindRender(e *gpuEmitter, uniform *wgpu.Buffer) (*wgpu.BindGroup, error) {
 	return g.device.TryCreateBindGroup(
 		&wgpu.BindGroupDescriptor{
 			Layout: g.renderLayout,
 			Entries: []wgpu.BindGroupEntry{
-				{Binding: 0, Buffer: e.uniforms, Size: wgpu.WholeSize},
+				{Binding: 0, Buffer: uniform, Size: wgpu.WholeSize},
 				{Binding: 1, Buffer: e.hot, Size: wgpu.WholeSize},
 				{Binding: 2, Buffer: e.alive, Size: wgpu.WholeSize},
 				{Binding: 3, Buffer: e.cold, Size: wgpu.WholeSize}},
@@ -431,6 +443,9 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 	e.lastSeen = g.frame
 	f := e.emission.Advance(cmd.Pos, d.EmitRate, cmd.Intensity, d.BurstSize, cmd.Burst, cmd.Dt)
 	n := max(f.Count, 0)
+	e.command = cmd
+	e.emissionFrame = f
+	e.emitCount = n
 	particlegpu.PackUniforms(e.scratch[:], d, cmd, f, n, e.seed, e.capacity, c, w, h)
 	if g.queue.TryWriteBuffer(e.uniforms, 0, e.scratch[:]) != nil || cmd.Dt <= 0 {
 		return particleSim{}, false
@@ -440,6 +455,35 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 	_ = g.queue.TryWriteBuffer(e.drawIndirect, particlegpu.DrawInstanceOffset, zero[:])
 	e.emission.Emitted += uint32(n)
 	return particleSim{e, n}, true
+}
+
+func (g *gpuParticles) renderView(e *gpuEmitter, camera render.Camera, width, height int) *gpuParticleView {
+	key := gpuParticleViewKey{camera: camera.Resolve(), width: width, height: height}
+	view := e.views[key]
+	if view == nil {
+		uniform, err := g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: particlegpu.UniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+		if err != nil {
+			return nil
+		}
+		bind, err := g.bindRender(e, uniform)
+		if err != nil {
+			uniform.Release()
+			return nil
+		}
+		view = &gpuParticleView{uniform: uniform, bind: bind}
+		e.views[key] = view
+	}
+	if view.lastSeen != g.frame {
+		particlegpu.PackUniforms(e.scratch[:], e.decl, e.command, e.emissionFrame, e.emitCount, e.seed, e.capacity, camera, width, height)
+		if g.queue.TryWriteBuffer(view.uniform, 0, e.scratch[:]) != nil {
+			view.bind.Release()
+			view.uniform.Release()
+			delete(e.views, key)
+			return nil
+		}
+		view.lastSeen = g.frame
+	}
+	return view
 }
 
 // encode records the emit and simulate compute passes. emitWrites/simulateWrites
@@ -477,8 +521,8 @@ func (g *gpuParticles) encode(
 
 // draw submits one emitter at its exact painter-order position in the main
 // MSAA pass.
-func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, w, h int) {
-	g.drawTo(p, cmd, c, 1, w, h, false)
+func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, viewport math2d.Rect, scissor *nativeScissorState, w, h int) {
+	g.drawTo(p, cmd, c, viewport, scissor, w, h, 1, w, h, false)
 }
 
 // drawTo submits one emitter into either the main MSAA pass (offscreen
@@ -490,6 +534,9 @@ func (g *gpuParticles) drawTo(
 	p *wgpu.RenderPassEncoder,
 	cmd render.DrawParticles,
 	c render.Camera,
+	viewport math2d.Rect,
+	scissor *nativeScissorState,
+	projectionW, projectionH int,
 	clipScale float64,
 	targetW, targetH int,
 	offscreen bool,
@@ -511,21 +558,33 @@ func (g *gpuParticles) drawTo(
 	} else if e.decl.Blend == particle.BlendAdditive {
 		pipe = g.drawAdditive
 	}
+	view := g.renderView(e, c, projectionW, projectionH)
+	if view == nil {
+		return
+	}
 	p.SetPipeline(pipe)
-	p.SetBindGroup(0, e.renderBind, nil)
+	p.SetBindGroup(0, view.bind, nil)
 	p.SetBindGroup(1, e.textureBind, nil)
-	x, y, sw, sh, ok := particlegpu.ScissorRect(cmd.Clip, c, clipScale, targetW, targetH)
-	p.SetScissorRect(uint32(x), uint32(y), uint32(sw), uint32(sh))
+	x, y, sw, sh, ok := particlegpu.ScissorRectWithin(cmd.Clip, c, viewport, clipScale, targetW, targetH)
+	setNativeScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 	if ok {
 		p.DrawIndirect(e.drawIndirect, 0)
 	}
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
-		p.SetScissorRect(0, 0, uint32(targetW), uint32(targetH))
+		x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, c, viewport, clipScale, targetW, targetH)
+		setNativeScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 	}
 }
 
 func (g *gpuParticles) endFrame() {
 	for k, e := range g.emitters {
+		for key, view := range e.views {
+			if view.lastSeen < g.frame {
+				view.bind.Release()
+				view.uniform.Release()
+				delete(e.views, key)
+			}
+		}
 		if g.frame-e.lastSeen >= particlegpu.TTL {
 			e.destroy()
 			delete(g.emitters, k)
@@ -535,10 +594,14 @@ func (g *gpuParticles) endFrame() {
 }
 
 func (e *gpuEmitter) destroy() {
+	for _, view := range e.views {
+		view.bind.Release()
+		view.uniform.Release()
+	}
 	for _, b := range []*wgpu.Buffer{e.hot, e.cold, e.alive, e.dead, e.counters, e.drawIndirect, e.uniforms} {
 		releaseBuffer(&b)
 	}
-	for _, b := range []*wgpu.BindGroup{e.computeBind, e.renderBind, e.textureBind} {
+	for _, b := range []*wgpu.BindGroup{e.computeBind, e.textureBind} {
 		if b != nil {
 			b.Release()
 		}

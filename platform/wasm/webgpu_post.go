@@ -616,10 +616,10 @@ func (r *webgpuRenderer) drawPostFullscreen(pass js.Value, pipelineName string, 
 	pass.Call("draw", 3, 1, 0, 0)
 }
 
-func (r *webgpuRenderer) renderPostFrame(
+func (r *webgpuRenderer) renderPostFramePasses(
 	frame runtime.Frame,
 	runs []gpuDrawRun,
-	layerCameras []tess.LayerCamera,
+	plans []gpuPassPlan,
 	chain render.PostChain,
 	w, h int,
 ) error {
@@ -632,9 +632,10 @@ func (r *webgpuRenderer) renderPostFrame(
 		particleRuns := make([]gpuParticleRun, 0)
 		for _, run := range runs {
 			if run.kind == tess.DrawRunParticles {
+				plan := plans[run.pass]
 				particleRuns = append(particleRuns, gpuParticleRun{
 					command: run.particles,
-					camera:  tess.CameraForLayer(frame.Camera, layerCameras, run.layer),
+					camera:  tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer),
 				})
 			}
 		}
@@ -657,7 +658,7 @@ func (r *webgpuRenderer) renderPostFrame(
 		}
 	}
 	pass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{attachment}})
-	r.drawPostRuns(pass, runs, frame, layerCameras, chain.BelowLayer, true, w, h)
+	r.drawPostRuns(pass, runs, plans, chain.BelowLayer, true, w, h)
 	pass.Call("end")
 
 	// Without MSAA and without runs above the chain, the last active effect
@@ -669,7 +670,7 @@ func (r *webgpuRenderer) renderPostFrame(
 		}
 	}
 	directFinal := r.msaaSamples <= 1 && lastActive >= 0 &&
-		!hasPostRuns(runs, false, chain.BelowLayer)
+		!hasPostRuns(runs, plans, false, chain.BelowLayer)
 
 	source, destination := r.postSceneA, r.postSceneB
 	sourceID, destID := postSourceSceneA, postSourceSceneB
@@ -731,7 +732,7 @@ func (r *webgpuRenderer) renderPostFrame(
 		}
 		finalPass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{finalAttachment}})
 		r.drawPostFullscreen(finalPass, postPipelineFinalBlit, sourceID, source.view, -1)
-		r.drawPostRuns(finalPass, runs, frame, layerCameras, chain.BelowLayer, false, w, h)
+		r.drawPostRuns(finalPass, runs, plans, chain.BelowLayer, false, w, h)
 		finalPass.Call("end")
 	}
 	commandBuffer := encoder.Call("finish")
@@ -773,16 +774,19 @@ func clampPostStrength(value float64) float64 {
 	return value
 }
 
-func hasPostRuns(runs []gpuDrawRun, below bool, belowLayer int) bool {
+func hasPostRuns(runs []gpuDrawRun, plans []gpuPassPlan, below bool, belowLayer int) bool {
 	for _, run := range runs {
-		if postRunVisible(run, below, belowLayer) {
+		if postRunVisible(run, len(plans)-1, below, belowLayer) {
 			return true
 		}
 	}
 	return false
 }
 
-func postRunVisible(run gpuDrawRun, below bool, belowLayer int) bool {
+func postRunVisible(run gpuDrawRun, basePass int, below bool, belowLayer int) bool {
+	if run.pass < basePass {
+		return below
+	}
 	if belowLayer == 0 {
 		return below
 	}
@@ -795,17 +799,18 @@ func postRunVisible(run gpuDrawRun, below bool, belowLayer int) bool {
 func (r *webgpuRenderer) drawPostRuns(
 	pass js.Value,
 	runs []gpuDrawRun,
-	frame runtime.Frame,
-	layerCameras []tess.LayerCamera,
+	plans []gpuPassPlan,
 	belowLayer int,
 	below bool,
 	w, h int,
 ) {
+	scissor := webGPUScissorState{}
 	for _, run := range runs {
-		if !postRunVisible(run, below, belowLayer) {
+		if !postRunVisible(run, len(plans)-1, below, belowLayer) {
 			continue
 		}
-		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.layer)
-		r.drawRun(pass, run, effective, w, h, false, nil)
+		plan := plans[run.pass]
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
+		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, w, h), &scissor, w, h, false, nil)
 	}
 }

@@ -90,10 +90,13 @@ func (c *Canvas2D) ensurePostSurface(width, height int) *canvasPostSurface {
 	return c.postSurface
 }
 
-func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Camera, chain render.PostChain, width, height int) {
+func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Camera, chain render.PostChain, width, height int, preserve bool) {
 	surface := c.ensurePostSurface(width, height)
 	below, above := canvasPostPartitions(commands, chain.BelowLayer)
 	clearCanvas(surface.ctx, width, height, c.clear)
+	if preserve {
+		copyCanvas(c.canvas, surface.canvas, surface.ctx, width, height)
+	}
 
 	oldContext := c.ctx
 	c.ctx = surface.ctx

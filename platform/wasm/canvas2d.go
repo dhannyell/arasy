@@ -232,8 +232,11 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
+	for _, pass := range frame.Passes {
+		c.renderExtraPass(pass, int(w), int(h))
+	}
 	if chain, ok := lastCanvasPostChain(frame.Commands); ok {
-		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h))
+		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h), len(frame.Passes) > 0)
 	} else {
 		c.renderCommands(frame.Commands, frame.Camera)
 	}
@@ -241,6 +244,19 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
 		c.ready = true
 	}
+}
+
+func (c *Canvas2D) renderExtraPass(pass render.Pass, width, height int) {
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
+	pass = pass.ResolveViewport(viewport)
+	clip := pass.Camera.Viewport
+
+	c.ctx.Call("save")
+	c.ctx.Call("beginPath")
+	c.ctx.Call("rect", clip.Min.X, clip.Min.Y, clip.Width(), clip.Height())
+	c.ctx.Call("clip")
+	c.renderCommands(pass.Commands, pass.Camera)
+	c.ctx.Call("restore")
 }
 
 // renderCommands is the single dispatch point into the sink: it attaches

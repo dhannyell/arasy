@@ -34,7 +34,8 @@ type gpuTextBatch struct {
 	// dirty is set on every replace and cleared after a successful repack;
 	// it forces a repack even when projection and atlas identity are
 	// unchanged, since only a repack re-reads labels.
-	dirty bool
+	dirty    bool
+	revision uint64
 
 	glyphBuffer js.Value
 	labelBuffer js.Value
@@ -48,6 +49,11 @@ type gpuTextBatch struct {
 	bounds    math2d.Rect
 	hasBounds bool
 	projKey   textBatchProjKey
+}
+
+type passTextBatchKey struct {
+	pass int
+	id   render.TextBatchID
 }
 
 func (b *gpuTextBatch) destroy() {
@@ -83,6 +89,7 @@ func (r *webgpuRenderer) applyTextBatchUpdates(updates []runtime.TextBatchUpdate
 		}
 		batch.labels = u.Labels
 		batch.dirty = true
+		batch.revision++
 	}
 }
 
@@ -143,19 +150,70 @@ func (r *webgpuRenderer) finalizeTextBatches(ids []render.TextBatchID, cam rende
 		if !ok {
 			continue
 		}
-		needsRepack := batch.dirty || batch.projKey != proj
-		if !needsRepack {
-			for key, oldAtlas := range batch.atlases {
-				if r.resolveFinalTextAtlas(key.Font, key.PX) != oldAtlas {
-					needsRepack = true
-					break
-				}
-			}
-		}
-		if needsRepack {
+		if r.textBatchNeedsRepack(batch, proj) {
 			r.repackTextBatch(batch, cam, w, h, proj)
 		}
 	}
+}
+
+func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, w, h int) map[passTextBatchKey]*gpuTextBatch {
+	if len(passes) == 0 {
+		return nil
+	}
+
+	baseIndex := len(passes) - 1
+	baseIDs := collectTextBatchIDs(passes[baseIndex].Commands)
+	r.finalizeTextBatches(baseIDs, passes[baseIndex].Camera, w, h)
+	result := make(map[passTextBatchKey]*gpuTextBatch)
+	used := make(map[passTextBatchKey]struct{})
+	for passIndex, pass := range passes {
+		for _, id := range collectTextBatchIDs(pass.Commands) {
+			batch, ok := r.textBatches[id]
+			if !ok {
+				continue
+			}
+			if passIndex == baseIndex {
+				result[passTextBatchKey{pass: passIndex, id: id}] = batch
+				continue
+			}
+			key := passTextBatchKey{pass: passIndex, id: id}
+			passBatch := r.passTextBatches[key]
+			if passBatch == nil {
+				passBatch = &gpuTextBatch{}
+				r.passTextBatches[key] = passBatch
+			}
+			if passBatch.revision != batch.revision {
+				passBatch.labels = append(passBatch.labels[:0], batch.labels...)
+				passBatch.dirty = true
+				passBatch.revision = batch.revision
+			}
+			proj := currentTextBatchProjKey(pass.Camera, w, h)
+			if r.textBatchNeedsRepack(passBatch, proj) {
+				r.repackTextBatch(passBatch, pass.Camera, w, h, proj)
+			}
+			used[key] = struct{}{}
+			result[key] = passBatch
+		}
+	}
+	for key, batch := range r.passTextBatches {
+		if _, ok := used[key]; !ok {
+			batch.destroy()
+			delete(r.passTextBatches, key)
+		}
+	}
+	return result
+}
+
+func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatchProjKey) bool {
+	if batch.dirty || batch.projKey != proj {
+		return true
+	}
+	for key, oldAtlas := range batch.atlases {
+		if r.resolveFinalTextAtlas(key.Font, key.PX) != oldAtlas {
+			return true
+		}
+	}
+	return false
 }
 
 // repackTextBatch packs and uploads a batch's glyph/label records once,
@@ -214,19 +272,14 @@ func (r *webgpuRenderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, 
 	}
 }
 
-// resolveTextBatchDraws fills drawRuns[i].text for every visible
-// DrawRunTextBatch, warning once and leaving text nil for a missing/deleted
-// batch (skipped at draw time) and for a batch culled against its
-// screen-space bounds. Must run after finalizeTextBatches so batch.bounds
-// reflects this frame's content.
-func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base render.Camera, cameras []tess.LayerCamera, w, h int) {
+func (r *webgpuRenderer) resolveTextBatchDrawsForPasses(drawRuns []gpuDrawRun, plans []gpuPassPlan, passBatches map[passTextBatchKey]*gpuTextBatch, w, h int) {
 	r.frameVisibleLabels = 0
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunTextBatch {
 			continue
 		}
 		cmd := drawRuns[i].textBatch
-		batch, ok := r.textBatches[cmd.Batch]
+		batch, ok := passBatches[passTextBatchKey{pass: drawRuns[i].pass, id: cmd.Batch}]
 		if !ok {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
 				diagnostic.Key{Code: "webgpu-text-batch-missing", ID: uint64(cmd.Batch)},
@@ -236,9 +289,10 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base rende
 		if batch.count == 0 {
 			continue
 		}
-		effective := tess.CameraForLayer(base, cameras, drawRuns[i].layer)
+		plan := plans[drawRuns[i].pass]
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
 		if view, ok := textBatchScreenView(effective, w, h, cmd.Clip); ok {
-			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(base, effective))
+			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(plan.camera, effective))
 			if !renderbatch.IntersectsView(bounds, view) {
 				continue
 			}
