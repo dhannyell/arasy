@@ -46,6 +46,15 @@ desenvolvimento limita conteúdo retido a 2.000 sprites e 500 labels.
 Batches retidos e partículas não suportam `Camera.View` com skew. O caminho GPU
 de tessellation recebe escala e offset, não um shear geral.
 
+## Passes de câmera
+
+`RenderContext.AddPass` adiciona uma câmera e um stream de comandos ao frame.
+Os renderers desenham os passes extras na ordem declarada e depois desenham os
+comandos normais retornados por `Game.Render` com a câmera do frame. Um pass
+com viewport zero usa o target inteiro; um viewport explícito limita o pass ao
+seu retângulo na tela. Os passes compartilham o clear do frame e são apenas de
+apresentação: não afetam checksums, snapshots, gravações ou replay.
+
 ## Interpolação de render
 
 `runtime.Config.RenderInterpolation` ativa a interpolação. O padrão é desativado.
