@@ -5,11 +5,13 @@ import (
 	"image"
 	"image/draw"
 	"log/slog"
+	"math"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
 	"golang.org/x/image/font"
@@ -48,6 +50,7 @@ type Renderer struct {
 
 	// postScratch keeps post-effect buffers alive across frames.
 	postScratch *postScratch
+	viewport    image.Rectangle
 }
 
 // drawAdditive renders one command into a transparent scratch image and sums
@@ -89,6 +92,13 @@ func (r *Renderer) Render(commands []render.Command) *image.RGBA {
 // RenderInto draws commands into dst, which must match this renderer's
 // dimensions. The image is cleared with r.Clear before drawing.
 func (r *Renderer) RenderInto(dst *image.RGBA, commands []render.Command) {
+	r.RenderPassesInto(dst, nil, render.Pass{Camera: r.Camera, Commands: commands})
+}
+
+// RenderPassesInto clears dst once, draws extra passes in declaration order,
+// and draws the base pass last. Each pass uses its own camera and is clipped
+// to that camera's viewport.
+func (r *Renderer) RenderPassesInto(dst *image.RGBA, passes []render.Pass, base render.Pass) {
 	if dst == nil {
 		panic("raster: RenderInto target is nil")
 	}
@@ -98,19 +108,52 @@ func (r *Renderer) RenderInto(dst *image.RGBA, commands []render.Command) {
 		panic(fmt.Sprintf("raster: RenderInto target bounds = %v, want %v", dst.Bounds(), wantBounds))
 	}
 
+	fillRect(dst, dst.Bounds(), toRGBA(r.Clear))
 	if r.particles != nil {
 		r.particles.BeginFrame()
 	}
 
-	fillRect(dst, dst.Bounds(), toRGBA(r.Clear))
+	originalCamera := r.Camera
+	originalViewport := r.viewport
+	defer func() {
+		r.Camera = originalCamera
+		r.viewport = originalViewport
+	}()
 
-	chain, ok := lastPostChain(commands)
-	if ok {
-		r.renderPostChain(dst, commands, chain)
-		return
+	for _, pass := range passes {
+		r.renderPass(dst, pass, false, false)
 	}
+	r.renderPass(dst, base, true, len(passes) > 0)
+}
 
-	r.renderCommands(dst, commands)
+func (r *Renderer) renderPass(dst *image.RGBA, pass render.Pass, base, preserve bool) {
+	pass = pass.ResolveViewport(frameRect(dst.Bounds()))
+	r.Camera = pass.Camera
+	r.viewport = viewportBounds(pass.Camera.Viewport, dst.Bounds())
+
+	if base {
+		if chain, ok := lastPostChain(pass.Commands); ok {
+			r.renderPostChain(dst, pass.Commands, chain, preserve)
+			return
+		}
+	}
+	r.renderCommands(dst, pass.Commands)
+}
+
+func frameRect(bounds image.Rectangle) math2d.Rect {
+	return math2d.NewRect(
+		math2d.Vec2{X: float64(bounds.Min.X), Y: float64(bounds.Min.Y)},
+		math2d.Vec2{X: float64(bounds.Dx()), Y: float64(bounds.Dy())},
+	)
+}
+
+func viewportBounds(viewport math2d.Rect, bounds image.Rectangle) image.Rectangle {
+	return image.Rect(
+		int(math.Floor(viewport.Min.X)),
+		int(math.Floor(viewport.Min.Y)),
+		int(math.Ceil(viewport.Max.X)),
+		int(math.Ceil(viewport.Max.Y)),
+	).Intersect(bounds)
 }
 
 // renderCommands is the single dispatch point into the sink: it attaches
@@ -156,7 +199,7 @@ func postChainPartitions(commands []render.Command, belowLayer int) (below, abov
 	return below, above
 }
 
-func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, chain render.PostChain) {
+func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, chain render.PostChain, preserve bool) {
 	below, above := postChainPartitions(commands, chain.BelowLayer)
 	if r.postScratch == nil {
 		r.postScratch = &postScratch{}
@@ -166,6 +209,9 @@ func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, c
 	r.postScratch.scene = ensureImage(r.postScratch.scene, dst.Bounds())
 	scene := r.postScratch.scene
 	fillRect(scene, scene.Bounds(), toRGBA(r.Clear))
+	if preserve {
+		draw.Draw(scene, scene.Bounds(), dst, dst.Bounds().Min, draw.Src)
+	}
 	r.renderCommands(scene, below)
 	applyPostChain(scene, chain, r.Camera, r.postScratch)
 	draw.Draw(dst, dst.Bounds(), scene, scene.Bounds().Min, draw.Src)

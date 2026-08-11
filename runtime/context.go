@@ -77,10 +77,20 @@ type RenderContext struct {
 	fixedDt float64
 
 	camera render.Camera
+	passes []render.Pass
 }
 
 func (ctx *RenderContext) Camera() render.Camera       { return ctx.camera }
 func (ctx *RenderContext) SetCamera(cam render.Camera) { ctx.camera = cam }
+
+// AddPass appends one extra camera and command stream to the frame. Extra
+// passes are rendered before the base stream returned by Game.Render.
+func (ctx *RenderContext) AddPass(camera render.Camera, commands []render.Command) {
+	ctx.passes = append(ctx.passes, render.Pass{
+		Camera:   camera,
+		Commands: append([]render.Command(nil), commands...),
+	})
+}
 
 // UpdateTexture publishes new content for a dynamic texture declared in the
 // manifest. Ownership of img transfers to the engine -- do not mutate it

@@ -204,6 +204,37 @@ func TestBuildSortsSolidCommandsByLayer(t *testing.T) {
 	assertFloat32(t, math.Float32frombits(binary.LittleEndian.Uint32(solid[6*SolidVertexStride+8:])), float32(first.R))
 }
 
+func TestBuildPassesKeepRunsAndStreamsInPassOrder(t *testing.T) {
+	var builder Builder
+	first := render.DrawRect{
+		Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+		Fill: render.RGBA(1, 0, 0, 1),
+	}
+	second := render.DrawRect{
+		Rect: math2d.NewRect(math2d.Vec2{X: 20, Y: 20}, math2d.Vec2{X: 10, Y: 10}),
+		Fill: render.RGBA(0, 0, 1, 1),
+	}
+
+	passes := builder.BuildPasses([]Frame{
+		{Camera: testCamera(), Commands: []render.Command{first}},
+		{Camera: testCamera(), Commands: []render.Command{second}},
+	}, 100, 100, nil, nil)
+
+	if len(passes) != 2 || len(passes[0].Runs) != 1 || len(passes[1].Runs) != 1 {
+		t.Fatalf("passes = %+v, want two single-run passes", passes)
+	}
+	if passes[0].Runs[0].Pass != 0 || passes[1].Runs[0].Pass != 1 {
+		t.Fatalf("run pass indices = %d, %d; want 0, 1", passes[0].Runs[0].Pass, passes[1].Runs[0].Pass)
+	}
+	if got, want := passes[1].Runs[0].ByteOffset, 6*SolidVertexStride; got != want {
+		t.Fatalf("second pass byte offset = %d, want %d", got, want)
+	}
+	solid, _ := builder.Streams()
+	if len(solid) == 0 {
+		t.Fatal("Streams returned no values; expected shared solid stream")
+	}
+}
+
 // TestBuildGroupsConsecutiveSameTextureDrawsAndSplitsOnAlternation confirms
 // that Builder's run grouping is wired correctly into the DrawImage
 // dispatch: consecutive draws of the same texture share one run, a different

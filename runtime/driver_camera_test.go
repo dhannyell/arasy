@@ -42,6 +42,44 @@ func TestDriverFrameReturnsCameraModifiedByRender(t *testing.T) {
 	}
 }
 
+type framePassGame struct{}
+
+func (framePassGame) Setup() Config { return cameraGame{}.Setup() }
+
+func (framePassGame) Init(ctx *UpdateContext) {}
+
+func (framePassGame) Update(ctx *UpdateContext, dt float64) {}
+
+func (framePassGame) Render(ctx *RenderContext) []render.Command {
+	commands := []render.Command{render.DrawRect{
+		Rect: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+	}}
+	passCamera := ctx.Camera()
+	passCamera.Viewport = math2d.NewRect(math2d.Vec2{X: 4, Y: 5}, math2d.Vec2{X: 20, Y: 20})
+	ctx.AddPass(passCamera, commands)
+	commands[0] = nil
+	ctx.AddPass(render.Camera{}, nil)
+	return nil
+}
+
+func TestDriverFrameIncludesExtraPassesInDeclarationOrder(t *testing.T) {
+	driver := NewDriver(framePassGame{}, slog.Default())
+	frame := driver.Frame(0)
+
+	if len(frame.Passes) != 2 {
+		t.Fatalf("pass count = %d, want 2", len(frame.Passes))
+	}
+	if got := frame.Passes[0].Camera.Viewport.Min; got != (math2d.Vec2{X: 4, Y: 5}) {
+		t.Fatalf("first pass viewport min = %v, want (4, 5)", got)
+	}
+	if len(frame.Passes[0].Commands) != 1 {
+		t.Fatalf("first pass command count = %d, want 1", len(frame.Passes[0].Commands))
+	}
+	if _, ok := frame.Passes[0].Commands[0].(render.DrawRect); !ok {
+		t.Fatalf("first pass command = %T, want copied DrawRect", frame.Passes[0].Commands[0])
+	}
+}
+
 var _ Game = cameraGame{}
 
 type renderClockGame struct {

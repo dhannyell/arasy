@@ -16,6 +16,7 @@ import (
 	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
 
@@ -148,7 +149,14 @@ func (t *frameTarget) UpdateResources(updates runtime.FrameUpdates) {
 }
 
 func (t *frameTarget) Render(frame runtime.Frame) {
-	t.r.RenderInto(t.target, frame.Commands)
+	// Offline raster owns the physical output viewport. Keep that established
+	// sizing contract while taking the frame camera's render-time world/view.
+	baseCamera := frame.Camera
+	baseCamera.Viewport = t.r.Camera.Viewport
+	t.r.RenderPassesInto(t.target, frame.Passes, render.Pass{
+		Camera:   baseCamera,
+		Commands: frame.Commands,
+	})
 	t.img = t.target
 }
 
