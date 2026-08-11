@@ -1,23 +1,12 @@
 package parallax
 
 import (
-	"embed"
-	"fmt"
-	"image"
-	"image/color"
-	"io/fs"
-
-	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/arasy/scene"
-	"github.com/dhannyell/arasy/tilemap"
 )
-
-//go:embed assets
-var embeddedAssets embed.FS
 
 const (
 	viewportWidth  = 1280
@@ -26,28 +15,23 @@ const (
 	worldWidth  = 160.0
 	worldHeight = 90.0
 
-	tileSize          = 4.0
-	groundColumns     = int(worldWidth / tileSize)
-	groundRows        = 30
-	groundLayer       = 0
-	playerLayer       = 10
-	hudLayer          = 100
-	skyLayer          = -20
-	moonLayer         = -19
-	hillsLayer        = -10
-	foregroundLayer   = 20
-	groundBatchBase   = render.SpriteBatchID(100)
-	groundAtlasCell   = 16
-	groundAtlasCols   = 2
-	groundAtlasWidth  = groundAtlasCell * groundAtlasCols
-	groundAtlasHeight = groundAtlasCell
-	groundStartRow    = 12
-	groundSurfaceY    = float64(groundStartRow) * tileSize
+	groundLayer     = 0
+	playerLayer     = 10
+	hudLayer        = 100
+	skyLayer        = -20
+	moonLayer       = -19
+	hillsLayer      = -10
+	foregroundLayer = 20
+	bushLayer       = 30
+	groundSurfaceY  = 48.0
 
+	// The camera starts with this framing; repeated layers use periods that
+	// keep their patterns continuous as the camera moves beyond it.
 	skyFactor        = 0.0
-	hillsFactor      = 0.3
-	groundFactor     = 1.0
-	foregroundFactor = 1.3
+	hillsFactor      = 0.5 // 0.5*160 = 80, one hillsPeriod
+	groundFactor     = 1.0 // the floor follows the camera exactly
+	foregroundFactor = 1.2 // 1.2*160 = 192, three foregroundPeriod
+	bushFactor       = 1.8 // 1.8*160 = 288, three bushPeriod
 
 	playerStartX       = 80.0
 	playerStartY       = groundSurfaceY - playerRadius
@@ -55,7 +39,7 @@ const (
 	playerMoveDistance = 100.0
 	playerDesiredSpeed = 36.0
 	playerAccel        = 130.0
-	playerDecel        = 72.0
+	playerDecel        = 10
 	playerAgility      = 72.0
 
 	zoomStart = 1.0
@@ -79,6 +63,15 @@ const (
 	foregroundPoleW  = 2.0
 	foregroundPoleH  = 26.0
 
+	// The bushes sit at the bottom edge so they read as centimetres from
+	// the lens: they cover the player and slide faster than everything else.
+	bushPeriod  = 96.0
+	bushOneX    = 18.0
+	bushTwoX    = 74.0
+	bushOneR    = 13.0
+	bushTwoR    = 10.0
+	bushCenterY = worldHeight - 4.0
+
 	hudMargin     = 4.0
 	hudLineHeight = 4.0
 	hudTextSize   = 2.6
@@ -95,6 +88,7 @@ var (
 	groundBaseFill   = render.RGBA8(61, 66, 68, 255)
 	foregroundTrunk  = render.RGBA8(17, 20, 24, 255)
 	foregroundLeaves = render.RGBA8(14, 18, 22, 255)
+	bushFill         = render.RGBA8(6, 8, 11, 255)
 	backgroundTrunk  = render.RGBA8(27, 33, 41, 255)
 	backgroundLeaves = render.RGBA8(24, 30, 38, 255)
 	playerFill       = render.RGBA8(195, 201, 198, 255)
@@ -109,93 +103,19 @@ var parallaxLayers = []render.LayerParallax{
 	{FromLayer: hillsLayer, ToLayer: hillsLayer, Factor: math2d.Vec2{X: hillsFactor, Y: groundFactor}},
 	{FromLayer: groundLayer, ToLayer: playerLayer, Factor: math2d.Vec2{X: groundFactor, Y: groundFactor}},
 	{FromLayer: foregroundLayer, ToLayer: foregroundLayer, Factor: math2d.Vec2{X: foregroundFactor, Y: groundFactor}},
-}
-
-var groundAtlasFills = [groundAtlasCols]color.RGBA{
-	{R: 61, G: 66, B: 68, A: 255},
-	{R: 62, G: 67, B: 69, A: 255},
-}
-
-var groundAtlasStroke = color.RGBA{R: 61, G: 66, B: 68, A: 255}
-
-var groundRowsASCII = []string{
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"........................................",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
-	"gggggggggggggggggggggggggggggggggggggggg",
+	{FromLayer: bushLayer, ToLayer: bushLayer, Factor: math2d.Vec2{X: bushFactor, Y: groundFactor}},
 }
 
 // Game is a small side-scroller that shows the camera's layer factors.
 type Game struct {
 	player scene.EntityID
-	ground tilemap.Layer
 	zoom   float64
-	assets asset.Manifest
-
-	groundAtlas    tilemap.Atlas
-	groundBuffer   []render.SpriteInstance
-	groundUploaded bool
 }
 
-// NewGame loads the side-scroller assets and its tilemap ground.
+// NewGame creates the side-scroller demo.
 func NewGame() (*Game, error) {
-	sub, err := fs.Sub(embeddedAssets, "assets")
-	if err != nil {
-		return nil, err
-	}
-	assets, err := asset.Load(sub)
-	if err != nil {
-		return nil, err
-	}
-
-	ground, err := tilemap.ParseASCII(groundRowsASCII, map[rune]int16{'g': 0, '.': -1})
-	if err != nil {
-		return nil, fmt.Errorf("parse parallax ground: %w", err)
-	}
-	ground.CellSize = math2d.Vec2{X: tileSize, Y: tileSize}
-	for y := 0; y < ground.H; y++ {
-		for x := 0; x < ground.W; x++ {
-			index := y*ground.W + x
-			if ground.Tiles[index] >= 0 {
-				ground.Tiles[index] = int16((x + y) % groundAtlasCols)
-			}
-		}
-	}
-
 	return &Game{
-		ground: ground,
-		zoom:   zoomStart,
-		assets: assets,
-		groundAtlas: tilemap.Atlas{
-			Texture:  assets.Texture("ground_atlas"),
-			TileSize: math2d.Vec2{X: groundAtlasCell, Y: groundAtlasCell},
-			Columns:  groundAtlasCols,
-		},
+		zoom: zoomStart,
 	}, nil
 }
 
@@ -208,7 +128,7 @@ func (g *Game) Setup() runtime.Config {
 				math2d.Vec2{},
 				math2d.Vec2{X: viewportWidth, Y: viewportHeight},
 			),
-			Aspect:   render.AspectFit,
+			Aspect:   render.AspectExpand,
 			Parallax: parallaxLayers,
 		},
 		Clear:                skyFill,
@@ -217,7 +137,6 @@ func (g *Game) Setup() runtime.Config {
 		FPS:                  60,
 		HistoryLen:           600,
 		DisableDefaultSplash: true,
-		Assets:               g.assets,
 	}
 }
 
@@ -232,10 +151,8 @@ func parallaxBindings() []input.Binding {
 	}
 }
 
-// Init places the actor on the ground and publishes the static terrain.
+// Init places the actor on the infinite floor.
 func (g *Game) Init(ctx *runtime.UpdateContext) {
-	g.publishGround(ctx.Batches)
-
 	g.player = ctx.World.Spawn()
 	ctx.World.SetTransform(g.player, scene.Transform{
 		Position: math2d.Vec2{X: playerStartX, Y: playerStartY},
@@ -263,7 +180,6 @@ func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 		ctx.World.RemoveMoveIntent(g.player)
 	} else {
 		target := transform.Position.Add(direction.Mul(playerMoveDistance))
-		target.X = math2d.Clamp(target.X, 0, worldWidth)
 		target.Y = playerStartY
 		ctx.World.SetMoveIntent(g.player, scene.MoveIntent{
 			Target:       target,
@@ -281,23 +197,19 @@ func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 
 // Render draws the layer bands through their declared camera factors.
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	if !g.groundUploaded {
-		ctx.UpdateTexture(g.groundAtlas.Texture, groundAtlasImage())
-		g.groundUploaded = true
-	}
-
 	playerTransform, _ := ctx.World.Transform(g.player)
 	playerPosition := playerTransform.Position
 	camera := ctx.Camera().Pan(playerPosition.Sub(ctx.Camera().World.Center()))
 	camera = camera.ZoomAt(g.zoom, playerPosition)
 	ctx.SetCamera(camera)
 
-	commands := make([]render.Command, 0, groundColumns*groundRows)
+	commands := make([]render.Command, 0, 64)
 	commands = appendSky(commands, camera)
 	commands = appendHills(commands, camera)
 	commands = g.appendGround(commands, camera)
 	commands = appendPlayer(commands, playerPosition)
 	commands = appendForeground(commands, camera)
+	commands = appendBushes(commands, camera)
 	commands = appendHUD(commands, camera)
 	return commands
 }
@@ -323,8 +235,11 @@ func appendHills(commands []render.Command, camera render.Camera) []render.Comma
 	first, count := render.WrapOffsets(view.Min.X-stripMargin, view.Max.X+stripMargin, hillsPeriod)
 	for copyIndex := range count {
 		x := first + float64(copyIndex)*hillsPeriod
+		// copyIndex is view-local; the world strip keeps its color when the
+		// camera crosses a WrapOffsets boundary.
+		stripIndex := int(first/hillsPeriod) + copyIndex
 		fill := hillsFill
-		if copyIndex%2 == 0 {
+		if stripIndex%2 != 0 {
 			fill = hillsFarFill
 		}
 		commands = append(commands,
@@ -362,57 +277,19 @@ func appendHills(commands []render.Command, camera render.Camera) []render.Comma
 }
 
 func (g *Game) appendGround(commands []render.Command, camera render.Camera) []render.Command {
-	visible := tilemap.VisibleChunks(&g.ground, camera.ForLayer(groundLayer))
-	if len(visible) == 0 {
+	view := camera.ForLayer(groundLayer).World
+	floorBottom := view.Max.Y + stripMargin
+	if floorBottom <= groundSurfaceY {
 		return commands
 	}
-	commands = append(commands, render.DrawRect{
+	return append(commands, render.DrawRect{
 		BaseCommand: render.BaseCommand{LayerValue: groundLayer},
 		Rect: math2d.NewRect(
-			g.ground.Origin.Add(math2d.Vec2{Y: float64(groundStartRow) * tileSize}),
-			math2d.Vec2{X: float64(g.ground.W) * tileSize, Y: float64(g.ground.H-groundStartRow) * tileSize},
+			math2d.Vec2{X: view.Min.X - stripMargin, Y: groundSurfaceY},
+			math2d.Vec2{X: view.Size().X + stripMargin*2, Y: floorBottom - groundSurfaceY},
 		),
 		Fill: groundBaseFill,
 	})
-	for _, chunk := range visible {
-		commands = append(commands, render.DrawSpriteBatch{
-			BaseCommand: render.BaseCommand{LayerValue: groundLayer},
-			Batch:       groundBatchID(chunk),
-		})
-	}
-	return commands
-}
-
-func (g *Game) publishGround(batches *runtime.BatchPort) {
-	for y := 0; y < g.ground.H; y += tilemap.ChunkSize {
-		for x := 0; x < g.ground.W; x += tilemap.ChunkSize {
-			chunk := tilemap.ChunkCoord{X: x / tilemap.ChunkSize, Y: y / tilemap.ChunkSize}
-			instances := g.ground.Chunk(chunk.X, chunk.Y, g.groundAtlas, g.groundBuffer)
-			g.groundBuffer = instances
-			batches.UpdateSprites(groundBatchID(chunk), instances)
-		}
-	}
-}
-
-func groundBatchID(chunk tilemap.ChunkCoord) render.SpriteBatchID {
-	return groundBatchBase + render.SpriteBatchID(chunk.Y*256+chunk.X)
-}
-
-func groundAtlasImage() *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, groundAtlasWidth, groundAtlasHeight))
-	for tile := range groundAtlasCols {
-		fill := groundAtlasFills[tile]
-		for y := 0; y < groundAtlasCell; y++ {
-			for x := 0; x < groundAtlasCell; x++ {
-				pixel := fill
-				if x == 0 || y == 0 || x == groundAtlasCell-1 || y == groundAtlasCell-1 {
-					pixel = groundAtlasStroke
-				}
-				img.SetRGBA(tile*groundAtlasCell+x, y, pixel)
-			}
-		}
-	}
-	return img
 }
 
 func appendPlayer(commands []render.Command, position math2d.Vec2) []render.Command {
@@ -512,6 +389,43 @@ func appendForeground(commands []render.Command, camera render.Camera) []render.
 	return commands
 }
 
+func appendBushes(commands []render.Command, camera render.Camera) []render.Command {
+	view := camera.ForLayer(bushLayer).World
+	first, count := render.WrapOffsets(view.Min.X-stripMargin, view.Max.X+stripMargin, bushPeriod)
+	for copyIndex := range count {
+		x := first + float64(copyIndex)*bushPeriod
+		for _, bush := range []struct {
+			offset, radius float64
+		}{
+			{offset: bushOneX, radius: bushOneR},
+			{offset: bushTwoX, radius: bushTwoR},
+		} {
+			center := math2d.Vec2{X: x + bush.offset, Y: bushCenterY}
+			commands = append(commands,
+				render.DrawCircle{
+					BaseCommand: render.BaseCommand{LayerValue: bushLayer},
+					Center:      center,
+					Radius:      bush.radius,
+					Fill:        bushFill,
+				},
+				render.DrawCircle{
+					BaseCommand: render.BaseCommand{LayerValue: bushLayer},
+					Center:      center.Add(math2d.Vec2{X: -bush.radius * 0.7, Y: bush.radius * 0.3}),
+					Radius:      bush.radius * 0.7,
+					Fill:        bushFill,
+				},
+				render.DrawCircle{
+					BaseCommand: render.BaseCommand{LayerValue: bushLayer},
+					Center:      center.Add(math2d.Vec2{X: bush.radius * 0.7, Y: bush.radius * 0.3}),
+					Radius:      bush.radius * 0.7,
+					Fill:        bushFill,
+				},
+			)
+		}
+	}
+	return commands
+}
+
 func appendHUD(commands []render.Command, camera render.Camera) []render.Command {
 	position := camera.ScreenToWorld(camera.Viewport.Min.Add(math2d.Vec2{X: hudMargin, Y: hudMargin}))
 	return append(commands,
@@ -526,7 +440,7 @@ func appendHUD(commands []render.Command, camera render.Camera) []render.Command
 		render.DrawText{
 			BaseCommand: render.BaseCommand{LayerValue: hudLayer},
 			Position:    position.Add(math2d.Vec2{Y: hudLineHeight}),
-			Text:        "MOON 0.0   HILLS 0.3   GROUND 1.0   FOREGROUND 1.3",
+			Text:        "MOON 0.0   HILLS 0.5   GROUND 1.0   FOREGROUND 1.2   BUSH 1.8",
 			Color:       hudMuted,
 			Size:        hudSmallSize,
 			Baseline:    render.BaselineTop,

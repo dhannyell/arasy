@@ -124,6 +124,33 @@ func TestComponentSetterConventionCoversAllStores(t *testing.T) {
 	}
 }
 
+// TestRegistryCoversAllStoreFields ties componentDefs to the World struct.
+// A store field without a registry entry escapes Clone, Despawn and
+// checksum silently; the counts here catch it at test time.
+func TestRegistryCoversAllStoreFields(t *testing.T) {
+	fields := 0
+	for f := range reflect.TypeFor[World]().Fields() {
+		if strings.HasPrefix(f.Type.String(), "scene.store[") {
+			fields++
+		}
+	}
+	if len(componentDefs) != fields {
+		t.Fatalf("componentDefs has %d entries, World has %d store fields — register the new store in componentDefs",
+			len(componentDefs), fields)
+	}
+
+	hashed := 0
+	for i := range componentDefs {
+		if componentDefs[i].hash != nil {
+			hashed++
+		}
+	}
+	if hashed != ChecksumComponentStores {
+		t.Fatalf("hashed registry entries = %d, want %d (ChecksumComponentStores)",
+			hashed, ChecksumComponentStores)
+	}
+}
+
 // TestCloneCoversAllComponentStores catches a component store forgotten in
 // World.Clone(): either missing entirely (the clone reads back the zero
 // value) or shallow-copied (the clone shares storage with the source and

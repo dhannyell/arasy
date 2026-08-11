@@ -73,10 +73,12 @@ referenced documents when you need subsystem detail.
 
 1. Define the component in `scene/components.go`.
 2. Add its store to `scene.World`.
-3. Add `Set`, getter, and `Remove` methods.
-4. Clone the store in `World.Clone()`.
-5. Remove the component in `World.Despawn()`.
-6. Add simulation state to `World.Checksum()` and update the store count.
+3. Register the store in `componentDefs` (`scene/registry.go`) with its
+   checksum class and hash fields, and add `Set`, getter, and `Remove`
+   methods. Hashed entries append after `tagImageSprite`; bump
+   `ChecksumComponentStores`. The registry drives `Clone`, `Despawn`,
+   `DespawnBatch`, and the checksums; the structural guard tests catch a
+   missing entry.
 
 ### Verification
 
