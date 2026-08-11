@@ -90,3 +90,11 @@ test('renders two camera passes without WebGPU MSAA', async ({ page }, testInfo)
 test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
   await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
 });
+
+test('renders RTT through sprite, textured, retained, and post paths', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'rtt', 'rtt.png');
+});
+
+test('renders RTT while preserving the sprite texture array', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'rtt-array', 'rtt-array.png');
+});

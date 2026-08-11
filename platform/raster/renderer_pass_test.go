@@ -4,12 +4,35 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/draw"
 	"testing"
+	"testing/fstest"
 
+	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/platform/raster"
 	"github.com/dhannyell/arasy/render"
 )
+
+func targetRenderer(t *testing.T) (raster.Renderer, render.TextureID) {
+	t.Helper()
+	manifest, err := asset.Load(fstest.MapFS{
+		"manifest.json": {Data: []byte(`{"version":1,"dynamic":[{"name":"target","w":4,"h":4}]}`)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	textures, err := pixel.BuildRegistry(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4})
+	return raster.Renderer{
+		Width: 4, Height: 4, Camera: passCamera(world, world),
+		Clear: render.RGBA(0, 0, 0, 1), Textures: textures, Assets: manifest,
+	}, manifest.Texture("target")
+}
 
 func passCamera(world, viewport math2d.Rect) render.Camera {
 	return render.Camera{World: world, Viewport: viewport}
@@ -128,5 +151,58 @@ func TestRendererPassOutsideTargetDrawsNothing(t *testing.T) {
 
 	if got := img.RGBAAt(4, 4); got != (color.RGBA{A: 255}) {
 		t.Fatalf("outside pass pixel = %v, want clear black", got)
+	}
+}
+
+func TestRendererTargetPassFeedsTheBaseStreamInDeclarationOrder(t *testing.T) {
+	renderer, target := targetRenderer(t)
+	base := render.Pass{Camera: renderer.Camera, Commands: []render.Command{
+		render.DrawImage{Texture: target, Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}), Tint: render.RGBA(1, 1, 1, 1)},
+	}}
+	producer := render.Pass{Target: target, Camera: renderer.Camera, Commands: []render.Command{
+		passRect(math2d.NewRect(math2d.Vec2{X: 1, Y: 1}, math2d.Vec2{X: 2, Y: 2}), render.RGBA(1, 0, 0, 1)),
+	}}
+
+	image := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	renderer.RenderPassesInto(image, []render.Pass{producer}, base)
+	if got := image.RGBAAt(2, 2); got != (color.RGBA{R: 255, A: 255}) {
+		t.Fatalf("target sampled in base = %v, want red", got)
+	}
+	if got := renderer.Textures.Lookup(target).RGBAAt(0, 0); got != (color.RGBA{}) {
+		t.Fatalf("target clear pixel = %v, want transparent", got)
+	}
+}
+
+func TestRendererTargetPassKeepsPreviousFrameUntilItsDeclaration(t *testing.T) {
+	renderer, target := targetRenderer(t)
+	texture := renderer.Textures.Lookup(target)
+	draw.Draw(texture, texture.Bounds(), &image.Uniform{C: color.RGBA{B: 255, A: 255}}, image.Point{}, draw.Src)
+	consumer := render.Pass{Camera: renderer.Camera, Commands: []render.Command{
+		render.DrawImage{Texture: target, Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}), Tint: render.RGBA(1, 1, 1, 1)},
+	}}
+	producer := render.Pass{Target: target, Camera: renderer.Camera, Commands: []render.Command{
+		passRect(math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}), render.RGBA(1, 0, 0, 1)),
+	}}
+	image := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	renderer.RenderPassesInto(image, []render.Pass{consumer, producer}, render.Pass{Camera: renderer.Camera})
+	if got := image.RGBAAt(2, 2); got != (color.RGBA{B: 255, A: 255}) {
+		t.Fatalf("consumer before producer = %v, want previous blue frame", got)
+	}
+	if got := texture.RGBAAt(2, 2); got != (color.RGBA{R: 255, A: 255}) {
+		t.Fatalf("target after producer = %v, want red", got)
+	}
+}
+
+func TestRendererTargetPassKeepsFirstOwner(t *testing.T) {
+	renderer, target := targetRenderer(t)
+	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4})
+	passes := []render.Pass{
+		{Target: target, Camera: renderer.Camera, Commands: []render.Command{passRect(world, render.RGBA(1, 0, 0, 1))}},
+		{Target: target, Camera: renderer.Camera, Commands: []render.Command{passRect(world, render.RGBA(0, 1, 0, 1))}},
+	}
+
+	renderer.RenderPassesInto(image.NewRGBA(image.Rect(0, 0, 4, 4)), passes, render.Pass{Camera: renderer.Camera})
+	if got := renderer.Textures.Lookup(target).RGBAAt(2, 2); got != (color.RGBA{R: 255, A: 255}) {
+		t.Fatalf("target pixel = %v, want first owner's red", got)
 	}
 }

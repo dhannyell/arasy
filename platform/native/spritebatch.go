@@ -128,10 +128,10 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 		}
 		for i := range batch.ranges {
 			texture, ok := textureFor(r.textures, batch.ranges[i].texture)
-			if !ok || texture.view == nil {
+			if !ok || nativeTextureSampleView(texture) == nil {
 				continue
 			}
-			bindGroup, err := r.createSpriteBatchBindGroup(texture.view, batch.buffer)
+			bindGroup, err := r.createSpriteBatchBindGroup(nativeTextureSampleView(texture), batch.buffer)
 			if err != nil {
 				batch.release()
 				return err
@@ -181,14 +181,21 @@ func (r *Renderer) rebuildSpriteBatchBindGroups(batch *nativeSpriteBatch) error 
 			batch.ranges[i].bindGroup = nil
 		}
 		texture, ok := textureFor(r.textures, batch.ranges[i].texture)
-		if !ok || texture.view == nil {
+		if !ok || nativeTextureSampleView(texture) == nil {
 			continue
 		}
-		bindGroup, err := r.createSpriteBatchBindGroup(texture.view, batch.buffer)
+		bindGroup, err := r.createSpriteBatchBindGroup(nativeTextureSampleView(texture), batch.buffer)
 		if err != nil {
 			return err
 		}
 		batch.ranges[i].bindGroup = bindGroup
 	}
 	return nil
+}
+
+func nativeTextureSampleView(texture gpuTexture) *wgpu.TextureView {
+	if texture.rtt {
+		return texture.targetView
+	}
+	return texture.view
 }

@@ -208,3 +208,87 @@ func TestUpdateTexturePendingSurvivesRewind(t *testing.T) {
 		t.Fatalf("pending updates after rewind = %d, want 1 (render-only state must survive rewind untouched)", len(updates))
 	}
 }
+
+func TestAddTargetPassPublishesCopiedCommands(t *testing.T) {
+	m := dynamicManifest(t)
+	target := m.Texture("heatmap")
+	commands := []render.Command{render.DrawRect{}}
+	game := &textureUpdateGame{assets: m}
+	game.updateFn = func(ctx *runtime.RenderContext) {
+		ctx.AddTargetPass(render.Camera{}, commands, target)
+		commands[0] = nil
+	}
+
+	frame := runtime.NewDriver(game, testLogger()).Frame(0)
+	if len(frame.Passes) != 1 || frame.Passes[0].Target != target {
+		t.Fatalf("passes = %#v, want one pass targeting %d", frame.Passes, target)
+	}
+	if _, ok := frame.Passes[0].Commands[0].(render.DrawRect); !ok {
+		t.Fatalf("target command = %T, want copied render.DrawRect", frame.Passes[0].Commands[0])
+	}
+}
+
+func TestAddTargetPassKeepsFirstOwnerAndWarnsOnce(t *testing.T) {
+	m := dynamicManifest(t)
+	target := m.Texture("heatmap")
+	var logs bytes.Buffer
+	game := &textureUpdateGame{assets: m}
+	game.updateFn = func(ctx *runtime.RenderContext) {
+		ctx.AddTargetPass(render.Camera{}, []render.Command{render.DrawRect{}}, target)
+		ctx.AddTargetPass(render.Camera{}, []render.Command{render.DrawEllipse{}}, target)
+	}
+	driver := runtime.NewDriver(game, slog.New(slog.NewTextHandler(&logs, nil)))
+
+	for range 2 {
+		frame := driver.Frame(0)
+		if len(frame.Passes) != 1 {
+			t.Fatalf("pass count = %d, want first owner only", len(frame.Passes))
+		}
+		if _, ok := frame.Passes[0].Commands[0].(render.DrawRect); !ok {
+			t.Fatalf("owner command = %T, want first pass", frame.Passes[0].Commands[0])
+		}
+	}
+	if got := strings.Count(logs.String(), "render.pass_target_duplicate"); got != 1 {
+		t.Fatalf("duplicate warnings = %d, want 1; logs: %s", got, logs.String())
+	}
+}
+
+func TestAddTargetPassRejectsInvalidTargetOnce(t *testing.T) {
+	m := dynamicManifest(t)
+	var logs bytes.Buffer
+	game := &textureUpdateGame{assets: m}
+	game.updateFn = func(ctx *runtime.RenderContext) {
+		ctx.AddTargetPass(render.Camera{}, nil, render.TextureID(999))
+	}
+	driver := runtime.NewDriver(game, slog.New(slog.NewTextHandler(&logs, nil)))
+
+	if frame := driver.Frame(0); len(frame.Passes) != 0 {
+		t.Fatalf("invalid target produced %d passes, want 0", len(frame.Passes))
+	}
+	driver.Frame(0)
+	if got := strings.Count(logs.String(), "render.pass_target_invalid"); got != 1 {
+		t.Fatalf("invalid-target warnings = %d, want 1; logs: %s", got, logs.String())
+	}
+}
+
+func TestTargetPassWinsUpdateTextureConflict(t *testing.T) {
+	m := dynamicManifest(t)
+	target := m.Texture("heatmap")
+	var logs bytes.Buffer
+	game := &textureUpdateGame{assets: m}
+	game.updateFn = func(ctx *runtime.RenderContext) {
+		ctx.UpdateTexture(target, solidImage(2, 2, color.RGBA{B: 255, A: 255}))
+		ctx.AddTargetPass(render.Camera{}, nil, target)
+	}
+	driver := runtime.NewDriver(game, slog.New(slog.NewTextHandler(&logs, nil)))
+
+	frame := driver.Frame(0)
+	updates := driver.ConsumeTextureUpdates()
+	if len(frame.Passes) != 1 || len(updates) != 1 {
+		t.Fatalf("passes = %d, updates = %d, want one of each", len(frame.Passes), len(updates))
+	}
+	driver.Frame(0)
+	if got := strings.Count(logs.String(), "render.pass_target_update_conflict"); got != 1 {
+		t.Fatalf("conflict warnings = %d, want 1; logs: %s", got, logs.String())
+	}
+}

@@ -146,7 +146,7 @@ func (r *webgpuRenderer) finalizeTextBatch(id render.TextBatchID, cam render.Cam
 	}
 }
 
-func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, passIDs [][]render.TextBatchID, w, h int) map[passTextBatchKey]*gpuTextBatch {
+func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, built []tess.BuiltPass, passIDs [][]render.TextBatchID) map[passTextBatchKey]*gpuTextBatch {
 	if len(passes) == 0 {
 		return nil
 	}
@@ -168,7 +168,7 @@ func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, passIDs []
 	for passIndex, ids := range passIDs {
 		for _, id := range ids {
 			if r.passTextPrimary[id] == passIndex {
-				r.finalizeTextBatch(id, passes[passIndex].Camera, w, h)
+				r.finalizeTextBatch(id, passes[passIndex].Camera, built[passIndex].Width, built[passIndex].Height)
 			}
 		}
 	}
@@ -193,6 +193,7 @@ func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, passIDs []
 				passBatch.dirty = true
 				passBatch.revision = batch.revision
 			}
+			w, h := built[passIndex].Width, built[passIndex].Height
 			proj := currentTextBatchProjKey(pass.Camera, w, h)
 			if r.textBatchNeedsRepack(passBatch, proj) {
 				r.repackTextBatch(passBatch, pass.Camera, w, h, proj)
@@ -278,7 +279,7 @@ func (r *webgpuRenderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, 
 	}
 }
 
-func (r *webgpuRenderer) resolveTextBatchDrawsForPasses(drawRuns []gpuDrawRun, plans []gpuPassPlan, passBatches map[passTextBatchKey]*gpuTextBatch, w, h int) {
+func (r *webgpuRenderer) resolveTextBatchDrawsForPasses(drawRuns []gpuDrawRun, plans []gpuPassPlan, passBatches map[passTextBatchKey]*gpuTextBatch) {
 	r.frameVisibleLabels = 0
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunTextBatch {
@@ -297,7 +298,7 @@ func (r *webgpuRenderer) resolveTextBatchDrawsForPasses(drawRuns []gpuDrawRun, p
 		}
 		plan := plans[drawRuns[i].pass]
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
-		if view, ok := textBatchScreenView(effective, w, h, cmd.Clip); ok {
+		if view, ok := textBatchScreenView(effective, plan.width, plan.height, cmd.Clip); ok {
 			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(plan.camera, effective))
 			if !renderbatch.IntersectsView(bounds, view) {
 				continue

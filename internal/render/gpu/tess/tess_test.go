@@ -216,7 +216,7 @@ func TestBuildPassesKeepRunsAndStreamsInPassOrder(t *testing.T) {
 	}
 
 	passes := builder.BuildPasses([]Frame{
-		{Camera: testCamera(), Commands: []render.Command{first}},
+		{Camera: testCamera(), Commands: []render.Command{first}, Width: 40, Height: 20},
 		{Camera: testCamera(), Commands: []render.Command{second}},
 	}, 100, 100, nil, nil)
 
@@ -225,6 +225,10 @@ func TestBuildPassesKeepRunsAndStreamsInPassOrder(t *testing.T) {
 	}
 	if passes[0].Runs[0].Pass != 0 || passes[1].Runs[0].Pass != 1 {
 		t.Fatalf("run pass indices = %d, %d; want 0, 1", passes[0].Runs[0].Pass, passes[1].Runs[0].Pass)
+	}
+	if passes[0].Width != 40 || passes[0].Height != 20 || passes[1].Width != 100 || passes[1].Height != 100 {
+		t.Fatalf("pass dimensions = %dx%d, %dx%d; want 40x20, 100x100",
+			passes[0].Width, passes[0].Height, passes[1].Width, passes[1].Height)
 	}
 	if got, want := passes[1].Runs[0].ByteOffset, 6*SolidVertexStride; got != want {
 		t.Fatalf("second pass byte offset = %d, want %d", got, want)

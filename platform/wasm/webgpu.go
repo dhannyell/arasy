@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"syscall/js"
 	"time"
 
@@ -72,6 +73,11 @@ type webgpuRenderer struct {
 	texturedPipeline          js.Value
 	spritePipeline            js.Value
 	spriteArrayPipeline       js.Value
+	targetSolidPipeline       js.Value
+	targetTextGlyphPipeline   js.Value
+	targetTexturedPipeline    js.Value
+	targetSpritePipeline      js.Value
+	targetSpriteArrayPipeline js.Value
 	spriteLayout              js.Value
 	spriteArrayLayout         js.Value
 	textGlyphLayout           js.Value
@@ -81,11 +87,16 @@ type webgpuRenderer struct {
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
-	solidAddPipeline       js.Value
-	textGlyphAddPipeline   js.Value
-	texturedAddPipeline    js.Value
-	spriteAddPipeline      js.Value
-	spriteArrayAddPipeline js.Value
+	solidAddPipeline             js.Value
+	textGlyphAddPipeline         js.Value
+	texturedAddPipeline          js.Value
+	spriteAddPipeline            js.Value
+	spriteArrayAddPipeline       js.Value
+	targetSolidAddPipeline       js.Value
+	targetTextGlyphAddPipeline   js.Value
+	targetTexturedAddPipeline    js.Value
+	targetSpriteAddPipeline      js.Value
+	targetSpriteArrayAddPipeline js.Value
 	// mipPipeline renders a fullscreen triangle sampling one mip level into
 	// the next. Boot-time only, used by generateMipmaps.
 	mipPipeline js.Value
@@ -139,16 +150,18 @@ type webgpuRenderer struct {
 	// Retained sprite batches: registry keyed by game-chosen ID, the shared
 	// animated-uniform arena, and the lazily created 1x1 magenta placeholder
 	// view. Content is render-only.
-	spriteBatches                map[render.SpriteBatchID]*gpuSpriteBatch
-	spriteBatchAnimLayout        js.Value
-	spriteBatchAnimArrayLayout   js.Value
-	spriteBatchAnimPipeline      js.Value
-	spriteBatchAnimArrayPipeline js.Value
-	spritePlaceholder            js.Value
-	batchUniformBuffer           js.Value
-	batchArena                   uniformArena
-	batchArenaAlignment          int
-	batchArenaScratch            [spriteBatchAnimUniformSize]byte
+	spriteBatches                      map[render.SpriteBatchID]*gpuSpriteBatch
+	spriteBatchAnimLayout              js.Value
+	spriteBatchAnimArrayLayout         js.Value
+	spriteBatchAnimPipeline            js.Value
+	spriteBatchAnimArrayPipeline       js.Value
+	targetSpriteBatchAnimPipeline      js.Value
+	targetSpriteBatchAnimArrayPipeline js.Value
+	spritePlaceholder                  js.Value
+	batchUniformBuffer                 js.Value
+	batchArena                         uniformArena
+	batchArenaAlignment                int
+	batchArenaScratch                  [spriteBatchAnimUniformSize]byte
 
 	// Retained text batches: registry keyed by game-chosen ID. Content is
 	// render-only.
@@ -290,6 +303,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.dev = newJSDevice(r.device, r.queue)
 	r.observeDeviceErrors(log)
 	r.initPostResources()
+	hasTargets := manifestHasDynamicTextures(manifest)
 
 	r.spriteLayout, r.spritePipelineLayout = r.createDynamicSpriteLayout("2d")
 	r.spriteArrayLayout, r.spriteArrayPipelineLayout = r.createDynamicSpriteLayout("2d-array")
@@ -299,6 +313,13 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.texturedPipeline, r.texturedAddPipeline = r.createTexturedPipelines()
 	r.spritePipeline, r.spriteAddPipeline = r.createSpritePipelines()
 	r.spriteArrayPipeline, r.spriteArrayAddPipeline = r.createSpriteArrayPipelines()
+	if hasTargets {
+		r.targetSolidPipeline, r.targetSolidAddPipeline = r.createTargetSolidPipelines()
+		r.targetTextGlyphPipeline, r.targetTextGlyphAddPipeline = r.createTargetTextGlyphPipelines()
+		r.targetTexturedPipeline, r.targetTexturedAddPipeline = r.createTargetTexturedPipelines()
+		r.targetSpritePipeline, r.targetSpriteAddPipeline = r.createTargetSpritePipelines()
+		r.targetSpriteArrayPipeline, r.targetSpriteArrayAddPipeline = r.createTargetSpriteArrayPipelines()
+	}
 	r.mipPipeline = r.createMipPipeline()
 	r.texSampler = r.createTextureSampler()
 	r.mipSampler = r.createMipSampler()
@@ -312,7 +333,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
 		r.spriteArena.slotSize*r.spriteArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 
-	r.createSpriteBatchAnimPipelines()
+	r.createSpriteBatchAnimPipelines(hasTargets)
 	r.batchArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
 	r.batchArena = newUniformArena(spriteBatchAnimUniformSize, r.batchArenaAlignment, 64)
 	r.batchUniformBuffer = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
@@ -320,7 +341,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 
 	r.textures, r.texSizes = r.buildTextures(manifest)
 	r.rebuildSpriteBindGroups()
-	r.particles = newGpuParticles(r, particleScale > 0)
+	r.particles = newGpuParticles(r, particleScale > 0, hasTargets)
 	if particleScale > 0 {
 		r.compositePipeline = r.createCompositePipeline()
 		r.compositeSampler = r.device.Call("createSampler", map[string]any{
@@ -401,6 +422,9 @@ type gpuPassPlan struct {
 	camera       render.Camera
 	layerCameras []tess.LayerCamera
 	extra        bool
+	target       render.TextureID
+	width        int
+	height       int
 }
 
 func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
@@ -417,7 +441,28 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(w), Y: float64(h)})
 	oldPasses := r.framePasses
 	passes := oldPasses[:0]
+	var claimedTargets []render.TextureID
 	for _, pass := range frame.Passes {
+		if pass.Target != 0 {
+			if slices.Contains(claimedTargets, pass.Target) {
+				r.diagnostics.Log(r.log, slog.LevelWarn,
+					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
+					"webgpu: target already has a pass owner this frame; pass skipped", "target", pass.Target)
+				continue
+			}
+			decl, ok := r.manifest.TextureDecl(pass.Target)
+			if !ok || !decl.Dynamic {
+				r.diagnostics.Log(r.log, slog.LevelWarn,
+					diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(pass.Target)},
+					"webgpu: pass target is not a declared dynamic texture; pass skipped", "target", pass.Target)
+				continue
+			}
+			claimedTargets = append(claimedTargets, pass.Target)
+			targetBounds := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(decl.W), Y: float64(decl.H)})
+			r.activateRenderTarget(pass.Target)
+			passes = append(passes, pass.ResolveViewport(targetBounds))
+			continue
+		}
 		passes = append(passes, pass.ResolveViewport(viewport))
 	}
 	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
@@ -442,13 +487,18 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	}
 	r.passTextIDs = r.passTextIDs[:len(passes)]
 	for i, pass := range passes {
-		passFrames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands}
+		passWidth, passHeight := w, h
+		if pass.Target != 0 {
+			decl, _ := r.manifest.TextureDecl(pass.Target)
+			passWidth, passHeight = decl.W, decl.H
+		}
+		passFrames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
 		ids := collectTextBatchIDsInto(r.passTextIDs[i], pass.Commands)
 		r.passTextIDs[i] = ids
-		r.prepTextBatches(ids, pass.Camera, w, h)
+		r.prepTextBatches(ids, pass.Camera, passWidth, passHeight)
 	}
 	built := r.tess.BuildPasses(passFrames, w, h, r.fontProvider, r.texSizes)
-	passTextBatches := r.preparePassTextBatches(passes, r.passTextIDs, w, h)
+	passTextBatches := r.preparePassTextBatches(passes, built, r.passTextIDs)
 
 	oldPlans := r.passPlans
 	if cap(r.passPlans) < len(built) {
@@ -465,7 +515,10 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		plans[passIndex] = gpuPassPlan{
 			camera:       builtPass.Camera,
 			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
-			extra:        passIndex < len(frame.Passes),
+			extra:        passIndex < len(passes)-1,
+			target:       passes[passIndex].Target,
+			width:        builtPass.Width,
+			height:       builtPass.Height,
 		}
 		for _, run := range builtPass.Runs {
 			r.drawRuns = append(r.drawRuns, gpuDrawRunFromTess(run, passIndex))
@@ -526,12 +579,12 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		}
 		plan := plans[drawRuns[i].pass]
 		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
-		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, w, h, drawRuns[i].spriteBatch.Animation)
+		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, plan.width, plan.height, drawRuns[i].spriteBatch.Animation)
 		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
 		drawRuns[i].batchSlot = offset
 	}
-	r.resolveTextBatchDrawsForPasses(drawRuns, plans, passTextBatches, w, h)
-	r.prepareSpriteUniformsForPasses(drawRuns, plans, w, h)
+	r.resolveTextBatchDrawsForPasses(drawRuns, plans, passTextBatches)
+	r.prepareSpriteUniformsForPasses(drawRuns, plans)
 
 	solidBytes, texBytes := r.tess.Streams()
 	spriteBytes := r.tess.SpriteStream()
@@ -596,6 +649,8 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		particleRun := gpuParticleRun{
 			command: drawRuns[i].particles,
 			camera:  tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer),
+			width:   plan.width,
+			height:  plan.height,
 		}
 		particleRuns = append(particleRuns, particleRun)
 		if drawRuns[i].pass != len(plans)-1 {
@@ -615,33 +670,43 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	if offscreenParticles {
 		r.encodeParticleOffscreen(encoder, groupCmds, w, h, sampleTiming)
 	}
-
-	attachment := map[string]any{
-		"view": r.msaaView, "resolveTarget": textureView, "loadOp": "clear", "storeOp": "discard", "clearValue": clearValue(r.clear),
-	}
-	if r.msaaSamples <= 1 {
-		attachment = map[string]any{"view": textureView, "loadOp": "clear", "storeOp": "store", "clearValue": clearValue(r.clear)}
-	}
-	renderPassDesc := map[string]any{"colorAttachments": []any{attachment}}
-	if sampleTiming {
-		if offscreenParticles {
-			renderPassDesc["timestampWrites"] = r.timing.renderEndTimestampWrites()
-		} else {
-			renderPassDesc["timestampWrites"] = r.timing.renderTimestampWrites()
-		}
-	}
-	pass := encoder.Call("beginRenderPass", renderPassDesc)
-	lastComposited := -1
-	scissor := webGPUScissorState{}
 	for index := range drawRuns {
 		drawRuns[index].group = groupOf[index]
 	}
-	for _, run := range drawRuns {
-		plan := plans[run.pass]
-		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
-		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, w, h), &scissor, w, h, offscreenParticles, &lastComposited)
+	firstScreen, lastScreen := firstAndLastScreenPass(plans)
+	for passIndex, plan := range plans {
+		if plan.target != 0 {
+			r.encodeTargetPass(encoder, passIndex, plan, drawRuns)
+			continue
+		}
+		loadOp := "load"
+		if passIndex == firstScreen {
+			loadOp = "clear"
+		}
+		attachment := map[string]any{
+			"view": r.msaaView, "resolveTarget": textureView, "loadOp": loadOp, "storeOp": "store", "clearValue": clearValue(r.clear),
+		}
+		if passIndex == lastScreen {
+			attachment["storeOp"] = "discard"
+		}
+		if r.msaaSamples <= 1 {
+			attachment = map[string]any{"view": textureView, "loadOp": loadOp, "storeOp": "store", "clearValue": clearValue(r.clear)}
+		}
+		desc := map[string]any{"colorAttachments": []any{attachment}}
+		if sampleTiming {
+			switch {
+			case passIndex == firstScreen && passIndex == lastScreen && !offscreenParticles:
+				desc["timestampWrites"] = r.timing.renderTimestampWrites()
+			case passIndex == firstScreen && !offscreenParticles:
+				desc["timestampWrites"] = r.timing.renderBeginTimestampWrites()
+			case passIndex == lastScreen:
+				desc["timestampWrites"] = r.timing.renderEndTimestampWrites()
+			}
+		}
+		pass := encoder.Call("beginRenderPass", desc)
+		r.drawScreenPassRuns(pass, passIndex, plan, drawRuns, offscreenParticles)
+		pass.Call("end")
 	}
-	pass.Call("end")
 	timingSlot := -1
 	if sampleTiming {
 		timingSlot = r.timing.encodeResolve(encoder, r.particles.timingWrote)
@@ -662,6 +727,63 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		r.cpuTimingValid = true
 	}
 	r.signalReadyAfterPresent()
+}
+
+func firstAndLastScreenPass(plans []gpuPassPlan) (int, int) {
+	first, last := -1, -1
+	for index, plan := range plans {
+		if plan.target == 0 {
+			if first < 0 {
+				first = index
+			}
+			last = index
+		}
+	}
+	return first, last
+}
+
+func (r *webgpuRenderer) encodeTargetPass(encoder js.Value, passIndex int, plan gpuPassPlan, runs []gpuDrawRun) {
+	target, ok := r.textureFor(plan.target)
+	if !ok || target.targetView.IsUndefined() || target.targetView.IsNull() {
+		r.diagnostics.Log(r.log, slog.LevelWarn,
+			diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(plan.target)},
+			"webgpu: pass target has no GPU attachment; pass skipped", "target", plan.target)
+		return
+	}
+	pass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{map[string]any{
+		"view": target.targetView, "loadOp": "clear", "storeOp": "store",
+		"clearValue": map[string]any{"r": 0, "g": 0, "b": 0, "a": 0},
+	}}})
+	scissor := webGPUScissorState{}
+	last := -1
+	for _, run := range runs {
+		if run.pass != passIndex {
+			continue
+		}
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
+		r.drawRun(pass, run, effective, passViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, true, false, &last)
+	}
+	pass.Call("end")
+	if target.arrayLayer >= 0 {
+		encoder.Call("copyTextureToTexture",
+			map[string]any{"texture": target.targetTexture},
+			map[string]any{"texture": target.texture, "origin": map[string]any{"z": target.arrayLayer}},
+			map[string]any{"width": plan.width, "height": plan.height, "depthOrArrayLayers": 1},
+		)
+		r.encodeMipmapsLayer(encoder, target.texture, plan.width, plan.height, target.mipLevels, target.arrayLayer)
+	}
+}
+
+func (r *webgpuRenderer) drawScreenPassRuns(pass js.Value, passIndex int, plan gpuPassPlan, runs []gpuDrawRun, offscreenParticles bool) {
+	scissor := webGPUScissorState{}
+	last := -1
+	for _, run := range runs {
+		if run.pass != passIndex {
+			continue
+		}
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
+		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, false, offscreenParticles, &last)
+	}
 }
 
 func gpuDrawRunFromTess(run tess.StreamRun, pass int) gpuDrawRun {
@@ -740,7 +862,7 @@ func (r *webgpuRenderer) encodeParticleOffscreen(
 		pass := encoder.Call("beginRenderPass", desc)
 		scissor := webGPUScissorState{}
 		for _, run := range cmds {
-			r.particles.drawTo(pass, run.command, run.camera, math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(w), Y: float64(h)}), &scissor, w, h, r.particleScale, ow, oh, true)
+			r.particles.drawTo(pass, run.command, run.camera, math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(w), Y: float64(h)}), &scissor, w, h, r.particleScale, ow, oh, true, false)
 		}
 		pass.Call("end")
 	}
@@ -840,6 +962,7 @@ func (r *webgpuRenderer) drawRun(
 	viewport math2d.Rect,
 	scissor *webGPUScissorState,
 	w, h int,
+	renderTarget bool,
 	offscreenParticles bool,
 	lastComposited *int,
 ) {
@@ -848,7 +971,11 @@ func (r *webgpuRenderer) drawRun(
 	}
 	switch run.kind {
 	case tess.DrawRunSolid:
-		pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
+		if renderTarget {
+			pass.Call("setPipeline", pickJS(run.blend, r.targetSolidAddPipeline, r.targetSolidPipeline))
+		} else {
+			pass.Call("setPipeline", pickJS(run.blend, r.solidAddPipeline, r.solidPipeline))
+		}
 		pass.Call("setVertexBuffer", 0, r.solidBuffer)
 		pass.Call("draw", run.count, 1, run.offset, 0)
 	case tess.DrawRunTextured:
@@ -856,20 +983,33 @@ func (r *webgpuRenderer) drawRun(
 		if !ok {
 			return
 		}
-		pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
+		if renderTarget {
+			pass.Call("setPipeline", pickJS(run.blend, r.targetTexturedAddPipeline, r.targetTexturedPipeline))
+			pass.Call("setBindGroup", 0, texture.targetBindGroup)
+		} else {
+			pass.Call("setPipeline", pickJS(run.blend, r.texturedAddPipeline, r.texturedPipeline))
+			pass.Call("setBindGroup", 0, texture.bindGroup)
+		}
 		pass.Call("setVertexBuffer", 0, r.texBuffer)
-		pass.Call("setBindGroup", 0, texture.bindGroup)
 		pass.Call("draw", run.count, 1, run.offset, 0)
 	case tess.DrawRunSprites:
 		if r.spriteArrayEnabled {
-			pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
+			if renderTarget {
+				pass.Call("setPipeline", pickJS(run.blend, r.targetSpriteArrayAddPipeline, r.targetSpriteArrayPipeline))
+			} else {
+				pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
+			}
 			pass.Call("setBindGroup", 0, r.spriteArrayBindGroup, []any{run.uniformSlot})
 		} else {
 			texture, ok := r.textureFor(run.texture)
 			if !ok || texture.spriteBindGroup.IsUndefined() || texture.spriteBindGroup.IsNull() {
 				return
 			}
-			pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
+			if renderTarget {
+				pass.Call("setPipeline", pickJS(run.blend, r.targetSpriteAddPipeline, r.targetSpritePipeline))
+			} else {
+				pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
+			}
 			pass.Call("setBindGroup", 0, texture.spriteBindGroup, []any{run.uniformSlot})
 		}
 		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
@@ -878,11 +1018,19 @@ func (r *webgpuRenderer) drawRun(
 		if !ok {
 			return
 		}
-		pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
+		if renderTarget {
+			pass.Call("setPipeline", pickJS(run.blend, r.targetTextGlyphAddPipeline, r.targetTextGlyphPipeline))
+		} else {
+			pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
+		}
 		pass.Call("setBindGroup", 0, atlas.glyphBindGroup, []any{run.uniformSlot})
 		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 	case tess.DrawRunParticles:
 		if r.particles == nil {
+			return
+		}
+		if renderTarget {
+			r.particles.drawTarget(pass, run.particles, camera, viewport, scissor, w, h)
 			return
 		}
 		if !offscreenParticles || run.group < 0 {
@@ -907,7 +1055,11 @@ func (r *webgpuRenderer) drawRun(
 		}
 		for i, rg := range batch.ranges {
 			if batch.animated {
-				if r.spriteArrayEnabled && !rg.magenta {
+				if renderTarget && r.spriteArrayEnabled && !rg.magenta {
+					pass.Call("setPipeline", r.targetSpriteBatchAnimArrayPipeline)
+				} else if renderTarget {
+					pass.Call("setPipeline", r.targetSpriteBatchAnimPipeline)
+				} else if r.spriteArrayEnabled && !rg.magenta {
 					pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
 				} else {
 					pass.Call("setPipeline", r.spriteBatchAnimPipeline)
@@ -915,9 +1067,17 @@ func (r *webgpuRenderer) drawRun(
 				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
 			} else {
 				if r.spriteArrayEnabled && !rg.magenta {
-					pass.Call("setPipeline", r.spriteArrayPipeline)
+					if renderTarget {
+						pass.Call("setPipeline", r.targetSpriteArrayPipeline)
+					} else {
+						pass.Call("setPipeline", r.spriteArrayPipeline)
+					}
 				} else {
-					pass.Call("setPipeline", r.spritePipeline)
+					if renderTarget {
+						pass.Call("setPipeline", r.targetSpritePipeline)
+					} else {
+						pass.Call("setPipeline", r.spritePipeline)
+					}
 				}
 				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.uniformSlot})
 			}
@@ -935,7 +1095,11 @@ func (r *webgpuRenderer) drawRun(
 		if !applyClipScissor(pass, cmd.Clip, camera, viewport, 1, w, h, scissor) {
 			return
 		}
-		pass.Call("setPipeline", r.textGlyphPipeline)
+		if renderTarget {
+			pass.Call("setPipeline", r.targetTextGlyphPipeline)
+		} else {
+			pass.Call("setPipeline", r.textGlyphPipeline)
+		}
 		for _, rg := range batch.ranges {
 			if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
 				continue
@@ -1007,6 +1171,12 @@ func (r *webgpuRenderer) createSolidPipelines() (js.Value, js.Value) {
 		jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend())))
 }
 
+func (r *webgpuRenderer) createTargetSolidPipelines() (js.Value, js.Value) {
+	module := r.dev.CreateShaderModule(shaders.SolidWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, "rgba8unorm", 1, gpu.AlphaBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, "rgba8unorm", 1, gpu.AdditiveStraightBlend())))
+}
+
 func (r *webgpuRenderer) createDynamicSpriteLayout(viewDimension string) (js.Value, js.Value) {
 	vertex := js.Global().Get("GPUShaderStage").Get("VERTEX").Int()
 	fragment := js.Global().Get("GPUShaderStage").Get("FRAGMENT").Int()
@@ -1055,10 +1225,22 @@ func (r *webgpuRenderer) createTextGlyphPipelines() (js.Value, js.Value) {
 		jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend(), r.textGlyphPipelineLayout)))
 }
 
+func (r *webgpuRenderer) createTargetTextGlyphPipelines() (js.Value, js.Value) {
+	module := r.dev.CreateShaderModule(shaders.TextGlyphWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDescWithLayout(module, "rgba8unorm", 1, gpu.AlphaBlend(), r.textGlyphPipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDescWithLayout(module, "rgba8unorm", 1, gpu.AdditiveStraightBlend(), r.textGlyphPipelineLayout)))
+}
+
 func (r *webgpuRenderer) createTexturedPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.TexturedWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
 		jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
+}
+
+func (r *webgpuRenderer) createTargetTexturedPipelines() (js.Value, js.Value) {
+	module := r.dev.CreateShaderModule(shaders.TexturedWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, "rgba8unorm", 1, gpu.PremultipliedBlend()))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.TexturedPipelineDesc(module, "rgba8unorm", 1, gpu.AdditiveBlend())))
 }
 
 func (r *webgpuRenderer) createSpritePipelines() (js.Value, js.Value) {
@@ -1067,10 +1249,22 @@ func (r *webgpuRenderer) createSpritePipelines() (js.Value, js.Value) {
 		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend(), r.spritePipelineLayout)))
 }
 
+func (r *webgpuRenderer) createTargetSpritePipelines() (js.Value, js.Value) {
+	module := r.dev.CreateShaderModule(shaders.SpriteWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, "rgba8unorm", 1, gpu.PremultipliedBlend(), r.spritePipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, "rgba8unorm", 1, gpu.AdditiveBlend(), r.spritePipelineLayout)))
+}
+
 func (r *webgpuRenderer) createSpriteArrayPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
 	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend(), r.spriteArrayPipelineLayout))),
 		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend(), r.spriteArrayPipelineLayout)))
+}
+
+func (r *webgpuRenderer) createTargetSpriteArrayPipelines() (js.Value, js.Value) {
+	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, "rgba8unorm", 1, gpu.PremultipliedBlend(), r.spriteArrayPipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, "rgba8unorm", 1, gpu.AdditiveBlend(), r.spriteArrayPipelineLayout)))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a
@@ -1262,15 +1456,13 @@ func (r *webgpuRenderer) ensureSpriteUniformArena(required int) {
 		r.spriteArena.slotSize*r.spriteArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 	r.rebuildSpriteBindGroups()
 	r.rebuildTextGlyphBindGroups()
-	for _, batch := range r.spriteBatches {
-		batch.bindGroups = r.createSpriteBatchBindGroups(batch)
-	}
+	r.rebuildRetainedSpriteBindGroups()
 	if !old.IsUndefined() && !old.IsNull() {
 		old.Call("destroy")
 	}
 }
 
-func (r *webgpuRenderer) prepareSpriteUniformsForPasses(runs []gpuDrawRun, plans []gpuPassPlan, width, height int) {
+func (r *webgpuRenderer) prepareSpriteUniformsForPasses(runs []gpuDrawRun, plans []gpuPassPlan) {
 	r.spriteUniformKeys = r.spriteUniformKeys[:0]
 	for i := range runs {
 		runs[i].uniformSlot = -1
@@ -1298,7 +1490,7 @@ func (r *webgpuRenderer) prepareSpriteUniformsForPasses(runs []gpuDrawRun, plans
 			panic("wasm: sprite uniform arena capacity miscalculated")
 		}
 		plan := plans[key.Pass]
-		tess.PackUniform(r.spriteUniformScratch[:], key, plan.camera, plan.layerCameras, width, height)
+		tess.PackUniform(r.spriteUniformScratch[:], key, plan.camera, plan.layerCameras, plan.width, plan.height)
 		r.queue.Call("writeBuffer", r.spriteUniform, offset, bytesToJS(r.spriteUniformScratch[:]))
 	}
 	for i := range runs {

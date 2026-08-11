@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/asset"
@@ -191,31 +192,37 @@ func (c *Canvas2D) UpdateResources(updates runtime.FrameUpdates) {
 }
 
 func (c *Canvas2D) UpdateTexture(id render.TextureID, pix []byte, w, h int) {
-	dt, ok := c.dynamic[id]
-	if !ok || dt.w != w || dt.h != h {
-		canvas := js.Global().Get("document").Call("createElement", "canvas")
-		canvas.Set("width", w)
-		canvas.Set("height", h)
-		ctx := canvas.Call("getContext", "2d")
-		dt = &dynamicTexture{
-			canvas:  canvas,
-			ctx:     ctx,
-			imgData: ctx.Call("createImageData", w, h),
-			w:       w,
-			h:       h,
-		}
-		c.dynamic[id] = dt
-		// Free the ImageBitmap this canvas replaces (e.g. a decoded manifest
-		// placeholder); canvases from a previous size mismatch have no close.
-		if old, exists := c.textures[id]; exists && old.Get("close").Type() == js.TypeFunction {
-			old.Call("close")
-		}
-		c.textures[id] = canvas
-	}
+	dt := c.ensureDynamicTexture(id, w, h)
 	// ImageData.data has no setter -- copy into its existing backing array
 	// instead of assigning a new one, or the write is silently dropped.
 	js.CopyBytesToJS(dt.imgData.Get("data"), pix)
 	dt.ctx.Call("putImageData", dt.imgData, 0, 0)
+}
+
+func (c *Canvas2D) ensureDynamicTexture(id render.TextureID, w, h int) *dynamicTexture {
+	dt, ok := c.dynamic[id]
+	if ok && dt.w == w && dt.h == h {
+		return dt
+	}
+	canvas := js.Global().Get("document").Call("createElement", "canvas")
+	canvas.Set("width", w)
+	canvas.Set("height", h)
+	ctx := canvas.Call("getContext", "2d")
+	dt = &dynamicTexture{
+		canvas:  canvas,
+		ctx:     ctx,
+		imgData: ctx.Call("createImageData", w, h),
+		w:       w,
+		h:       h,
+	}
+	c.dynamic[id] = dt
+	// Free the ImageBitmap this canvas replaces (e.g. a decoded manifest
+	// placeholder); canvases from a previous size mismatch have no close.
+	if old, exists := c.textures[id]; exists && old.Get("close").Type() == js.TypeFunction {
+		old.Call("close")
+	}
+	c.textures[id] = canvas
+	return dt
 }
 
 func (c *Canvas2D) Render(frame runtime.Frame) {
@@ -232,11 +239,29 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
+	var claimedTargets []render.TextureID
+	hasScreenPass := false
 	for _, pass := range frame.Passes {
+		if pass.Target != 0 {
+			decl, ok := c.manifest.TextureDecl(pass.Target)
+			if !ok || !decl.Dynamic {
+				c.renderExtraPass(pass, int(w), int(h))
+				continue
+			}
+			if slices.Contains(claimedTargets, pass.Target) {
+				c.diagnostics.Log(c.log, slog.LevelWarn,
+					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
+					"canvas2d: target already has a pass owner this frame; pass skipped", "target", pass.Target)
+				continue
+			}
+			claimedTargets = append(claimedTargets, pass.Target)
+		} else {
+			hasScreenPass = true
+		}
 		c.renderExtraPass(pass, int(w), int(h))
 	}
 	if chain, ok := lastCanvasPostChain(frame.Commands); ok {
-		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h), len(frame.Passes) > 0)
+		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h), hasScreenPass)
 	} else {
 		c.renderCommands(frame.Commands, frame.Camera)
 	}
@@ -247,10 +272,41 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 }
 
 func (c *Canvas2D) renderExtraPass(pass render.Pass, width, height int) {
+	if pass.Target != 0 {
+		c.renderTargetPass(pass)
+		return
+	}
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
 	pass = pass.ResolveViewport(viewport)
 	clip := pass.Camera.Viewport
 
+	c.ctx.Call("save")
+	c.ctx.Call("beginPath")
+	c.ctx.Call("rect", clip.Min.X, clip.Min.Y, clip.Width(), clip.Height())
+	c.ctx.Call("clip")
+	c.renderCommands(pass.Commands, pass.Camera)
+	c.ctx.Call("restore")
+}
+
+func (c *Canvas2D) renderTargetPass(pass render.Pass) {
+	decl, ok := c.manifest.TextureDecl(pass.Target)
+	if !ok || !decl.Dynamic {
+		c.diagnostics.Log(c.log, slog.LevelWarn,
+			diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(pass.Target)},
+			"canvas2d: pass target is not a declared dynamic texture; pass skipped", "target", pass.Target)
+		return
+	}
+	target := c.ensureDynamicTexture(pass.Target, decl.W, decl.H)
+	originalCtx, originalCanvas := c.ctx, c.canvas
+	c.ctx, c.canvas = target.ctx, target.canvas
+	defer func() { c.ctx, c.canvas = originalCtx, originalCanvas }()
+
+	w, h := float64(target.w), float64(target.h)
+	c.ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+	c.ctx.Call("clearRect", 0, 0, w, h)
+	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: w, Y: h})
+	pass = pass.ResolveViewport(viewport)
+	clip := pass.Camera.Viewport
 	c.ctx.Call("save")
 	c.ctx.Call("beginPath")
 	c.ctx.Call("rect", clip.Min.X, clip.Min.Y, clip.Width(), clip.Height())

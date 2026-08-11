@@ -14,14 +14,19 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
-// gpuTexture is one declared texture uploaded to the GPU, with its full mip
-// chain generated at boot.
+// gpuTexture is one declared texture uploaded to the GPU.
 type gpuTexture struct {
 	texture         js.Value
+	targetTexture   js.Value
 	view            js.Value
+	targetView      js.Value
 	bindGroup       js.Value
+	targetBindGroup js.Value
 	spriteBindGroup js.Value
 	arrayLayer      int
+	mipLevels       int
+	dynamic         bool
+	rtt             bool
 }
 
 // buildTextures decodes every texture in manifest via asset/pixel and
@@ -56,7 +61,7 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 	maxLayers := r.device.Get("limits").Get("maxTextureArrayLayers").Int()
 	plan := planSpriteTextureArray(sizes, maxLayers)
 	if plan.Enabled {
-		textures := r.createGPUTextureArray(reg, plan)
+		textures := r.createGPUTextureArray(reg, manifest, plan)
 		slog.Default().Info("sprite texture array enabled",
 			"layers", plan.Layers, "width", plan.Width, "height", plan.Height,
 		)
@@ -70,7 +75,8 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 			continue
 		}
 		bounds := img.Bounds()
-		textures[decl.ID] = r.createGPUTexture(img.Pix, bounds.Dx(), bounds.Dy())
+		levels := gpu.MipLevelCount(bounds.Dx(), bounds.Dy())
+		textures[decl.ID] = r.createGPUTexture(img.Pix, bounds.Dx(), bounds.Dy(), levels, decl.Dynamic)
 	}
 	slog.Default().Info("sprite texture array disabled", "reason", plan.Reason)
 	return textures, sizes
@@ -78,9 +84,10 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 
 // createGPUTextureArray uploads matching textures into one resource. Each
 // texture keeps a single-layer 2D view for DrawImageQuad, while instanced
-// sprites share the full array view. This replaces the individual resources
-// instead of duplicating their pixels in GPU memory.
-func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, plan spriteTextureArrayPlan) []gpuTexture {
+// sprites share the full array view. A dynamic layer lazily creates a
+// single-mip attachment when first targeted so a target pass never binds an
+// overlapping array view.
+func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, manifest asset.Manifest, plan spriteTextureArrayPlan) []gpuTexture {
 	levels := gpu.MipLevelCount(plan.Width, plan.Height)
 	texture := jsHandle(r.dev.CreateTexture(gpu.TextureArrayDesc(plan.Width, plan.Height, plan.Layers, levels)))
 	textures := make([]gpuTexture, len(reg))
@@ -101,9 +108,16 @@ func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, plan spriteTe
 		}))
 		layout := r.texturedPipeline.Call("getBindGroupLayout", 0)
 		bindGroup := jsHandle(r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(layout, view, r.texSampler)))
-		textures[index+1] = gpuTexture{
-			texture: texture, view: view, bindGroup: bindGroup, arrayLayer: index,
+		decl, _ := manifest.TextureDecl(render.TextureID(index + 1))
+		result := gpuTexture{
+			texture: texture, view: view, bindGroup: bindGroup,
+			arrayLayer: index, mipLevels: levels, dynamic: decl.Dynamic,
 		}
+		if !r.targetTexturedPipeline.IsUndefined() && !r.targetTexturedPipeline.IsNull() {
+			targetLayout := r.targetTexturedPipeline.Call("getBindGroupLayout", 0)
+			result.targetBindGroup = jsHandle(r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(targetLayout, view, r.texSampler)))
+		}
+		textures[index+1] = result
 	}
 
 	r.spriteArrayTexture = texture
@@ -115,14 +129,57 @@ func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, plan spriteTe
 // texture at mip level 0, generates the remaining mip levels, and builds
 // the bind group the textured pipeline expects (binding 0: view, binding 1:
 // the shared linear/anisotropic sampler).
-func (r *webgpuRenderer) createGPUTexture(pix []byte, w, h int) gpuTexture {
+func (r *webgpuRenderer) createGPUTexture(pix []byte, w, h, levels int, dynamic bool) gpuTexture {
 	resources := gpu.BuildTextureResources(r.dev, pix, w, h, r.texturedPipeline, r.texSampler)
 	texture := jsHandle(resources.Texture)
-	r.generateMipmaps(texture, w, h, gpu.MipLevelCount(w, h))
-	return gpuTexture{
-		texture: texture, view: jsHandle(resources.View), bindGroup: jsHandle(resources.BindGroup),
-		arrayLayer: -1,
+	r.generateMipmaps(texture, w, h, levels)
+	view := jsHandle(resources.View)
+	result := gpuTexture{
+		texture: texture, view: view,
+		bindGroup: jsHandle(resources.BindGroup), arrayLayer: -1, mipLevels: levels, dynamic: dynamic,
 	}
+	if dynamic {
+		result.targetView = jsHandle(texture.Call("createView", map[string]any{
+			"dimension": "2d", "baseMipLevel": 0, "mipLevelCount": 1,
+		}))
+	}
+	if !r.targetTexturedPipeline.IsUndefined() && !r.targetTexturedPipeline.IsNull() {
+		targetLayout := r.targetTexturedPipeline.Call("getBindGroupLayout", 0)
+		result.targetBindGroup = jsHandle(r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(targetLayout, view, r.texSampler)))
+	}
+	return result
+}
+
+func (r *webgpuRenderer) activateRenderTarget(id render.TextureID) {
+	if id == 0 || int(id) >= len(r.textures) {
+		return
+	}
+	texture := &r.textures[id]
+	if texture.rtt || !texture.dynamic {
+		return
+	}
+	if texture.arrayLayer >= 0 {
+		decl, ok := r.manifest.TextureDecl(id)
+		if !ok {
+			return
+		}
+		targetDesc := gpu.TextureDesc(decl.W, decl.H, 1)
+		targetDesc["usage"] = gpu.TextureUsageTextureBinding | gpu.TextureUsageCopySrc | gpu.TextureUsageCopyDst | gpu.TextureUsageRenderAttachment
+		texture.targetTexture = jsHandle(r.dev.CreateTexture(targetDesc))
+		texture.targetView = jsHandle(texture.targetTexture.Call("createView"))
+		texture.rtt = true
+		return
+	}
+	if texture.targetView.IsUndefined() || texture.targetView.IsNull() {
+		return
+	}
+	baseLayout := r.texturedPipeline.Call("getBindGroupLayout", 0)
+	targetLayout := r.targetTexturedPipeline.Call("getBindGroupLayout", 0)
+	texture.bindGroup = jsHandle(r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(baseLayout, texture.targetView, r.texSampler)))
+	texture.targetBindGroup = jsHandle(r.dev.CreateBindGroup(gpu.TextureBindGroupDesc(targetLayout, texture.targetView, r.texSampler)))
+	texture.rtt = true
+	r.rebuildSpriteBindGroups()
+	r.rebuildRetainedSpriteBindGroups()
 }
 
 // rebuildSpriteBindGroups connects each declared texture to the current
@@ -146,13 +203,17 @@ func (r *webgpuRenderer) rebuildSpriteBindGroups() {
 	layout := r.spriteLayout
 	for i := range r.textures {
 		texture := &r.textures[i]
-		if texture.view.IsUndefined() || texture.view.IsNull() {
+		view := texture.view
+		if texture.rtt && texture.arrayLayer < 0 {
+			view = texture.targetView
+		}
+		if view.IsUndefined() || view.IsNull() {
 			continue
 		}
 		texture.spriteBindGroup = r.device.Call("createBindGroup", map[string]any{
 			"layout": layout,
 			"entries": []any{
-				map[string]any{"binding": 0, "resource": texture.view},
+				map[string]any{"binding": 0, "resource": view},
 				map[string]any{"binding": 1, "resource": r.texSampler},
 				map[string]any{"binding": 2, "resource": map[string]any{"buffer": r.spriteBuffer}},
 				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
@@ -179,6 +240,17 @@ func (r *webgpuRenderer) generateMipmapsLayer(tex js.Value, w, h, levels, layer 
 	}
 
 	encoder := r.device.Call("createCommandEncoder")
+	r.encodeMipmapsLayer(encoder, tex, w, h, levels, layer)
+	r.queue.Call("submit", []any{encoder.Call("finish")})
+}
+
+// encodeMipmapsLayer records mip generation into an existing encoder. RTT
+// array layers use it immediately after their producer pass so later passes
+// in the same frame sample the freshly generated chain.
+func (r *webgpuRenderer) encodeMipmapsLayer(encoder, tex js.Value, w, h, levels, layer int) {
+	if levels <= 1 {
+		return
+	}
 
 	for level := 1; level < levels; level++ {
 		srcDesc := map[string]any{
@@ -222,7 +294,6 @@ func (r *webgpuRenderer) generateMipmapsLayer(tex js.Value, w, h, levels, layer 
 		pass.Call("end")
 	}
 
-	r.queue.Call("submit", []any{encoder.Call("finish")})
 }
 
 // textureFor resolves id to its uploaded GPU texture. ok is false when id is
@@ -258,10 +329,14 @@ func (r *webgpuRenderer) UpdateResources(updates runtime.FrameUpdates) {
 			destination["origin"] = map[string]any{"z": gt.arrayLayer}
 		}
 		r.dev.WriteTexture(destination, u.Image.Pix, gpu.TextureWriteLayout(4*w, h), gpu.TextureWriteSize(w, h))
+		levels := gt.mipLevels
+		if gt.rtt && gt.arrayLayer < 0 {
+			levels = 1
+		}
 		if gt.arrayLayer >= 0 {
-			r.generateMipmapsLayer(gt.texture, w, h, gpu.MipLevelCount(w, h), gt.arrayLayer)
+			r.generateMipmapsLayer(gt.texture, w, h, levels, gt.arrayLayer)
 		} else {
-			r.generateMipmaps(gt.texture, w, h, gpu.MipLevelCount(w, h))
+			r.generateMipmaps(gt.texture, w, h, levels)
 		}
 	}
 	// Textures first: retained batches may reference them.
@@ -270,6 +345,15 @@ func (r *webgpuRenderer) UpdateResources(updates runtime.FrameUpdates) {
 	if r.sampleCPUTiming {
 		r.cpuResourceUpdate = durationFromMillis(performanceNowMillis() - start)
 	}
+}
+
+func manifestHasDynamicTextures(manifest asset.Manifest) bool {
+	for _, texture := range manifest.Textures() {
+		if texture.Dynamic {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *webgpuRenderer) textureFor(id render.TextureID) (gpuTexture, bool) {
