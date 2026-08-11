@@ -628,7 +628,11 @@ func (r *webgpuRenderer) renderPostFramePasses(
 	}
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
+	sampleTiming := r.timing != nil
 	if r.particles != nil {
+		if sampleTiming {
+			r.particles.armTiming(r.timing)
+		}
 		particleRuns := make([]gpuParticleRun, 0)
 		for _, run := range runs {
 			if run.kind == tess.DrawRunParticles {
@@ -667,7 +671,20 @@ func (r *webgpuRenderer) renderPostFramePasses(
 				"storeOp": "store", "clearValue": clearValue(r.clear),
 			}
 		}
-		pass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{attachment}})
+		desc := map[string]any{"colorAttachments": []any{attachment}}
+		// The GPU render window ends at the last screen pass; the post
+		// effect chain stays outside the measurement.
+		if sampleTiming {
+			switch {
+			case passIndex == firstScreen && passIndex == lastScreen:
+				desc["timestampWrites"] = r.timing.renderTimestampWrites()
+			case passIndex == firstScreen:
+				desc["timestampWrites"] = r.timing.renderBeginTimestampWrites()
+			case passIndex == lastScreen:
+				desc["timestampWrites"] = r.timing.renderEndTimestampWrites()
+			}
+		}
+		pass := encoder.Call("beginRenderPass", desc)
 		r.drawPostPlanRuns(pass, runs, plans, passIndex, chain.BelowLayer, true, w, h)
 		pass.Call("end")
 	}
@@ -746,8 +763,16 @@ func (r *webgpuRenderer) renderPostFramePasses(
 		r.drawPostRuns(finalPass, runs, plans, chain.BelowLayer, false, w, h)
 		finalPass.Call("end")
 	}
+	timingSlot := -1
+	if sampleTiming {
+		timedCompute := r.particles != nil && r.particles.timingWrote
+		timingSlot = r.timing.encodeResolve(encoder, timedCompute)
+	}
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	if timingSlot >= 0 {
+		r.timing.readback(timingSlot)
+	}
 	if r.particles != nil {
 		r.particles.endFrame()
 	}

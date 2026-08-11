@@ -620,6 +620,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		if err := r.renderPostFramePasses(frame, drawRuns, plans, chain, w, h); err != nil {
 			r.disablePost(err)
 		} else {
+			r.recordCPUPhases(phaseStart, buildEnd, uploadEnd)
 			return
 		}
 	}
@@ -719,14 +720,21 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
-	if r.sampleCPUTiming {
-		encodeEnd := performanceNowMillis()
-		r.cpuTess = durationFromMillis(buildEnd - phaseStart)
-		r.cpuUpload = durationFromMillis(uploadEnd-buildEnd) + r.cpuResourceUpdate
-		r.cpuEncode = durationFromMillis(encodeEnd - uploadEnd)
-		r.cpuTimingValid = true
-	}
+	r.recordCPUPhases(phaseStart, buildEnd, uploadEnd)
 	r.signalReadyAfterPresent()
+}
+
+// recordCPUPhases closes the CPU phase metrics after submit; the encode phase
+// ends at the moment of this call.
+func (r *webgpuRenderer) recordCPUPhases(phaseStart, buildEnd, uploadEnd float64) {
+	if !r.sampleCPUTiming {
+		return
+	}
+	encodeEnd := performanceNowMillis()
+	r.cpuTess = durationFromMillis(buildEnd - phaseStart)
+	r.cpuUpload = durationFromMillis(uploadEnd-buildEnd) + r.cpuResourceUpdate
+	r.cpuEncode = durationFromMillis(encodeEnd - uploadEnd)
+	r.cpuTimingValid = true
 }
 
 func firstAndLastScreenPass(plans []gpuPassPlan) (int, int) {

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
@@ -682,6 +683,8 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		return fmt.Errorf("create post command encoder: %w", err)
 	}
 	defer encoder.Release()
+	sampling := r.timeGPU && r.timing.sampleFrame()
+	var timedCompute bool
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
@@ -693,7 +696,13 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 				sims = append(sims, sim)
 			}
 		}
-		if err := r.particles.encode(encoder, sims, nil, nil); err != nil {
+		var emitWrites, simulateWrites *wgpu.PassTimestampWrites
+		if sampling && len(sims) > 0 {
+			emitWrites = r.timing.prepareWrites()
+			simulateWrites = r.timing.simulateWrites()
+			timedCompute = true
+		}
+		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return err
 		}
 	}
@@ -720,7 +729,20 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 			attachment.View, attachment.ResolveTarget = r.postSceneA.view, nil
 			attachment.StoreOp = wgpu.StoreOpStore
 		}
-		pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}})
+		var writes *wgpu.PassTimestampWrites
+		// The GPU render window ends at the last screen pass; the post
+		// effect chain stays outside the measurement.
+		if sampling {
+			switch {
+			case passIndex == firstScreen && passIndex == lastScreen:
+				writes = r.timing.renderWrites()
+			case passIndex == firstScreen:
+				writes = r.timing.renderBeginWrites()
+			case passIndex == lastScreen:
+				writes = r.timing.renderEndWrites()
+			}
+		}
+		pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}, TimestampWrites: writes})
 		if err := r.drawNativePostPlanRuns(pass, runs, uniformOffsets, plans, passIndex, chain.BelowLayer, true); err != nil {
 			pass.Release()
 			return err
@@ -824,12 +846,24 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		}
 		finalPass.Release()
 	}
+	slot := -1
+	if sampling {
+		slot = r.timing.encodeResolve(encoder, timedCompute)
+	}
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {
 		return fmt.Errorf("finish post command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
+	if r.timeCPU {
+		r.cpuFrame.submittedAt = time.Now()
+	}
+	if r.timeGPU {
+		r.timing.readback(slot)
+		r.timing.poll()
+		r.timing.drain()
+	}
 	return nil
 }
 
