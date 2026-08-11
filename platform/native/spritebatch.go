@@ -162,11 +162,33 @@ func (r *Renderer) createSpriteBatchBindGroup(view *wgpu.TextureView, buffer *wg
 			{Binding: 0, TextureView: view},
 			{Binding: 1, Sampler: r.textureSampler},
 			{Binding: 2, Buffer: buffer, Size: wgpu.WholeSize},
-			{Binding: 3, Buffer: r.spriteUniform, Size: wgpu.WholeSize},
+			{Binding: 3, Buffer: r.spriteUniform, Size: tess.SpriteUniformSize},
 		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create retained sprite batch bind group: %w", err)
 	}
 	return bindGroup, nil
+}
+
+func (r *Renderer) rebuildSpriteBatchBindGroups(batch *nativeSpriteBatch) error {
+	if batch == nil {
+		return nil
+	}
+	for i := range batch.ranges {
+		if batch.ranges[i].bindGroup != nil {
+			batch.ranges[i].bindGroup.Release()
+			batch.ranges[i].bindGroup = nil
+		}
+		texture, ok := textureFor(r.textures, batch.ranges[i].texture)
+		if !ok || texture.view == nil {
+			continue
+		}
+		bindGroup, err := r.createSpriteBatchBindGroup(texture.view, batch.buffer)
+		if err != nil {
+			return err
+		}
+		batch.ranges[i].bindGroup = bindGroup
+	}
+	return nil
 }

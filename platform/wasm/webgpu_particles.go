@@ -75,6 +75,11 @@ type gpuParticles struct {
 	timingWrote bool
 }
 
+type gpuParticleRun struct {
+	command render.DrawParticles
+	camera  render.Camera
+}
+
 // newGpuParticles builds the shared particle GPU state once: bind group
 // layouts, the three compute pipelines, the render blend variants (plus
 // their single-sample offscreen twins when withOffscreen is set), the white
@@ -356,13 +361,12 @@ type simRequest struct {
 // simulate makes freshly spawned particles visible to the same-frame scan.
 func (g *gpuParticles) encodeSims(
 	encoder js.Value,
-	cmds []render.DrawParticles,
-	camera render.Camera,
+	runs []gpuParticleRun,
 	w, h int,
 ) {
-	sims := make([]simRequest, 0, len(cmds))
-	for _, cmd := range cmds {
-		if e, emitCount, ok := g.prepareEmitter(cmd, camera, w, h); ok {
+	sims := make([]simRequest, 0, len(runs))
+	for _, run := range runs {
+		if e, emitCount, ok := g.prepareEmitter(run.command, run.camera, w, h); ok {
 			sims = append(sims, simRequest{e: e, emitCount: emitCount})
 		}
 	}

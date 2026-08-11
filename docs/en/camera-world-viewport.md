@@ -169,6 +169,18 @@ It answers:
 where does this game point land on the screen?
 ```
 
+For a moving camera, keep the simulation in world coordinates and move the
+camera itself:
+
+```go
+camera = camera.Pan(playerPosition.Sub(camera.World.Center()))
+camera = camera.ZoomAt(1.1, playerPosition)
+```
+
+When a scene has parallax, `Camera.Parallax` derives a camera for each command
+layer. The same rule applies to manual content and tilemap culling:
+`camera.ForLayer(layer)` is the camera for that layer.
+
 ## WorldToScreen
 
 `WorldToScreen` converts a world position to a screen position.

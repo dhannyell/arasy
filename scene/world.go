@@ -130,39 +130,14 @@ func NewWorld() *World {
 // first getter or Step call rebuilds sparse indexes and thus mutates state.
 // See the store type for details.
 func (w *World) Clone() *World {
-	return &World{
+	c := &World{
 		nextID:           w.nextID,
 		stepTick:         w.stepTick,
-		transforms:       w.transforms.clone(),
-		transformTweens:  w.transformTweens.clone(),
-		spriteTransforms: w.spriteTransforms.clone(),
-		shadowStyles:     w.shadowStyles.clone(),
-		circleSprites:    w.circleSprites.clone(),
-		circleTweens:     w.circleTweens.clone(),
-		rectSprites:      w.rectSprites.clone(),
-		imageSprites:     w.imageSprites.clone(),
-		velocities:       w.velocities.clone(),
-		accelerations:    w.accelerations.clone(),
-		dampings:         w.dampings.clone(),
-		bodies:           w.bodies.clone(),
-		circleColliders:  w.circleColliders.clone(),
-		rectColliders:    w.rectColliders.clone(),
-		heights:          w.heights.clone(),
-		spins:            w.spins.clone(),
-		ballistics:       w.ballistics.clone(),
-		locomotions:      w.locomotions.clone(),
-		moveIntents:      w.moveIntents.clone(),
-		hopTweens:        w.hopTweens.clone(),
-		attachments:      w.attachments.clone(),
-		pointLights:      w.pointLights.clone(),
 		litLayers:        w.litLayers,
 		ambientLight:     w.ambientLight,
-		commandSprites:   w.commandSprites.clone(),
 		debugGridCells:   append([]DebugGridCell(nil), w.debugGridCells...),
 		entityCountCache: w.entityCountCache,
 		entityCountDirty: w.entityCountDirty,
-		renderTransforms: w.renderTransforms.clone(),
-		renderHeights:    w.renderHeights.clone(),
 		projection:       w.projection,
 		sortAxis:         w.sortAxis,
 		// contacts are transient per-tick — not cloned
@@ -170,6 +145,10 @@ func (w *World) Clone() *World {
 		// renderSortScratch is transient render working memory — not cloned
 		// debugGrid is a derived overlay cache — not cloned
 	}
+	for i := range componentDefs {
+		componentDefs[i].clone(c, w)
+	}
+	return c
 }
 
 func (w *World) Spawn() EntityID {
@@ -184,31 +163,9 @@ func (w *World) Spawn() EntityID {
 // use DespawnBatch when removing a group.
 func (w *World) Despawn(id EntityID) {
 	w.markEntityCountDirty()
-	w.transforms.remove(id)
-	w.transformTweens.remove(id)
-	w.spriteTransforms.remove(id)
-	w.shadowStyles.remove(id)
-	w.circleSprites.remove(id)
-	w.circleTweens.remove(id)
-	w.rectSprites.remove(id)
-	w.imageSprites.remove(id)
-	w.velocities.remove(id)
-	w.accelerations.remove(id)
-	w.dampings.remove(id)
-	w.bodies.remove(id)
-	w.circleColliders.remove(id)
-	w.rectColliders.remove(id)
-	w.heights.remove(id)
-	w.spins.remove(id)
-	w.ballistics.remove(id)
-	w.locomotions.remove(id)
-	w.moveIntents.remove(id)
-	w.hopTweens.remove(id)
-	w.attachments.remove(id)
-	w.pointLights.remove(id)
-	w.commandSprites.remove(id)
-	w.renderTransforms.remove(id)
-	w.renderHeights.remove(id)
+	for i := range componentDefs {
+		componentDefs[i].remove(w, id)
+	}
 }
 
 // DespawnBatch removes every listed entity in one stable compaction pass per
@@ -226,31 +183,9 @@ func (w *World) DespawnBatch(ids []EntityID) {
 	}
 
 	w.markEntityCountDirty()
-	w.transforms.removeMarked(w.despawnMarked)
-	w.transformTweens.removeMarked(w.despawnMarked)
-	w.spriteTransforms.removeMarked(w.despawnMarked)
-	w.shadowStyles.removeMarked(w.despawnMarked)
-	w.circleSprites.removeMarked(w.despawnMarked)
-	w.circleTweens.removeMarked(w.despawnMarked)
-	w.rectSprites.removeMarked(w.despawnMarked)
-	w.imageSprites.removeMarked(w.despawnMarked)
-	w.velocities.removeMarked(w.despawnMarked)
-	w.accelerations.removeMarked(w.despawnMarked)
-	w.dampings.removeMarked(w.despawnMarked)
-	w.bodies.removeMarked(w.despawnMarked)
-	w.circleColliders.removeMarked(w.despawnMarked)
-	w.rectColliders.removeMarked(w.despawnMarked)
-	w.heights.removeMarked(w.despawnMarked)
-	w.spins.removeMarked(w.despawnMarked)
-	w.ballistics.removeMarked(w.despawnMarked)
-	w.locomotions.removeMarked(w.despawnMarked)
-	w.moveIntents.removeMarked(w.despawnMarked)
-	w.hopTweens.removeMarked(w.despawnMarked)
-	w.attachments.removeMarked(w.despawnMarked)
-	w.pointLights.removeMarked(w.despawnMarked)
-	w.commandSprites.removeMarked(w.despawnMarked)
-	w.renderTransforms.removeMarked(w.despawnMarked)
-	w.renderHeights.removeMarked(w.despawnMarked)
+	for i := range componentDefs {
+		componentDefs[i].removeMarked(w, w.despawnMarked)
+	}
 	clear(w.despawnMarked)
 }
 

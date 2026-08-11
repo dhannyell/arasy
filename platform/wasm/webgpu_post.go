@@ -619,6 +619,7 @@ func (r *webgpuRenderer) drawPostFullscreen(pass js.Value, pipelineName string, 
 func (r *webgpuRenderer) renderPostFrame(
 	frame runtime.Frame,
 	runs []gpuDrawRun,
+	layerCameras []tess.LayerCamera,
 	chain render.PostChain,
 	w, h int,
 ) error {
@@ -628,13 +629,16 @@ func (r *webgpuRenderer) renderPostFrame(
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
 	if r.particles != nil {
-		particles := make([]render.DrawParticles, 0)
+		particleRuns := make([]gpuParticleRun, 0)
 		for _, run := range runs {
 			if run.kind == tess.DrawRunParticles {
-				particles = append(particles, run.particles)
+				particleRuns = append(particleRuns, gpuParticleRun{
+					command: run.particles,
+					camera:  tess.CameraForLayer(frame.Camera, layerCameras, run.layer),
+				})
 			}
 		}
-		r.particles.encodeSims(encoder, particles, frame.Camera, w, h)
+		r.particles.encodeSims(encoder, particleRuns, w, h)
 	}
 
 	attachment := map[string]any{
@@ -653,7 +657,7 @@ func (r *webgpuRenderer) renderPostFrame(
 		}
 	}
 	pass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{attachment}})
-	r.drawPostRuns(pass, runs, frame, chain.BelowLayer, true, w, h)
+	r.drawPostRuns(pass, runs, frame, layerCameras, chain.BelowLayer, true, w, h)
 	pass.Call("end")
 
 	// Without MSAA and without runs above the chain, the last active effect
@@ -727,7 +731,7 @@ func (r *webgpuRenderer) renderPostFrame(
 		}
 		finalPass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{finalAttachment}})
 		r.drawPostFullscreen(finalPass, postPipelineFinalBlit, sourceID, source.view, -1)
-		r.drawPostRuns(finalPass, runs, frame, chain.BelowLayer, false, w, h)
+		r.drawPostRuns(finalPass, runs, frame, layerCameras, chain.BelowLayer, false, w, h)
 		finalPass.Call("end")
 	}
 	commandBuffer := encoder.Call("finish")
@@ -792,6 +796,7 @@ func (r *webgpuRenderer) drawPostRuns(
 	pass js.Value,
 	runs []gpuDrawRun,
 	frame runtime.Frame,
+	layerCameras []tess.LayerCamera,
 	belowLayer int,
 	below bool,
 	w, h int,
@@ -800,6 +805,7 @@ func (r *webgpuRenderer) drawPostRuns(
 		if !postRunVisible(run, below, belowLayer) {
 			continue
 		}
-		r.drawRun(pass, run, frame.Camera, w, h, false, nil)
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.layer)
+		r.drawRun(pass, run, effective, w, h, false, nil)
 	}
 }

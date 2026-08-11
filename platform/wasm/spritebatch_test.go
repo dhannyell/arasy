@@ -357,3 +357,4 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 		}
 	}
 }
+

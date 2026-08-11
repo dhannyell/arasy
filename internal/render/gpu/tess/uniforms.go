@@ -29,6 +29,34 @@ func PackSpriteUniforms(dst []byte, camera render.Camera, w, h int) {
 	}
 }
 
+// PackTextUniforms writes the screen-space camera data used by text records.
+// offset is the additional screen displacement for a retained batch whose
+// labels were packed under the base camera.
+func PackTextUniforms(dst []byte, offset math2d.Vec2, w, h int) {
+	if w <= 0 || h <= 0 {
+		return
+	}
+	screenToClipScale := math2d.Vec2{X: 2 / float64(w), Y: -2 / float64(h)}
+	values := [12]float64{
+		offset.X * screenToClipScale.X,
+		offset.Y * screenToClipScale.Y,
+		0, 0,
+		0, 0,
+		0, 0,
+		screenToClipScale.X, screenToClipScale.Y,
+	}
+	for i, value := range values {
+		binary.LittleEndian.PutUint32(dst[i*4:], math.Float32bits(float32(value)))
+	}
+}
+
+// TextScreenOffset returns the constant screen displacement between two
+// cameras that differ only by a parallax translation.
+func TextScreenOffset(base, derived render.Camera) math2d.Vec2 {
+	origin := math2d.Vec2{}
+	return derived.WorldToScreen(origin).Sub(base.WorldToScreen(origin))
+}
+
 // WorldToClip returns the camera mapping used by the sprite and text shaders.
 // It uses the same world-to-screen rules as Camera.WorldToScreen, including
 // aspect-fit and aspect-expand resolution.

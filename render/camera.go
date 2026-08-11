@@ -29,6 +29,22 @@ type ResolvedCamera struct {
 	ScaleY   float64
 }
 
+// LayerParallax defines how one inclusive layer range follows the camera.
+// When ranges overlap, Camera.ForLayer uses the first matching declaration.
+type LayerParallax struct {
+	// FromLayer is the first layer in the range.
+	FromLayer int
+	// ToLayer is the last layer in the range.
+	ToLayer int
+	// Factor scales the camera scroll independently on each axis.
+	Factor math2d.Vec2
+	// Anchor is the world point where this range lines up with the base
+	// camera: when the camera centres on it, the range draws exactly where
+	// the base camera would draw it. It is a pre-View point, like command
+	// geometry; ForLayer routes it through View before deriving.
+	Anchor math2d.Vec2
+}
+
 // Camera maps world coordinates to viewport coordinates.
 type Camera struct {
 	// World is the visible area in world coordinates.
@@ -55,6 +71,89 @@ type Camera struct {
 	// requests projected corners. DrawParticles still ignores BaseCommand.Transform;
 	// this is a command rule, not a camera rule.
 	View math2d.Affine
+
+	// Parallax declares the scroll factor for layer ranges. An empty slice is
+	// an exact no-op. Ranges are checked in declaration order.
+	Parallax []LayerParallax
+}
+
+// ForLayer returns the camera used to draw layer. The first matching
+// declaration wins; layers without a declaration use the base camera.
+// Parallax shifts only World by (Factor-1) times the base view centre relative
+// to Anchor. Viewport, Aspect, DepthScale, View, and Parallax remain unchanged.
+func (c Camera) ForLayer(layer int) Camera {
+	if len(c.Parallax) == 0 {
+		return c
+	}
+
+	world, _ := c.resolveAspect()
+	center := world.Center()
+	for _, parallax := range c.Parallax {
+		if layer < parallax.FromLayer || layer > parallax.ToLayer {
+			continue
+		}
+		if parallax.Factor.X == 1 && parallax.Factor.Y == 1 {
+			return c
+		}
+
+		// World lives in post-View space, so the declared anchor crosses
+		// View before it can meet the resolved centre.
+		anchor := c.View.Apply(parallax.Anchor)
+		delta := math2d.Vec2{
+			X: (parallax.Factor.X - 1) * (center.X - anchor.X),
+			Y: (parallax.Factor.Y - 1) * (center.Y - anchor.Y),
+		}
+		derived := c
+		derived.World.Min = derived.World.Min.Add(delta)
+		derived.World.Max = derived.World.Max.Add(delta)
+		return derived
+	}
+
+	return c
+}
+
+// Pan returns a camera whose visible world is shifted by delta. The delta is
+// in the same space as World: after View, before aspect resolution.
+func (c Camera) Pan(delta math2d.Vec2) Camera {
+	c.World.Min = c.World.Min.Add(delta)
+	c.World.Max = c.World.Max.Add(delta)
+	return c
+}
+
+// ZoomAt returns a camera zoomed by factor while keeping anchor at the same
+// viewport position. Factors that are non-positive, non-finite, or NaN leave
+// the camera unchanged.
+func (c Camera) ZoomAt(factor float64, anchor math2d.Vec2) Camera {
+	if factor <= 0 || math.IsNaN(factor) || math.IsInf(factor, 0) || factor == 1 {
+		return c
+	}
+
+	anchor = c.View.Apply(anchor)
+	worldSize := c.World.Size().Div(factor)
+	worldMin := math2d.Vec2{
+		X: anchor.X - (anchor.X-c.World.Min.X)/factor,
+		Y: anchor.Y - (anchor.Y-c.World.Min.Y)/factor,
+	}
+
+	c.World = math2d.NewRect(worldMin, worldSize)
+	return c
+}
+
+// WrapOffsets returns the first world-space offset and number of copies of a
+// strip with period needed to cover the visible span. The strip starts at zero
+// before the returned offset is applied. Invalid periods and empty spans return
+// zero copies.
+func WrapOffsets(visibleMin, visibleMax, period float64) (first float64, count int) {
+	if period <= 0 || math.IsNaN(period) || math.IsInf(period, 0) || visibleMax <= visibleMin {
+		return 0, 0
+	}
+
+	first = math.Floor(visibleMin/period) * period
+	count = int(math.Ceil((visibleMax - first) / period))
+	if count < 1 {
+		count = 1
+	}
+	return first, count
 }
 
 // Skews reports whether View does anything, so a backend can route shape

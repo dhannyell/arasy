@@ -69,6 +69,13 @@ test('renders isometric batch and particle conformance', async ({ page }, testIn
   );
 });
 
+test('renders layer parallax across retained and streaming content', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(
+    page,
+    testInfo,
+    'parallax',
+    'parallax.png',
+  );
 test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
   await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
 });

@@ -195,6 +195,8 @@ type DrawImage struct {
 	// first (around the center of Dest), then Transform maps the result.
 	// Prefer Transform in new code.
 	Rotation float64
+	// Flip mirrors the sampled Src content inside Dest before Rotation.
+	Flip SpriteFlip
 }
 
 // DrawImageQuad draws a texture, or a sub-rectangle of it, mapped onto an

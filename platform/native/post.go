@@ -116,7 +116,7 @@ func (r *Renderer) createPostResources() error {
 		if key == nativePostFinalBlit {
 			samples = r.msaaSamples
 		}
-		pipeline, createErr := r.createPipelineEntry(spec.label, spec.source, spec.entry, r.device.config.Format, samples, nil, nil)
+		pipeline, createErr := r.createPipelineEntry(spec.label, spec.source, spec.entry, r.device.config.Format, samples, nil, nil, nil)
 		if createErr != nil {
 			r.releasePostPipelines()
 			releaseSampler(&r.postSampler)
@@ -673,7 +673,7 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source native
 	return r.encodePostCombine(encoder, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 }
 
-func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
+func (r *Renderer) encodePostFrame(runs []tess.StreamRun, uniformOffsets []uint32, layerCameras []tess.LayerCamera, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
 	if err := r.ensurePostTargets(width, height); err != nil {
 		return err
 	}
@@ -688,7 +688,7 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 			if run.Kind != tess.DrawRunParticles {
 				continue
 			}
-			if sim, ok := r.particles.prepare(run.Particles, frame.Camera, width, height); ok {
+			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(frame.Camera, layerCameras, run.Layer), width, height); ok {
 				sims = append(sims, sim)
 			}
 		}
@@ -702,11 +702,12 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 	}
 	pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}})
 	last := -1
-	for _, run := range runs {
+	for i, run := range runs {
 		if !nativePostRunVisible(run, chain.BelowLayer, true) {
 			continue
 		}
-		if err := r.drawRun(pass, run, frame.Camera, width, height, -1, false, &last); err != nil {
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.Layer)
+		if err := r.drawRun(pass, run, uniformOffsets[i], effective, width, height, -1, false, &last); err != nil {
 			pass.Release()
 			return err
 		}
@@ -791,11 +792,12 @@ func (r *Renderer) encodePostFrame(runs []tess.StreamRun, surfaceView *wgpu.Text
 		finalPass.SetBindGroup(0, bindGroup, nil)
 		finalPass.Draw(3, 1, 0, 0)
 		last = -1
-		for _, run := range runs {
+		for i, run := range runs {
 			if !nativePostRunVisible(run, chain.BelowLayer, false) {
 				continue
 			}
-			if err := r.drawRun(finalPass, run, frame.Camera, width, height, -1, false, &last); err != nil {
+			effective := tess.CameraForLayer(frame.Camera, layerCameras, run.Layer)
+			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, width, height, -1, false, &last); err != nil {
 				finalPass.Release()
 				return err
 			}

@@ -97,7 +97,7 @@ func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Came
 
 	oldContext := c.ctx
 	c.ctx = surface.ctx
-	render.Each(below, canvasSink{canvas: c, camera: camera})
+	c.renderCommands(below, camera)
 	c.ctx = oldContext
 
 	source := surface.canvas
@@ -119,7 +119,7 @@ func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Came
 		copyCanvas(source, c.canvas, oldContext, width, height)
 	}
 
-	render.Each(above, canvasSink{canvas: c, camera: camera})
+	c.renderCommands(above, camera)
 }
 
 func clearCanvas(ctx js.Value, width, height int, clear render.Color) {

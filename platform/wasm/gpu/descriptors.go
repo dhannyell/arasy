@@ -83,8 +83,15 @@ func TexturedPipelineDesc(module Handle, format string, sampleCount int, blend m
 // SpritePipelineDesc expands storage-buffer sprite records with vertex
 // pulling, so it intentionally has no vertex buffer layout.
 func SpritePipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
+	return SpritePipelineDescWithLayout(module, format, sampleCount, blend, "auto")
+}
+
+// SpritePipelineDescWithLayout describes a sprite pipeline with an explicit
+// bind-group layout. The dynamic camera uniform needs this layout because an
+// auto layout cannot declare a dynamic offset.
+func SpritePipelineDescWithLayout(module Handle, format string, sampleCount int, blend map[string]any, layout Handle) map[string]any {
 	return map[string]any{
-		"layout":      "auto",
+		"layout":      layout,
 		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
 		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": blend}}},
 		"primitive":   map[string]any{"topology": "triangle-list"},
@@ -96,8 +103,14 @@ func SpritePipelineDesc(module Handle, format string, sampleCount int, blend map
 // vertex buffer. Unlike sprites, glyph fragments carry straight RGB plus an
 // alpha mask, so they must retain the text pipeline's straight-alpha blend.
 func TextGlyphPipelineDesc(module Handle, format string, sampleCount int, blend map[string]any) map[string]any {
+	return TextGlyphPipelineDescWithLayout(module, format, sampleCount, blend, "auto")
+}
+
+// TextGlyphPipelineDescWithLayout describes a text pipeline with an explicit
+// bind-group layout for the dynamic camera uniform.
+func TextGlyphPipelineDescWithLayout(module Handle, format string, sampleCount int, blend map[string]any, layout Handle) map[string]any {
 	return map[string]any{
-		"layout":      "auto",
+		"layout":      layout,
 		"vertex":      map[string]any{"module": module, "entryPoint": "vs_main"},
 		"fragment":    map[string]any{"module": module, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": blend}}},
 		"primitive":   map[string]any{"topology": "triangle-list"},

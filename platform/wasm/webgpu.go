@@ -67,11 +67,17 @@ type webgpuRenderer struct {
 	msaaWidth   int
 	msaaHeight  int
 
-	solidPipeline       js.Value
-	textGlyphPipeline   js.Value
-	texturedPipeline    js.Value
-	spritePipeline      js.Value
-	spriteArrayPipeline js.Value
+	solidPipeline             js.Value
+	textGlyphPipeline         js.Value
+	texturedPipeline          js.Value
+	spritePipeline            js.Value
+	spriteArrayPipeline       js.Value
+	spriteLayout              js.Value
+	spriteArrayLayout         js.Value
+	textGlyphLayout           js.Value
+	spritePipelineLayout      js.Value
+	spriteArrayPipelineLayout js.Value
+	textGlyphPipelineLayout   js.Value
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
@@ -123,6 +129,9 @@ type webgpuRenderer struct {
 	texCap               int
 	spriteCap            int
 	spriteUniformScratch [tess.SpriteUniformSize]byte
+	spriteArena          uniformArena
+	spriteArenaAlignment int
+	spriteUniformKeys    []tess.UniformKey
 	spriteArrayTexture   js.Value
 	spriteArrayBindGroup js.Value
 	spriteArrayEnabled   bool
@@ -269,6 +278,9 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.observeDeviceErrors(log)
 	r.initPostResources()
 
+	r.spriteLayout, r.spritePipelineLayout = r.createDynamicSpriteLayout("2d")
+	r.spriteArrayLayout, r.spriteArrayPipelineLayout = r.createDynamicSpriteLayout("2d-array")
+	r.textGlyphLayout, r.textGlyphPipelineLayout = r.createDynamicTextLayout()
 	r.solidPipeline, r.solidAddPipeline = r.createSolidPipelines()
 	r.textGlyphPipeline, r.textGlyphAddPipeline = r.createTextGlyphPipelines()
 	r.texturedPipeline, r.texturedAddPipeline = r.createTexturedPipelines()
@@ -282,7 +294,10 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(64 * 1024)
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(64 * 1024)
-	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(tess.SpriteUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
+	r.spriteArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
+	r.spriteArena = newUniformArena(tess.SpriteUniformSize, r.spriteArenaAlignment, 64)
+	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
+		r.spriteArena.slotSize*r.spriteArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 
 	r.createSpriteBatchAnimPipelines()
 	r.batchArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
@@ -378,6 +393,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	textBatchIDs := collectTextBatchIDs(frame.Commands)
 	r.prepTextBatches(textBatchIDs, frame.Camera, w, h)
 	runs := r.tess.Build(tess.Frame(frame), w, h, r.fontProvider, r.texSizes)
+	layerCameras := tess.LayerCameras(frame.Camera, runs)
 
 	// tess ends here: command building/packing and atlas-coverage growth are
 	// done. Retained-batch repack (finalizeTextBatches, the sprite-batch
@@ -404,8 +420,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:   tess.DrawRunSolid,
-				blend:  run.Blend,
 				layer:  run.Layer,
+				blend:  run.Blend,
 				offset: run.ByteOffset / tess.SolidVertexStride,
 				count:  run.VertexCount,
 			})
@@ -415,8 +431,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunTextured,
-				blend:   run.Blend,
 				layer:   run.Layer,
+				blend:   run.Blend,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.TexVertexStride,
 				count:   run.VertexCount,
@@ -427,8 +443,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:    tess.DrawRunSprites,
-				blend:   run.Blend,
 				layer:   run.Layer,
+				blend:   run.Blend,
 				texture: run.Texture,
 				offset:  run.ByteOffset / tess.SpriteStride,
 				count:   run.VertexCount,
@@ -439,8 +455,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			}
 			drawRuns = append(drawRuns, gpuDrawRun{
 				kind:     tess.DrawRunText,
-				blend:    run.Blend,
 				layer:    run.Layer,
+				blend:    run.Blend,
 				atlasKey: run.AtlasKey,
 				offset:   run.ByteOffset / tess.TextGlyphStride,
 				count:    run.VertexCount,
@@ -457,12 +473,14 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 				layer:       run.Layer,
 				spriteBatch: run.SpriteBatch,
 				batchSlot:   -1,
+				uniformSlot: -1,
 			})
 		case tess.DrawRunTextBatch:
 			drawRuns = append(drawRuns, gpuDrawRun{
-				kind:      tess.DrawRunTextBatch,
-				layer:     run.Layer,
-				textBatch: run.TextBatch,
+				kind:        tess.DrawRunTextBatch,
+				layer:       run.Layer,
+				textBatch:   run.TextBatch,
+				uniformSlot: -1,
 			})
 		}
 	}
@@ -474,7 +492,6 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// uniforms per animated command. Two draws of the same batch always get
 	// two distinct slots, since queue.writeBuffer lands before the command
 	// buffer and a shared slot would show both draws the last packed value.
-	hasSpriteBatchDraw := false
 	r.frameVisibleSprites = 0
 	r.frameRetainedDraws = 0
 	animatedBatchDraws := 0
@@ -493,10 +510,11 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		if batch.count == 0 {
 			continue
 		}
-		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(frame.Camera)
-		if view, ok := webgpuBatchView(frame.Camera, cmd.Clip); ok && canCull {
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
+		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(effective)
+		if view, ok := webgpuBatchView(effective, cmd.Clip); ok && canCull {
 			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
-			bounds = renderbatch.BoundsForView(bounds, frame.Camera.View)
+			bounds = renderbatch.BoundsForView(bounds, effective.View)
 			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
 				continue
 			}
@@ -505,7 +523,6 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 			animatedBatchDraws++
 		}
 		drawRuns[i].batch = batch
-		hasSpriteBatchDraw = true
 		r.frameVisibleSprites += batch.count
 		r.frameRetainedDraws += len(batch.ranges)
 	}
@@ -520,7 +537,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 		if !ok {
 			panic("wasm: retained sprite uniform arena capacity miscalculated")
 		}
-		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], frame.Camera, w, h, drawRuns[i].spriteBatch.Animation)
+		camera := tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer)
+		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, w, h, drawRuns[i].spriteBatch.Animation)
 		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
 		drawRuns[i].batchSlot = offset
 	}
@@ -529,7 +547,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// (missing batches warn once and are skipped) and whole-batch culling
 	// against the batch's screen-space bounds. finalizeTextBatches already
 	// repacked any batch that changed, so this only reads the result.
-	hasTextBatchDraw := r.resolveTextBatchDraws(drawRuns, frame.Camera, w, h)
+	r.resolveTextBatchDraws(drawRuns, frame.Camera, layerCameras, w, h)
+	r.prepareSpriteUniforms(drawRuns, frame.Camera, layerCameras, w, h)
 
 	r.ensureSolidBuffer(len(solidBytes))
 	r.ensureTextGlyphBuffer(len(textGlyphBytes))
@@ -553,11 +572,6 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	if len(spriteBytes) > 0 {
 		r.queue.Call("writeBuffer", r.spriteBuffer, 0, bytesToJS(spriteBytes))
 	}
-	if len(spriteBytes) > 0 || len(textGlyphBytes) > 0 || hasSpriteBatchDraw || hasTextBatchDraw {
-		tess.PackSpriteUniforms(r.spriteUniformScratch[:], frame.Camera, w, h)
-		r.queue.Call("writeBuffer", r.spriteUniform, 0, bytesToJS(r.spriteUniformScratch[:]))
-	}
-
 	var uploadEnd float64
 	if r.sampleCPUTiming {
 		uploadEnd = performanceNowMillis()
@@ -565,7 +579,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 
 	r.ensureMSAATarget(w, h)
 	if chain, ok := lastWebGPUPostChain(frame.Commands); ok && !r.postDisabled {
-		if err := r.renderPostFrame(frame, drawRuns, chain, w, h); err != nil {
+		if err := r.renderPostFrame(frame, drawRuns, layerCameras, chain, w, h); err != nil {
 			r.disablePost(err)
 		} else {
 			return
@@ -584,24 +598,27 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// Contiguous particle runs form composite groups: with offscreen
 	// compositing enabled, each group renders into one pooled target and is
 	// composited once, at the painter-order position of its first run.
-	var particleRuns []render.DrawParticles
-	var groupCmds [][]render.DrawParticles
+	var particleRuns []gpuParticleRun
+	var groupCmds [][]gpuParticleRun
 	inGroup := false
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunParticles {
 			inGroup = false
 			continue
 		}
-		particleRuns = append(particleRuns, drawRuns[i].particles)
+		particleRuns = append(particleRuns, gpuParticleRun{
+			command: drawRuns[i].particles,
+			camera:  tess.CameraForLayer(frame.Camera, layerCameras, drawRuns[i].layer),
+		})
 		if !inGroup {
 			groupCmds = append(groupCmds, nil)
 			inGroup = true
 		}
 		drawRuns[i].group = len(groupCmds) - 1
-		groupCmds[len(groupCmds)-1] = append(groupCmds[len(groupCmds)-1], drawRuns[i].particles)
+		groupCmds[len(groupCmds)-1] = append(groupCmds[len(groupCmds)-1], particleRuns[len(particleRuns)-1])
 	}
 
-	r.particles.encodeSims(encoder, particleRuns, frame.Camera, w, h)
+	r.particles.encodeSims(encoder, particleRuns, w, h)
 	// The render pass is timed whenever a metrics consumer exists, with or
 	// without particles; timingWrote tells the readback whether the particle
 	// compute queries were also written this frame (stale otherwise).
@@ -609,7 +626,7 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 
 	offscreenParticles := r.particleScale > 0 && len(groupCmds) > 0
 	if offscreenParticles {
-		r.encodeParticleOffscreen(encoder, groupCmds, frame.Camera, w, h, sampleTiming)
+		r.encodeParticleOffscreen(encoder, groupCmds, w, h, sampleTiming)
 	}
 
 	// With multi-sampling the pass draws into the sampled target and resolves
@@ -650,7 +667,8 @@ func (r *webgpuRenderer) Render(frame runtime.Frame) {
 	// records without relying on firstInstance.
 	lastComposited := -1
 	for _, run := range drawRuns {
-		r.drawRun(pass, run, frame.Camera, w, h, offscreenParticles, &lastComposited)
+		effective := tess.CameraForLayer(frame.Camera, layerCameras, run.layer)
+		r.drawRun(pass, run, effective, w, h, offscreenParticles, &lastComposited)
 	}
 
 	pass.Call("end")
@@ -706,8 +724,7 @@ func (r *webgpuRenderer) particleGPUTimings() (prepare, simulate, render time.Du
 // position in the main pass.
 func (r *webgpuRenderer) encodeParticleOffscreen(
 	encoder js.Value,
-	groups [][]render.DrawParticles,
-	camera render.Camera,
+	groups [][]gpuParticleRun,
 	w, h int,
 	sampleTiming bool,
 ) {
@@ -726,8 +743,8 @@ func (r *webgpuRenderer) encodeParticleOffscreen(
 			desc["timestampWrites"] = r.timing.renderBeginTimestampWrites()
 		}
 		pass := encoder.Call("beginRenderPass", desc)
-		for _, cmd := range cmds {
-			r.particles.drawTo(pass, cmd, camera, r.particleScale, ow, oh, true)
+		for _, run := range cmds {
+			r.particles.drawTo(pass, run.command, run.camera, r.particleScale, ow, oh, true)
 		}
 		pass.Call("end")
 	}
@@ -845,14 +862,14 @@ func (r *webgpuRenderer) drawRun(
 	case tess.DrawRunSprites:
 		if r.spriteArrayEnabled {
 			pass.Call("setPipeline", pickJS(run.blend, r.spriteArrayAddPipeline, r.spriteArrayPipeline))
-			pass.Call("setBindGroup", 0, r.spriteArrayBindGroup)
+			pass.Call("setBindGroup", 0, r.spriteArrayBindGroup, []any{run.uniformSlot})
 		} else {
 			texture, ok := r.textureFor(run.texture)
 			if !ok || texture.spriteBindGroup.IsUndefined() || texture.spriteBindGroup.IsNull() {
 				return
 			}
 			pass.Call("setPipeline", pickJS(run.blend, r.spriteAddPipeline, r.spritePipeline))
-			pass.Call("setBindGroup", 0, texture.spriteBindGroup)
+			pass.Call("setBindGroup", 0, texture.spriteBindGroup, []any{run.uniformSlot})
 		}
 		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 	case tess.DrawRunText:
@@ -861,7 +878,7 @@ func (r *webgpuRenderer) drawRun(
 			return
 		}
 		pass.Call("setPipeline", pickJS(run.blend, r.textGlyphAddPipeline, r.textGlyphPipeline))
-		pass.Call("setBindGroup", 0, atlas.glyphBindGroup)
+		pass.Call("setBindGroup", 0, atlas.glyphBindGroup, []any{run.uniformSlot})
 		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 	case tess.DrawRunParticles:
 		if r.particles == nil {
@@ -901,7 +918,7 @@ func (r *webgpuRenderer) drawRun(
 				} else {
 					pass.Call("setPipeline", r.spritePipeline)
 				}
-				pass.Call("setBindGroup", 0, batch.bindGroups[i])
+				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.uniformSlot})
 			}
 			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
 		}
@@ -922,7 +939,7 @@ func (r *webgpuRenderer) drawRun(
 			if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
 				continue
 			}
-			pass.Call("setBindGroup", 0, rg.bindGroup)
+			pass.Call("setBindGroup", 0, rg.bindGroup, []any{run.uniformSlot})
 			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
 		}
 		if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
@@ -933,8 +950,8 @@ func (r *webgpuRenderer) drawRun(
 
 type gpuDrawRun struct {
 	kind      tess.DrawRunKind
-	blend     render.Blend
 	layer     int
+	blend     render.Blend
 	texture   render.TextureID
 	atlasKey  tess.AtlasKey
 	particles render.DrawParticles
@@ -949,10 +966,28 @@ type gpuDrawRun struct {
 	spriteBatch render.DrawSpriteBatch
 	batch       *gpuSpriteBatch
 	batchSlot   int
+	uniformSlot int
 	// textBatch is the retained text batch command; text is its resolved
 	// registry entry (nil when missing, deleted, empty or culled).
 	textBatch render.DrawTextBatch
 	text      *gpuTextBatch
+}
+
+// wasmUniformKeyForRun resolves the upload key of one draw run, skipping
+// runs whose retained content is missing or animated (animated batches use
+// their own per-draw uniforms). The pure key logic lives in tess.
+func wasmUniformKeyForRun(run *gpuDrawRun, base render.Camera, cameras []tess.LayerCamera) (tess.UniformKey, bool) {
+	switch run.kind {
+	case tess.DrawRunSpriteBatch:
+		if run.batch == nil || run.batch.animated {
+			return tess.UniformKey{}, false
+		}
+	case tess.DrawRunTextBatch:
+		if run.text == nil {
+			return tess.UniformKey{}, false
+		}
+	}
+	return tess.UniformKeyForKind(run.kind, run.layer, base, cameras)
 }
 
 // webgpuBatchView returns the world area that can show a retained batch.
@@ -987,10 +1022,52 @@ func (r *webgpuRenderer) createSolidPipelines() (js.Value, js.Value) {
 		jsHandle(r.dev.CreateRenderPipeline(gpu.SolidPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend())))
 }
 
+func (r *webgpuRenderer) createDynamicSpriteLayout(viewDimension string) (js.Value, js.Value) {
+	vertex := js.Global().Get("GPUShaderStage").Get("VERTEX").Int()
+	fragment := js.Global().Get("GPUShaderStage").Get("FRAGMENT").Int()
+	texture := map[string]any{"viewDimension": viewDimension}
+	layout := r.device.Call("createBindGroupLayout", map[string]any{
+		"entries": []any{
+			map[string]any{"binding": 0, "visibility": fragment, "texture": texture},
+			map[string]any{"binding": 1, "visibility": fragment, "sampler": map[string]any{}},
+			map[string]any{"binding": 2, "visibility": vertex, "buffer": map[string]any{"type": "read-only-storage"}},
+			map[string]any{"binding": 3, "visibility": vertex, "buffer": map[string]any{
+				"type": "uniform", "hasDynamicOffset": true, "minBindingSize": tess.SpriteUniformSize,
+			}},
+		},
+	})
+	pipelineLayout := r.device.Call("createPipelineLayout", map[string]any{
+		"bindGroupLayouts": []any{layout},
+	})
+	return layout, pipelineLayout
+}
+
+func (r *webgpuRenderer) createDynamicTextLayout() (js.Value, js.Value) {
+	vertex := js.Global().Get("GPUShaderStage").Get("VERTEX").Int()
+	fragment := js.Global().Get("GPUShaderStage").Get("FRAGMENT").Int()
+	readOnly := map[string]any{"type": "read-only-storage"}
+	layout := r.device.Call("createBindGroupLayout", map[string]any{
+		"entries": []any{
+			map[string]any{"binding": 0, "visibility": fragment, "texture": map[string]any{"viewDimension": "2d"}},
+			map[string]any{"binding": 1, "visibility": fragment, "sampler": map[string]any{}},
+			map[string]any{"binding": 2, "visibility": vertex, "buffer": readOnly},
+			map[string]any{"binding": 3, "visibility": vertex, "buffer": readOnly},
+			map[string]any{"binding": 4, "visibility": vertex, "buffer": readOnly},
+			map[string]any{"binding": 5, "visibility": vertex, "buffer": map[string]any{
+				"type": "uniform", "hasDynamicOffset": true, "minBindingSize": tess.SpriteUniformSize,
+			}},
+		},
+	})
+	pipelineLayout := r.device.Call("createPipelineLayout", map[string]any{
+		"bindGroupLayouts": []any{layout},
+	})
+	return layout, pipelineLayout
+}
+
 func (r *webgpuRenderer) createTextGlyphPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.TextGlyphWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AlphaBlend()))),
-		jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend())))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AlphaBlend(), r.textGlyphPipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.TextGlyphPipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveStraightBlend(), r.textGlyphPipelineLayout)))
 }
 
 func (r *webgpuRenderer) createTexturedPipelines() (js.Value, js.Value) {
@@ -1001,14 +1078,14 @@ func (r *webgpuRenderer) createTexturedPipelines() (js.Value, js.Value) {
 
 func (r *webgpuRenderer) createSpritePipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SpriteWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
-		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend(), r.spritePipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend(), r.spritePipelineLayout)))
 }
 
 func (r *webgpuRenderer) createSpriteArrayPipelines() (js.Value, js.Value) {
 	module := r.dev.CreateShaderModule(shaders.SpriteArrayWGSL)
-	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend()))),
-		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDesc(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend())))
+	return jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.PremultipliedBlend(), r.spriteArrayPipelineLayout))),
+		jsHandle(r.dev.CreateRenderPipeline(gpu.SpritePipelineDescWithLayout(module, r.format.String(), r.msaaSamples, gpu.AdditiveBlend(), r.spriteArrayPipelineLayout)))
 }
 
 // createMipPipeline builds the internal pipeline used by generateMipmaps: a
@@ -1153,7 +1230,7 @@ func (r *webgpuRenderer) createTextGlyphBindGroup(view, sampler, metrics, glyphB
 			map[string]any{"binding": 2, "resource": map[string]any{"buffer": glyphBuffer}},
 			map[string]any{"binding": 3, "resource": map[string]any{"buffer": labelBuffer}},
 			map[string]any{"binding": 4, "resource": map[string]any{"buffer": metrics}},
-			map[string]any{"binding": 5, "resource": map[string]any{"buffer": r.spriteUniform}},
+			map[string]any{"binding": 5, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
 		},
 	})
 }
@@ -1187,6 +1264,63 @@ func (r *webgpuRenderer) ensureSpriteBuffer(size int) {
 	newCap := gpubuffer.GrowCapacity(r.spriteCap, size)
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(newCap)
 	r.rebuildSpriteBindGroups()
+}
+
+func (r *webgpuRenderer) ensureSpriteUniformArena(required int) {
+	slots := uniformArenaSlotCapacity(r.spriteArena.slots, required)
+	if slots == r.spriteArena.slots {
+		return
+	}
+	old := r.spriteUniform
+	r.spriteArena = newUniformArena(tess.SpriteUniformSize, r.spriteArenaAlignment, slots)
+	r.spriteUniform = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(
+		r.spriteArena.slotSize*r.spriteArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
+	r.rebuildSpriteBindGroups()
+	r.rebuildTextGlyphBindGroups()
+	for _, batch := range r.spriteBatches {
+		batch.bindGroups = r.createSpriteBatchBindGroups(batch)
+	}
+	if !old.IsUndefined() && !old.IsNull() {
+		old.Call("destroy")
+	}
+}
+
+func (r *webgpuRenderer) prepareSpriteUniforms(runs []gpuDrawRun, base render.Camera, cameras []tess.LayerCamera, width, height int) {
+	// A camera upload is shared by every run that uses the same packed view.
+	r.spriteUniformKeys = r.spriteUniformKeys[:0]
+	for i := range runs {
+		run := &runs[i]
+		run.uniformSlot = -1
+		key, ok := wasmUniformKeyForRun(run, base, cameras)
+		if !ok {
+			continue
+		}
+		keyIndex := tess.UniformKeyIndex(r.spriteUniformKeys, key)
+		if keyIndex < 0 {
+			r.spriteUniformKeys = append(r.spriteUniformKeys, key)
+			keyIndex = len(r.spriteUniformKeys) - 1
+		}
+		run.uniformSlot = keyIndex
+	}
+	if len(r.spriteUniformKeys) == 0 {
+		return
+	}
+	r.ensureSpriteUniformArena(len(r.spriteUniformKeys))
+	r.spriteArena.reset()
+	for _, key := range r.spriteUniformKeys {
+		offset, ok := r.spriteArena.alloc()
+		if !ok {
+			panic("wasm: sprite uniform arena capacity miscalculated")
+		}
+		tess.PackUniform(r.spriteUniformScratch[:], key, base, cameras, width, height)
+		r.queue.Call("writeBuffer", r.spriteUniform, offset, bytesToJS(r.spriteUniformScratch[:]))
+	}
+	for i := range runs {
+		run := &runs[i]
+		if run.uniformSlot >= 0 {
+			run.uniformSlot = run.uniformSlot * r.spriteArena.slotSize
+		}
+	}
 }
 
 func awaitPromise(promise js.Value) (js.Value, error) {

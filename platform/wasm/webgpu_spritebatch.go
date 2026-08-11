@@ -8,6 +8,7 @@ import (
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
+	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/platform/wasm/gpu"
 	"github.com/dhannyell/arasy/render"
@@ -131,10 +132,9 @@ func (r *webgpuRenderer) replaceSpriteBatch(id render.SpriteBatchID, instances [
 }
 
 // createSpriteBatchBindGroups builds one bind group per range. Static
-// batches reuse the streaming sprite pipeline layouts (auto layout: texture,
-// sampler, records, shared camera uniform); animated batches use the
-// explicit dynamic-offset layouts with the records, one shared uniform
-// arena, and the animation records.
+// batches reuse the streaming sprite pipeline layouts with a dynamic camera
+// uniform; animated batches use the animation variants with the records, one
+// shared uniform arena, and the animation records.
 func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js.Value {
 	groups := make([]js.Value, len(batch.ranges))
 	for i, rg := range batch.ranges {
@@ -164,23 +164,23 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 		}
 		if r.spriteArrayEnabled && !rg.magenta {
 			groups[i] = r.device.Call("createBindGroup", map[string]any{
-				"layout": r.spriteArrayPipeline.Call("getBindGroupLayout", 0),
+				"layout": r.spriteArrayLayout,
 				"entries": []any{
 					map[string]any{"binding": 0, "resource": r.spriteArrayTexture.Call("createView", map[string]any{"dimension": "2d-array"})},
 					map[string]any{"binding": 1, "resource": r.texSampler},
 					map[string]any{"binding": 2, "resource": map[string]any{"buffer": batch.buffer}},
-					map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform}},
+					map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
 				},
 			})
 			continue
 		}
 		groups[i] = r.device.Call("createBindGroup", map[string]any{
-			"layout": r.spritePipeline.Call("getBindGroupLayout", 0),
+			"layout": r.spriteLayout,
 			"entries": []any{
 				map[string]any{"binding": 0, "resource": r.spriteRangeTexture(rg)},
 				map[string]any{"binding": 1, "resource": r.texSampler},
 				map[string]any{"binding": 2, "resource": map[string]any{"buffer": batch.buffer}},
-				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform}},
+				map[string]any{"binding": 3, "resource": map[string]any{"buffer": r.spriteUniform, "size": tess.SpriteUniformSize}},
 			},
 		})
 	}

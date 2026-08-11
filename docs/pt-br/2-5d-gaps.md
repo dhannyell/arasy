@@ -77,11 +77,14 @@ consulta barata (comparar chave de profundidade + sobreposição de footprint
 na tela) permitiria ao jogo desenhar a silhueta; o recorte per-pixel é outro
 problema (depth buffer) e pode continuar fora.
 
-### 7. Estilos de 2.5D ainda sem caminho
+### 7. Estilos de 2.5D
 
-- **Parallax de camadas** (side-view 2.5D): uma câmera só; falta fator de
-  parallax por layer ou câmeras por grupo de comandos. A engine que declara
-  projeção poderia declarar isso também.
+- **Parallax de camadas — fechado.** `Camera.Parallax` declara faixas
+  inclusivas de layers e um fator por eixo. `Camera.ForLayer` é a saída pública
+  para passes manuais, `WrapOffsets` apoia cenário repetido e chunks retidos de
+  tilemap usam a câmera derivada no culling. A iluminação continua sendo uma
+  preocupação render-only em espaço de mundo; o conteúdo iluminado suportado
+  fica nas layers de gameplay com fator 1.
 - **Chão em perspectiva (estilo Mode-7)**: `View` é afim; perspectiva pede
   homografia. `DrawImageQuad` já interpola com correção de perspectiva,
   então o material existe — falta a câmera saber usá-lo.

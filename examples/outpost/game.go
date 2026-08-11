@@ -396,7 +396,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 }
 
 func (g *Game) appendGroundBatches(cmds []render.Command, cam render.Camera) []render.Command {
-	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam) {
+	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam.ForLayer(layerGround)) {
 		cmds = append(cmds, render.DrawSpriteBatch{
 			BaseCommand: render.BaseCommand{LayerValue: layerGround},
 			Batch:       groundBatchID(chunk),

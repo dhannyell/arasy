@@ -31,6 +31,7 @@ func canvasBatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool)
 }
 
 func (s canvasSink) VisitSpriteBatch(command render.DrawSpriteBatch) {
+	s = s.forCommand(command)
 	instances, ok := s.canvas.batches.sprites[command.Batch]
 	if !ok {
 		s.canvas.diagnostics.Log(s.canvas.log, slog.LevelWarn,
@@ -109,6 +110,7 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 }
 
 func (s canvasSink) VisitTextBatch(command render.DrawTextBatch) {
+	s = s.forCommand(command)
 	labels, ok := s.canvas.batches.text[command.Batch]
 	if !ok {
 		s.canvas.diagnostics.Log(s.canvas.log, slog.LevelWarn,
