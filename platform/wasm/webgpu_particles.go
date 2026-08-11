@@ -37,19 +37,14 @@ type gpuEmitter struct {
 	computeBind js.Value // emit + simulate share one layout and group
 	textureBind js.Value
 	scratch     [particlegpu.UniformSize]byte
-	views       map[gpuParticleViewKey]*gpuParticleView
-}
-
-type gpuParticleViewKey struct {
-	camera render.ResolvedCamera
-	width  int
-	height int
+	views       map[particlegpu.ViewKey]*gpuParticleView
 }
 
 type gpuParticleView struct {
 	uniform  js.Value
 	bind     js.Value
 	lastSeen uint64
+	valid    bool
 }
 
 type gpuParticles struct {
@@ -241,7 +236,7 @@ func additiveOffscreenBlend() map[string]any {
 }
 
 func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmitter {
-	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity, views: make(map[gpuParticleViewKey]*gpuParticleView)}
+	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity, views: make(map[particlegpu.ViewKey]*gpuParticleView)}
 	usage := js.Global().Get("GPUBufferUsage")
 	storage := usage.Get("STORAGE").Int() | usage.Get("COPY_DST").Int()
 
@@ -492,20 +487,30 @@ func (g *gpuParticles) prepareEmitter(
 }
 
 func (g *gpuParticles) renderView(e *gpuEmitter, camera render.Camera, width, height int) *gpuParticleView {
-	key := gpuParticleViewKey{camera: camera.Resolve(), width: width, height: height}
+	key := particlegpu.NewViewKey(camera, width, height)
 	view := e.views[key]
 	if view == nil {
-		usage := js.Global().Get("GPUBufferUsage")
-		view = &gpuParticleView{
-			uniform: g.buffer(particlegpu.UniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int()),
+		for oldKey, candidate := range e.views {
+			if candidate.lastSeen < g.frame {
+				delete(e.views, oldKey)
+				view = candidate
+				break
+			}
 		}
-		view.bind = g.bindRender(e, view.uniform)
+		if view == nil {
+			usage := js.Global().Get("GPUBufferUsage")
+			view = &gpuParticleView{
+				uniform: g.buffer(particlegpu.UniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int()),
+			}
+			view.bind = g.bindRender(e, view.uniform)
+		}
 		e.views[key] = view
 	}
-	if view.lastSeen != g.frame {
+	if !view.valid || view.lastSeen != g.frame {
 		particlegpu.PackUniforms(e.scratch[:], e.decl, e.command, e.emissionFrame, e.emitCount, e.seed, e.capacity, camera, width, height)
 		g.queue.Call("writeBuffer", view.uniform, 0, bytesToJS(e.scratch[:]))
 		view.lastSeen = g.frame
+		view.valid = true
 	}
 	return view
 }
@@ -600,7 +605,7 @@ func (g *gpuParticles) bufferBytes() uint64 {
 	for _, emitter := range g.emitters {
 		// Hot/cold particle state plus survivor/dead index lists. This
 		// excludes shared pipelines, textures and browser/driver allocations.
-		total += uint64(emitter.capacity*(particlegpu.HotStride+particlegpu.ColdStride+2*4) + perEmitterOverhead)
+		total += uint64(emitter.capacity*(particlegpu.HotStride+particlegpu.ColdStride+2*4) + perEmitterOverhead + len(emitter.views)*particlegpu.UniformSize)
 	}
 	return total
 }

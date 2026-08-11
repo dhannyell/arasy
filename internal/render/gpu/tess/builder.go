@@ -18,6 +18,8 @@ type Frame struct {
 type BuiltPass struct {
 	Camera render.Camera
 	Runs   []StreamRun
+	start  int
+	end    int
 }
 
 // StreamRun identifies one ordered draw in Builder's shared streams.
@@ -51,6 +53,7 @@ type Builder struct {
 	glyphs  []textGlyphRecord
 	labels  []textLabelRecord
 	runs    []StreamRun
+	passes  []BuiltPass
 
 	solidMesh Mesh
 	texMesh   TexMesh
@@ -80,21 +83,31 @@ func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes Tex
 // streams, so a host can submit all passes through one render pass.
 func (b *Builder) BuildPasses(frames []Frame, w, h int, provider AtlasProvider, sizes TexSizes) []BuiltPass {
 	b.reset()
-	built := make([]BuiltPass, 0, len(frames))
-	for _, frame := range frames {
+	oldPasses := b.passes
+	b.passes = b.passes[:0]
+	for passIndex, frame := range frames {
 		start := len(b.runs)
 		b.buildFrame(frame, w, h, provider, sizes)
-		runs := append([]StreamRun(nil), b.runs[start:]...)
-		for index := range runs {
-			runs[index].Pass = len(built)
+		for index := start; index < len(b.runs); index++ {
+			b.runs[index].Pass = passIndex
 		}
-		built = append(built, BuiltPass{
+		b.passes = append(b.passes, BuiltPass{
 			Camera: frame.Camera,
-			Runs:   runs,
+			start:  start,
+			end:    len(b.runs),
 		})
 	}
-	return built
+	for index := range b.passes {
+		b.passes[index].Runs = b.runs[b.passes[index].start:b.passes[index].end]
+	}
+	if len(b.passes) < len(oldPasses) {
+		clear(oldPasses[len(b.passes):])
+	}
+	return b.passes
 }
+
+// Runs returns the flattened runs produced by the most recent build.
+func (b *Builder) Runs() []StreamRun { return b.runs }
 
 func (b *Builder) reset() {
 	b.solid = b.solid[:0]

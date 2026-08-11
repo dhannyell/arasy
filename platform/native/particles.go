@@ -29,19 +29,14 @@ type gpuEmitter struct {
 	hot, cold, alive, dead, counters, drawIndirect, uniforms *wgpu.Buffer
 	computeBind, textureBind                                 *wgpu.BindGroup
 	scratch                                                  [particlegpu.UniformSize]byte
-	views                                                    map[gpuParticleViewKey]*gpuParticleView
-}
-
-type gpuParticleViewKey struct {
-	camera render.ResolvedCamera
-	width  int
-	height int
+	views                                                    map[particlegpu.ViewKey]*gpuParticleView
 }
 
 type gpuParticleView struct {
 	uniform  *wgpu.Buffer
 	bind     *wgpu.BindGroup
 	lastSeen uint64
+	valid    bool
 }
 type particleSim struct {
 	e    *gpuEmitter
@@ -303,7 +298,7 @@ func (g *gpuParticles) bufferBytes() uint64 {
 }
 
 func (g *gpuParticles) newEmitter(d particle.EffectDecl, seed uint64) (*gpuEmitter, error) {
-	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity, views: make(map[gpuParticleViewKey]*gpuParticleView)}
+	e := &gpuEmitter{decl: d, seed: seed, capacity: d.Capacity, views: make(map[particlegpu.ViewKey]*gpuParticleView)}
 	mk := func(size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
 		e.bufferBytes += uint64(size)
 		return g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: uint64(size), Usage: usage})
@@ -458,22 +453,31 @@ func (g *gpuParticles) prepare(cmd render.DrawParticles, c render.Camera, w, h i
 }
 
 func (g *gpuParticles) renderView(e *gpuEmitter, camera render.Camera, width, height int) *gpuParticleView {
-	key := gpuParticleViewKey{camera: camera.Resolve(), width: width, height: height}
+	key := particlegpu.NewViewKey(camera, width, height)
 	view := e.views[key]
 	if view == nil {
-		uniform, err := g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: particlegpu.UniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
-		if err != nil {
-			return nil
+		for oldKey, candidate := range e.views {
+			if candidate.lastSeen < g.frame {
+				delete(e.views, oldKey)
+				view = candidate
+				break
+			}
 		}
-		bind, err := g.bindRender(e, uniform)
-		if err != nil {
-			uniform.Release()
-			return nil
+		if view == nil {
+			uniform, err := g.device.TryCreateBuffer(&wgpu.BufferDescriptor{Size: particlegpu.UniformSize, Usage: wgpu.BufferUsageUniform | wgpu.BufferUsageCopyDst})
+			if err != nil {
+				return nil
+			}
+			bind, err := g.bindRender(e, uniform)
+			if err != nil {
+				uniform.Release()
+				return nil
+			}
+			view = &gpuParticleView{uniform: uniform, bind: bind}
 		}
-		view = &gpuParticleView{uniform: uniform, bind: bind}
 		e.views[key] = view
 	}
-	if view.lastSeen != g.frame {
+	if !view.valid || view.lastSeen != g.frame {
 		particlegpu.PackUniforms(e.scratch[:], e.decl, e.command, e.emissionFrame, e.emitCount, e.seed, e.capacity, camera, width, height)
 		if g.queue.TryWriteBuffer(view.uniform, 0, e.scratch[:]) != nil {
 			view.bind.Release()
@@ -482,6 +486,7 @@ func (g *gpuParticles) renderView(e *gpuEmitter, camera render.Camera, width, he
 			return nil
 		}
 		view.lastSeen = g.frame
+		view.valid = true
 	}
 	return view
 }

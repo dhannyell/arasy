@@ -110,3 +110,23 @@ func TestRendererPassesKeepExtraContentInFramePostChain(t *testing.T) {
 		t.Fatalf("post-processed extra pass pixel = %v, want half-red", got)
 	}
 }
+
+func TestRendererPassOutsideTargetDrawsNothing(t *testing.T) {
+	renderer := raster.Renderer{
+		Width:  8,
+		Height: 8,
+		Clear:  render.RGBA(0, 0, 0, 1),
+	}
+	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 8, Y: 8})
+	outside := math2d.NewRect(math2d.Vec2{X: 20, Y: 20}, math2d.Vec2{X: 8, Y: 8})
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+
+	renderer.RenderPassesInto(img, []render.Pass{{
+		Camera:   passCamera(world, outside),
+		Commands: []render.Command{passRect(world, render.RGBA(1, 0, 0, 1))},
+	}}, render.Pass{Camera: passCamera(world, math2d.Rect{})})
+
+	if got := img.RGBAAt(4, 4); got != (color.RGBA{A: 255}) {
+		t.Fatalf("outside pass pixel = %v, want clear black", got)
+	}
+}

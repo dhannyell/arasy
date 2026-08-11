@@ -154,6 +154,10 @@ type webgpuRenderer struct {
 	// render-only.
 	textBatches     map[render.TextBatchID]*gpuTextBatch
 	passTextBatches map[passTextBatchKey]*gpuTextBatch
+	passTextIDs     [][]render.TextBatchID
+	passTextResult  map[passTextBatchKey]*gpuTextBatch
+	passTextUsed    map[passTextBatchKey]struct{}
+	passTextPrimary map[render.TextBatchID]int
 
 	// Retained-batch frame accounting for retainedBatchMetrics:
 	// frameRetainedContentBytes is reset once per frame (UpdateResources,
@@ -178,10 +182,14 @@ type webgpuRenderer struct {
 
 	// textures maps TextureID to its GPU texture/view/bind group, indexed
 	// like texSizes (index 0 unused, TextureID 0 means "missing texture").
-	textures  []gpuTexture
-	particles *gpuParticles
-	timing    *gpuTiming // nil when "timestamp-query" was not granted
-	drawRuns  []gpuDrawRun
+	textures        []gpuTexture
+	particles       *gpuParticles
+	timing          *gpuTiming // nil when "timestamp-query" was not granted
+	drawRuns        []gpuDrawRun
+	framePasses     []render.Pass
+	tessPassFrames  []tess.Frame
+	passPlans       []gpuPassPlan
+	particleGroupOf []int
 
 	// sampleCPUTiming mirrors the FrameMetrics gate used for GPU timestamps:
 	// without a metrics consumer the per-frame clock reads are pure overhead.
@@ -271,6 +279,9 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		spriteBatches:   make(map[render.SpriteBatchID]*gpuSpriteBatch),
 		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
 		passTextBatches: make(map[passTextBatchKey]*gpuTextBatch),
+		passTextResult:  make(map[passTextBatchKey]*gpuTextBatch),
+		passTextUsed:    make(map[passTextBatchKey]struct{}),
+		passTextPrimary: make(map[render.TextBatchID]int),
 		particleScale:   particleScale,
 		sampleCPUTiming: wantGPUTiming,
 		msaaSamples:     msaaSampleCount(msaa, log),
@@ -344,6 +355,9 @@ func (r *webgpuRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
 		m.GPUBytes += uint64(b.residentBytes())
 		m.LabelsTotal += len(b.labels)
 	}
+	for _, b := range r.passTextBatches {
+		m.GPUBytes += uint64(b.residentBytes())
+	}
 	m.ContentBytes = r.frameRetainedContentBytes
 	m.SpritesVisible = r.frameVisibleSprites
 	m.LabelsVisible = r.frameVisibleLabels
@@ -401,23 +415,51 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	}
 
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(w), Y: float64(h)})
-	passes := make([]render.Pass, 0, len(frame.Passes)+1)
+	oldPasses := r.framePasses
+	passes := oldPasses[:0]
 	for _, pass := range frame.Passes {
 		passes = append(passes, pass.ResolveViewport(viewport))
 	}
 	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
+	if len(passes) < len(oldPasses) {
+		clear(oldPasses[len(passes):])
+	}
+	r.framePasses = passes
 
 	r.tess.SetSpriteArray(r.spriteArrayEnabled)
-	passFrames := make([]tess.Frame, len(passes))
+	oldPassFrames := r.tessPassFrames
+	if cap(r.tessPassFrames) < len(passes) {
+		r.tessPassFrames = make([]tess.Frame, len(passes))
+	} else {
+		r.tessPassFrames = r.tessPassFrames[:len(passes)]
+	}
+	passFrames := r.tessPassFrames
+	if len(passFrames) < len(oldPassFrames) {
+		clear(oldPassFrames[len(passFrames):])
+	}
+	if cap(r.passTextIDs) < len(passes) {
+		r.passTextIDs = append(r.passTextIDs[:cap(r.passTextIDs)], make([][]render.TextBatchID, len(passes)-cap(r.passTextIDs))...)
+	}
+	r.passTextIDs = r.passTextIDs[:len(passes)]
 	for i, pass := range passes {
 		passFrames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands}
-		ids := collectTextBatchIDs(pass.Commands)
+		ids := collectTextBatchIDsInto(r.passTextIDs[i], pass.Commands)
+		r.passTextIDs[i] = ids
 		r.prepTextBatches(ids, pass.Camera, w, h)
 	}
 	built := r.tess.BuildPasses(passFrames, w, h, r.fontProvider, r.texSizes)
-	passTextBatches := r.preparePassTextBatches(passes, w, h)
+	passTextBatches := r.preparePassTextBatches(passes, r.passTextIDs, w, h)
 
-	plans := make([]gpuPassPlan, len(built))
+	oldPlans := r.passPlans
+	if cap(r.passPlans) < len(built) {
+		r.passPlans = make([]gpuPassPlan, len(built))
+	} else {
+		r.passPlans = r.passPlans[:len(built)]
+	}
+	plans := r.passPlans
+	if len(plans) < len(oldPlans) {
+		clear(oldPlans[len(plans):])
+	}
 	r.drawRuns = r.drawRuns[:0]
 	for passIndex, builtPass := range built {
 		plans[passIndex] = gpuPassPlan{
@@ -535,7 +577,12 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	}
 	var particleRuns []gpuParticleRun
 	var groupCmds [][]gpuParticleRun
-	groupOf := make([]int, len(drawRuns))
+	if cap(r.particleGroupOf) < len(drawRuns) {
+		r.particleGroupOf = make([]int, len(drawRuns))
+	} else {
+		r.particleGroupOf = r.particleGroupOf[:len(drawRuns)]
+	}
+	groupOf := r.particleGroupOf
 	for i := range groupOf {
 		groupOf[i] = -1
 	}

@@ -121,6 +121,10 @@ type Renderer struct {
 	spriteUniformSlotSize int
 	spriteUniformOffsets  []uint32
 	spriteUniformEntries  []nativeUniformEntry
+	framePasses           []render.Pass
+	tessPassFrames        []tess.Frame
+	passPlans             []nativePassPlan
+	particleGroupOf       []int
 
 	msaaTexture *wgpu.Texture
 	msaaView    *wgpu.TextureView
@@ -456,28 +460,50 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		phaseStart = time.Now()
 	}
 	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
-	passes := make([]render.Pass, 0, len(frame.Passes)+1)
+	oldPasses := r.framePasses
+	passes := oldPasses[:0]
 	for _, pass := range frame.Passes {
 		passes = append(passes, pass.ResolveViewport(viewport))
 	}
 	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
+	if len(passes) < len(oldPasses) {
+		clear(oldPasses[len(passes):])
+	}
+	r.framePasses = passes
 
 	r.tess.SetSpriteArray(false)
-	frames := make([]tess.Frame, len(passes))
+	oldFrames := r.tessPassFrames
+	if cap(r.tessPassFrames) < len(passes) {
+		r.tessPassFrames = make([]tess.Frame, len(passes))
+	} else {
+		r.tessPassFrames = r.tessPassFrames[:len(passes)]
+	}
+	frames := r.tessPassFrames
+	if len(frames) < len(oldFrames) {
+		clear(oldFrames[len(frames):])
+	}
 	for i, pass := range passes {
 		frames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands}
 	}
 	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
-	plans := make([]nativePassPlan, len(built))
-	var runs []tess.StreamRun
+	oldPlans := r.passPlans
+	if cap(r.passPlans) < len(built) {
+		r.passPlans = make([]nativePassPlan, len(built))
+	} else {
+		r.passPlans = r.passPlans[:len(built)]
+	}
+	plans := r.passPlans
+	if len(plans) < len(oldPlans) {
+		clear(oldPlans[len(plans):])
+	}
 	for i, builtPass := range built {
 		plans[i] = nativePassPlan{
 			camera:       builtPass.Camera,
 			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
 			extra:        i < len(frame.Passes),
 		}
-		runs = append(runs, builtPass.Runs...)
 	}
+	runs := r.tess.Runs()
 	if r.timeCPU {
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
@@ -1374,7 +1400,12 @@ func (r *Renderer) encodeFramePasses(
 	}
 	defer encoder.Release()
 	sampling := r.timeGPU && r.timing.sampleFrame()
-	groupOf := make([]int, len(runs))
+	if cap(r.particleGroupOf) < len(runs) {
+		r.particleGroupOf = make([]int, len(runs))
+	} else {
+		r.particleGroupOf = r.particleGroupOf[:len(runs)]
+	}
+	groupOf := r.particleGroupOf
 	for index := range groupOf {
 		groupOf[index] = -1
 	}

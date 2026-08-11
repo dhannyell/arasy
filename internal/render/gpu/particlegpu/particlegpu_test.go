@@ -177,3 +177,21 @@ func TestScissorRectWithin(t *testing.T) {
 		})
 	}
 }
+
+func TestViewKeyIncludesCameraView(t *testing.T) {
+	camera := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+	}
+	projected := camera
+	projected.View = math2d.Affine{A: 1, D: 1, E: 8}
+
+	if NewViewKey(camera, 100, 100) == NewViewKey(projected, 100, 100) {
+		t.Fatal("particle view key ignored Camera.View")
+	}
+	identity := camera
+	identity.View = math2d.Identity()
+	if NewViewKey(camera, 100, 100) != NewViewKey(identity, 100, 100) {
+		t.Fatal("zero and explicit identity views produced different keys")
+	}
+}

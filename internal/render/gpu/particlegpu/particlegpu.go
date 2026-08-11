@@ -30,6 +30,25 @@ const (
 	TTL = 300
 )
 
+// ViewKey identifies one particle projection without retaining Camera's
+// non-comparable parallax slice. View stays explicit because Camera.Resolve
+// does not include the affine transform used by WorldToClip.
+type ViewKey struct {
+	Camera render.ResolvedCamera
+	View   math2d.Affine
+	Width  int
+	Height int
+}
+
+// NewViewKey returns the comparable identity of one particle projection.
+func NewViewKey(camera render.Camera, width, height int) ViewKey {
+	view := camera.View
+	if view.IsIdentity() {
+		view = math2d.Identity()
+	}
+	return ViewKey{Camera: camera.Resolve(), View: view, Width: width, Height: height}
+}
+
 // EmitterKey identifies one emitter in a particle effect.
 type EmitterKey struct {
 	Effect  render.ParticleEffectID

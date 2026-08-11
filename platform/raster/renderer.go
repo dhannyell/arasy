@@ -51,6 +51,7 @@ type Renderer struct {
 	// postScratch keeps post-effect buffers alive across frames.
 	postScratch *postScratch
 	viewport    image.Rectangle
+	viewportSet bool
 }
 
 // drawAdditive renders one command into a transparent scratch image and sums
@@ -115,9 +116,11 @@ func (r *Renderer) RenderPassesInto(dst *image.RGBA, passes []render.Pass, base 
 
 	originalCamera := r.Camera
 	originalViewport := r.viewport
+	originalViewportSet := r.viewportSet
 	defer func() {
 		r.Camera = originalCamera
 		r.viewport = originalViewport
+		r.viewportSet = originalViewportSet
 	}()
 
 	for _, pass := range passes {
@@ -130,6 +133,7 @@ func (r *Renderer) renderPass(dst *image.RGBA, pass render.Pass, base, preserve 
 	pass = pass.ResolveViewport(frameRect(dst.Bounds()))
 	r.Camera = pass.Camera
 	r.viewport = viewportBounds(pass.Camera.Viewport, dst.Bounds())
+	r.viewportSet = true
 
 	if base {
 		if chain, ok := lastPostChain(pass.Commands); ok {

@@ -9,7 +9,7 @@ import (
 
 func (r *Renderer) clipBounds(img *image.RGBA, bounds image.Rectangle, clip math2d.Rect) image.Rectangle {
 	bounds = bounds.Intersect(img.Bounds())
-	if !r.viewport.Empty() {
+	if r.viewportSet {
 		bounds = bounds.Intersect(r.viewport)
 	}
 	if isZeroRect(clip) {

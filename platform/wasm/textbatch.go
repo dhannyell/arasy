@@ -50,20 +50,26 @@ func textBatchScreenView(cam render.Camera, w, h int, clip math2d.Rect) (math2d.
 // (tess.Build owns that separately); this only drives which retained batches
 // need atlas-coverage preparation and repack resolution this frame.
 func collectTextBatchIDs(commands []render.Command) []render.TextBatchID {
-	var ids []render.TextBatchID
-	var seen map[render.TextBatchID]bool
+	return collectTextBatchIDsInto(nil, commands)
+}
+
+func collectTextBatchIDsInto(ids []render.TextBatchID, commands []render.Command) []render.TextBatchID {
+	ids = ids[:0]
 	for _, command := range commands {
 		cmd, ok := command.(render.DrawTextBatch)
 		if !ok {
 			continue
 		}
-		if seen == nil {
-			seen = make(map[render.TextBatchID]bool)
+		duplicate := false
+		for _, id := range ids {
+			if id == cmd.Batch {
+				duplicate = true
+				break
+			}
 		}
-		if seen[cmd.Batch] {
+		if duplicate {
 			continue
 		}
-		seen[cmd.Batch] = true
 		ids = append(ids, cmd.Batch)
 	}
 	return ids

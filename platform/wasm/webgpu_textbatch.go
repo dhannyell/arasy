@@ -135,45 +135,51 @@ func (r *webgpuRenderer) prepTextBatches(ids []render.TextBatchID, cam render.Ca
 	}
 }
 
-// finalizeTextBatches repacks every referenced batch whose content,
-// projection, or resolved atlas identity changed since its last pack. It
-// must run after tess.Builder.Build, once every atlas the frame needs is
-// finalized: a repack only consults resolveFinalTextAtlas, it never grows
-// coverage itself.
-func (r *webgpuRenderer) finalizeTextBatches(ids []render.TextBatchID, cam render.Camera, w, h int) {
-	if len(ids) == 0 {
+func (r *webgpuRenderer) finalizeTextBatch(id render.TextBatchID, cam render.Camera, w, h int) {
+	batch, ok := r.textBatches[id]
+	if !ok {
 		return
 	}
 	proj := currentTextBatchProjKey(cam, w, h)
-	for _, id := range ids {
-		batch, ok := r.textBatches[id]
-		if !ok {
-			continue
-		}
-		if r.textBatchNeedsRepack(batch, proj) {
-			r.repackTextBatch(batch, cam, w, h, proj)
-		}
+	if r.textBatchNeedsRepack(batch, proj) {
+		r.repackTextBatch(batch, cam, w, h, proj)
 	}
 }
 
-func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, w, h int) map[passTextBatchKey]*gpuTextBatch {
+func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, passIDs [][]render.TextBatchID, w, h int) map[passTextBatchKey]*gpuTextBatch {
 	if len(passes) == 0 {
 		return nil
 	}
 
 	baseIndex := len(passes) - 1
-	baseIDs := collectTextBatchIDs(passes[baseIndex].Commands)
-	r.finalizeTextBatches(baseIDs, passes[baseIndex].Camera, w, h)
-	result := make(map[passTextBatchKey]*gpuTextBatch)
-	used := make(map[passTextBatchKey]struct{})
+	clear(r.passTextPrimary)
+	clear(r.passTextResult)
+	clear(r.passTextUsed)
+	for passIndex, ids := range passIDs {
+		for _, id := range ids {
+			if _, exists := r.passTextPrimary[id]; !exists {
+				r.passTextPrimary[id] = passIndex
+			}
+		}
+	}
+	for _, id := range passIDs[baseIndex] {
+		r.passTextPrimary[id] = baseIndex
+	}
+	for passIndex, ids := range passIDs {
+		for _, id := range ids {
+			if r.passTextPrimary[id] == passIndex {
+				r.finalizeTextBatch(id, passes[passIndex].Camera, w, h)
+			}
+		}
+	}
 	for passIndex, pass := range passes {
-		for _, id := range collectTextBatchIDs(pass.Commands) {
+		for _, id := range passIDs[passIndex] {
 			batch, ok := r.textBatches[id]
 			if !ok {
 				continue
 			}
-			if passIndex == baseIndex {
-				result[passTextBatchKey{pass: passIndex, id: id}] = batch
+			if r.passTextPrimary[id] == passIndex {
+				r.passTextResult[passTextBatchKey{pass: passIndex, id: id}] = batch
 				continue
 			}
 			key := passTextBatchKey{pass: passIndex, id: id}
@@ -191,17 +197,17 @@ func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, w, h int) 
 			if r.textBatchNeedsRepack(passBatch, proj) {
 				r.repackTextBatch(passBatch, pass.Camera, w, h, proj)
 			}
-			used[key] = struct{}{}
-			result[key] = passBatch
+			r.passTextUsed[key] = struct{}{}
+			r.passTextResult[key] = passBatch
 		}
 	}
 	for key, batch := range r.passTextBatches {
-		if _, ok := used[key]; !ok {
+		if _, ok := r.passTextUsed[key]; !ok {
 			batch.destroy()
 			delete(r.passTextBatches, key)
 		}
 	}
-	return result
+	return r.passTextResult
 }
 
 func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatchProjKey) bool {
@@ -218,7 +224,7 @@ func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatc
 
 // repackTextBatch packs and uploads a batch's glyph/label records once,
 // grouped into consecutive draw ranges by the atlas each range resolved to.
-// Steady-state frames never reach this function: finalizeTextBatches only
+// Steady-state frames never reach this function: finalizeTextBatch only
 // calls it when content, projection, or atlas identity actually changed.
 func (r *webgpuRenderer) repackTextBatch(batch *gpuTextBatch, cam render.Camera, w, h int, proj textBatchProjKey) {
 	plan := tess.PlanTextBatch(cam, w, h, batch.labels, r.resolveFinalTextAtlas)
