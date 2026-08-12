@@ -36,9 +36,6 @@ Current capabilities:
 math2d/
   Basic 2D math primitives such as Vec2 and Rect.
 
-loop/
-  Fixed timestep utilities (accumulator and step planner).
-
 render/
   Backend-agnostic rendering types, colors, commands, and camera.
 
