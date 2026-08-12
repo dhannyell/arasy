@@ -644,13 +644,9 @@ func (r *Renderer) resolveFramePasses(frame runtime.Frame, width, height int) []
 }
 
 func (r *Renderer) logPassDiagnostic(diag frameplan.Diagnostic) {
-	message := "native: pass target is not a declared dynamic texture; pass skipped"
-	if diag.Code == frameplan.CodeTargetDuplicate {
-		message = "native: target already has a pass owner this frame; pass skipped"
-	}
 	r.diagnostics.Log(r.log, slog.LevelWarn,
 		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
-		message, "target", diag.Target)
+		"native: "+diag.Message(), "target", diag.Target)
 }
 
 func (r *Renderer) hasPresentedFrame() bool {

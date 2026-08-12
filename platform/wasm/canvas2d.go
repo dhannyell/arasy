@@ -302,13 +302,9 @@ func (c *Canvas2D) renderTargetPass(pass frameplan.Pass) {
 }
 
 func (c *Canvas2D) logPassDiagnostic(diag frameplan.Diagnostic) {
-	message := "canvas2d: pass target is not a declared dynamic texture; pass skipped"
-	if diag.Code == frameplan.CodeTargetDuplicate {
-		message = "canvas2d: target already has a pass owner this frame; pass skipped"
-	}
 	c.diagnostics.Log(c.log, slog.LevelWarn,
 		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
-		message, "target", diag.Target)
+		"canvas2d: "+diag.Message(), "target", diag.Target)
 }
 
 // renderCommands is the single dispatch point into the sink: it attaches

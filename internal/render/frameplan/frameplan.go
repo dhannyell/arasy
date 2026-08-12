@@ -61,6 +61,18 @@ type Diagnostic struct {
 	Target render.TextureID
 }
 
+// Message describes the backend-neutral planning decision.
+func (d Diagnostic) Message() string {
+	switch d.Code {
+	case CodeTargetDuplicate:
+		return "target already has a pass owner this frame; pass skipped"
+	case CodeTargetInvalid:
+		return "pass target is not a declared dynamic texture; pass skipped"
+	default:
+		return "pass target was rejected; pass skipped"
+	}
+}
+
 // Planner reuses its output slices and is not safe for concurrent use.
 type Planner struct {
 	passes  []Pass

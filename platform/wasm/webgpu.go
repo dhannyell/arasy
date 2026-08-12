@@ -767,13 +767,9 @@ func (r *webgpuRenderer) encodeTargetPass(encoder js.Value, passIndex int, plan 
 }
 
 func (r *webgpuRenderer) logPassDiagnostic(diag frameplan.Diagnostic) {
-	message := "webgpu: pass target is not a declared dynamic texture; pass skipped"
-	if diag.Code == frameplan.CodeTargetDuplicate {
-		message = "webgpu: target already has a pass owner this frame; pass skipped"
-	}
 	r.diagnostics.Log(r.log, slog.LevelWarn,
 		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
-		message, "target", diag.Target)
+		"webgpu: "+diag.Message(), "target", diag.Target)
 }
 
 func (r *webgpuRenderer) drawScreenPassRuns(pass js.Value, passIndex int, plan gpuPassPlan, runs []gpuDrawRun, offscreenParticles bool) {
