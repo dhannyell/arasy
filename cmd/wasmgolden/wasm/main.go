@@ -28,6 +28,8 @@ func main() {
 		game, err = wasmgolden.NewViewConformanceGolden()
 	case "parallax":
 		game, err = wasmgolden.NewParallaxConformanceGolden()
+	case "flip":
+		game, err = wasmgolden.NewFlipConformanceGolden()
 	case "passes":
 		game, err = wasmgolden.NewCameraPassesGolden()
 	case "post":

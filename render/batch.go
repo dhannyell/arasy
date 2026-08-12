@@ -54,6 +54,21 @@ type SpriteInstance struct {
 	Animation SpriteAnimation
 }
 
+// FlipQuadCorners returns the corner order that mirrors source sampling for a
+// quad. DrawImageQuad has no flip field, so projected sprite batches use this
+// when they lower a SpriteInstance to a quad command.
+func FlipQuadCorners(corners [4]math2d.Vec2, flip SpriteFlip) [4]math2d.Vec2 {
+	if flip&FlipX != 0 {
+		corners[0], corners[1] = corners[1], corners[0]
+		corners[3], corners[2] = corners[2], corners[3]
+	}
+	if flip&FlipY != 0 {
+		corners[0], corners[3] = corners[3], corners[0]
+		corners[1], corners[2] = corners[2], corners[1]
+	}
+	return corners
+}
+
 // SpriteAnimation is optional per-instance presentation data for a retained
 // sprite. Frames <= 1 is static. Src is the base cell; frames advance
 // row-major through equal cells in one texture. Bounce is the vertical

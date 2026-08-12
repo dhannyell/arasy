@@ -38,6 +38,9 @@ const (
 	parallaxChannelTol        = 32
 	parallaxCanvas2DBudget    = 0.0200
 	parallaxWebGPUBudget      = 0.0150
+	flipChannelTol            = 32
+	flipCanvas2DBudget        = 0.0200
+	flipWebGPUBudget          = 0.0150
 	passesChannelTol          = 32
 	passesCanvas2DBudget      = 0.0200
 	passesWebGPUBudget        = 0.0150
@@ -82,6 +85,14 @@ func TestConformanceParallaxCanvas2D(t *testing.T) {
 
 func TestConformanceParallaxWebGPU(t *testing.T) {
 	assertConformance(t, "parallax", "webgpu", 1, parallaxChannelTol, parallaxWebGPUBudget)
+}
+
+func TestConformanceFlipCanvas2D(t *testing.T) {
+	assertConformance(t, "flip", "canvas2d", 1, flipChannelTol, flipCanvas2DBudget)
+}
+
+func TestConformanceFlipWebGPU(t *testing.T) {
+	assertConformance(t, "flip", "webgpu", 1, flipChannelTol, flipWebGPUBudget)
 }
 
 func TestConformancePassesCanvas2D(t *testing.T) {
@@ -163,6 +174,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return NewViewConformanceGolden()
 	case "parallax":
 		return NewParallaxConformanceGolden()
+	case "flip":
+		return NewFlipConformanceGolden()
 	case "passes", "passes-msaa-off":
 		return NewCameraPassesGolden()
 	case "rtt":

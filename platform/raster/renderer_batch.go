@@ -94,7 +94,7 @@ func (r *Renderer) drawSpriteBatch(img *image.RGBA, command render.DrawSpriteBat
 			r.drawImageQuad(img, render.DrawImageQuad{
 				BaseCommand: render.BaseCommand{LayerValue: command.LayerValue, Clip: command.Clip},
 				Texture:     projected.Texture,
-				Corners:     renderbatch.SpriteCorners(projected),
+				Corners:     render.FlipQuadCorners(renderbatch.SpriteCorners(projected), projected.Flip),
 				Src:         src,
 				Tint:        projected.Tint,
 			})

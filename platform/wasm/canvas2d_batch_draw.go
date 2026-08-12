@@ -90,7 +90,7 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 			c.drawImageQuad(render.DrawImageQuad{
 				BaseCommand: render.BaseCommand{LayerValue: command.LayerValue},
 				Texture:     projected.Texture,
-				Corners:     renderbatch.SpriteCorners(projected),
+				Corners:     render.FlipQuadCorners(renderbatch.SpriteCorners(projected), projected.Flip),
 				Src:         src,
 				Tint:        projected.Tint,
 			}, camera)
@@ -105,6 +105,7 @@ func (c *Canvas2D) drawSpriteBatch(camera render.Camera, command render.DrawSpri
 			Src:         src,
 			Tint:        inst.Tint,
 			Rotation:    inst.Rotation,
+			Flip:        inst.Flip,
 		}, camera)
 	}
 }

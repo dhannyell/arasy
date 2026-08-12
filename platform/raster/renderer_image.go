@@ -81,7 +81,7 @@ func (r *Renderer) drawTransformedImage(img *image.RGBA, command render.DrawImag
 			corners[i] = math2d.Vec2{X: center.X + dx*cos - dy*sin, Y: center.Y + dx*sin + dy*cos}
 		}
 	}
-	corners = flipQuadCorners(corners, command.Flip)
+	corners = render.FlipQuadCorners(corners, command.Flip)
 	r.drawImageQuad(img, render.DrawImageQuad{
 		BaseCommand: command.BaseCommand,
 		Texture:     command.Texture,
@@ -145,18 +145,6 @@ func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw)
 		command.blend,
 		command.flip,
 	)
-}
-
-func flipQuadCorners(corners [4]math2d.Vec2, flip render.SpriteFlip) [4]math2d.Vec2 {
-	if flip&render.FlipX != 0 {
-		corners[0], corners[1] = corners[1], corners[0]
-		corners[3], corners[2] = corners[2], corners[3]
-	}
-	if flip&render.FlipY != 0 {
-		corners[0], corners[3] = corners[3], corners[0]
-		corners[1], corners[2] = corners[2], corners[1]
-	}
-	return corners
 }
 
 // Warnings below fire at most once per process: a bad DrawImageQuad command

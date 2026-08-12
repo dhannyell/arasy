@@ -68,6 +68,18 @@ func TestAppendRetainedSpriteRecordProjectsCorners(t *testing.T) {
 	}
 }
 
+func TestAppendRetainedSpriteRecordWritesFlipFlags(t *testing.T) {
+	inst := render.SpriteInstance{
+		Dest:           math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 8, Y: 6}),
+		ProjectCorners: true,
+		Flip:           render.FlipX | render.FlipY,
+	}
+	records := AppendRetainedSpriteRecord(nil, inst, 8, 6, 0, false)
+	if got := binary.LittleEndian.Uint32(records[20:]); got != projectedSpriteFlag|flipXSpriteFlag|flipYSpriteFlag {
+		t.Fatalf("flags = %d, want projected and both flip flags", got)
+	}
+}
+
 func TestAppendRetainedSpriteRecordMissingTextureWhiteTint(t *testing.T) {
 	inst := render.SpriteInstance{
 		Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}),

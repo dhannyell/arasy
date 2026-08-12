@@ -13,6 +13,7 @@ import (
 type decodedSprite struct {
 	center, halfSize [2]float32
 	rotation         float32
+	flags            uint32
 	uvMin, uvMax     [2]float32
 	clipMin, clipMax [2]float32
 	tint             uint32
@@ -35,12 +36,26 @@ func decodeSprite(t *testing.T, stream []byte, index int) decodedSprite {
 		center:       readVec(0),
 		halfSize:     readVec(8),
 		rotation:     math.Float32frombits(binary.LittleEndian.Uint32(stream[offset+16:])),
+		flags:        binary.LittleEndian.Uint32(stream[offset+20:]),
 		uvMin:        readVec(24),
 		uvMax:        readVec(32),
 		clipMin:      readVec(40),
 		clipMax:      readVec(48),
 		tint:         binary.LittleEndian.Uint32(stream[offset+56:]),
 		textureLayer: binary.LittleEndian.Uint32(stream[offset+60:]),
+	}
+}
+
+func TestBuilderWritesSpriteFlipFlags(t *testing.T) {
+	cmd := render.DrawImage{
+		Texture: 1,
+		Dest:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10}),
+		Flip:    render.FlipX | render.FlipY,
+	}
+	var builder Builder
+	builder.Build(Frame{Camera: testCamera(), Commands: []render.Command{cmd}}, 100, 100, nil, TexSizes{{}, {16, 16}})
+	if got := decodeSprite(t, builder.SpriteStream(), 0).flags; got != flipXSpriteFlag|flipYSpriteFlag {
+		t.Fatalf("flags = %d, want horizontal and vertical flip flags", got)
 	}
 }
 

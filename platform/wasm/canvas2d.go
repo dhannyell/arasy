@@ -476,9 +476,15 @@ func (c *Canvas2D) drawImage(cmd render.DrawImage, camera render.Camera) {
 		c.ctx.Set("globalAlpha", cmd.Tint.A)
 		source = c.tintedBitmap(bitmap, cmd.Texture, cmd.Tint)
 	}
-	if cmd.Rotation != 0 {
+	if cmd.Rotation != 0 || cmd.Flip != render.FlipNone {
 		c.ctx.Call("translate", x+w/2, y+h/2)
 		c.ctx.Call("rotate", cmd.Rotation)
+		if cmd.Flip&render.FlipX != 0 {
+			c.ctx.Call("scale", -1, 1)
+		}
+		if cmd.Flip&render.FlipY != 0 {
+			c.ctx.Call("scale", 1, -1)
+		}
 		c.ctx.Call("drawImage", source, sx, sy, sw, sh, -w/2, -h/2, w, h)
 	} else {
 		c.ctx.Call("drawImage", source, sx, sy, sw, sh, x, y, w, h)

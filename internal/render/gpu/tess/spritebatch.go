@@ -13,7 +13,25 @@ import (
 var retainedSpriteClipMin = [2]float32{-math.MaxFloat32, -math.MaxFloat32}
 var retainedSpriteClipMax = [2]float32{math.MaxFloat32, math.MaxFloat32}
 
-const projectedSpriteFlag uint32 = 1
+const (
+	projectedSpriteFlag uint32 = 1 << iota
+	flipXSpriteFlag
+	flipYSpriteFlag
+)
+
+func spriteFlags(projectCorners bool, flip render.SpriteFlip) uint32 {
+	flags := uint32(0)
+	if projectCorners {
+		flags |= projectedSpriteFlag
+	}
+	if flip&render.FlipX != 0 {
+		flags |= flipXSpriteFlag
+	}
+	if flip&render.FlipY != 0 {
+		flags |= flipYSpriteFlag
+	}
+	return flags
+}
 
 // AppendRetainedSpriteRecord appends one 64-byte sprite storage record for a
 // retained batch instance, serialized exactly like the streaming records of
@@ -58,10 +76,7 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 	if !whiteTint {
 		tint = packSpriteTint(inst.Tint)
 	}
-	flags := uint32(0)
-	if inst.ProjectCorners {
-		flags = projectedSpriteFlag
-	}
+	flags := spriteFlags(inst.ProjectCorners, inst.Flip)
 
 	record := spriteRecord{
 		centerX:    float32((minX + maxX) * 0.5),
