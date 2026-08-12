@@ -150,6 +150,8 @@ supported animated SVG/CSS subset into deterministic Go render code.
 `internal/render/gpu/tess` builds ordered GPU pipeline streams. The WASM WebGPU
 host uses it, and the native renderer shares the same core. `fontatlas` provides
 manifest-backed glyph atlases. `shaders` contains embedded WGSL sources.
+`internal/render/frameplan` normalizes pass and target policy for every backend;
+hosts only activate resources and encode the resulting passes.
 
 ### Platform hosts
 

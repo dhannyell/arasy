@@ -158,6 +158,8 @@ de render.
 WASM WebGPU o usa, e o renderer native compartilha o mesmo núcleo. `fontatlas`
 fornece atlas de glyphs baseado em manifest. `shaders` contém fontes WGSL
 embutidas.
+`internal/render/frameplan` normaliza a política de passes e alvos para todos os
+backends; os hosts apenas ativam recursos e codificam os passes resultantes.
 
 ### Hosts de plataforma
 
