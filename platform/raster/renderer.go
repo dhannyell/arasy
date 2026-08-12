@@ -6,12 +6,12 @@ import (
 	"image/draw"
 	"log/slog"
 	"math"
-	"slices"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
@@ -38,6 +38,7 @@ type Renderer struct {
 	particles   *particle.EmitterSet
 	diagnostics diagnostic.Once
 	log         *slog.Logger
+	planner     frameplan.Planner
 
 	// spriteBatches/textBatches hold retained batch content published through
 	// Replace*Batch. Render-only: never snapshotted or recorded.
@@ -124,72 +125,54 @@ func (r *Renderer) RenderPassesInto(dst *image.RGBA, passes []render.Pass, base 
 		r.viewportSet = originalViewportSet
 	}()
 
-	var claimedTargets []render.TextureID
-	hasScreenPass := false
-	for _, pass := range passes {
+	planned, diagnostics := r.planner.Plan(frameplan.Input{
+		Camera: base.Camera, Commands: base.Commands, Passes: passes,
+		SurfaceW: r.Width, SurfaceH: r.Height,
+		Targets: func(id render.TextureID) (frameplan.TargetInfo, bool) {
+			decl, ok := r.Assets.TextureDecl(id)
+			return frameplan.TargetInfo{W: decl.W, H: decl.H, Dynamic: decl.Dynamic}, ok
+		},
+	})
+	for _, diag := range diagnostics {
+		r.logPassDiagnostic(diag)
+	}
+	for _, pass := range planned {
 		if pass.Target != 0 {
-			if slices.Contains(claimedTargets, pass.Target) {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
-					"raster: target already has a pass owner this frame; pass skipped", "target", pass.Target)
-				continue
-			}
-			if r.Assets.IsDynamic(pass.Target) {
-				claimedTargets = append(claimedTargets, pass.Target)
-			}
 			target, ok := r.passTarget(pass.Target)
 			if !ok {
 				continue
 			}
 			clear(target.Pix)
-			r.renderPass(target, pass, false, false)
+			r.renderPass(target, pass)
 			continue
 		}
-		hasScreenPass = true
-		r.renderPass(dst, pass, false, false)
+		r.renderPass(dst, pass)
 	}
-	r.renderPass(dst, base, true, hasScreenPass)
 }
 
 // passTarget resolves the CPU storage of a dynamic texture that a pass may
 // overwrite. Static and unknown textures stay source-only by contract.
 func (r *Renderer) passTarget(id render.TextureID) (*image.RGBA, bool) {
-	if !r.Assets.IsDynamic(id) {
-		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(id)},
-			"raster: pass target is not a declared dynamic texture; pass skipped", "target", id)
-		return nil, false
-	}
 	target := r.Textures.Lookup(id)
 	if target == nil {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(id)},
+			diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(id)},
 			"raster: pass target has no pixel storage; pass skipped", "target", id)
 		return nil, false
 	}
 	return target, true
 }
 
-func (r *Renderer) renderPass(dst *image.RGBA, pass render.Pass, base, preserve bool) {
-	pass = pass.ResolveViewport(frameRect(dst.Bounds()))
+func (r *Renderer) renderPass(dst *image.RGBA, pass frameplan.Pass) {
 	r.Camera = pass.Camera
 	r.viewport = viewportBounds(pass.Camera.Viewport, dst.Bounds())
 	r.viewportSet = true
 
-	if base {
-		if chain, ok := lastPostChain(pass.Commands); ok {
-			r.renderPostChain(dst, pass.Commands, chain, preserve)
-			return
-		}
+	if pass.Base && pass.HasPost {
+		r.renderPostChain(dst, pass.Commands, pass.Post, pass.Preserve)
+		return
 	}
 	r.renderCommands(dst, pass.Commands)
-}
-
-func frameRect(bounds image.Rectangle) math2d.Rect {
-	return math2d.NewRect(
-		math2d.Vec2{X: float64(bounds.Min.X), Y: float64(bounds.Min.Y)},
-		math2d.Vec2{X: float64(bounds.Dx()), Y: float64(bounds.Dy())},
-	)
 }
 
 func viewportBounds(viewport math2d.Rect, bounds image.Rectangle) image.Rectangle {
@@ -218,34 +201,8 @@ func (r *Renderer) renderCommands(dst *image.RGBA, commands []render.Command) {
 	render.Each(commands, sink)
 }
 
-func lastPostChain(commands []render.Command) (render.PostChain, bool) {
-	var chain render.PostChain
-	found := false
-	for _, command := range commands {
-		if candidate, ok := command.(render.PostChain); ok {
-			chain = candidate
-			found = true
-		}
-	}
-	return chain, found
-}
-
-func postChainPartitions(commands []render.Command, belowLayer int) (below, above []render.Command) {
-	for _, command := range commands {
-		if _, ok := command.(render.PostChain); ok {
-			continue
-		}
-		if belowLayer == 0 || command.Layer() < belowLayer {
-			below = append(below, command)
-			continue
-		}
-		above = append(above, command)
-	}
-	return below, above
-}
-
 func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, chain render.PostChain, preserve bool) {
-	below, above := postChainPartitions(commands, chain.BelowLayer)
+	below, above := frameplan.PostPartitions(commands, chain.BelowLayer)
 	if r.postScratch == nil {
 		r.postScratch = &postScratch{}
 	}
@@ -261,6 +218,16 @@ func (r *Renderer) renderPostChain(dst *image.RGBA, commands []render.Command, c
 	applyPostChain(scene, chain, r.Camera, r.postScratch)
 	draw.Draw(dst, dst.Bounds(), scene, scene.Bounds().Min, draw.Src)
 	r.renderCommands(dst, above)
+}
+
+func (r *Renderer) logPassDiagnostic(diag frameplan.Diagnostic) {
+	message := "raster: pass target is not a declared dynamic texture; pass skipped"
+	if diag.Code == frameplan.CodeTargetDuplicate {
+		message = "raster: target already has a pass owner this frame; pass skipped"
+	}
+	r.diagnostics.Log(r.log, slog.LevelWarn,
+		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
+		message, "target", diag.Target)
 }
 
 type rasterSink struct {

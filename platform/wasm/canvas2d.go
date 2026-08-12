@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"slices"
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
@@ -41,6 +41,7 @@ type Canvas2D struct {
 
 	particles   *particle.EmitterSet
 	diagnostics diagnostic.Once
+	planner     frameplan.Planner
 
 	// batches holds retained sprite/text batch content (render-only).
 	batches canvasBatchRegistry
@@ -239,31 +240,31 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 		c.particles.BeginFrame()
 	}
 
-	var claimedTargets []render.TextureID
-	hasScreenPass := false
-	for _, pass := range frame.Passes {
-		if pass.Target != 0 {
-			decl, ok := c.manifest.TextureDecl(pass.Target)
-			if !ok || !decl.Dynamic {
-				c.renderExtraPass(pass, int(w), int(h))
-				continue
-			}
-			if slices.Contains(claimedTargets, pass.Target) {
-				c.diagnostics.Log(c.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
-					"canvas2d: target already has a pass owner this frame; pass skipped", "target", pass.Target)
-				continue
-			}
-			claimedTargets = append(claimedTargets, pass.Target)
-		} else {
-			hasScreenPass = true
-		}
-		c.renderExtraPass(pass, int(w), int(h))
+	planned, diagnostics := c.planner.Plan(frameplan.Input{
+		Camera: frame.Camera, Commands: frame.Commands, Passes: frame.Passes,
+		SurfaceW: int(w), SurfaceH: int(h),
+		Targets: func(id render.TextureID) (frameplan.TargetInfo, bool) {
+			decl, ok := c.manifest.TextureDecl(id)
+			return frameplan.TargetInfo{W: decl.W, H: decl.H, Dynamic: decl.Dynamic}, ok
+		},
+	})
+	for _, diag := range diagnostics {
+		c.logPassDiagnostic(diag)
 	}
-	if chain, ok := lastCanvasPostChain(frame.Commands); ok {
-		c.renderPostFrame(frame.Commands, frame.Camera, chain, int(w), int(h), hasScreenPass)
-	} else {
-		c.renderCommands(frame.Commands, frame.Camera)
+	for _, pass := range planned {
+		if pass.Target != 0 {
+			c.renderTargetPass(pass)
+			continue
+		}
+		if pass.Base {
+			if pass.HasPost {
+				c.renderPostFrame(pass.Commands, pass.Camera, pass.Post, pass.Width, pass.Height, pass.Preserve)
+			} else {
+				c.renderCommands(pass.Commands, pass.Camera)
+			}
+			continue
+		}
+		c.renderScreenPass(pass)
 	}
 	if !c.ready && c.pendingTextures == 0 {
 		c.canvas.Call("setAttribute", "data-arasy-ready", "canvas2d")
@@ -271,13 +272,7 @@ func (c *Canvas2D) Render(frame runtime.Frame) {
 	}
 }
 
-func (c *Canvas2D) renderExtraPass(pass render.Pass, width, height int) {
-	if pass.Target != 0 {
-		c.renderTargetPass(pass)
-		return
-	}
-	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
-	pass = pass.ResolveViewport(viewport)
+func (c *Canvas2D) renderScreenPass(pass frameplan.Pass) {
 	clip := pass.Camera.Viewport
 
 	c.ctx.Call("save")
@@ -288,15 +283,8 @@ func (c *Canvas2D) renderExtraPass(pass render.Pass, width, height int) {
 	c.ctx.Call("restore")
 }
 
-func (c *Canvas2D) renderTargetPass(pass render.Pass) {
-	decl, ok := c.manifest.TextureDecl(pass.Target)
-	if !ok || !decl.Dynamic {
-		c.diagnostics.Log(c.log, slog.LevelWarn,
-			diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(pass.Target)},
-			"canvas2d: pass target is not a declared dynamic texture; pass skipped", "target", pass.Target)
-		return
-	}
-	target := c.ensureDynamicTexture(pass.Target, decl.W, decl.H)
+func (c *Canvas2D) renderTargetPass(pass frameplan.Pass) {
+	target := c.ensureDynamicTexture(pass.Target, pass.Width, pass.Height)
 	originalCtx, originalCanvas := c.ctx, c.canvas
 	c.ctx, c.canvas = target.ctx, target.canvas
 	defer func() { c.ctx, c.canvas = originalCtx, originalCanvas }()
@@ -304,8 +292,6 @@ func (c *Canvas2D) renderTargetPass(pass render.Pass) {
 	w, h := float64(target.w), float64(target.h)
 	c.ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
 	c.ctx.Call("clearRect", 0, 0, w, h)
-	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: w, Y: h})
-	pass = pass.ResolveViewport(viewport)
 	clip := pass.Camera.Viewport
 	c.ctx.Call("save")
 	c.ctx.Call("beginPath")
@@ -313,6 +299,16 @@ func (c *Canvas2D) renderTargetPass(pass render.Pass) {
 	c.ctx.Call("clip")
 	c.renderCommands(pass.Commands, pass.Camera)
 	c.ctx.Call("restore")
+}
+
+func (c *Canvas2D) logPassDiagnostic(diag frameplan.Diagnostic) {
+	message := "canvas2d: pass target is not a declared dynamic texture; pass skipped"
+	if diag.Code == frameplan.CodeTargetDuplicate {
+		message = "canvas2d: target already has a pass owner this frame; pass skipped"
+	}
+	c.diagnostics.Log(c.log, slog.LevelWarn,
+		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
+		message, "target", diag.Target)
 }
 
 // renderCommands is the single dispatch point into the sink: it attaches
