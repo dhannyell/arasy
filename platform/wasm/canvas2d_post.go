@@ -37,6 +37,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
 )
@@ -45,32 +46,6 @@ type canvasPostSurface struct {
 	canvas        js.Value
 	ctx           js.Value
 	width, height int
-}
-
-func lastCanvasPostChain(commands []render.Command) (render.PostChain, bool) {
-	var chain render.PostChain
-	found := false
-	for _, command := range commands {
-		if candidate, ok := command.(render.PostChain); ok {
-			chain = candidate
-			found = true
-		}
-	}
-	return chain, found
-}
-
-func canvasPostPartitions(commands []render.Command, belowLayer int) (below, above []render.Command) {
-	for _, command := range commands {
-		if _, ok := command.(render.PostChain); ok {
-			continue
-		}
-		if belowLayer == 0 || command.Layer() < belowLayer {
-			below = append(below, command)
-			continue
-		}
-		above = append(above, command)
-	}
-	return below, above
 }
 
 func (c *Canvas2D) ensurePostSurface(width, height int) *canvasPostSurface {
@@ -92,7 +67,7 @@ func (c *Canvas2D) ensurePostSurface(width, height int) *canvasPostSurface {
 
 func (c *Canvas2D) renderPostFrame(commands []render.Command, camera render.Camera, chain render.PostChain, width, height int, preserve bool) {
 	surface := c.ensurePostSurface(width, height)
-	below, above := canvasPostPartitions(commands, chain.BelowLayer)
+	below, above := frameplan.PostPartitions(commands, chain.BelowLayer)
 	clearCanvas(surface.ctx, width, height, c.clear)
 	if preserve {
 		copyCanvas(c.canvas, surface.canvas, surface.ctx, width, height)

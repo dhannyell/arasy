@@ -10,6 +10,7 @@ import (
 	"testing/fstest"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
@@ -248,7 +249,7 @@ func TestAddTargetPassKeepsFirstOwnerAndWarnsOnce(t *testing.T) {
 			t.Fatalf("owner command = %T, want first pass", frame.Passes[0].Commands[0])
 		}
 	}
-	if got := strings.Count(logs.String(), "render.pass_target_duplicate"); got != 1 {
+	if got := strings.Count(logs.String(), frameplan.CodeTargetDuplicate); got != 1 {
 		t.Fatalf("duplicate warnings = %d, want 1; logs: %s", got, logs.String())
 	}
 }
@@ -266,7 +267,7 @@ func TestAddTargetPassRejectsInvalidTargetOnce(t *testing.T) {
 		t.Fatalf("invalid target produced %d passes, want 0", len(frame.Passes))
 	}
 	driver.Frame(0)
-	if got := strings.Count(logs.String(), "render.pass_target_invalid"); got != 1 {
+	if got := strings.Count(logs.String(), frameplan.CodeTargetInvalid); got != 1 {
 		t.Fatalf("invalid-target warnings = %d, want 1; logs: %s", got, logs.String())
 	}
 }
@@ -288,7 +289,7 @@ func TestTargetPassWinsUpdateTextureConflict(t *testing.T) {
 		t.Fatalf("passes = %d, updates = %d, want one of each", len(frame.Passes), len(updates))
 	}
 	driver.Frame(0)
-	if got := strings.Count(logs.String(), "render.pass_target_update_conflict"); got != 1 {
+	if got := strings.Count(logs.String(), frameplan.CodeTargetUpdateConflict); got != 1 {
 		t.Fatalf("conflict warnings = %d, want 1; logs: %s", got, logs.String())
 	}
 }

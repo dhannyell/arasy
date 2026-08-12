@@ -11,7 +11,6 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/render"
-	"github.com/dhannyell/arasy/runtime"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
@@ -251,17 +250,6 @@ func (r *Renderer) releasePostTarget(target *nativePostTarget) {
 		target.texture.Release()
 	}
 	*target = nativePostTarget{}
-}
-
-func lastNativePostChain(commands []render.Command) (render.PostChain, bool) {
-	var chain render.PostChain
-	found := false
-	for _, command := range commands {
-		if candidate, ok := command.(render.PostChain); ok {
-			chain, found = candidate, true
-		}
-	}
-	return chain, found
 }
 
 func nativePostF32(dst []byte, index int, value float64) {
@@ -674,7 +662,7 @@ func (r *Renderer) encodeNativeBloom(encoder *wgpu.CommandEncoder, source native
 	return r.encodePostCombine(encoder, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 }
 
-func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets []uint32, plans []nativePassPlan, surfaceView *wgpu.TextureView, frame runtime.Frame, chain render.PostChain, width, height int) error {
+func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets []uint32, plans []nativePassPlan, surfaceView *wgpu.TextureView, camera render.Camera, chain render.PostChain, width, height int) error {
 	if err := r.ensurePostTargets(width, height); err != nil {
 		return err
 	}
@@ -797,7 +785,7 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 			sourceID, destID = destID, sourceID
 			continue
 		}
-		name, err := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, width, height)
+		name, err := r.postParams(uniformIndex, effect, camera, chain.Time, width, height)
 		if err != nil {
 			return err
 		}

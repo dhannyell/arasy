@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"slices"
 	"syscall/js"
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
@@ -184,6 +184,7 @@ type webgpuRenderer struct {
 
 	log         *slog.Logger
 	diagnostics diagnostic.Once
+	planner     frameplan.Planner
 
 	fontProvider *fontatlas.Provider
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
@@ -199,7 +200,6 @@ type webgpuRenderer struct {
 	particles       *gpuParticles
 	timing          *gpuTiming // nil when "timestamp-query" was not granted
 	drawRuns        []gpuDrawRun
-	framePasses     []render.Pass
 	tessPassFrames  []tess.Frame
 	passPlans       []gpuPassPlan
 	particleGroupOf []int
@@ -438,38 +438,22 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		phaseStart = performanceNowMillis()
 	}
 
-	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(w), Y: float64(h)})
-	oldPasses := r.framePasses
-	passes := oldPasses[:0]
-	var claimedTargets []render.TextureID
-	for _, pass := range frame.Passes {
+	passes, diagnostics := r.planner.Plan(frameplan.Input{
+		Camera: frame.Camera, Commands: frame.Commands, Passes: frame.Passes,
+		SurfaceW: w, SurfaceH: h,
+		Targets: func(id render.TextureID) (frameplan.TargetInfo, bool) {
+			decl, ok := r.manifest.TextureDecl(id)
+			return frameplan.TargetInfo{W: decl.W, H: decl.H, Dynamic: decl.Dynamic}, ok
+		},
+	})
+	for _, diag := range diagnostics {
+		r.logPassDiagnostic(diag)
+	}
+	for _, pass := range passes {
 		if pass.Target != 0 {
-			if slices.Contains(claimedTargets, pass.Target) {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
-					"webgpu: target already has a pass owner this frame; pass skipped", "target", pass.Target)
-				continue
-			}
-			decl, ok := r.manifest.TextureDecl(pass.Target)
-			if !ok || !decl.Dynamic {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(pass.Target)},
-					"webgpu: pass target is not a declared dynamic texture; pass skipped", "target", pass.Target)
-				continue
-			}
-			claimedTargets = append(claimedTargets, pass.Target)
-			targetBounds := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(decl.W), Y: float64(decl.H)})
 			r.activateRenderTarget(pass.Target)
-			passes = append(passes, pass.ResolveViewport(targetBounds))
-			continue
 		}
-		passes = append(passes, pass.ResolveViewport(viewport))
 	}
-	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
-	if len(passes) < len(oldPasses) {
-		clear(oldPasses[len(passes):])
-	}
-	r.framePasses = passes
 
 	r.tess.SetSpriteArray(r.spriteArrayEnabled)
 	oldPassFrames := r.tessPassFrames
@@ -486,12 +470,12 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		r.passTextIDs = append(r.passTextIDs[:cap(r.passTextIDs)], make([][]render.TextBatchID, len(passes)-cap(r.passTextIDs))...)
 	}
 	r.passTextIDs = r.passTextIDs[:len(passes)]
+	var base frameplan.Pass
 	for i, pass := range passes {
-		passWidth, passHeight := w, h
-		if pass.Target != 0 {
-			decl, _ := r.manifest.TextureDecl(pass.Target)
-			passWidth, passHeight = decl.W, decl.H
+		if pass.Base {
+			base = pass
 		}
+		passWidth, passHeight := pass.Width, pass.Height
 		passFrames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
 		ids := collectTextBatchIDsInto(r.passTextIDs[i], pass.Commands)
 		r.passTextIDs[i] = ids
@@ -515,7 +499,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		plans[passIndex] = gpuPassPlan{
 			camera:       builtPass.Camera,
 			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
-			extra:        passIndex < len(passes)-1,
+			extra:        !passes[passIndex].Base,
 			target:       passes[passIndex].Target,
 			width:        builtPass.Width,
 			height:       builtPass.Height,
@@ -616,8 +600,8 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	}
 
 	r.ensureMSAATarget(w, h)
-	if chain, ok := lastWebGPUPostChain(frame.Commands); ok && !r.postDisabled {
-		if err := r.renderPostFramePasses(frame, drawRuns, plans, chain, w, h); err != nil {
+	if base.HasPost && !r.postDisabled {
+		if err := r.renderPostFramePasses(base.Camera, drawRuns, plans, base.Post, w, h); err != nil {
 			r.disablePost(err)
 		} else {
 			r.recordCPUPhases(phaseStart, buildEnd, uploadEnd)
@@ -754,7 +738,7 @@ func (r *webgpuRenderer) encodeTargetPass(encoder js.Value, passIndex int, plan 
 	target, ok := r.textureFor(plan.target)
 	if !ok || target.targetView.IsUndefined() || target.targetView.IsNull() {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(plan.target)},
+			diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(plan.target)},
 			"webgpu: pass target has no GPU attachment; pass skipped", "target", plan.target)
 		return
 	}
@@ -780,6 +764,12 @@ func (r *webgpuRenderer) encodeTargetPass(encoder js.Value, passIndex int, plan 
 		)
 		r.encodeMipmapsLayer(encoder, target.texture, plan.width, plan.height, target.mipLevels, target.arrayLayer)
 	}
+}
+
+func (r *webgpuRenderer) logPassDiagnostic(diag frameplan.Diagnostic) {
+	r.diagnostics.Log(r.log, slog.LevelWarn,
+		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
+		"webgpu: "+diag.Message(), "target", diag.Target)
 }
 
 func (r *webgpuRenderer) drawScreenPassRuns(pass js.Value, passIndex int, plan gpuPassPlan, runs []gpuDrawRun, offscreenParticles bool) {

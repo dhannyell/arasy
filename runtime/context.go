@@ -8,6 +8,7 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/ui"
@@ -99,15 +100,15 @@ func (ctx *RenderContext) AddPass(camera render.Camera, commands []render.Comman
 func (ctx *RenderContext) AddTargetPass(camera render.Camera, commands []render.Command, target render.TextureID) {
 	decl, ok := ctx.Assets.TextureDecl(target)
 	if !ok || !decl.Dynamic {
-		ctx.logTargetWarning("render.pass_target_invalid", target, "AddTargetPass: unknown or non-dynamic texture ID")
+		ctx.logTargetWarning(frameplan.CodeTargetInvalid, target, "AddTargetPass: unknown or non-dynamic texture ID")
 		return
 	}
 	if slices.Contains(ctx.passTargets, target) {
-		ctx.logTargetWarning("render.pass_target_duplicate", target, "AddTargetPass: target already has an owner this frame")
+		ctx.logTargetWarning(frameplan.CodeTargetDuplicate, target, "AddTargetPass: target already has an owner this frame")
 		return
 	}
 	if slices.Contains(ctx.updatedTargets, target) {
-		ctx.logTargetWarning("render.pass_target_update_conflict", target, "AddTargetPass: pass overwrites UpdateTexture content")
+		ctx.logTargetWarning(frameplan.CodeTargetUpdateConflict, target, "AddTargetPass: pass overwrites UpdateTexture content")
 	}
 	ctx.passTargets = append(ctx.passTargets, target)
 	ctx.passes = append(ctx.passes, render.Pass{Camera: camera, Commands: append([]render.Command(nil), commands...), Target: target})
@@ -139,7 +140,7 @@ func (ctx *RenderContext) UpdateTexture(id render.TextureID, img *image.RGBA) {
 		return
 	}
 	if slices.Contains(ctx.passTargets, id) {
-		ctx.logTargetWarning("render.pass_target_update_conflict", id, "UpdateTexture: content will be overwritten by target pass")
+		ctx.logTargetWarning(frameplan.CodeTargetUpdateConflict, id, "UpdateTexture: content will be overwritten by target pass")
 	}
 	if !slices.Contains(ctx.updatedTargets, id) {
 		ctx.updatedTargets = append(ctx.updatedTargets, id)
