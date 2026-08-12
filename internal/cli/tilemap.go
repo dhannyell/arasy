@@ -162,8 +162,9 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "// %sMap is the generated map data.\n", name)
 	fmt.Fprintf(&out, "type %sMap struct {\n\tLayers []%sLayer\n\tObjects []%sObject\n}\n\n", name, name, name)
 	if m.Orientation == "isometric" {
-		fmt.Fprintf(&out, "// %sSuggestedIsoViewRatio is the horizontal Camera.View ratio suggested by Tiled's 2:1 isometric preview.\n", name)
-		fmt.Fprintf(&out, "const %sSuggestedIsoViewRatio = 2\n\n", name)
+		ratio := float64(m.TileWidth) / float64(m.TileHeight)
+		fmt.Fprintf(&out, "// %sSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.\n", name)
+		fmt.Fprintf(&out, "const %sSuggestedIsoViewRatio = %s\n\n", name, tilemapFloat(ratio))
 	}
 	fmt.Fprintf(&out, "// New%sMap builds the map with texture names resolved by texture.\n", name)
 	fmt.Fprintf(&out, "func New%sMap(texture func(string) render.TextureID) %sMap {\n", name, name)
@@ -294,13 +295,13 @@ func tiledTileTransform(horizontal, vertical, diagonal bool) (uint8, float64) {
 	// renderer's sample flip followed by its center rotation.
 	switch {
 	case horizontal && vertical:
-		return 2, math.Pi / 2
-	case horizontal:
-		return 0, -math.Pi / 2
-	case vertical:
-		return 0, math.Pi / 2
-	default:
 		return 1, math.Pi / 2
+	case horizontal:
+		return 0, math.Pi / 2
+	case vertical:
+		return 0, -math.Pi / 2
+	default:
+		return 2, math.Pi / 2
 	}
 }
 

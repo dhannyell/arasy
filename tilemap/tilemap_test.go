@@ -141,6 +141,34 @@ func TestSetTileFlipRepairsMalformedFlipSlice(t *testing.T) {
 	}
 }
 
+func TestSetTileTransformEmitsRotationAndClearsItThroughSetTile(t *testing.T) {
+	layer := Layer{Tiles: []int16{0}, W: 1, H: 1, CellSize: math2d.Vec2{X: 1, Y: 1}}
+	layer.SetTileTransform(0, 0, 1, render.FlipY, 1.25)
+
+	got := layer.Chunk(0, 0, Atlas{TileSize: math2d.Vec2{X: 1, Y: 1}, Columns: 2}, nil)
+	if len(got) != 1 || got[0].Flip != render.FlipY || got[0].Rotation != 1.25 {
+		t.Fatalf("instance = %#v, want flip Y and rotation 1.25", got)
+	}
+
+	layer.DirtyChunks()
+	layer.SetTile(0, 0, 1)
+	got = layer.Chunk(0, 0, Atlas{TileSize: math2d.Vec2{X: 1, Y: 1}, Columns: 2}, nil)
+	if got[0].Flip != render.FlipNone || got[0].Rotation != 0 {
+		t.Fatalf("SetTile transform = (%v, %v), want none and zero", got[0].Flip, got[0].Rotation)
+	}
+	if dirty := layer.DirtyChunks(); len(dirty) != 1 || dirty[0] != (ChunkCoord{}) {
+		t.Fatalf("dirty chunks = %#v, want origin chunk", dirty)
+	}
+}
+
+func TestSetTileTransformKeepsTransformSlicesNilForZeroValues(t *testing.T) {
+	layer := Layer{Tiles: []int16{0}, W: 1, H: 1}
+	layer.SetTileTransform(0, 0, 1, render.FlipNone, 0)
+	if layer.Flips != nil || layer.Rotations != nil {
+		t.Fatalf("zero transform allocated slices: flips=%#v rotations=%#v", layer.Flips, layer.Rotations)
+	}
+}
+
 func TestChunkAnchorsTallOffsetTilesAtCellBase(t *testing.T) {
 	layer := Layer{
 		Tiles:    []int16{0},

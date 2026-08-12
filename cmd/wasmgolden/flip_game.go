@@ -11,8 +11,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
-// flipConformanceGame covers the four source-flip states in streaming and
-// retained image paths. Rotated cells pin the flip-before-rotation contract.
+// flipConformanceGame covers every source-flip state with and without a
+// rotation in streaming, static retained and flip-book retained paths.
 type flipConformanceGame struct {
 	assets asset.Manifest
 }
@@ -42,12 +42,12 @@ func (g *flipConformanceGame) Setup() runtime.Config {
 
 func (g *flipConformanceGame) Init(ctx *runtime.UpdateContext) {
 	texture := g.assets.Texture("quadrants")
-	ctx.Batches.UpdateSprites(1, []render.SpriteInstance{
-		{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 8, Y: 42}, math2d.Vec2{X: 5, Y: 5})},
-		{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 16, Y: 42}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipX},
-		{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 24, Y: 42}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipY},
-		{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 32, Y: 42}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipX | render.FlipY, Rotation: math.Pi / 2},
-	})
+	instances := flipInstances(texture, 30, 0, render.SpriteAnimation{})
+	instances = append(instances, flipInstances(texture, 40, math.Pi/2, render.SpriteAnimation{})...)
+	flipBook := render.SpriteAnimation{Frames: 4, Rate: 1, Phase: 0.5}
+	instances = append(instances, flipInstances(texture, 50, 0, flipBook)...)
+	instances = append(instances, flipInstances(texture, 60, math.Pi/2, flipBook)...)
+	ctx.Batches.UpdateSprites(1, instances)
 }
 
 func (*flipConformanceGame) Update(ctx *runtime.UpdateContext, _ float64) {
@@ -56,13 +56,44 @@ func (*flipConformanceGame) Update(ctx *runtime.UpdateContext, _ float64) {
 
 func (g *flipConformanceGame) Render(ctx *runtime.RenderContext) []render.Command {
 	texture := g.assets.Texture("quadrants")
-	return []render.Command{
-		render.DrawImage{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 8, Y: 12}, math2d.Vec2{X: 5, Y: 5})},
-		render.DrawImage{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 16, Y: 12}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipX},
-		render.DrawImage{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 24, Y: 12}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipY},
-		render.DrawImage{Texture: texture, Dest: math2d.NewRect(math2d.Vec2{X: 32, Y: 12}, math2d.Vec2{X: 5, Y: 5}), Flip: render.FlipX | render.FlipY, Rotation: math.Pi / 2},
-		render.DrawSpriteBatch{BaseCommand: render.BaseCommand{LayerValue: 1}, Batch: 1},
+	commands := flipCommands(texture, 5, 0)
+	commands = append(commands, flipCommands(texture, 15, math.Pi/2)...)
+	return append(commands, render.DrawSpriteBatch{BaseCommand: render.BaseCommand{LayerValue: 1}, Batch: 1})
+}
+
+var flipStates = [...]render.SpriteFlip{render.FlipNone, render.FlipX, render.FlipY, render.FlipX | render.FlipY}
+
+const flipDestSize = 5
+
+func flipCommands(texture render.TextureID, y, rotation float64) []render.Command {
+	commands := make([]render.Command, 0, len(flipStates))
+	for index, flip := range flipStates {
+		commands = append(commands, render.DrawImage{
+			Texture:  texture,
+			Dest:     math2d.NewRect(math2d.Vec2{X: 10 + float64(index)*10, Y: y}, math2d.Vec2{X: flipDestSize, Y: flipDestSize}),
+			Flip:     flip,
+			Rotation: rotation,
+		})
 	}
+	return commands
+}
+
+func flipInstances(texture render.TextureID, y, rotation float64, animation render.SpriteAnimation) []render.SpriteInstance {
+	instances := make([]render.SpriteInstance, 0, len(flipStates))
+	for index, flip := range flipStates {
+		instance := render.SpriteInstance{
+			Texture:   texture,
+			Dest:      math2d.NewRect(math2d.Vec2{X: 10 + float64(index)*10, Y: y}, math2d.Vec2{X: flipDestSize, Y: flipDestSize}),
+			Flip:      flip,
+			Rotation:  rotation,
+			Animation: animation,
+		}
+		if animation.Frames > 1 {
+			instance.Src = math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4})
+		}
+		instances = append(instances, instance)
+	}
+	return instances
 }
 
 func flipConformanceManifest() (asset.Manifest, error) {

@@ -41,8 +41,8 @@ type OutpostMap struct {
 	Objects []OutpostObject
 }
 
-// OutpostSuggestedIsoViewRatio is the horizontal Camera.View ratio suggested by Tiled's 2:1 isometric preview.
-const OutpostSuggestedIsoViewRatio = 2
+// OutpostSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.
+const OutpostSuggestedIsoViewRatio = 1
 
 // NewOutpostMap builds the map with texture names resolved by texture.
 func NewOutpostMap(texture func(string) render.TextureID) OutpostMap {

@@ -94,36 +94,55 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 	return buf
 }
 
-// SetTile changes one cell and marks its chunk for regeneration.
+// SetTile changes one cell and clears its source transform.
 // Coordinates outside the layer are ignored.
 func (l *Layer) SetTile(x, y int, tile int16) {
-	l.setTile(x, y, tile, render.FlipNone, false)
+	l.SetTileTransform(x, y, tile, render.FlipNone, 0)
 }
 
-// SetTileFlip changes one cell's atlas index and source flip, allocating the
-// optional flip slice only when a layer first needs it.
+// SetTileFlip changes one cell's atlas index and source flip.
 // Coordinates outside the layer are ignored.
 func (l *Layer) SetTileFlip(x, y int, tile int16, flip render.SpriteFlip) {
-	l.setTile(x, y, tile, flip, true)
+	l.SetTileTransform(x, y, tile, flip, 0)
 }
 
-func (l *Layer) setTile(x, y int, tile int16, flip render.SpriteFlip, setFlip bool) {
+// SetTileTransform changes one cell's atlas index, source flip and rotation.
+// Flip happens before rotation, matching render.SpriteInstance and Tiled's
+// diagonal GID decomposition. Optional transform slices stay nil until a cell
+// needs a non-zero value.
+func (l *Layer) SetTileTransform(x, y int, tile int16, flip render.SpriteFlip, rotation float64) {
 	if x < 0 || y < 0 || x >= l.W || y >= l.H || len(l.Tiles) < l.W*l.H {
 		return
 	}
 	index := y*l.W + x
-	if setFlip && len(l.Flips) != len(l.Tiles) {
-		flips := make([]render.SpriteFlip, len(l.Tiles))
-		copy(flips, l.Flips)
-		l.Flips = flips
+	oldFlip := render.FlipNone
+	if len(l.Flips) == len(l.Tiles) {
+		oldFlip = l.Flips[index]
 	}
-	if l.Tiles[index] == tile && (!setFlip || l.Flips[index] == flip) {
+	oldRotation := 0.0
+	if len(l.Rotations) == len(l.Tiles) {
+		oldRotation = l.Rotations[index]
+	}
+	if l.Tiles[index] == tile && oldFlip == flip && oldRotation == rotation {
 		return
 	}
-	l.Tiles[index] = tile
-	if setFlip {
+	if flip != render.FlipNone || len(l.Flips) == len(l.Tiles) {
+		if len(l.Flips) != len(l.Tiles) {
+			flips := make([]render.SpriteFlip, len(l.Tiles))
+			copy(flips, l.Flips)
+			l.Flips = flips
+		}
 		l.Flips[index] = flip
 	}
+	if rotation != 0 || len(l.Rotations) == len(l.Tiles) {
+		if len(l.Rotations) != len(l.Tiles) {
+			rotations := make([]float64, len(l.Tiles))
+			copy(rotations, l.Rotations)
+			l.Rotations = rotations
+		}
+		l.Rotations[index] = rotation
+	}
+	l.Tiles[index] = tile
 	if l.dirty == nil {
 		l.dirty = make(map[ChunkCoord]struct{})
 	}

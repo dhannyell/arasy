@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="8" height="1" tilewidth="64" tileheight="64" infinite="0">
+ <tileset firstgid="1" source="orthogonal-flips.tsx"/>
+ <layer id="1" name="all-gid-orientations" width="8" height="1">
+  <data encoding="csv">1,2147483649,1073741825,3221225473,536870913,2684354561,1610612737,3758096385</data>
+ </layer>
+ <layer id="2" name="parallax" width="8" height="1" parallaxx="0.3" parallaxy="1">
+  <data encoding="csv">1,0,0,0,0,0,0,0</data>
+ </layer>
+ <objectgroup id="3" name="objects">
+  <object id="7" name="spawn" class="Spawn" x="64" y="0">
+   <properties><property name="team" value="blue"/></properties>
+  </object>
+ </objectgroup>
+</map>
