@@ -198,9 +198,18 @@ func (r *webgpuRenderer) spriteRangeTexture(rg spriteBatchRange) js.Value {
 		return r.spriteArrayTexture.Call("createView", map[string]any{"dimension": "2d-array"})
 	}
 	if gt, ok := r.textureFor(rg.texture); ok {
+		if gt.rtt {
+			return gt.targetView
+		}
 		return gt.view
 	}
 	return r.spritePlaceholderView()
+}
+
+func (r *webgpuRenderer) rebuildRetainedSpriteBindGroups() {
+	for _, batch := range r.spriteBatches {
+		batch.bindGroups = r.createSpriteBatchBindGroups(batch)
+	}
 }
 
 // spritePlaceholderView lazily creates the 1x1 opaque-magenta texture that
@@ -222,7 +231,7 @@ func (r *webgpuRenderer) spritePlaceholderView() js.Value {
 // pipelines and their explicit bind group layouts. The uniform binding
 // carries hasDynamicOffset, which "auto" layouts never produce, so the
 // layout is explicit — one slot per draw command lives in the shared arena.
-func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
+func (r *webgpuRenderer) createSpriteBatchAnimPipelines(withTargets bool) {
 	vertex := js.Global().Get("GPUShaderStage").Get("VERTEX").Int()
 	fragment := js.Global().Get("GPUShaderStage").Get("FRAGMENT").Int()
 	readOnly := map[string]any{"type": "read-only-storage"}
@@ -243,7 +252,7 @@ func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
 			},
 		})
 	}
-	pipelineFor := func(module string, layout js.Value) js.Value {
+	pipelineFor := func(module string, layout js.Value, format any, samples int) js.Value {
 		pipelineLayout := r.device.Call("createPipelineLayout", map[string]any{
 			"bindGroupLayouts": []any{layout},
 		})
@@ -251,16 +260,20 @@ func (r *webgpuRenderer) createSpriteBatchAnimPipelines() {
 		return r.device.Call("createRenderPipeline", map[string]any{
 			"layout":      pipelineLayout,
 			"vertex":      map[string]any{"module": shader, "entryPoint": "vs_main"},
-			"fragment":    map[string]any{"module": shader, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": r.format, "blend": gpu.PremultipliedBlend()}}},
+			"fragment":    map[string]any{"module": shader, "entryPoint": "fs_main", "targets": []any{map[string]any{"format": format, "blend": gpu.PremultipliedBlend()}}},
 			"primitive":   map[string]any{"topology": "triangle-list"},
-			"multisample": map[string]any{"count": r.msaaSamples},
+			"multisample": map[string]any{"count": samples},
 		})
 	}
 
 	r.spriteBatchAnimLayout = layoutFor("")
 	r.spriteBatchAnimArrayLayout = layoutFor("2d-array")
-	r.spriteBatchAnimPipeline = pipelineFor(shaders.SpriteBatchAnimWGSL, r.spriteBatchAnimLayout)
-	r.spriteBatchAnimArrayPipeline = pipelineFor(shaders.SpriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout)
+	r.spriteBatchAnimPipeline = pipelineFor(shaders.SpriteBatchAnimWGSL, r.spriteBatchAnimLayout, r.format, r.msaaSamples)
+	r.spriteBatchAnimArrayPipeline = pipelineFor(shaders.SpriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout, r.format, r.msaaSamples)
+	if withTargets {
+		r.targetSpriteBatchAnimPipeline = pipelineFor(shaders.SpriteBatchAnimWGSL, r.spriteBatchAnimLayout, "rgba8unorm", 1)
+		r.targetSpriteBatchAnimArrayPipeline = pipelineFor(shaders.SpriteBatchAnimArrayWGSL, r.spriteBatchAnimArrayLayout, "rgba8unorm", 1)
+	}
 }
 
 // ensureBatchUniformArena grows the shared uniform arena before any slots are

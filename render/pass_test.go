@@ -58,3 +58,14 @@ func TestCameraForScreenPointResolvesZeroViewport(t *testing.T) {
 		t.Fatalf("base viewport = %#v, want resolved screen bounds", got.Viewport)
 	}
 }
+
+func TestCameraForScreenPointIgnoresTargetPasses(t *testing.T) {
+	base := render.Camera{World: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})}
+	target := render.Camera{World: math2d.NewRect(math2d.Vec2{X: 200}, math2d.Vec2{X: 10, Y: 10})}
+	bounds := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})
+
+	got := render.CameraForScreenPoint(base, []render.Pass{{Camera: target, Target: 1}}, bounds, math2d.Vec2{X: 50, Y: 50})
+	if !reflect.DeepEqual(got.World, base.World) {
+		t.Fatalf("camera world = %#v, want base; RTT image coordinates are not screen picking coordinates", got.World)
+	}
+}

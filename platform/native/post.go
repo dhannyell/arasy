@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
@@ -682,6 +683,8 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		return fmt.Errorf("create post command encoder: %w", err)
 	}
 	defer encoder.Release()
+	sampling := r.timeGPU && r.timing.sampleFrame()
+	var timedCompute bool
 	if r.particles != nil {
 		sims := make([]particleSim, 0)
 		for _, run := range runs {
@@ -689,37 +692,67 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 				continue
 			}
 			plan := plans[run.Pass]
-			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer), width, height); ok {
+			if sim, ok := r.particles.prepare(run.Particles, tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer), plan.width, plan.height); ok {
 				sims = append(sims, sim)
 			}
 		}
-		if err := r.particles.encode(encoder, sims, nil, nil); err != nil {
+		var emitWrites, simulateWrites *wgpu.PassTimestampWrites
+		if sampling && len(sims) > 0 {
+			emitWrites = r.timing.prepareWrites()
+			simulateWrites = r.timing.simulateWrites()
+			timedCompute = true
+		}
+		if err := r.particles.encode(encoder, sims, emitWrites, simulateWrites); err != nil {
 			return err
 		}
 	}
-	attachment := wgpu.RenderPassColorAttachment{View: r.msaaView, ResolveTarget: r.postSceneA.view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpDiscard, ClearValue: clearColor(r.clear)}
-	if r.msaaSamples <= 1 {
-		attachment = wgpu.RenderPassColorAttachment{View: r.postSceneA.view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore, ClearValue: clearColor(r.clear)}
-	}
-	pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}})
-	last := -1
-	scissor := nativeScissorState{}
-	for i, run := range runs {
-		if !nativePostRunVisible(run, len(plans)-1, chain.BelowLayer, true) {
+	firstScreen, lastScreen := firstAndLastNativeScreenPass(plans)
+	for passIndex, plan := range plans {
+		if plan.target != 0 {
+			if err := r.encodeTargetPass(encoder, passIndex, plan, runs, uniformOffsets); err != nil {
+				return err
+			}
 			continue
 		}
-		plan := plans[run.Pass]
-		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, &last); err != nil {
+		loadOp := wgpu.LoadOpLoad
+		if passIndex == firstScreen {
+			loadOp = wgpu.LoadOpClear
+		}
+		attachment := wgpu.RenderPassColorAttachment{
+			View: r.msaaView, ResolveTarget: r.postSceneA.view, LoadOp: loadOp,
+			StoreOp: wgpu.StoreOpStore, ClearValue: clearColor(r.clear),
+		}
+		if passIndex == lastScreen {
+			attachment.StoreOp = wgpu.StoreOpDiscard
+		}
+		if r.msaaSamples <= 1 {
+			attachment.View, attachment.ResolveTarget = r.postSceneA.view, nil
+			attachment.StoreOp = wgpu.StoreOpStore
+		}
+		var writes *wgpu.PassTimestampWrites
+		// The GPU render window ends at the last screen pass; the post
+		// effect chain stays outside the measurement.
+		if sampling {
+			switch {
+			case passIndex == firstScreen && passIndex == lastScreen:
+				writes = r.timing.renderWrites()
+			case passIndex == firstScreen:
+				writes = r.timing.renderBeginWrites()
+			case passIndex == lastScreen:
+				writes = r.timing.renderEndWrites()
+			}
+		}
+		pass := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{ColorAttachments: []wgpu.RenderPassColorAttachment{attachment}, TimestampWrites: writes})
+		if err := r.drawNativePostPlanRuns(pass, runs, uniformOffsets, plans, passIndex, chain.BelowLayer, true); err != nil {
 			pass.Release()
 			return err
 		}
-	}
-	if err := pass.TryEnd(); err != nil {
+		if err := pass.TryEnd(); err != nil {
+			pass.Release()
+			return err
+		}
 		pass.Release()
-		return err
 	}
-	pass.Release()
 
 	// Without MSAA and without runs above the chain, the last active effect
 	// renders directly to the surface and the final blit pass disappears.
@@ -794,15 +827,15 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		finalPass.SetPipeline(blit)
 		finalPass.SetBindGroup(0, bindGroup, nil)
 		finalPass.Draw(3, 1, 0, 0)
-		last = -1
-		scissor = nativeScissorState{}
+		last := -1
+		scissor := nativeScissorState{}
 		for i, run := range runs {
 			if !nativePostRunVisible(run, len(plans)-1, chain.BelowLayer, false) {
 				continue
 			}
 			plan := plans[run.Pass]
 			effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, &last); err != nil {
+			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, false, &last); err != nil {
 				finalPass.Release()
 				return err
 			}
@@ -813,12 +846,40 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		}
 		finalPass.Release()
 	}
+	slot := -1
+	if sampling {
+		slot = r.timing.encodeResolve(encoder, timedCompute)
+	}
 	commandBuffer, err := encoder.TryFinish(nil)
 	if err != nil {
 		return fmt.Errorf("finish post command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
 	r.device.queue.Submit(commandBuffer)
+	if r.timeCPU {
+		r.cpuFrame.submittedAt = time.Now()
+	}
+	if r.timeGPU {
+		r.timing.readback(slot)
+		r.timing.poll()
+		r.timing.drain()
+	}
+	return nil
+}
+
+func (r *Renderer) drawNativePostPlanRuns(pass *wgpu.RenderPassEncoder, runs []tess.StreamRun, uniformOffsets []uint32, plans []nativePassPlan, passIndex, belowLayer int, below bool) error {
+	plan := plans[passIndex]
+	scissor := nativeScissorState{}
+	last := -1
+	for index, run := range runs {
+		if run.Pass != passIndex || !nativePostRunVisible(run, len(plans)-1, belowLayer, below) {
+			continue
+		}
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		if err := r.drawRun(pass, run, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, -1, false, false, &last); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

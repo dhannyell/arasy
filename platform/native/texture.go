@@ -19,17 +19,23 @@ import (
 type gpuTexture struct {
 	texture         *wgpu.Texture
 	view            *wgpu.TextureView
+	targetView      *wgpu.TextureView
 	bindGroup       *wgpu.BindGroup
+	targetBindGroup *wgpu.BindGroup
 	spriteBindGroup *wgpu.BindGroup
+	mipLevels       int
+	dynamic         bool
+	rtt             bool
 }
 
 type textureResources struct {
-	device           *wgpu.Device
-	queue            *wgpu.Queue
-	texturedPipeline *wgpu.RenderPipeline
-	mipPipeline      *wgpu.RenderPipeline
-	textureSampler   *wgpu.Sampler
-	mipSampler       *wgpu.Sampler
+	device                 *wgpu.Device
+	queue                  *wgpu.Queue
+	texturedPipeline       *wgpu.RenderPipeline
+	targetTexturedPipeline *wgpu.RenderPipeline
+	mipPipeline            *wgpu.RenderPipeline
+	textureSampler         *wgpu.Sampler
+	mipSampler             *wgpu.Sampler
 }
 
 func buildTextures(manifest asset.Manifest, resources textureResources, log *slog.Logger) ([]gpuTexture, tess.TexSizes) {
@@ -53,7 +59,8 @@ func buildTextures(manifest asset.Manifest, resources textureResources, log *slo
 		if width <= 0 || height <= 0 {
 			continue
 		}
-		texture, err := resources.createGPUTexture(image.Pix, width, height)
+		mipLevels := mipLevelCount(width, height)
+		texture, err := resources.createGPUTexture(image.Pix, width, height, mipLevels, declaration.Dynamic)
 		if err != nil {
 			log.Error("upload texture", "texture", declaration.Name, "error", err)
 			continue
@@ -64,11 +71,10 @@ func buildTextures(manifest asset.Manifest, resources textureResources, log *slo
 	return textures, sizes
 }
 
-func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gpuTexture, error) {
+func (r textureResources) createGPUTexture(pixels []byte, width, height, levels int, dynamic bool) (gpuTexture, error) {
 	if err := r.valid(); err != nil {
 		return gpuTexture{}, err
 	}
-	levels := mipLevelCount(width, height)
 	texture, err := r.device.TryCreateTexture(&wgpu.TextureDescriptor{
 		Label:         "Arasy texture",
 		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst | wgpu.TextureUsageRenderAttachment,
@@ -81,7 +87,7 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 	if err != nil {
 		return gpuTexture{}, fmt.Errorf("create texture: %w", err)
 	}
-	result := gpuTexture{texture: texture}
+	result := gpuTexture{texture: texture, mipLevels: levels, dynamic: dynamic}
 	if err := r.writeRGBA(texture, pixels, width, height); err != nil {
 		result.release()
 		return gpuTexture{}, err
@@ -96,6 +102,17 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 		return gpuTexture{}, fmt.Errorf("create texture view: %w", err)
 	}
 	result.view = view
+	if dynamic {
+		targetView, err := texture.TryCreateView(&wgpu.TextureViewDescriptor{
+			Dimension: wgpu.TextureViewDimension2D, BaseMipLevel: 0, MipLevelCount: 1,
+			ArrayLayerCount: 1, Aspect: wgpu.TextureAspectAll,
+		})
+		if err != nil {
+			result.release()
+			return gpuTexture{}, fmt.Errorf("create target texture view: %w", err)
+		}
+		result.targetView = targetView
+	}
 	layout := r.texturedPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
@@ -111,6 +128,19 @@ func (r textureResources) createGPUTexture(pixels []byte, width, height int) (gp
 		return gpuTexture{}, fmt.Errorf("create texture bind group: %w", err)
 	}
 	result.bindGroup = bindGroup
+	if r.targetTexturedPipeline != nil {
+		targetLayout := r.targetTexturedPipeline.GetBindGroupLayout(0)
+		defer targetLayout.Release()
+		targetBindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+			Label: "Arasy target textured bind group", Layout: targetLayout,
+			Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: view}, {Binding: 1, Sampler: r.textureSampler}},
+		})
+		if err != nil {
+			result.release()
+			return gpuTexture{}, fmt.Errorf("create target texture bind group: %w", err)
+		}
+		result.targetBindGroup = targetBindGroup
+	}
 	return result, nil
 }
 
@@ -134,7 +164,11 @@ func (r textureResources) updateTextures(updates []runtime.TextureUpdate, textur
 		if err := r.writeRGBA(texture.texture, update.Image.Pix, width, height); err != nil {
 			return fmt.Errorf("update texture %d: %w", update.ID, err)
 		}
-		if err := r.generateMipmaps(texture.texture, width, height, mipLevelCount(width, height)); err != nil {
+		levels := texture.mipLevels
+		if texture.rtt {
+			levels = 1
+		}
+		if err := r.generateMipmaps(texture.texture, width, height, levels); err != nil {
 			return fmt.Errorf("generate texture %d mipmaps: %w", update.ID, err)
 		}
 	}
@@ -249,6 +283,12 @@ func (t gpuTexture) release() {
 	}
 	if t.bindGroup != nil {
 		t.bindGroup.Release()
+	}
+	if t.targetBindGroup != nil {
+		t.targetBindGroup.Release()
+	}
+	if t.targetView != nil {
+		t.targetView.Release()
 	}
 	if t.view != nil {
 		t.view.Release()

@@ -11,6 +11,9 @@ import (
 type Frame struct {
 	Camera   render.Camera
 	Commands []render.Command
+	// Width and Height are the physical target dimensions. Zero uses the
+	// dimensions supplied to Build or BuildPasses.
+	Width, Height int
 }
 
 // BuiltPass contains the runs emitted for one camera pass. The builder's
@@ -18,6 +21,8 @@ type Frame struct {
 type BuiltPass struct {
 	Camera render.Camera
 	Runs   []StreamRun
+	Width  int
+	Height int
 	start  int
 	end    int
 }
@@ -86,13 +91,19 @@ func (b *Builder) BuildPasses(frames []Frame, w, h int, provider AtlasProvider, 
 	oldPasses := b.passes
 	b.passes = b.passes[:0]
 	for passIndex, frame := range frames {
+		passW, passH := frame.Width, frame.Height
+		if passW <= 0 || passH <= 0 {
+			passW, passH = w, h
+		}
 		start := len(b.runs)
-		b.buildFrame(frame, w, h, provider, sizes)
+		b.buildFrame(frame, passW, passH, provider, sizes)
 		for index := start; index < len(b.runs); index++ {
 			b.runs[index].Pass = passIndex
 		}
 		b.passes = append(b.passes, BuiltPass{
 			Camera: frame.Camera,
+			Width:  passW,
+			Height: passH,
 			start:  start,
 			end:    len(b.runs),
 		})

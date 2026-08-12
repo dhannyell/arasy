@@ -43,6 +43,7 @@ const (
 	passesWebGPUBudget        = 0.0150
 	passesWebGPUMSAAOffBudget = 0.0150
 	postWebGPUBudget          = 0.075
+	rttWebGPUBudget           = 0.050
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -95,6 +96,40 @@ func TestConformancePassesWebGPUMSAAOff(t *testing.T) {
 	assertConformance(t, "passes-msaa-off", "webgpu", 1, passesChannelTol, passesWebGPUMSAAOffBudget)
 }
 
+func TestConformanceRTTWebGPU(t *testing.T) {
+	assertConformance(t, "rtt", "webgpu", 1, frameChannelTol, rttWebGPUBudget)
+}
+
+func TestConformanceRTTArrayWebGPU(t *testing.T) {
+	assertConformance(t, "rtt-array", "webgpu", 1, frameChannelTol, rttWebGPUBudget)
+}
+
+func TestRTTFixturesShareRasterOracle(t *testing.T) {
+	individual, err := NewRTTGolden()
+	if err != nil {
+		t.Fatal(err)
+	}
+	array, err := NewRTTArrayGolden()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	individualFrame := rasterFrame(t, individual, 1)
+	arrayFrame := rasterFrame(t, array, 1)
+	if !bytes.Equal(individualFrame.Pix, arrayFrame.Pix) {
+		t.Fatal("individual and sprite-array RTT fixtures have different raster output")
+	}
+	colors := make(map[color.RGBA]struct{})
+	for y := 0; y < individualFrame.Bounds().Dy(); y += 8 {
+		for x := 0; x < individualFrame.Bounds().Dx(); x += 8 {
+			colors[individualFrame.RGBAAt(x, y)] = struct{}{}
+		}
+	}
+	if len(colors) < 8 {
+		t.Fatalf("RTT fixture produced only %d sampled colors, want a non-empty conformance scene", len(colors))
+	}
+}
+
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
 	t.Helper()
 
@@ -130,6 +165,10 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return NewParallaxConformanceGolden()
 	case "passes", "passes-msaa-off":
 		return NewCameraPassesGolden()
+	case "rtt":
+		return NewRTTGolden()
+	case "rtt-array":
+		return NewRTTArrayGolden()
 	default:
 		return nil, fmt.Errorf("unknown fixture %q", fixture)
 	}

@@ -3,9 +3,11 @@ package runtime
 import (
 	"image"
 	"log/slog"
+	"slices"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/ui"
@@ -76,20 +78,39 @@ type RenderContext struct {
 	// fixedDt is a simulation tick in seconds. 1/SimulationHz
 	fixedDt float64
 
-	camera render.Camera
-	passes []render.Pass
+	camera         render.Camera
+	passes         []render.Pass
+	passTargets    []render.TextureID
+	updatedTargets []render.TextureID
+	diagnostics    *diagnostic.Once
 }
 
 func (ctx *RenderContext) Camera() render.Camera       { return ctx.camera }
 func (ctx *RenderContext) SetCamera(cam render.Camera) { ctx.camera = cam }
 
-// AddPass appends one extra camera and command stream to the frame. Extra
-// passes are rendered before the base stream returned by Game.Render.
+// AddPass appends one extra screen camera and command stream to the frame.
 func (ctx *RenderContext) AddPass(camera render.Camera, commands []render.Command) {
-	ctx.passes = append(ctx.passes, render.Pass{
-		Camera:   camera,
-		Commands: append([]render.Command(nil), commands...),
-	})
+	ctx.passes = append(ctx.passes, render.Pass{Camera: camera, Commands: append([]render.Command(nil), commands...)})
+}
+
+// AddTargetPass appends one pass that clears and draws into a dynamic texture.
+// The first pass that names a target owns it for the frame. A conflicting CPU
+// update is accepted first, then overwritten when the pass executes.
+func (ctx *RenderContext) AddTargetPass(camera render.Camera, commands []render.Command, target render.TextureID) {
+	decl, ok := ctx.Assets.TextureDecl(target)
+	if !ok || !decl.Dynamic {
+		ctx.logTargetWarning("render.pass_target_invalid", target, "AddTargetPass: unknown or non-dynamic texture ID")
+		return
+	}
+	if slices.Contains(ctx.passTargets, target) {
+		ctx.logTargetWarning("render.pass_target_duplicate", target, "AddTargetPass: target already has an owner this frame")
+		return
+	}
+	if slices.Contains(ctx.updatedTargets, target) {
+		ctx.logTargetWarning("render.pass_target_update_conflict", target, "AddTargetPass: pass overwrites UpdateTexture content")
+	}
+	ctx.passTargets = append(ctx.passTargets, target)
+	ctx.passes = append(ctx.passes, render.Pass{Camera: camera, Commands: append([]render.Command(nil), commands...), Target: target})
 }
 
 // UpdateTexture publishes new content for a dynamic texture declared in the
@@ -117,7 +138,23 @@ func (ctx *RenderContext) UpdateTexture(id render.TextureID, img *image.RGBA) {
 		}
 		return
 	}
+	if slices.Contains(ctx.passTargets, id) {
+		ctx.logTargetWarning("render.pass_target_update_conflict", id, "UpdateTexture: content will be overwritten by target pass")
+	}
+	if !slices.Contains(ctx.updatedTargets, id) {
+		ctx.updatedTargets = append(ctx.updatedTargets, id)
+	}
 	ctx.UpdateTextureField.UpdateTexture(id, img)
+}
+
+func (ctx *RenderContext) logTargetWarning(code string, id render.TextureID, message string) {
+	if ctx.diagnostics != nil {
+		ctx.diagnostics.Log(ctx.Log, slog.LevelWarn, diagnostic.Key{Code: code, ID: uint64(id)}, message, "code", code, "id", id)
+		return
+	}
+	if ctx.Log != nil {
+		ctx.Log.Warn(message, "code", code, "id", id)
+	}
 }
 
 func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
@@ -137,6 +174,7 @@ func (d *Driver) makeRenderContext(uiInst *ui.UI) RenderContext {
 		GamepadConnected:   d.gamepadConnected,
 		UpdateTextureField: &TexturePort{texture: &d.texture},
 		Batches:            &d.batchPort,
+		diagnostics:        &d.renderDiagnostics,
 		fixedDt:            d.clock.DT(),
 		camera:             d.cameraForSurface(),
 	}

@@ -53,11 +53,28 @@ sprites use the complete `Camera.View`; text and particles remain billboards.
 ## Camera passes
 
 `RenderContext.AddPass` adds an extra camera and command stream to the frame.
-Renderers draw extra passes in declaration order, then draw the ordinary
+Renderers draw screen passes in declaration order, then draw the ordinary
 commands returned by `Game.Render` with the frame camera. A pass with a zero
 viewport uses the full target; an explicit viewport clips that pass to its
-screen rectangle. Passes share the frame clear and remain presentation-only:
-they do not affect checksums, snapshots, recordings, or replay.
+screen rectangle. Passes remain presentation-only: they do not affect
+checksums, snapshots, recordings, or replay.
+
+Use `AddTargetPass` with a declared dynamic texture to draw the pass into that
+texture instead of the screen. Target passes clear to transparent and
+their result is available to later passes and to the base stream in the same
+frame. This is the minimap, mirror, and in-world-screen path:
+
+```go
+ctx.AddTargetPass(minimapCamera, minimapCommands, minimapTexture)
+commands = append(commands, render.DrawImage{Texture: minimapTexture, Dest: panel})
+```
+
+Only manifest-declared dynamic textures may be targets. Do not sample a
+target in the pass that writes it: GPU feedback is undefined. Use two dynamic
+textures and alternate them for feedback effects. Targets are single-sample,
+clear every frame, and have no readback API. The API does not promise target
+mipmaps; WebGPU may refresh internal sprite-array mips to keep array batching
+correct after an RTT pass.
 
 ## Render interpolation
 

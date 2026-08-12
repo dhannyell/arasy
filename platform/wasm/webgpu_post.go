@@ -628,7 +628,11 @@ func (r *webgpuRenderer) renderPostFramePasses(
 	}
 	encoder := r.device.Call("createCommandEncoder")
 	textureView := r.context.Call("getCurrentTexture").Call("createView")
+	sampleTiming := r.timing != nil
 	if r.particles != nil {
+		if sampleTiming {
+			r.particles.armTiming(r.timing)
+		}
 		particleRuns := make([]gpuParticleRun, 0)
 		for _, run := range runs {
 			if run.kind == tess.DrawRunParticles {
@@ -636,30 +640,54 @@ func (r *webgpuRenderer) renderPostFramePasses(
 				particleRuns = append(particleRuns, gpuParticleRun{
 					command: run.particles,
 					camera:  tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer),
+					width:   plan.width,
+					height:  plan.height,
 				})
 			}
 		}
 		r.particles.encodeSims(encoder, particleRuns, w, h)
 	}
 
-	attachment := map[string]any{
-		"view":          r.msaaView,
-		"resolveTarget": r.postSceneA.view,
-		"loadOp":        "clear",
-		"storeOp":       "discard",
-		"clearValue":    clearValue(r.clear),
-	}
-	if r.msaaSamples <= 1 {
-		attachment = map[string]any{
-			"view":       r.postSceneA.view,
-			"loadOp":     "clear",
-			"storeOp":    "store",
-			"clearValue": clearValue(r.clear),
+	firstScreen, lastScreen := firstAndLastScreenPass(plans)
+	for passIndex, plan := range plans {
+		if plan.target != 0 {
+			r.encodeTargetPass(encoder, passIndex, plan, runs)
+			continue
 		}
+		loadOp := "load"
+		if passIndex == firstScreen {
+			loadOp = "clear"
+		}
+		attachment := map[string]any{
+			"view": r.msaaView, "resolveTarget": r.postSceneA.view,
+			"loadOp": loadOp, "storeOp": "store", "clearValue": clearValue(r.clear),
+		}
+		if passIndex == lastScreen {
+			attachment["storeOp"] = "discard"
+		}
+		if r.msaaSamples <= 1 {
+			attachment = map[string]any{
+				"view": r.postSceneA.view, "loadOp": loadOp,
+				"storeOp": "store", "clearValue": clearValue(r.clear),
+			}
+		}
+		desc := map[string]any{"colorAttachments": []any{attachment}}
+		// The GPU render window ends at the last screen pass; the post
+		// effect chain stays outside the measurement.
+		if sampleTiming {
+			switch {
+			case passIndex == firstScreen && passIndex == lastScreen:
+				desc["timestampWrites"] = r.timing.renderTimestampWrites()
+			case passIndex == firstScreen:
+				desc["timestampWrites"] = r.timing.renderBeginTimestampWrites()
+			case passIndex == lastScreen:
+				desc["timestampWrites"] = r.timing.renderEndTimestampWrites()
+			}
+		}
+		pass := encoder.Call("beginRenderPass", desc)
+		r.drawPostPlanRuns(pass, runs, plans, passIndex, chain.BelowLayer, true, w, h)
+		pass.Call("end")
 	}
-	pass := encoder.Call("beginRenderPass", map[string]any{"colorAttachments": []any{attachment}})
-	r.drawPostRuns(pass, runs, plans, chain.BelowLayer, true, w, h)
-	pass.Call("end")
 
 	// Without MSAA and without runs above the chain, the last active effect
 	// renders directly to the swapchain and the final blit pass disappears.
@@ -735,8 +763,16 @@ func (r *webgpuRenderer) renderPostFramePasses(
 		r.drawPostRuns(finalPass, runs, plans, chain.BelowLayer, false, w, h)
 		finalPass.Call("end")
 	}
+	timingSlot := -1
+	if sampleTiming {
+		timedCompute := r.particles != nil && r.particles.timingWrote
+		timingSlot = r.timing.encodeResolve(encoder, timedCompute)
+	}
 	commandBuffer := encoder.Call("finish")
 	r.queue.Call("submit", []any{commandBuffer})
+	if timingSlot >= 0 {
+		r.timing.readback(timingSlot)
+	}
 	if r.particles != nil {
 		r.particles.endFrame()
 	}
@@ -811,6 +847,25 @@ func (r *webgpuRenderer) drawPostRuns(
 		}
 		plan := plans[run.pass]
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
-		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, w, h), &scissor, w, h, false, nil)
+		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, w, h), &scissor, w, h, false, false, nil)
+	}
+}
+
+func (r *webgpuRenderer) drawPostPlanRuns(
+	pass js.Value,
+	runs []gpuDrawRun,
+	plans []gpuPassPlan,
+	passIndex, belowLayer int,
+	below bool,
+	w, h int,
+) {
+	plan := plans[passIndex]
+	scissor := webGPUScissorState{}
+	for _, run := range runs {
+		if run.pass != passIndex || !postRunVisible(run, len(plans)-1, below, belowLayer) {
+			continue
+		}
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.layer)
+		r.drawRun(pass, run, effective, passViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, false, false, nil)
 	}
 }

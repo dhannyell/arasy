@@ -61,9 +61,12 @@ type gpuParticles struct {
 	// when Config.ParticleOffscreenScale enables offscreen compositing. The
 	// additive variant keeps destination alpha untouched so the source-over
 	// composite of the offscreen stays mathematically exact for both blends.
-	drawAlphaOff    js.Value
-	drawAdditiveOff js.Value
-	drawMissingOff  js.Value
+	drawAlphaOff       js.Value
+	drawAdditiveOff    js.Value
+	drawMissingOff     js.Value
+	drawAlphaTarget    js.Value
+	drawAdditiveTarget js.Value
+	drawMissingTarget  js.Value
 
 	computeLayout js.Value
 	renderLayout  js.Value
@@ -88,13 +91,15 @@ type gpuParticles struct {
 type gpuParticleRun struct {
 	command render.DrawParticles
 	camera  render.Camera
+	width   int
+	height  int
 }
 
 // newGpuParticles builds the shared particle GPU state once: bind group
 // layouts, the three compute pipelines, the render blend variants (plus
 // their single-sample offscreen twins when withOffscreen is set), the white
 // 1×1 texture for untextured effects and the sampler.
-func newGpuParticles(r *webgpuRenderer, withOffscreen bool) *gpuParticles {
+func newGpuParticles(r *webgpuRenderer, withOffscreen, withTargets bool) *gpuParticles {
 	g := &gpuParticles{
 		device:   r.device,
 		queue:    r.queue,
@@ -110,7 +115,7 @@ func newGpuParticles(r *webgpuRenderer, withOffscreen bool) *gpuParticles {
 		"magFilter": "linear",
 		"minFilter": "linear",
 	})
-	g.buildPipelines(r.format, withOffscreen, r.msaaSamples)
+	g.buildPipelines(r.format, withOffscreen, withTargets, r.msaaSamples)
 	return g
 }
 
@@ -161,7 +166,7 @@ func (g *gpuParticles) textureBindLayout() js.Value {
 	})
 }
 
-func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool, samples int) {
+func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen, withTargets bool, samples int) {
 	computeModule := g.device.Call("createShaderModule", map[string]any{"code": shaders.ParticlesComputeWGSL})
 	computePipelineLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.computeLayout},
@@ -179,26 +184,31 @@ func (g *gpuParticles) buildPipelines(format js.Value, withOffscreen bool, sampl
 	renderLayout := g.device.Call("createPipelineLayout", map[string]any{
 		"bindGroupLayouts": []any{g.renderLayout, g.textureLayout},
 	})
-	pipeline := func(fragment string, blend map[string]any, samples int) js.Value {
+	pipeline := func(fragment string, blend map[string]any, samples int, targetFormat any) js.Value {
 		return g.device.Call("createRenderPipeline", map[string]any{
 			"layout": renderLayout,
 			"vertex": map[string]any{"module": renderModule, "entryPoint": "vs_main"},
 			"fragment": map[string]any{
 				"module":     renderModule,
 				"entryPoint": fragment,
-				"targets":    []any{map[string]any{"format": format, "blend": blend}},
+				"targets":    []any{map[string]any{"format": targetFormat, "blend": blend}},
 			},
 			"primitive":   map[string]any{"topology": "triangle-list"},
 			"multisample": map[string]any{"count": samples},
 		})
 	}
-	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend(), samples)
-	g.drawAdditive = pipeline("fs_main", additiveBlend(), samples)
-	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend(), samples)
+	g.drawAlpha = pipeline("fs_main", gpu.PremultipliedBlend(), samples, format)
+	g.drawAdditive = pipeline("fs_main", additiveBlend(), samples, format)
+	g.drawMissing = pipeline("fs_missing", gpu.PremultipliedBlend(), samples, format)
+	if withTargets {
+		g.drawAlphaTarget = pipeline("fs_main", gpu.PremultipliedBlend(), 1, "rgba8unorm")
+		g.drawAdditiveTarget = pipeline("fs_main", additiveBlend(), 1, "rgba8unorm")
+		g.drawMissingTarget = pipeline("fs_missing", gpu.PremultipliedBlend(), 1, "rgba8unorm")
+	}
 	if withOffscreen {
-		g.drawAlphaOff = pipeline("fs_main", gpu.PremultipliedBlend(), 1)
-		g.drawAdditiveOff = pipeline("fs_main", additiveOffscreenBlend(), 1)
-		g.drawMissingOff = pipeline("fs_missing", gpu.PremultipliedBlend(), 1)
+		g.drawAlphaOff = pipeline("fs_main", gpu.PremultipliedBlend(), 1, format)
+		g.drawAdditiveOff = pipeline("fs_main", additiveOffscreenBlend(), 1, format)
+		g.drawMissingOff = pipeline("fs_missing", gpu.PremultipliedBlend(), 1, format)
 	}
 }
 
@@ -375,7 +385,11 @@ func (g *gpuParticles) encodeSims(
 ) {
 	sims := make([]simRequest, 0, len(runs))
 	for _, run := range runs {
-		if e, emitCount, ok := g.prepareEmitter(run.command, run.camera, w, h); ok {
+		runW, runH := run.width, run.height
+		if runW <= 0 || runH <= 0 {
+			runW, runH = w, h
+		}
+		if e, emitCount, ok := g.prepareEmitter(run.command, run.camera, runW, runH); ok {
 			sims = append(sims, simRequest{e: e, emitCount: emitCount})
 		}
 	}
@@ -526,7 +540,11 @@ func (g *gpuParticles) draw(
 	scissor *webGPUScissorState,
 	w, h int,
 ) {
-	g.drawTo(pass, cmd, camera, viewport, scissor, w, h, 1, w, h, false)
+	g.drawTo(pass, cmd, camera, viewport, scissor, w, h, 1, w, h, false, false)
+}
+
+func (g *gpuParticles) drawTarget(pass js.Value, cmd render.DrawParticles, camera render.Camera, viewport math2d.Rect, scissor *webGPUScissorState, w, h int) {
+	g.drawTo(pass, cmd, camera, viewport, scissor, w, h, 1, w, h, false, true)
 }
 
 // drawTo submits one emitter into either the main MSAA pass (offscreen
@@ -544,6 +562,7 @@ func (g *gpuParticles) drawTo(
 	clipScale float64,
 	targetW, targetH int,
 	offscreen bool,
+	renderTarget bool,
 ) {
 	e := g.emitters[particlegpu.EmitterKey{Effect: cmd.Effect, Emitter: cmd.Emitter}]
 	if e == nil || e.seed != cmd.Seed || e.lastSeen != g.frame {
@@ -551,7 +570,14 @@ func (g *gpuParticles) drawTo(
 	}
 
 	pipeline := g.drawAlpha
-	if offscreen {
+	if renderTarget {
+		pipeline = g.drawAlphaTarget
+		if e.missingTexture {
+			pipeline = g.drawMissingTarget
+		} else if e.decl.Blend == particle.BlendAdditive {
+			pipeline = g.drawAdditiveTarget
+		}
+	} else if offscreen {
 		pipeline = g.drawAlphaOff
 		if e.missingTexture {
 			pipeline = g.drawMissingOff

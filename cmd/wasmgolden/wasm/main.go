@@ -32,6 +32,10 @@ func main() {
 		game, err = wasmgolden.NewCameraPassesGolden()
 	case "post":
 		game, err = wasmgolden.NewPostGolden()
+	case "rtt":
+		game, err = wasmgolden.NewRTTGolden()
+	case "rtt-array":
+		game, err = wasmgolden.NewRTTArrayGolden()
 	case "boot":
 		game, err = wasmgolden.NewBoot()
 	default:

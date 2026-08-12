@@ -7,6 +7,7 @@ import (
 
 	"github.com/dhannyell/arasy/audio"
 	"github.com/dhannyell/arasy/input"
+	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/enginesplash"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
@@ -32,7 +33,8 @@ type Driver struct {
 	tick     uint64
 	log      *slog.Logger
 
-	warnedManualStep bool
+	warnedManualStep  bool
+	renderDiagnostics diagnostic.Once
 
 	// UI
 	viewport   math2d.Rect

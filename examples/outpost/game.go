@@ -22,6 +22,8 @@ const (
 	viewportWidth   = 1600
 	viewportHeight  = 960
 	groundBatchBase = render.SpriteBatchID(100)
+	minimapWidth    = 240
+	minimapHeight   = 180
 
 	// cameraAir is the margin FrameGround adds around the board: enough for
 	// the peaks above it and the cliffs below without dwarfing the island.
@@ -107,6 +109,7 @@ type Game struct {
 	hovered         bool
 
 	commands []render.Command
+	minimap  []render.Command
 
 	assets asset.Manifest
 }
@@ -379,6 +382,8 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 		ctx.UpdateTexture(g.groundAtlas.Texture, terrainAtlasImage())
 		g.terrainUploaded = true
 	}
+	minimapTexture := ctx.Assets.Texture("minimap")
+	ctx.AddTargetPass(g.minimapCamera(), g.minimapCommands(), minimapTexture)
 
 	cmds := g.appendGroundBatches(g.commands[:0], ctx.Camera())
 	cmds = append(cmds, g.static...)
@@ -390,9 +395,65 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 
 	cmds = ctx.World.RenderCommandsInto(cmds, ctx.Alpha)
 	cmds = g.appendConfusion(cmds, ctx)
+	cmds = append(cmds, g.minimapPanel(ctx.Camera(), minimapTexture))
 
 	g.commands = cmds
 	return cmds
+}
+
+func (g *Game) minimapCamera() render.Camera {
+	return render.Camera{
+		World:  render.FrameGround(isoView, boardRect(), 0),
+		Aspect: render.AspectFit,
+		View:   isoView,
+	}
+}
+
+func (g *Game) minimapCommands() []render.Command {
+	commands := g.minimap[:0]
+	for j := range boardRows {
+		for i := range boardCols {
+			fill := render.RGBA8(74, 118, 76, 255)
+			switch terrainAt(i, j) {
+			case terrainWater:
+				fill = waterFill
+			case terrainForest:
+				fill = render.RGBA8(46, 88, 54, 255)
+			case terrainMountain, terrainPeak:
+				fill = rockSouth
+			case terrainBuilding, terrainLantern:
+				fill = bankLit
+			}
+			commands = append(commands, render.DrawRect{Rect: tileRect(i, j), Fill: fill})
+		}
+	}
+	for index, unit := range g.State.Units {
+		commands = append(commands, render.DrawCircle{
+			Center: tileCenter(unit.TileI, unit.TileJ), Radius: 2.2, Fill: unitBodies[index],
+		})
+	}
+	g.minimap = commands
+	return commands
+}
+
+func (g *Game) minimapPanel(camera render.Camera, texture render.TextureID) render.Command {
+	const margin = 24.0
+	max := math2d.Vec2{
+		X: camera.Viewport.Max.X - margin,
+		Y: camera.Viewport.Max.Y - margin,
+	}
+	min := math2d.Vec2{X: max.X - minimapWidth, Y: max.Y - minimapHeight}
+	return render.DrawImageQuad{
+		BaseCommand: render.BaseCommand{LayerValue: 100},
+		Texture:     texture,
+		Corners: [4]math2d.Vec2{
+			camera.ScreenToWorld(min),
+			camera.ScreenToWorld(math2d.Vec2{X: max.X, Y: min.Y}),
+			camera.ScreenToWorld(max),
+			camera.ScreenToWorld(math2d.Vec2{X: min.X, Y: max.Y}),
+		},
+		Tint: render.RGBA(1, 1, 1, 0.92),
+	}
 }
 
 func (g *Game) appendGroundBatches(cmds []render.Command, cam render.Camera) []render.Command {

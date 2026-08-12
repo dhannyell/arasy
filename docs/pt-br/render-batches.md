@@ -49,11 +49,28 @@ de tessellation recebe escala e offset, não um shear geral.
 ## Passes de câmera
 
 `RenderContext.AddPass` adiciona uma câmera e um stream de comandos ao frame.
-Os renderers desenham os passes extras na ordem declarada e depois desenham os
-comandos normais retornados por `Game.Render` com a câmera do frame. Um pass
-com viewport zero usa o target inteiro; um viewport explícito limita o pass ao
-seu retângulo na tela. Os passes compartilham o clear do frame e são apenas de
-apresentação: não afetam checksums, snapshots, gravações ou replay.
+Os renderers desenham os passes de tela na ordem declarada e depois desenham
+os comandos normais retornados por `Game.Render` com a câmera do frame. Um
+pass com viewport zero usa o target inteiro; um viewport explícito limita o
+pass ao seu retângulo na tela. Os passes são apenas de apresentação: não
+afetam checksums, snapshots, gravações ou replay.
+
+Use `AddTargetPass` com uma textura dinâmica declarada para desenhar o passe
+nessa textura, em vez de na tela. Um passe-alvo limpa para transparente e
+seu resultado fica disponível aos passes posteriores e ao stream base no mesmo
+frame. É o caminho de minimapa, espelho e tela dentro do mundo:
+
+```go
+ctx.AddTargetPass(minimapCamera, minimapCommands, minimapTexture)
+commands = append(commands, render.DrawImage{Texture: minimapTexture, Dest: panel})
+```
+
+Somente texturas dinâmicas declaradas no manifest podem ser alvos. Não amostre
+um alvo no passe que o escreve: feedback de GPU é indefinido. Use duas
+texturas dinâmicas e alterne-as para efeitos com feedback. Alvos são de uma
+amostra, limpam em todo frame e não têm API de readback. A API não promete
+mipmaps para alvos; o WebGPU pode atualizar mips internos do sprite array para
+manter o batching correto depois de um passe RTT.
 
 ## Interpolação de render
 

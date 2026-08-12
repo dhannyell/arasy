@@ -6,6 +6,7 @@ import (
 	"image/draw"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/asset/pixel"
@@ -123,10 +124,50 @@ func (r *Renderer) RenderPassesInto(dst *image.RGBA, passes []render.Pass, base 
 		r.viewportSet = originalViewportSet
 	}()
 
+	var claimedTargets []render.TextureID
+	hasScreenPass := false
 	for _, pass := range passes {
+		if pass.Target != 0 {
+			if slices.Contains(claimedTargets, pass.Target) {
+				r.diagnostics.Log(r.log, slog.LevelWarn,
+					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
+					"raster: target already has a pass owner this frame; pass skipped", "target", pass.Target)
+				continue
+			}
+			if r.Assets.IsDynamic(pass.Target) {
+				claimedTargets = append(claimedTargets, pass.Target)
+			}
+			target, ok := r.passTarget(pass.Target)
+			if !ok {
+				continue
+			}
+			clear(target.Pix)
+			r.renderPass(target, pass, false, false)
+			continue
+		}
+		hasScreenPass = true
 		r.renderPass(dst, pass, false, false)
 	}
-	r.renderPass(dst, base, true, len(passes) > 0)
+	r.renderPass(dst, base, true, hasScreenPass)
+}
+
+// passTarget resolves the CPU storage of a dynamic texture that a pass may
+// overwrite. Static and unknown textures stay source-only by contract.
+func (r *Renderer) passTarget(id render.TextureID) (*image.RGBA, bool) {
+	if !r.Assets.IsDynamic(id) {
+		r.diagnostics.Log(r.log, slog.LevelWarn,
+			diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(id)},
+			"raster: pass target is not a declared dynamic texture; pass skipped", "target", id)
+		return nil, false
+	}
+	target := r.Textures.Lookup(id)
+	if target == nil {
+		r.diagnostics.Log(r.log, slog.LevelWarn,
+			diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(id)},
+			"raster: pass target has no pixel storage; pass skipped", "target", id)
+		return nil, false
+	}
+	return target, true
 }
 
 func (r *Renderer) renderPass(dst *image.RGBA, pass render.Pass, base, preserve bool) {
