@@ -36,13 +36,20 @@ transforms bounds conservatively through that `View`. The remaining exception
 is `DrawParticles.BaseCommand.Transform`, which is deliberately outside the
 camera contract.
 
-### 2. There is no Tiled import
+### 2. Tiled import — closed
 
-The engine has a retained grid-and-atlas tilemap path, but it does not yet
-import map editor formats such as Tiled or LDtk. For 2.5D this still weighs
-double, because hand-maintaining the grid is content work. Plan the import
-around the existing square world grid, atlas layers, and `ProjectCorners`
-ground path.
+`arasy tilemap import map.tmx -o map_gen.go --package game` converts finite
+orthogonal and isometric Tiled maps into deterministic Go data at tool time.
+Tile layers become retained `tilemap.Layer` and `tilemap.Atlas` data, including
+tile flips, tall-tile anchoring, offsets, parallax and raw object groups. The
+world remains a square grid; `Camera.View` remains responsible for the
+isometric projection. `examples/outpost` commits both the `.tmx` source and
+its generated map.
+
+LDtk remains a second step for an orthogonal-only game that specifically needs
+it. Infinite maps, multiple tilesets in one layer, image/group layers and
+staggered/hexagonal layouts are rejected explicitly rather than imported with
+different semantics.
 
 ### 3. Height does not enter picking
 

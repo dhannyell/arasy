@@ -36,13 +36,20 @@ culling de batches transforma bounds conservadoramente pela mesma `View`. A
 exceção restante é `DrawParticles.BaseCommand.Transform`, deliberadamente fora
 do contrato da câmera.
 
-### 2. Não existe importação do Tiled
+### 2. Importação do Tiled — fechada
 
-O engine já tem um caminho retido de grid e atlas, mas ainda não importa
-formatos de editor como Tiled ou LDtk. Para 2.5D isso ainda pesa dobrado,
-porque manter o grid manualmente é trabalho de conteúdo. A importação deve
-usar o grid quadrado do mundo, as camadas de atlas existentes e o caminho de
-chão com `ProjectCorners`.
+`arasy tilemap import mapa.tmx -o mapa_gen.go --package game` converte mapas
+Tiled ortogonais e isométricos finitos em dados Go determinísticos no tempo de
+ferramenta. Camadas de tiles viram `tilemap.Layer` e `tilemap.Atlas` retidos,
+incluindo flips, ancoragem de tile alto, offsets, parallax e grupos de objetos
+crus. O mundo continua um grid quadrado; `Camera.View` continua responsável
+pela projeção isométrica. `examples/outpost` commita a fonte `.tmx` e o mapa
+gerado.
+
+LDtk continua um segundo degrau para um jogo ortogonal que o peça. Mapas
+infinitos, múltiplos tilesets numa layer, image/group layers e layouts
+staggered/hexagonal são rejeitados explicitamente, em vez de importar com
+semântica diferente.
 
 ### 3. Altura não entra no picking
 

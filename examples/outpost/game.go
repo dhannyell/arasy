@@ -2,7 +2,6 @@ package outpost
 
 import (
 	"embed"
-	"fmt"
 	"io/fs"
 	"math"
 
@@ -123,20 +122,11 @@ func NewGame() (*Game, error) {
 	if err != nil {
 		return nil, err
 	}
-	ground, err := tilemap.ParseASCII(boardMap[:], groundLegend)
-	if err != nil {
-		return nil, fmt.Errorf("parse outpost ground: %w", err)
-	}
-	ground.Origin = math2d.Vec2{}
-	ground.CellSize = math2d.Vec2{X: tileSize, Y: tileSize}
+	groundMap := NewOutpostMap(m.Texture)
 	return &Game{
-		assets: m,
-		ground: ground,
-		groundAtlas: tilemap.Atlas{
-			Texture:  m.Texture("terrain_atlas"),
-			TileSize: math2d.Vec2{X: terrainAtlasCell, Y: terrainAtlasCell},
-			Columns:  terrainAtlasColumns,
-		},
+		assets:      m,
+		ground:      groundMap.Layers[0].Layer,
+		groundAtlas: groundMap.Layers[0].Atlas,
 	}, nil
 }
 
@@ -457,7 +447,7 @@ func (g *Game) minimapPanel(camera render.Camera, texture render.TextureID) rend
 }
 
 func (g *Game) appendGroundBatches(cmds []render.Command, cam render.Camera) []render.Command {
-	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam.ForLayer(layerGround)) {
+	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam.ForLayer(layerGround), g.groundAtlas) {
 		cmds = append(cmds, render.DrawSpriteBatch{
 			BaseCommand: render.BaseCommand{LayerValue: layerGround},
 			Batch:       groundBatchID(chunk),
