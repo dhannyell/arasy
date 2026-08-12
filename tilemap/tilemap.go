@@ -13,6 +13,10 @@ type Atlas struct {
 	Texture  render.TextureID // Texture that contains the tiles.
 	TileSize math2d.Vec2      // Size of one tile in the atlas.
 	Columns  int              // Number of tiles in each atlas row.
+	DrawSize math2d.Vec2      // World size of each tile; zero uses Layer.CellSize.
+	Offset   math2d.Vec2      // World offset after bottom-aligning DrawSize.
+	Spacing  math2d.Vec2      // Pixel gap between atlas tiles.
+	Margin   math2d.Vec2      // Pixel border before the first atlas tile.
 }
 
 // ChunkCoord identifies a tilemap chunk by its column and row.
@@ -23,11 +27,13 @@ type ChunkCoord struct {
 
 // Layer stores tile indices and their world placement.
 type Layer struct {
-	Tiles    []int16     // Atlas indices in row-major order; -1 is empty.
-	W, H     int         // Layer width and height in cells.
-	Origin   math2d.Vec2 // World edge of tile (0,0).
-	CellSize math2d.Vec2 // Tile size in world units.
-	dirty    map[ChunkCoord]struct{}
+	Tiles     []int16             // Atlas indices in row-major order; -1 is empty.
+	Flips     []render.SpriteFlip // Optional per-cell source flips; nil means no flips.
+	Rotations []float64           // Optional per-cell rotations after flipping; nil means no rotation.
+	W, H      int                 // Layer width and height in cells.
+	Origin    math2d.Vec2         // World edge of tile (0,0).
+	CellSize  math2d.Vec2         // Tile size in world units.
+	dirty     map[ChunkCoord]struct{}
 }
 
 // Chunk returns the sprite instances for one chunk of the layer.
@@ -45,34 +51,44 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 	}
 	maxX := min(minX+ChunkSize, l.W)
 	maxY := min(minY+ChunkSize, l.H)
+	drawSize := a.DrawSize
+	if drawSize.X <= 0 || drawSize.Y <= 0 {
+		drawSize = l.CellSize
+	}
 
 	buf = buf[:0]
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
-			tile := l.Tiles[y*l.W+x]
+			index := y*l.W + x
+			tile := l.Tiles[index]
 			if tile < 0 {
 				continue
 			}
 			atlasX := int(tile) % a.Columns
 			atlasY := int(tile) / a.Columns
-			buf = append(buf, render.SpriteInstance{
+			position := l.Origin.Add(math2d.Vec2{
+				X: float64(x)*l.CellSize.X + a.Offset.X,
+				Y: float64(y)*l.CellSize.Y + l.CellSize.Y - drawSize.Y + a.Offset.Y,
+			})
+			instance := render.SpriteInstance{
 				Texture:        a.Texture,
 				ProjectCorners: true,
-				Dest: math2d.NewRect(
-					l.Origin.Add(math2d.Vec2{
-						X: float64(x) * l.CellSize.X,
-						Y: float64(y) * l.CellSize.Y,
-					}),
-					l.CellSize,
-				),
+				Dest:           math2d.NewRect(position, drawSize),
 				Src: math2d.NewRect(
 					math2d.Vec2{
-						X: float64(atlasX) * a.TileSize.X,
-						Y: float64(atlasY) * a.TileSize.Y,
+						X: a.Margin.X + float64(atlasX)*(a.TileSize.X+a.Spacing.X),
+						Y: a.Margin.Y + float64(atlasY)*(a.TileSize.Y+a.Spacing.Y),
 					},
 					a.TileSize,
 				),
-			})
+			}
+			if len(l.Flips) == len(l.Tiles) {
+				instance.Flip = l.Flips[index]
+			}
+			if len(l.Rotations) == len(l.Tiles) {
+				instance.Rotation = l.Rotations[index]
+			}
+			buf = append(buf, instance)
 		}
 	}
 	return buf
@@ -81,14 +97,33 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 // SetTile changes one cell and marks its chunk for regeneration.
 // Coordinates outside the layer are ignored.
 func (l *Layer) SetTile(x, y int, tile int16) {
+	l.setTile(x, y, tile, render.FlipNone, false)
+}
+
+// SetTileFlip changes one cell's atlas index and source flip, allocating the
+// optional flip slice only when a layer first needs it.
+// Coordinates outside the layer are ignored.
+func (l *Layer) SetTileFlip(x, y int, tile int16, flip render.SpriteFlip) {
+	l.setTile(x, y, tile, flip, true)
+}
+
+func (l *Layer) setTile(x, y int, tile int16, flip render.SpriteFlip, setFlip bool) {
 	if x < 0 || y < 0 || x >= l.W || y >= l.H || len(l.Tiles) < l.W*l.H {
 		return
 	}
 	index := y*l.W + x
-	if l.Tiles[index] == tile {
+	if setFlip && len(l.Flips) != len(l.Tiles) {
+		flips := make([]render.SpriteFlip, len(l.Tiles))
+		copy(flips, l.Flips)
+		l.Flips = flips
+	}
+	if l.Tiles[index] == tile && (!setFlip || l.Flips[index] == flip) {
 		return
 	}
 	l.Tiles[index] = tile
+	if setFlip {
+		l.Flips[index] = flip
+	}
 	if l.dirty == nil {
 		l.dirty = make(map[ChunkCoord]struct{})
 	}

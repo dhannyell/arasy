@@ -108,3 +108,75 @@ func TestSetTileTracksChangedChunks(t *testing.T) {
 		t.Fatalf("out-of-range dirty chunks = %#v, want nil", got)
 	}
 }
+
+func TestSetTileFlipEmitsOptionalCellFlips(t *testing.T) {
+	layer := Layer{
+		Tiles:    []int16{0, 1},
+		W:        2,
+		H:        1,
+		CellSize: math2d.Vec2{X: 1, Y: 1},
+	}
+	layer.SetTileFlip(1, 0, 1, render.FlipX|render.FlipY)
+
+	if len(layer.Flips) != len(layer.Tiles) {
+		t.Fatalf("flip count = %d, want %d", len(layer.Flips), len(layer.Tiles))
+	}
+	got := layer.Chunk(0, 0, Atlas{TileSize: math2d.Vec2{X: 1, Y: 1}, Columns: 2}, nil)
+	if len(got) != 2 {
+		t.Fatalf("chunk length = %d, want 2", len(got))
+	}
+	if got[0].Flip != render.FlipNone || got[1].Flip != render.FlipX|render.FlipY {
+		t.Fatalf("flips = %v, %v; want none, both", got[0].Flip, got[1].Flip)
+	}
+	if dirty := layer.DirtyChunks(); len(dirty) != 1 || dirty[0] != (ChunkCoord{}) {
+		t.Fatalf("dirty chunks = %#v, want origin chunk", dirty)
+	}
+}
+
+func TestSetTileFlipRepairsMalformedFlipSlice(t *testing.T) {
+	layer := Layer{Tiles: []int16{0, 1}, Flips: []render.SpriteFlip{render.FlipX}, W: 2, H: 1}
+	layer.SetTileFlip(1, 0, 1, render.FlipY)
+	if got, want := layer.Flips, []render.SpriteFlip{render.FlipX, render.FlipY}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("flips = %#v, want %#v", got, want)
+	}
+}
+
+func TestChunkAnchorsTallOffsetTilesAtCellBase(t *testing.T) {
+	layer := Layer{
+		Tiles:    []int16{0},
+		W:        1,
+		H:        1,
+		Origin:   math2d.Vec2{X: 10, Y: 20},
+		CellSize: math2d.Vec2{X: 2, Y: 1},
+	}
+	atlas := Atlas{
+		TileSize: math2d.Vec2{X: 16, Y: 32},
+		Columns:  1,
+		DrawSize: math2d.Vec2{X: 2, Y: 3},
+		Offset:   math2d.Vec2{X: 0.25, Y: -0.5},
+	}
+	got := layer.Chunk(0, 0, atlas, nil)
+	if len(got) != 1 {
+		t.Fatalf("chunk length = %d, want 1", len(got))
+	}
+	want := math2d.NewRect(math2d.Vec2{X: 10.25, Y: 17.5}, math2d.Vec2{X: 2, Y: 3})
+	if got[0].Dest != want {
+		t.Fatalf("destination = %#v, want %#v", got[0].Dest, want)
+	}
+}
+
+func TestChunkHonorsAtlasSpacingAndMargin(t *testing.T) {
+	layer := Layer{Tiles: []int16{3}, W: 1, H: 1, CellSize: math2d.Vec2{X: 1, Y: 1}}
+	atlas := Atlas{
+		TileSize: math2d.Vec2{X: 16, Y: 8}, Columns: 2,
+		Spacing: math2d.Vec2{X: 2, Y: 3}, Margin: math2d.Vec2{X: 1, Y: 4},
+	}
+	got := layer.Chunk(0, 0, atlas, nil)
+	if len(got) != 1 {
+		t.Fatalf("chunk length = %d, want 1", len(got))
+	}
+	want := math2d.NewRect(math2d.Vec2{X: 19, Y: 15}, math2d.Vec2{X: 16, Y: 8})
+	if got[0].Src != want {
+		t.Fatalf("source = %#v, want %#v", got[0].Src, want)
+	}
+}
