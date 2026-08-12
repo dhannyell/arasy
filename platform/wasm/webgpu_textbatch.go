@@ -7,6 +7,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
@@ -146,7 +147,7 @@ func (r *webgpuRenderer) finalizeTextBatch(id render.TextBatchID, cam render.Cam
 	}
 }
 
-func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, built []tess.BuiltPass, passIDs [][]render.TextBatchID) map[passTextBatchKey]*gpuTextBatch {
+func (r *webgpuRenderer) preparePassTextBatches(passes []frameplan.Pass, built []tess.BuiltPass, passIDs [][]render.TextBatchID) map[passTextBatchKey]*gpuTextBatch {
 	if len(passes) == 0 {
 		return nil
 	}

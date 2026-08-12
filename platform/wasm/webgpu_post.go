@@ -12,7 +12,6 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/platform/wasm/gpu"
 	"github.com/dhannyell/arasy/render"
-	"github.com/dhannyell/arasy/runtime"
 )
 
 const (
@@ -225,17 +224,6 @@ func (r *webgpuRenderer) disablePost(err error) {
 	}
 	r.postBloom = nil
 	clear(r.postBindGroups)
-}
-
-func lastWebGPUPostChain(commands []render.Command) (render.PostChain, bool) {
-	var chain render.PostChain
-	found := false
-	for _, command := range commands {
-		if candidate, ok := command.(render.PostChain); ok {
-			chain, found = candidate, true
-		}
-	}
-	return chain, found
 }
 
 // postUniformBuffer writes one effect's parameters into the pooled uniform
@@ -617,7 +605,7 @@ func (r *webgpuRenderer) drawPostFullscreen(pass js.Value, pipelineName string, 
 }
 
 func (r *webgpuRenderer) renderPostFramePasses(
-	frame runtime.Frame,
+	camera render.Camera,
 	runs []gpuDrawRun,
 	plans []gpuPassPlan,
 	chain render.PostChain,
@@ -732,7 +720,7 @@ func (r *webgpuRenderer) renderPostFramePasses(
 			sourceID, destID = destID, sourceID
 			continue
 		}
-		pipelineName := r.postParams(uniformIndex, effect, frame.Camera, chain.Time, w, h)
+		pipelineName := r.postParams(uniformIndex, effect, camera, chain.Time, w, h)
 		uniformIndex++
 		if pipelineName == "" {
 			continue

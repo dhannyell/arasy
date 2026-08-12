@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"slices"
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	"github.com/dhannyell/arasy/internal/render/frameplan"
 	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
@@ -131,7 +131,6 @@ type Renderer struct {
 	spriteUniformSlotSize int
 	spriteUniformOffsets  []uint32
 	spriteUniformEntries  []nativeUniformEntry
-	framePasses           []render.Pass
 	tessPassFrames        []tess.Frame
 	passPlans             []nativePassPlan
 	particleGroupOf       []int
@@ -160,6 +159,7 @@ type Renderer struct {
 	timeGPU bool
 
 	diagnostics diagnostic.Once
+	planner     frameplan.Planner
 	err         error
 	// presentedFrame stays false for skipped/reconfigured surfaces and flips
 	// only after the first successful surface.Present call.
@@ -487,12 +487,12 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	if len(frames) < len(oldFrames) {
 		clear(oldFrames[len(frames):])
 	}
+	var base frameplan.Pass
 	for i, pass := range passes {
-		passWidth, passHeight := width, height
-		if pass.Target != 0 {
-			decl, _ := r.manifest.TextureDecl(pass.Target)
-			passWidth, passHeight = decl.W, decl.H
+		if pass.Base {
+			base = pass
 		}
+		passWidth, passHeight := pass.Width, pass.Height
 		frames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
 	}
 	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
@@ -510,7 +510,7 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		plans[i] = nativePassPlan{
 			camera:       builtPass.Camera,
 			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
-			extra:        i < len(passes)-1,
+			extra:        !passes[i].Base,
 			target:       passes[i].Target,
 			width:        builtPass.Width,
 			height:       builtPass.Height,
@@ -583,8 +583,8 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	}
 	var encodeErr error
 	postEncoded := false
-	if chain, ok := lastNativePostChain(frame.Commands); ok && !r.postDisabled {
-		encodeErr = r.encodePostFramePasses(runs, uniformOffsets, plans, surfaceView, frame, chain, width, height)
+	if base.HasPost && !r.postDisabled {
+		encodeErr = r.encodePostFramePasses(runs, uniformOffsets, plans, surfaceView, base.Camera, base.Post, width, height)
 		if encodeErr != nil {
 			r.disablePost(encodeErr)
 		} else {
@@ -615,45 +615,42 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	}
 }
 
-func (r *Renderer) resolveFramePasses(frame runtime.Frame, width, height int) []render.Pass {
-	viewport := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
-	oldPasses := r.framePasses
-	passes := oldPasses[:0]
-	var claimedTargets []render.TextureID
-	for _, pass := range frame.Passes {
+func (r *Renderer) resolveFramePasses(frame runtime.Frame, width, height int) []frameplan.Pass {
+	planned, diagnostics := r.planner.Plan(frameplan.Input{
+		Camera: frame.Camera, Commands: frame.Commands, Passes: frame.Passes,
+		SurfaceW: width, SurfaceH: height,
+		Targets: func(id render.TextureID) (frameplan.TargetInfo, bool) {
+			decl, ok := r.manifest.TextureDecl(id)
+			return frameplan.TargetInfo{W: decl.W, H: decl.H, Dynamic: decl.Dynamic}, ok
+		},
+	})
+	for _, diag := range diagnostics {
+		r.logPassDiagnostic(diag)
+	}
+
+	passes := planned[:0]
+	for _, pass := range planned {
 		if pass.Target != 0 {
-			if slices.Contains(claimedTargets, pass.Target) {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_duplicate", ID: uint64(pass.Target)},
-					"native: target already has a pass owner this frame; pass skipped", "target", pass.Target)
-				continue
-			}
-			decl, ok := r.manifest.TextureDecl(pass.Target)
-			if !ok || !decl.Dynamic {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_invalid", ID: uint64(pass.Target)},
-					"native: pass target is not a declared dynamic texture; pass skipped", "target", pass.Target)
-				continue
-			}
-			claimedTargets = append(claimedTargets, pass.Target)
-			targetBounds := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(decl.W), Y: float64(decl.H)})
 			if err := r.activateRenderTarget(pass.Target); err != nil {
 				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(pass.Target)},
+					diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(pass.Target)},
 					"native: pass target activation failed; pass skipped", "target", pass.Target, "error", err)
 				continue
 			}
-			passes = append(passes, pass.ResolveViewport(targetBounds))
-			continue
 		}
-		passes = append(passes, pass.ResolveViewport(viewport))
+		passes = append(passes, pass)
 	}
-	passes = append(passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands}.ResolveViewport(viewport))
-	if len(passes) < len(oldPasses) {
-		clear(oldPasses[len(passes):])
-	}
-	r.framePasses = passes
 	return passes
+}
+
+func (r *Renderer) logPassDiagnostic(diag frameplan.Diagnostic) {
+	message := "native: pass target is not a declared dynamic texture; pass skipped"
+	if diag.Code == frameplan.CodeTargetDuplicate {
+		message = "native: target already has a pass owner this frame; pass skipped"
+	}
+	r.diagnostics.Log(r.log, slog.LevelWarn,
+		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
+		message, "target", diag.Target)
 }
 
 func (r *Renderer) hasPresentedFrame() bool {
@@ -1693,7 +1690,7 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 	target, ok := textureFor(r.textures, plan.target)
 	if !ok || target.targetView == nil {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "render.pass_target_unavailable", ID: uint64(plan.target)},
+			diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(plan.target)},
 			"native: pass target has no GPU attachment; pass skipped", "target", plan.target)
 		return nil
 	}
