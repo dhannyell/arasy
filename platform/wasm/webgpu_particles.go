@@ -15,11 +15,14 @@ import (
 )
 
 type gpuEmitter struct {
-	decl     particle.EffectDecl
-	seed     uint64
-	emission particle.EmissionState
-	capacity int
-	lastSeen uint64
+	decl          particle.EffectDecl
+	seed          uint64
+	emission      particle.EmissionState
+	emissionFrame particle.EmissionFrame
+	command       render.DrawParticles
+	emitCount     int
+	capacity      int
+	lastSeen      uint64
 	// missingTexture selects the untinted magenta placeholder pipeline.
 	missingTexture bool
 
@@ -32,9 +35,16 @@ type gpuEmitter struct {
 	uniforms     js.Value
 
 	computeBind js.Value // emit + simulate share one layout and group
-	renderBind  js.Value
 	textureBind js.Value
 	scratch     [particlegpu.UniformSize]byte
+	views       map[particlegpu.ViewKey]*gpuParticleView
+}
+
+type gpuParticleView struct {
+	uniform  js.Value
+	bind     js.Value
+	lastSeen uint64
+	valid    bool
 }
 
 type gpuParticles struct {
@@ -226,7 +236,7 @@ func additiveOffscreenBlend() map[string]any {
 }
 
 func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmitter {
-	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity}
+	e := &gpuEmitter{decl: decl, seed: seed, capacity: decl.Capacity, views: make(map[particlegpu.ViewKey]*gpuParticleView)}
 	usage := js.Global().Get("GPUBufferUsage")
 	storage := usage.Get("STORAGE").Int() | usage.Get("COPY_DST").Int()
 
@@ -251,7 +261,6 @@ func (g *gpuParticles) newEmitter(decl particle.EffectDecl, seed uint64) *gpuEmi
 	g.queue.Call("writeBuffer", e.drawIndirect, 0, bytesToJS(packU32(3, 0, 0, 0)))
 
 	e.computeBind = g.bindCompute(e)
-	e.renderBind = g.bindRender(e)
 	e.textureBind, e.missingTexture = g.bindTexture(decl) // white 1×1 when untextured
 	return e
 }
@@ -294,11 +303,11 @@ func packU32(values ...uint32) []byte {
 // bindRender builds the vertex-pulling bind group: the vertex shader indexes
 // the survivor list by instance_index. Storage buffers are read-only here:
 // core WebGPU forbids writable storage in vertex stages.
-func (g *gpuParticles) bindRender(e *gpuEmitter) js.Value {
+func (g *gpuParticles) bindRender(e *gpuEmitter, uniform js.Value) js.Value {
 	return g.device.Call("createBindGroup", map[string]any{
 		"layout": g.renderLayout,
 		"entries": []any{
-			map[string]any{"binding": 0, "resource": map[string]any{"buffer": e.uniforms}},
+			map[string]any{"binding": 0, "resource": map[string]any{"buffer": uniform}},
 			map[string]any{"binding": 1, "resource": map[string]any{"buffer": e.hot}},
 			map[string]any{"binding": 2, "resource": map[string]any{"buffer": e.alive}},
 			map[string]any{"binding": 3, "resource": map[string]any{"buffer": e.cold}},
@@ -455,6 +464,9 @@ func (g *gpuParticles) prepareEmitter(
 		cmd.Dt,
 	)
 	emitCount := max(frame.Count, 0)
+	e.command = cmd
+	e.emissionFrame = frame
+	e.emitCount = emitCount
 	particlegpu.PackUniforms(e.scratch[:], e.decl, cmd, frame, emitCount, e.seed, e.capacity, camera, w, h)
 	g.queue.Call("writeBuffer", e.uniforms, 0, bytesToJS(e.scratch[:]))
 
@@ -474,6 +486,35 @@ func (g *gpuParticles) prepareEmitter(
 	return e, emitCount, true
 }
 
+func (g *gpuParticles) renderView(e *gpuEmitter, camera render.Camera, width, height int) *gpuParticleView {
+	key := particlegpu.NewViewKey(camera, width, height)
+	view := e.views[key]
+	if view == nil {
+		for oldKey, candidate := range e.views {
+			if candidate.lastSeen < g.frame {
+				delete(e.views, oldKey)
+				view = candidate
+				break
+			}
+		}
+		if view == nil {
+			usage := js.Global().Get("GPUBufferUsage")
+			view = &gpuParticleView{
+				uniform: g.buffer(particlegpu.UniformSize, usage.Get("UNIFORM").Int()|usage.Get("COPY_DST").Int()),
+			}
+			view.bind = g.bindRender(e, view.uniform)
+		}
+		e.views[key] = view
+	}
+	if !view.valid || view.lastSeen != g.frame {
+		particlegpu.PackUniforms(e.scratch[:], e.decl, e.command, e.emissionFrame, e.emitCount, e.seed, e.capacity, camera, width, height)
+		g.queue.Call("writeBuffer", view.uniform, 0, bytesToJS(e.scratch[:]))
+		view.lastSeen = g.frame
+		view.valid = true
+	}
+	return view
+}
+
 // draw submits one emitter at its exact painter-order position in the main
 // MSAA pass. The indirect instance count was produced by simulate, so no GPU
 // readback is needed.
@@ -481,9 +522,11 @@ func (g *gpuParticles) draw(
 	pass js.Value,
 	cmd render.DrawParticles,
 	camera render.Camera,
+	viewport math2d.Rect,
+	scissor *webGPUScissorState,
 	w, h int,
 ) {
-	g.drawTo(pass, cmd, camera, 1, w, h, false)
+	g.drawTo(pass, cmd, camera, viewport, scissor, w, h, 1, w, h, false)
 }
 
 // drawTo submits one emitter into either the main MSAA pass (offscreen
@@ -495,6 +538,9 @@ func (g *gpuParticles) drawTo(
 	pass js.Value,
 	cmd render.DrawParticles,
 	camera render.Camera,
+	viewport math2d.Rect,
+	scissor *webGPUScissorState,
+	projectionW, projectionH int,
 	clipScale float64,
 	targetW, targetH int,
 	offscreen bool,
@@ -517,17 +563,21 @@ func (g *gpuParticles) drawTo(
 	} else if e.decl.Blend == particle.BlendAdditive {
 		pipeline = g.drawAdditive
 	}
+	view := g.renderView(e, camera, projectionW, projectionH)
+	if view == nil {
+		return
+	}
 	pass.Call("setPipeline", pipeline)
-	pass.Call("setBindGroup", 0, e.renderBind)
+	pass.Call("setBindGroup", 0, view.bind)
 	pass.Call("setBindGroup", 1, e.textureBind)
 
 	hasClip := cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0
-	if !applyClipScissor(pass, cmd.Clip, camera, clipScale, targetW, targetH) {
+	if !applyClipScissor(pass, cmd.Clip, camera, viewport, clipScale, targetW, targetH, scissor) {
 		return
 	}
 	pass.Call("drawIndirect", e.drawIndirect, 0)
 	if hasClip {
-		pass.Call("setScissorRect", 0, 0, targetW, targetH)
+		applyClipScissor(pass, math2d.Rect{}, camera, viewport, clipScale, targetW, targetH, scissor)
 	}
 }
 
@@ -535,6 +585,12 @@ func (g *gpuParticles) drawTo(
 // for particlegpu.TTL frames.
 func (g *gpuParticles) endFrame() {
 	for key, e := range g.emitters {
+		for viewKey, view := range e.views {
+			if view.lastSeen < g.frame {
+				view.uniform.Call("destroy")
+				delete(e.views, viewKey)
+			}
+		}
 		if g.frame-e.lastSeen >= particlegpu.TTL {
 			e.destroy()
 			delete(g.emitters, key)
@@ -549,7 +605,7 @@ func (g *gpuParticles) bufferBytes() uint64 {
 	for _, emitter := range g.emitters {
 		// Hot/cold particle state plus survivor/dead index lists. This
 		// excludes shared pipelines, textures and browser/driver allocations.
-		total += uint64(emitter.capacity*(particlegpu.HotStride+particlegpu.ColdStride+2*4) + perEmitterOverhead)
+		total += uint64(emitter.capacity*(particlegpu.HotStride+particlegpu.ColdStride+2*4) + perEmitterOverhead + len(emitter.views)*particlegpu.UniformSize)
 	}
 	return total
 }
@@ -557,6 +613,9 @@ func (g *gpuParticles) bufferBytes() uint64 {
 // destroy releases the storage owned by one emitter. Bind groups are GC'd by
 // JavaScript after their buffers become unreachable.
 func (e *gpuEmitter) destroy() {
+	for _, view := range e.views {
+		view.uniform.Call("destroy")
+	}
 	buffers := []js.Value{
 		e.hot,
 		e.cold,
@@ -573,9 +632,17 @@ func (e *gpuEmitter) destroy() {
 	}
 }
 
-// applyClipScissor applies the backend-independent particle scissor calculation.
-func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, scale float64, w, h int) bool {
-	x, y, width, height, ok := particlegpu.ScissorRect(clip, camera, scale, w, h)
-	pass.Call("setScissorRect", x, y, width, height)
+type webGPUScissorState struct {
+	x, y, width, height int
+	set                 bool
+}
+
+// applyClipScissor avoids redundant WebGPU state changes inside one pass.
+func applyClipScissor(pass js.Value, clip math2d.Rect, camera render.Camera, viewport math2d.Rect, scale float64, w, h int, state *webGPUScissorState) bool {
+	x, y, width, height, ok := particlegpu.ScissorRectWithin(clip, camera, viewport, scale, w, h)
+	if !state.set || state.x != x || state.y != y || state.width != width || state.height != height {
+		pass.Call("setScissorRect", x, y, width, height)
+		state.x, state.y, state.width, state.height, state.set = x, y, width, height, true
+	}
 	return ok
 }

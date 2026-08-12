@@ -71,6 +71,8 @@ type UniformKey struct {
 	// the key stays comparable.
 	OffsetX uint64
 	OffsetY uint64
+	// Pass separates identical layer keys belonging to different cameras.
+	Pass int
 }
 
 // UniformKeyForKind computes the upload key of one run kind. Streaming text

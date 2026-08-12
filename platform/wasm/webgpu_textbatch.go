@@ -34,7 +34,8 @@ type gpuTextBatch struct {
 	// dirty is set on every replace and cleared after a successful repack;
 	// it forces a repack even when projection and atlas identity are
 	// unchanged, since only a repack re-reads labels.
-	dirty bool
+	dirty    bool
+	revision uint64
 
 	glyphBuffer js.Value
 	labelBuffer js.Value
@@ -48,6 +49,11 @@ type gpuTextBatch struct {
 	bounds    math2d.Rect
 	hasBounds bool
 	projKey   textBatchProjKey
+}
+
+type passTextBatchKey struct {
+	pass int
+	id   render.TextBatchID
 }
 
 func (b *gpuTextBatch) destroy() {
@@ -83,6 +89,7 @@ func (r *webgpuRenderer) applyTextBatchUpdates(updates []runtime.TextBatchUpdate
 		}
 		batch.labels = u.Labels
 		batch.dirty = true
+		batch.revision++
 	}
 }
 
@@ -128,39 +135,96 @@ func (r *webgpuRenderer) prepTextBatches(ids []render.TextBatchID, cam render.Ca
 	}
 }
 
-// finalizeTextBatches repacks every referenced batch whose content,
-// projection, or resolved atlas identity changed since its last pack. It
-// must run after tess.Builder.Build, once every atlas the frame needs is
-// finalized: a repack only consults resolveFinalTextAtlas, it never grows
-// coverage itself.
-func (r *webgpuRenderer) finalizeTextBatches(ids []render.TextBatchID, cam render.Camera, w, h int) {
-	if len(ids) == 0 {
+func (r *webgpuRenderer) finalizeTextBatch(id render.TextBatchID, cam render.Camera, w, h int) {
+	batch, ok := r.textBatches[id]
+	if !ok {
 		return
 	}
 	proj := currentTextBatchProjKey(cam, w, h)
-	for _, id := range ids {
-		batch, ok := r.textBatches[id]
-		if !ok {
-			continue
-		}
-		needsRepack := batch.dirty || batch.projKey != proj
-		if !needsRepack {
-			for key, oldAtlas := range batch.atlases {
-				if r.resolveFinalTextAtlas(key.Font, key.PX) != oldAtlas {
-					needsRepack = true
-					break
-				}
+	if r.textBatchNeedsRepack(batch, proj) {
+		r.repackTextBatch(batch, cam, w, h, proj)
+	}
+}
+
+func (r *webgpuRenderer) preparePassTextBatches(passes []render.Pass, passIDs [][]render.TextBatchID, w, h int) map[passTextBatchKey]*gpuTextBatch {
+	if len(passes) == 0 {
+		return nil
+	}
+
+	baseIndex := len(passes) - 1
+	clear(r.passTextPrimary)
+	clear(r.passTextResult)
+	clear(r.passTextUsed)
+	for passIndex, ids := range passIDs {
+		for _, id := range ids {
+			if _, exists := r.passTextPrimary[id]; !exists {
+				r.passTextPrimary[id] = passIndex
 			}
 		}
-		if needsRepack {
-			r.repackTextBatch(batch, cam, w, h, proj)
+	}
+	for _, id := range passIDs[baseIndex] {
+		r.passTextPrimary[id] = baseIndex
+	}
+	for passIndex, ids := range passIDs {
+		for _, id := range ids {
+			if r.passTextPrimary[id] == passIndex {
+				r.finalizeTextBatch(id, passes[passIndex].Camera, w, h)
+			}
 		}
 	}
+	for passIndex, pass := range passes {
+		for _, id := range passIDs[passIndex] {
+			batch, ok := r.textBatches[id]
+			if !ok {
+				continue
+			}
+			if r.passTextPrimary[id] == passIndex {
+				r.passTextResult[passTextBatchKey{pass: passIndex, id: id}] = batch
+				continue
+			}
+			key := passTextBatchKey{pass: passIndex, id: id}
+			passBatch := r.passTextBatches[key]
+			if passBatch == nil {
+				passBatch = &gpuTextBatch{}
+				r.passTextBatches[key] = passBatch
+			}
+			if passBatch.revision != batch.revision {
+				passBatch.labels = append(passBatch.labels[:0], batch.labels...)
+				passBatch.dirty = true
+				passBatch.revision = batch.revision
+			}
+			proj := currentTextBatchProjKey(pass.Camera, w, h)
+			if r.textBatchNeedsRepack(passBatch, proj) {
+				r.repackTextBatch(passBatch, pass.Camera, w, h, proj)
+			}
+			r.passTextUsed[key] = struct{}{}
+			r.passTextResult[key] = passBatch
+		}
+	}
+	for key, batch := range r.passTextBatches {
+		if _, ok := r.passTextUsed[key]; !ok {
+			batch.destroy()
+			delete(r.passTextBatches, key)
+		}
+	}
+	return r.passTextResult
+}
+
+func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatchProjKey) bool {
+	if batch.dirty || batch.projKey != proj {
+		return true
+	}
+	for key, oldAtlas := range batch.atlases {
+		if r.resolveFinalTextAtlas(key.Font, key.PX) != oldAtlas {
+			return true
+		}
+	}
+	return false
 }
 
 // repackTextBatch packs and uploads a batch's glyph/label records once,
 // grouped into consecutive draw ranges by the atlas each range resolved to.
-// Steady-state frames never reach this function: finalizeTextBatches only
+// Steady-state frames never reach this function: finalizeTextBatch only
 // calls it when content, projection, or atlas identity actually changed.
 func (r *webgpuRenderer) repackTextBatch(batch *gpuTextBatch, cam render.Camera, w, h int, proj textBatchProjKey) {
 	plan := tess.PlanTextBatch(cam, w, h, batch.labels, r.resolveFinalTextAtlas)
@@ -214,19 +278,14 @@ func (r *webgpuRenderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, 
 	}
 }
 
-// resolveTextBatchDraws fills drawRuns[i].text for every visible
-// DrawRunTextBatch, warning once and leaving text nil for a missing/deleted
-// batch (skipped at draw time) and for a batch culled against its
-// screen-space bounds. Must run after finalizeTextBatches so batch.bounds
-// reflects this frame's content.
-func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base render.Camera, cameras []tess.LayerCamera, w, h int) {
+func (r *webgpuRenderer) resolveTextBatchDrawsForPasses(drawRuns []gpuDrawRun, plans []gpuPassPlan, passBatches map[passTextBatchKey]*gpuTextBatch, w, h int) {
 	r.frameVisibleLabels = 0
 	for i := range drawRuns {
 		if drawRuns[i].kind != tess.DrawRunTextBatch {
 			continue
 		}
 		cmd := drawRuns[i].textBatch
-		batch, ok := r.textBatches[cmd.Batch]
+		batch, ok := passBatches[passTextBatchKey{pass: drawRuns[i].pass, id: cmd.Batch}]
 		if !ok {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
 				diagnostic.Key{Code: "webgpu-text-batch-missing", ID: uint64(cmd.Batch)},
@@ -236,9 +295,10 @@ func (r *webgpuRenderer) resolveTextBatchDraws(drawRuns []gpuDrawRun, base rende
 		if batch.count == 0 {
 			continue
 		}
-		effective := tess.CameraForLayer(base, cameras, drawRuns[i].layer)
+		plan := plans[drawRuns[i].pass]
+		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
 		if view, ok := textBatchScreenView(effective, w, h, cmd.Clip); ok {
-			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(base, effective))
+			bounds := offsetTextBatchBounds(batch.bounds, tess.TextScreenOffset(plan.camera, effective))
 			if !renderbatch.IntersectsView(bounds, view) {
 				continue
 			}

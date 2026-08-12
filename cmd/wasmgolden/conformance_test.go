@@ -19,25 +19,30 @@ import (
 	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/platform/raster"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 )
 
 // These tests compare the raster reference with the repository browser
 // goldens. A difference above the budget reports the fixture and backend.
 const (
-	frameChannelTol         = 32
-	frameCanvas2DBudget     = 0.2454
-	frameWebGPUBudget       = 0.2002
-	particlesChannelTol     = 32
-	particlesCanvas2DBudget = 0.1520
-	particlesWebGPUBudget   = 0.0754
-	viewChannelTol          = 32
-	viewCanvas2DBudget      = 0.0186
-	viewWebGPUBudget        = 0.0509
-	parallaxChannelTol      = 32
-	parallaxCanvas2DBudget  = 0.0200
-	parallaxWebGPUBudget    = 0.0150
-	postWebGPUBudget = 0.075
+	frameChannelTol           = 32
+	frameCanvas2DBudget       = 0.2454
+	frameWebGPUBudget         = 0.2002
+	particlesChannelTol       = 32
+	particlesCanvas2DBudget   = 0.1520
+	particlesWebGPUBudget     = 0.0754
+	viewChannelTol            = 32
+	viewCanvas2DBudget        = 0.0186
+	viewWebGPUBudget          = 0.0509
+	parallaxChannelTol        = 32
+	parallaxCanvas2DBudget    = 0.0200
+	parallaxWebGPUBudget      = 0.0150
+	passesChannelTol          = 32
+	passesCanvas2DBudget      = 0.0200
+	passesWebGPUBudget        = 0.0150
+	passesWebGPUMSAAOffBudget = 0.0150
+	postWebGPUBudget          = 0.075
 )
 
 func TestConformanceFrameCanvas2D(t *testing.T) {
@@ -78,6 +83,18 @@ func TestConformanceParallaxWebGPU(t *testing.T) {
 	assertConformance(t, "parallax", "webgpu", 1, parallaxChannelTol, parallaxWebGPUBudget)
 }
 
+func TestConformancePassesCanvas2D(t *testing.T) {
+	assertConformance(t, "passes", "canvas2d", 1, passesChannelTol, passesCanvas2DBudget)
+}
+
+func TestConformancePassesWebGPU(t *testing.T) {
+	assertConformance(t, "passes", "webgpu", 1, passesChannelTol, passesWebGPUBudget)
+}
+
+func TestConformancePassesWebGPUMSAAOff(t *testing.T) {
+	assertConformance(t, "passes-msaa-off", "webgpu", 1, passesChannelTol, passesWebGPUMSAAOffBudget)
+}
+
 func assertConformance(t *testing.T, fixture, backend string, frames int, channelTol uint8, budget float64) {
 	t.Helper()
 
@@ -111,6 +128,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return NewViewConformanceGolden()
 	case "parallax":
 		return NewParallaxConformanceGolden()
+	case "passes", "passes-msaa-off":
+		return NewCameraPassesGolden()
 	default:
 		return nil, fmt.Errorf("unknown fixture %q", fixture)
 	}
@@ -151,7 +170,8 @@ func rasterFrame(t *testing.T, game runtime.Game, frames int) *image.RGBA {
 	for i := 0; i < frames; i++ {
 		frame := driver.Frame(time.Duration(0))
 		applyRasterUpdates(renderer, driver.ConsumeFrameUpdates())
-		img = renderer.Render(frame.Commands)
+		img = renderer.NewTarget()
+		renderer.RenderPassesInto(img, frame.Passes, render.Pass{Camera: frame.Camera, Commands: frame.Commands})
 	}
 	return img
 }

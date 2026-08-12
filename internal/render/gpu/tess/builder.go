@@ -6,12 +6,20 @@ import (
 )
 
 // Frame is the render-only input to Build: camera plus the painter-ordered
-// commands of one frame. Identical in layout to runtime.Frame so hosts convert
-// with a plain tess.Frame(rtFrame); the core must not import the orchestration
-// layer.
+// commands of one camera pass. The core keeps this small type separate from
+// runtime.Frame so it does not import the orchestration layer.
 type Frame struct {
 	Camera   render.Camera
 	Commands []render.Command
+}
+
+// BuiltPass contains the runs emitted for one camera pass. The builder's
+// streams contain the concatenated payload of all built passes.
+type BuiltPass struct {
+	Camera render.Camera
+	Runs   []StreamRun
+	start  int
+	end    int
 }
 
 // StreamRun identifies one ordered draw in Builder's shared streams.
@@ -21,6 +29,8 @@ type Frame struct {
 type StreamRun struct {
 	Kind  DrawRunKind
 	Blend render.Blend
+	// Pass identifies the logical camera pass in a BuildPasses result.
+	Pass int
 	// Layer is the command layer shared by every draw merged into this run.
 	// It selects the per-layer parallax camera and lets post-process passes
 	// split the painter stream without rebuilding the vertex buffers.
@@ -43,6 +53,7 @@ type Builder struct {
 	glyphs  []textGlyphRecord
 	labels  []textLabelRecord
 	runs    []StreamRun
+	passes  []BuiltPass
 
 	solidMesh Mesh
 	texMesh   TexMesh
@@ -62,13 +73,52 @@ func (b *Builder) SetSpriteArray(enabled bool) {
 
 // Build tessellates a frame into this builder's reusable streams.
 func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes TexSizes) []StreamRun {
+	b.reset()
+	b.buildFrame(frame, w, h, provider, sizes)
+	return b.runs
+}
+
+// BuildPasses tessellates several camera passes while keeping their command
+// order separate. Vertex and instance offsets remain valid in the shared
+// streams, so a host can submit all passes through one render pass.
+func (b *Builder) BuildPasses(frames []Frame, w, h int, provider AtlasProvider, sizes TexSizes) []BuiltPass {
+	b.reset()
+	oldPasses := b.passes
+	b.passes = b.passes[:0]
+	for passIndex, frame := range frames {
+		start := len(b.runs)
+		b.buildFrame(frame, w, h, provider, sizes)
+		for index := start; index < len(b.runs); index++ {
+			b.runs[index].Pass = passIndex
+		}
+		b.passes = append(b.passes, BuiltPass{
+			Camera: frame.Camera,
+			start:  start,
+			end:    len(b.runs),
+		})
+	}
+	for index := range b.passes {
+		b.passes[index].Runs = b.runs[b.passes[index].start:b.passes[index].end]
+	}
+	if len(b.passes) < len(oldPasses) {
+		clear(oldPasses[len(b.passes):])
+	}
+	return b.passes
+}
+
+// Runs returns the flattened runs produced by the most recent build.
+func (b *Builder) Runs() []StreamRun { return b.runs }
+
+func (b *Builder) reset() {
 	b.solid = b.solid[:0]
 	b.tex = b.tex[:0]
 	b.sprites = b.sprites[:0]
 	b.glyphs = b.glyphs[:0]
 	b.labels = b.labels[:0]
 	b.runs = b.runs[:0]
+}
 
+func (b *Builder) buildFrame(frame Frame, w, h int, provider AtlasProvider, sizes TexSizes) {
 	buildCtx := ctx{cam: frame.Camera, w: float64(w), h: float64(h)}
 	// The built-in Atlas is immutable and covers every rune it can render, so
 	// it needs neither per-frame glyph discovery nor an AtlasKey map. Keeping
@@ -102,7 +152,6 @@ func (b *Builder) Build(frame Frame, w, h int, provider AtlasProvider, sizes Tex
 	} else {
 		render.Each(frame.Commands, &sink)
 	}
-	return b.runs
 }
 
 // Streams returns the mesh vertex data built by the most recent Build.
@@ -435,7 +484,7 @@ func (s *streamSink) VisitText(cmd render.DrawText) {
 	if count == 0 {
 		return
 	}
-		s.appendRun(DrawRunText, cmd.BlendMode, 0, atlas.Key, start, count)
+	s.appendRun(DrawRunText, cmd.BlendMode, 0, atlas.Key, start, count)
 }
 
 func (s *streamSink) VisitImage(cmd render.DrawImage) {
@@ -469,7 +518,7 @@ func (s *streamSink) VisitImage(cmd render.DrawImage) {
 	if s.builder.spriteArray {
 		runTexture = 0
 	}
-		s.appendRun(DrawRunSprites, cmd.BlendMode, runTexture, AtlasKey{}, start, 1)
+	s.appendRun(DrawRunSprites, cmd.BlendMode, runTexture, AtlasKey{}, start, 1)
 }
 
 func (s *streamSink) VisitImageQuad(cmd render.DrawImageQuad) {

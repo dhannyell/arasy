@@ -455,9 +455,11 @@ func (d *Driver) Frame(elapsed time.Duration) Frame {
 	cmds := append([]render.Command(nil), gameCmds...)
 	cmds = append(cmds, d.debugCommands(gameCmds, ctx.Camera())...)
 	cmds = append(cmds, uiInst.Commands()...)
+	passes := append([]render.Pass(nil), ctx.passes...)
 	return Frame{
 		Camera:   ctx.Camera(),
 		Commands: cmds,
+		Passes:   passes,
 	}
 }
 

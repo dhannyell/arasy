@@ -50,6 +50,15 @@ caps retained content at 2,000 sprites and 500 labels.
 Retained sprites use screen-space billboard corners by default. Projected
 sprites use the complete `Camera.View`; text and particles remain billboards.
 
+## Camera passes
+
+`RenderContext.AddPass` adds an extra camera and command stream to the frame.
+Renderers draw extra passes in declaration order, then draw the ordinary
+commands returned by `Game.Render` with the frame camera. A pass with a zero
+viewport uses the full target; an explicit viewport clips that pass to its
+screen rectangle. Passes share the frame clear and remain presentation-only:
+they do not affect checksums, snapshots, recordings, or replay.
+
 ## Render interpolation
 
 `runtime.Config.RenderInterpolation` enables interpolation. It is disabled by

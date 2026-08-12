@@ -9,6 +9,9 @@ import (
 type Frame struct {
 	Camera   render.Camera
 	Commands []render.Command
+	// Passes are drawn in declaration order before Commands. They are
+	// render-only and do not affect simulation, checksums, or replay.
+	Passes []render.Pass
 }
 
 // FrameUpdates carries the render-only resource publications drained from

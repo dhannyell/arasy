@@ -154,3 +154,44 @@ func TestScissorRect(t *testing.T) {
 		})
 	}
 }
+
+func TestScissorRectWithin(t *testing.T) {
+	camera := render.Camera{World: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}), Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100})}
+	viewport := math2d.NewRectFromCorners(math2d.Vec2{X: 20, Y: 30}, math2d.Vec2{X: 60, Y: 70})
+	cases := []struct {
+		name string
+		clip math2d.Rect
+		want [4]int
+		ok   bool
+	}{
+		{"viewport", math2d.Rect{}, [4]int{20, 30, 40, 40}, true},
+		{"intersection", math2d.NewRectFromCorners(math2d.Vec2{X: 50, Y: 60}, math2d.Vec2{X: 80, Y: 90}), [4]int{50, 60, 10, 10}, true},
+		{"outside", math2d.NewRectFromCorners(math2d.Vec2{X: 70, Y: 40}, math2d.Vec2{X: 80, Y: 50}), [4]int{70, 40, 0, 0}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			x, y, w, h, ok := ScissorRectWithin(tc.clip, camera, viewport, 1, 100, 100)
+			if got := [4]int{x, y, w, h}; got != tc.want || ok != tc.ok {
+				t.Fatalf("ScissorRectWithin() = %v, %v; want %v, %v", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}
+
+func TestViewKeyIncludesCameraView(t *testing.T) {
+	camera := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 100}),
+	}
+	projected := camera
+	projected.View = math2d.Affine{A: 1, D: 1, E: 8}
+
+	if NewViewKey(camera, 100, 100) == NewViewKey(projected, 100, 100) {
+		t.Fatal("particle view key ignored Camera.View")
+	}
+	identity := camera
+	identity.View = math2d.Identity()
+	if NewViewKey(camera, 100, 100) != NewViewKey(identity, 100, 100) {
+		t.Fatal("zero and explicit identity views produced different keys")
+	}
+}
