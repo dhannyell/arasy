@@ -1,6 +1,8 @@
 package tilemap
 
 import (
+	"slices"
+
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -33,7 +35,7 @@ type ObjectView struct {
 func NewObjectView(objects []TileObject, base render.SpriteBatchID) *ObjectView {
 	v := &ObjectView{Objects: objects, base: base}
 	for _, object := range objects {
-		if !containsTexture(v.textures, object.Texture) {
+		if !slices.Contains(v.textures, object.Texture) {
 			v.textures = append(v.textures, object.Texture)
 		}
 	}
@@ -79,13 +81,4 @@ func (v *ObjectView) Commands(dst []render.Command, layer int) []render.Command 
 		})
 	}
 	return dst
-}
-
-func containsTexture(textures []render.TextureID, texture render.TextureID) bool {
-	for _, existing := range textures {
-		if existing == texture {
-			return true
-		}
-	}
-	return false
 }

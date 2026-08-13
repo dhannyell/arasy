@@ -1,6 +1,9 @@
 package tilemap
 
 import (
+	"cmp"
+	"slices"
+
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -17,6 +20,39 @@ type Atlas struct {
 	Offset   math2d.Vec2      // World offset after bottom-aligning DrawSize.
 	Spacing  math2d.Vec2      // Pixel gap between atlas tiles.
 	Margin   math2d.Vec2      // Pixel border before the first atlas tile.
+	// Animations lists the flip-book tiles. The flip-book advances through
+	// the texture grid, so it requires zero Margin and Spacing.
+	Animations []Animation
+}
+
+// Animation gives one atlas index a flip-book: Frames consecutive atlas
+// cells starting at Tile, advancing at Rate frames per second. Presentation
+// state: the frame resolves at draw time from the render clock, so animated
+// layers never re-upload their chunks.
+type Animation struct {
+	Tile   int16
+	Frames uint16
+	Rate   float32
+}
+
+// animationFor returns the flip-book of one atlas index, if any.
+func (a Atlas) animationFor(tile int16) (Animation, bool) {
+	for _, animation := range a.Animations {
+		if animation.Tile == tile {
+			return animation, true
+		}
+	}
+	return Animation{}, false
+}
+
+// SrcRect returns the atlas pixel rect of one tile index.
+func (a Atlas) SrcRect(tile int16) math2d.Rect {
+	column := int(tile) % a.Columns
+	row := int(tile) / a.Columns
+	return math2d.NewRect(math2d.Vec2{
+		X: a.Margin.X + float64(column)*(a.TileSize.X+a.Spacing.X),
+		Y: a.Margin.Y + float64(row)*(a.TileSize.Y+a.Spacing.Y),
+	}, a.TileSize)
 }
 
 // ChunkCoord identifies a tilemap chunk by its column and row.
@@ -64,8 +100,6 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 			if tile < 0 {
 				continue
 			}
-			atlasX := int(tile) % a.Columns
-			atlasY := int(tile) / a.Columns
 			position := l.Origin.Add(math2d.Vec2{
 				X: float64(x)*l.CellSize.X + a.Offset.X,
 				Y: float64(y)*l.CellSize.Y + l.CellSize.Y - drawSize.Y + a.Offset.Y,
@@ -74,13 +108,10 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 				Texture:        a.Texture,
 				ProjectCorners: true,
 				Dest:           math2d.NewRect(position, drawSize),
-				Src: math2d.NewRect(
-					math2d.Vec2{
-						X: a.Margin.X + float64(atlasX)*(a.TileSize.X+a.Spacing.X),
-						Y: a.Margin.Y + float64(atlasY)*(a.TileSize.Y+a.Spacing.Y),
-					},
-					a.TileSize,
-				),
+				Src:            a.SrcRect(tile),
+			}
+			if animation, ok := a.animationFor(tile); ok {
+				instance.Animation = render.SpriteAnimation{Frames: animation.Frames, Rate: animation.Rate}
 			}
 			if len(l.Flips) == len(l.Tiles) {
 				instance.Flip = l.Flips[index]
@@ -159,15 +190,12 @@ func (l *Layer) DirtyChunks() []ChunkCoord {
 	for chunk := range l.dirty {
 		chunks = append(chunks, chunk)
 	}
-	for i := 1; i < len(chunks); i++ {
-		for j := i; j > 0 && chunkBefore(chunks[j], chunks[j-1]); j-- {
-			chunks[j], chunks[j-1] = chunks[j-1], chunks[j]
+	slices.SortFunc(chunks, func(a, b ChunkCoord) int {
+		if c := cmp.Compare(a.Y, b.Y); c != 0 {
+			return c
 		}
-	}
+		return cmp.Compare(a.X, b.X)
+	})
 	l.dirty = nil
 	return chunks
-}
-
-func chunkBefore(a, b ChunkCoord) bool {
-	return a.Y < b.Y || a.Y == b.Y && a.X < b.X
 }

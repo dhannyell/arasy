@@ -69,12 +69,16 @@ func TestViewCommandsMatchVisibleChunks(t *testing.T) {
 	}
 	const layer = 7
 
-	got := view.Commands(nil, cam, layer)
+	const clock = 2.5
+
+	got := view.Commands(nil, cam, layer, clock)
 	var want []render.Command
 	for _, chunk := range VisibleChunks(&view.Layer, cam.ForLayer(layer), view.Atlas) {
 		want = append(want, render.DrawSpriteBatch{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
 			Batch:       view.batchID(chunk),
+			// The render clock rides every chunk so atlas flip-books animate.
+			Animation: render.SpriteBatchAnimation{Time: clock},
 		})
 	}
 	if len(want) == 0 {
@@ -128,7 +132,7 @@ func TestViewSteadyStateDoesNotAllocate(t *testing.T) {
 		World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 64, Y: 64}),
 		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 64, Y: 64}),
 	}
-	dst := view.Commands(nil, cam, 0)
+	dst := view.Commands(nil, cam, 0, 0)
 	boxed := float64(len(dst))
 	if boxed == 0 {
 		t.Fatal("fixture camera culled every chunk; the alloc guard needs at least one")
@@ -136,7 +140,7 @@ func TestViewSteadyStateDoesNotAllocate(t *testing.T) {
 
 	allocs := testing.AllocsPerRun(100, func() {
 		view.Publish(sink)
-		dst = view.Commands(dst[:0], cam, 0)
+		dst = view.Commands(dst[:0], cam, 0, 0)
 	})
 	if allocs > boxed {
 		t.Fatalf("steady state allocs = %v, want at most %v (command boxing only)", allocs, boxed)

@@ -53,12 +53,15 @@ func (v *View) publishChunk(sink BatchSink, chunk ChunkCoord) {
 
 // Commands appends one DrawSpriteBatch per visible chunk to dst. It culls
 // with the layer's parallax camera, the same camera the batches render with.
-func (v *View) Commands(dst []render.Command, cam render.Camera, layer int) []render.Command {
+// time is the render clock that drives the atlas flip-books; layers without
+// Animations ignore it, so passing 0 is safe for static maps.
+func (v *View) Commands(dst []render.Command, cam render.Camera, layer int, time float64) []render.Command {
 	v.chunks = visibleChunksInto(v.chunks[:0], &v.Layer, cam.ForLayer(layer), v.Atlas)
 	for _, chunk := range v.chunks {
 		dst = append(dst, render.DrawSpriteBatch{
 			BaseCommand: render.BaseCommand{LayerValue: layer},
 			Batch:       v.batchID(chunk),
+			Animation:   render.SpriteBatchAnimation{Time: time},
 		})
 	}
 	return dst

@@ -371,7 +371,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	minimapTexture := ctx.Assets.Texture("minimap")
 	ctx.AddTargetPass(g.minimapCamera(), g.minimapCommands(), minimapTexture)
 
-	cmds := g.ground.Commands(g.commands[:0], ctx.Camera(), layerGround)
+	cmds := g.ground.Commands(g.commands[:0], ctx.Camera(), layerGround, ctx.Time)
 	cmds = append(cmds, g.static...)
 	cmds = g.appendClouds(cmds, ctx.Time)
 	cmds = g.appendWater(cmds, ctx.Time)

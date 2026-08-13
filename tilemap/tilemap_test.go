@@ -48,6 +48,34 @@ func TestChunkMapsCellsToWorldAndAtlas(t *testing.T) {
 	}
 }
 
+// TestChunkAppliesAtlasAnimations proves an animated atlas index carries its
+// flip-book into the instance while other indices stay static — the retained
+// chunk itself never changes for animation.
+func TestChunkAppliesAtlasAnimations(t *testing.T) {
+	layer := Layer{
+		Tiles:    []int16{0, 1},
+		W:        2,
+		H:        1,
+		CellSize: math2d.Vec2{X: 1, Y: 1},
+	}
+	atlas := Atlas{
+		TileSize:   math2d.Vec2{X: 16, Y: 16},
+		Columns:    2,
+		Animations: []Animation{{Tile: 1, Frames: 4, Rate: 8}},
+	}
+
+	got := layer.Chunk(0, 0, atlas, nil)
+	if len(got) != 2 {
+		t.Fatalf("chunk length = %d, want 2", len(got))
+	}
+	if got[0].Animation != (render.SpriteAnimation{}) {
+		t.Fatalf("static tile animation = %#v, want zero", got[0].Animation)
+	}
+	if got[1].Animation != (render.SpriteAnimation{Frames: 4, Rate: 8}) {
+		t.Fatalf("animated tile animation = %#v, want Frames 4 Rate 8", got[1].Animation)
+	}
+}
+
 func TestChunkReusesBuffer(t *testing.T) {
 	layer := Layer{
 		Tiles:    make([]int16, ChunkSize*ChunkSize),

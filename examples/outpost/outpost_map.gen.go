@@ -5,6 +5,7 @@ package outpost
 import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/tilemap"
 )
 
@@ -50,11 +51,13 @@ type OutpostTileObjectGroup struct {
 	TileObjects []tilemap.TileObject
 }
 
-// OutpostMap is the generated map data.
+// OutpostMap is the generated map data. Collision is the solidity grid of the
+// layer marked class="collision" in Tiled; it is zero when the map has none.
 type OutpostMap struct {
 	Layers           []OutpostLayer
 	Objects          []OutpostObject
 	TileObjectGroups []OutpostTileObjectGroup
+	Collision        scene.CollisionGrid
 }
 
 // OutpostSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.
