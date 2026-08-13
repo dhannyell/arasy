@@ -10,13 +10,27 @@ import (
 
 type recordingSink struct {
 	updates map[render.SpriteBatchID]int
+	sprites map[render.SpriteBatchID][]render.SpriteInstance
 }
 
-func (s *recordingSink) UpdateSprites(id render.SpriteBatchID, _ []render.SpriteInstance) {
+func (s *recordingSink) UpdateSprites(id render.SpriteBatchID, instances []render.SpriteInstance) {
 	if s.updates == nil {
 		s.updates = make(map[render.SpriteBatchID]int)
 	}
 	s.updates[id]++
+	if s.sprites == nil {
+		s.sprites = make(map[render.SpriteBatchID][]render.SpriteInstance)
+	}
+	s.sprites[id] = append(s.sprites[id][:0], instances...)
+}
+
+func TestViewReportsOccupiedBatchIDs(t *testing.T) {
+	if got := viewFixture().Batches(); got != 4 {
+		t.Fatalf("Batches() = %d, want 4", got)
+	}
+	if got := NewView(Layer{}, Atlas{}, 1).Batches(); got != 0 {
+		t.Fatalf("empty Batches() = %d, want 0", got)
+	}
 }
 
 func viewFixture() *View {
@@ -89,20 +103,27 @@ func TestViewCommandsMatchVisibleChunks(t *testing.T) {
 	}
 }
 
-// Tile objects group into one batch per texture, in first-appearance order,
-// and publish only once: the authored scene is static.
-func TestObjectViewGroupsByTextureAndPublishesOnce(t *testing.T) {
+// Tile objects stay in authored order across texture changes and publish only
+// once. The backends split consecutive texture ranges inside the batch.
+func TestObjectViewPreservesOrderAndPublishesOnce(t *testing.T) {
 	objects := []TileObject{
 		{Texture: 7, Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1, Y: 1})},
 		{Texture: 9, Dest: math2d.NewRect(math2d.Vec2{X: 2}, math2d.Vec2{X: 1, Y: 1})},
-		{Texture: 7, Dest: math2d.NewRect(math2d.Vec2{X: 4}, math2d.Vec2{X: 1, Y: 1})},
+		{Texture: 7, Dest: math2d.NewRect(math2d.Vec2{X: 4}, math2d.Vec2{X: 1, Y: 1}), Animation: render.SpriteAnimation{Frames: 2, Rate: 4}},
 	}
 	view := NewObjectView(objects, 50)
 	sink := &recordingSink{}
 
 	view.Publish(sink)
-	if len(sink.updates) != 2 || sink.updates[50] != 1 || sink.updates[51] != 1 {
-		t.Fatalf("publish uploads = %v, want one upload each for batches 50 and 51", sink.updates)
+	if len(sink.updates) != 1 || sink.updates[50] != 1 {
+		t.Fatalf("publish uploads = %v, want one upload for batch 50", sink.updates)
+	}
+	gotTextures := []render.TextureID{sink.sprites[50][0].Texture, sink.sprites[50][1].Texture, sink.sprites[50][2].Texture}
+	if wantTextures := []render.TextureID{7, 9, 7}; !reflect.DeepEqual(gotTextures, wantTextures) {
+		t.Fatalf("textures = %v, want authored order %v", gotTextures, wantTextures)
+	}
+	if got := sink.sprites[50][2].Animation; got != (render.SpriteAnimation{Frames: 2, Rate: 4}) {
+		t.Fatalf("animation = %+v, want imported flip-book", got)
 	}
 
 	sink.updates = nil
@@ -111,10 +132,9 @@ func TestObjectViewGroupsByTextureAndPublishesOnce(t *testing.T) {
 		t.Fatalf("second publish uploaded %d batches, want 0", len(sink.updates))
 	}
 
-	got := view.Commands(nil, 3)
+	got := view.Commands(nil, 3, 2.5)
 	want := []render.Command{
-		render.DrawSpriteBatch{BaseCommand: render.BaseCommand{LayerValue: 3}, Batch: 50},
-		render.DrawSpriteBatch{BaseCommand: render.BaseCommand{LayerValue: 3}, Batch: 51},
+		render.DrawSpriteBatch{BaseCommand: render.BaseCommand{LayerValue: 3}, Batch: 50, Animation: render.SpriteBatchAnimation{Time: 2.5}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("commands = %v, want %v", got, want)

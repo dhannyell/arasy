@@ -22,9 +22,19 @@ type View struct {
 }
 
 // NewView pairs a layer with its atlas. Each chunk uses one batch ID starting
-// at base; reserve one ID per chunk before the next view's base.
+// at base; Batches reports the range to reserve before the next view.
 func NewView(layer Layer, atlas Atlas, base render.SpriteBatchID) *View {
 	return &View{Layer: layer, Atlas: atlas, base: base}
+}
+
+// Batches returns the number of batch IDs the view occupies from its base.
+func (v *View) Batches() int {
+	if v.Layer.W <= 0 || v.Layer.H <= 0 {
+		return 0
+	}
+	wide := (v.Layer.W-1)/ChunkSize + 1
+	high := (v.Layer.H-1)/ChunkSize + 1
+	return wide * high
 }
 
 // Publish uploads the layer's chunks to the sink: every chunk on the first

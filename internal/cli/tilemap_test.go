@@ -2,6 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"compress/gzip"
+	"compress/zlib"
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
 	"image/png"
 	"math"
 	"os"
@@ -283,6 +288,59 @@ func TestGenerateTilemapEmitsAnimations(t *testing.T) {
 	}
 }
 
+func TestCompileTilemapPreservesObjectLayerSemantics(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "objects.tmx")
+	data := `<?xml version="1.0" encoding="UTF-8"?>
+<map orientation="orthogonal" renderorder="right-down" width="1" height="1" tilewidth="16" tileheight="16">
+ <tileset firstgid="1" name="tiles" tilewidth="16" tileheight="16" tilecount="2" columns="2">
+  <image source="tiles.png" width="32" height="16"/>
+  <tile id="0"><animation><frame tileid="0" duration="100"/><frame tileid="1" duration="100"/></animation></tile>
+ </tileset>
+ <objectgroup id="1" name="props" offsetx="16" offsety="8" draworder="topdown">
+  <object id="1" gid="1" x="32" y="32" width="16" height="16"/>
+  <object id="2" gid="2" x="0" y="16" width="16" height="16"/>
+ </objectgroup>
+</map>`
+	if err := os.WriteFile(source, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(dir, "objects.gen.go")
+	if err := compileTilemap(source, tilemapImportFlags{output: output, packageName: "fixture", name: "Objects", cellSize: 1}); err != nil {
+		t.Fatal(err)
+	}
+	generated, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(generated)
+	first := strings.Index(text, "X: 16, Y: 0")
+	second := strings.Index(text, "X: 0, Y: 0")
+	if first < 0 || second < 0 || first >= second {
+		t.Fatalf("topdown tile objects are not sorted by Y: first=%d second=%d\n%s", first, second, text)
+	}
+	if !strings.Contains(text, "Animation: render.SpriteAnimation{Frames: 2, Rate: 10}") {
+		t.Fatalf("animated tile object lost its flip-book:\n%s", text)
+	}
+	if !strings.Contains(text, "Position: math2d.Vec2{X: 3, Y: 2.5}") {
+		t.Fatalf("raw object position did not include the group offset:\n%s", text)
+	}
+}
+
+func TestValidateTilemapObjectGroupRejectsUnsupportedPresentation(t *testing.T) {
+	tests := []*tiled.ObjectGroup{
+		{Name: "opacity", Opacity: 0.5, ParallaxX: 1, ParallaxY: 1, DrawOrder: "topdown"},
+		{Name: "parallax", Opacity: 1, ParallaxX: 0.5, ParallaxY: 1, DrawOrder: "topdown"},
+		{Name: "blend", Opacity: 1, ParallaxX: 1, ParallaxY: 1, Mode: "multiply", DrawOrder: "topdown"},
+		{Name: "draw order", Opacity: 1, ParallaxX: 1, ParallaxY: 1, DrawOrder: "unknown"},
+	}
+	for _, group := range tests {
+		if err := validateTilemapObjectGroup(group); err == nil {
+			t.Fatalf("object group %q must reject unsupported presentation", group.Name)
+		}
+	}
+}
+
 // TestGenerateTilemapRejectsIrregularAnimations closes the v1 subset: frame
 // sequences the flip-book cannot represent must error with an instruction,
 // never silently drop.
@@ -329,6 +387,49 @@ func TestCompileTilemapRejectsZstd(t *testing.T) {
 	err := compileTilemap(source, tilemapImportFlags{output: filepath.Join(dir, "out.go"), packageName: "fixture", name: "Zstd", cellSize: 1})
 	if err == nil || !strings.Contains(err.Error(), "zstd compression") {
 		t.Fatalf("error = %v, want clear zstd rejection", err)
+	}
+}
+
+func TestCompileTilemapAcceptsBase64Compression(t *testing.T) {
+	for _, compression := range []string{"gzip", "zlib"} {
+		t.Run(compression, func(t *testing.T) {
+			var encoded bytes.Buffer
+			var writer interface {
+				Write([]byte) (int, error)
+				Close() error
+			}
+			if compression == "gzip" {
+				writer = gzip.NewWriter(&encoded)
+			} else {
+				writer = zlib.NewWriter(&encoded)
+			}
+			var gid [4]byte
+			binary.LittleEndian.PutUint32(gid[:], 1)
+			if _, err := writer.Write(gid[:]); err != nil {
+				t.Fatal(err)
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+
+			dir := t.TempDir()
+			source := filepath.Join(dir, compression+".tmx")
+			data := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><map orientation="orthogonal" renderorder="right-down" width="1" height="1" tilewidth="16" tileheight="16"><tileset firstgid="1" name="tiles" tilewidth="16" tileheight="16" tilecount="1" columns="1"><image source="tiles.png" width="16" height="16"/></tileset><layer name="ground" width="1" height="1"><data encoding="base64" compression="%s">%s</data></layer></map>`, compression, base64.StdEncoding.EncodeToString(encoded.Bytes()))
+			if err := os.WriteFile(source, []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			output := filepath.Join(dir, "out.go")
+			if err := compileTilemap(source, tilemapImportFlags{output: output, packageName: "fixture", name: "Compressed", cellSize: 1}); err != nil {
+				t.Fatal(err)
+			}
+			generated, err := os.ReadFile(output)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(generated, []byte("Tiles: []int16{0}")) {
+				t.Fatalf("compressed tile was not decoded:\n%s", generated)
+			}
+		})
 	}
 }
 

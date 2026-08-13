@@ -241,8 +241,11 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintln(&out, "\t\t},")
 	fmt.Fprintf(&out, "\t\tObjects: []%sObject{\n", name)
 	for _, group := range m.ObjectGroups {
+		if err := validateTilemapObjectGroup(group); err != nil {
+			return nil, err
+		}
 		for _, object := range group.Objects {
-			if err := writeTilemapObject(&out, object, group.Name, m, options.cellSize, mappings, name); err != nil {
+			if err := writeTilemapObject(&out, object, group.Name, group.OffsetX, group.OffsetY, m, options.cellSize, mappings, name); err != nil {
 				return nil, err
 			}
 		}
@@ -250,9 +253,12 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintln(&out, "\t\t},")
 	fmt.Fprintf(&out, "\t\tTileObjectGroups: []%sTileObjectGroup{\n", name)
 	for index, group := range m.ObjectGroups {
+		if !group.Visible {
+			continue
+		}
 		var objects bytes.Buffer
-		for _, object := range group.Objects {
-			if err := writeTilemapTileObject(&objects, object, m, options.cellSize, mappings); err != nil {
+		for _, object := range tilemapObjectsInDrawOrder(group) {
+			if err := writeTilemapTileObject(&objects, object, group.OffsetX, group.OffsetY, m, options.cellSize, mappings); err != nil {
 				return nil, err
 			}
 		}
@@ -278,6 +284,26 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 		return nil, fmt.Errorf("tilemap import: format generated Go: %w", err)
 	}
 	return generated, nil
+}
+
+func validateTilemapObjectGroup(group *tiled.ObjectGroup) error {
+	if group.Opacity != 1 || group.ParallaxX != 1 || group.ParallaxY != 1 || group.Mode != "" && group.Mode != "normal" {
+		return fmt.Errorf("tilemap import: object layer %q uses opacity, parallax, or blend mode outside the v1 subset", group.Name)
+	}
+	if group.DrawOrder != "index" && group.DrawOrder != "topdown" {
+		return fmt.Errorf("tilemap import: object layer %q uses unsupported draw order %q", group.Name, group.DrawOrder)
+	}
+	return nil
+}
+
+func tilemapObjectsInDrawOrder(group *tiled.ObjectGroup) []*tiled.Object {
+	objects := slices.Clone(group.Objects)
+	if group.DrawOrder == "topdown" {
+		slices.SortStableFunc(objects, func(a, b *tiled.Object) int {
+			return cmp.Compare(a.Y, b.Y)
+		})
+	}
+	return objects
 }
 
 // tilemapOrder returns the document draw order of a layer ID, or fallback for
@@ -523,13 +549,13 @@ func tileFlip(horizontal, vertical bool) uint8 {
 	return flip
 }
 
-func writeTilemapObject(out *bytes.Buffer, object *tiled.Object, group string, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping, name string) error {
+func writeTilemapObject(out *bytes.Buffer, object *tiled.Object, group string, offsetX, offsetY float64, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping, name string) error {
 	tile, texture, flip, err := tilemapObjectTile(object, m, mappings)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "\t\t\t{Group: %q, ID: %d, Name: %q, Class: %q, Position: ", group, object.ID, object.Name, object.Class)
-	writeVec(out, object.X*cellSize/float64(m.TileWidth), object.Y*cellSize/float64(m.TileHeight))
+	writeVec(out, (object.X+offsetX)*cellSize/float64(m.TileWidth), (object.Y+offsetY)*cellSize/float64(m.TileHeight))
 	fmt.Fprint(out, ", Size: ")
 	writeVec(out, object.Width*cellSize/float64(m.TileWidth), object.Height*cellSize/float64(m.TileHeight))
 	fmt.Fprintf(out, ", Rotation: %s, Tile: %d", tilemapFloat(object.Rotation), tile)
@@ -584,7 +610,7 @@ func tilemapObjectLayerTile(object *tiled.Object, m *tiled.Map, mappings []tilem
 // anchors a tile object at its bottom-left and rotates clockwise around that
 // anchor; the emitted Dest center absorbs that pivot, since sprite instances
 // rotate around their center.
-func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping) error {
+func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, offsetX, offsetY float64, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping) error {
 	tile, texture, err := tilemapObjectLayerTile(object, m, mappings)
 	if err != nil || tile == nil || !object.Visible {
 		return err
@@ -593,8 +619,8 @@ func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, m *tiled.Ma
 
 	width := object.Width * cellSize / float64(m.TileWidth)
 	height := object.Height * cellSize / float64(m.TileHeight)
-	pivotX := object.X * cellSize / float64(m.TileWidth)
-	pivotY := object.Y * cellSize / float64(m.TileHeight)
+	pivotX := (object.X + offsetX) * cellSize / float64(m.TileWidth)
+	pivotY := (object.Y + offsetY) * cellSize / float64(m.TileHeight)
 	rotation := object.Rotation * math.Pi / 180
 	sin, cos := math.Sincos(rotation)
 	centerX := pivotX + cos*(width/2) - sin*(-height/2)
@@ -618,7 +644,15 @@ func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, m *tiled.Ma
 	writeVec(out, float64(tileset.TileWidth), float64(tileset.TileHeight))
 	fmt.Fprint(out, "), Flip: ")
 	writeFlips(out, []uint8{tileFlip(tile.HorizontalFlip, tile.VerticalFlip)})
-	fmt.Fprintf(out, "Rotation: %s},\n", tilemapFloat(rotation))
+	fmt.Fprintf(out, "Rotation: %s", tilemapFloat(rotation))
+	if definition, definitionErr := tileset.GetTilesetTile(tile.ID); definitionErr == nil && len(definition.Animation) > 0 {
+		frames, rate, animationErr := tiledFlipBook(definition)
+		if animationErr != nil {
+			return animationErr
+		}
+		fmt.Fprintf(out, ", Animation: render.SpriteAnimation{Frames: %d, Rate: %s}", frames, tilemapFloat32(rate))
+	}
+	fmt.Fprintln(out, "},")
 	return nil
 }
 
