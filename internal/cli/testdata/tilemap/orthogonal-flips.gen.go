@@ -5,6 +5,7 @@ package fixture
 import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/tilemap"
 )
 
@@ -50,11 +51,13 @@ type OrthogonalFlipsTileObjectGroup struct {
 	TileObjects []tilemap.TileObject
 }
 
-// OrthogonalFlipsMap is the generated map data.
+// OrthogonalFlipsMap is the generated map data. Collision is the solidity grid of the
+// layer marked class="collision" in Tiled; it is zero when the map has none.
 type OrthogonalFlipsMap struct {
 	Layers           []OrthogonalFlipsLayer
 	Objects          []OrthogonalFlipsObject
 	TileObjectGroups []OrthogonalFlipsTileObjectGroup
+	Collision        scene.CollisionGrid
 }
 
 // NewOrthogonalFlipsMap builds the map with texture names resolved by texture.

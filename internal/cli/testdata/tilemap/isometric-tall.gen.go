@@ -5,6 +5,7 @@ package fixture
 import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/tilemap"
 )
 
@@ -50,11 +51,13 @@ type IsometricTallTileObjectGroup struct {
 	TileObjects []tilemap.TileObject
 }
 
-// IsometricTallMap is the generated map data.
+// IsometricTallMap is the generated map data. Collision is the solidity grid of the
+// layer marked class="collision" in Tiled; it is zero when the map has none.
 type IsometricTallMap struct {
 	Layers           []IsometricTallLayer
 	Objects          []IsometricTallObject
 	TileObjectGroups []IsometricTallTileObjectGroup
+	Collision        scene.CollisionGrid
 }
 
 // IsometricTallSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.

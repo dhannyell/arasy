@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/xml"
 	"fmt"
 	"go/format"
@@ -9,10 +10,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/tilemap"
 	"github.com/lafriks/go-tiled"
 	"github.com/spf13/cobra"
 )
@@ -190,6 +194,7 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintln(&out, "import (")
 	fmt.Fprintln(&out, "\t\"github.com/dhannyell/arasy/math2d\"")
 	fmt.Fprintln(&out, "\t\"github.com/dhannyell/arasy/render\"")
+	fmt.Fprintln(&out, "\t\"github.com/dhannyell/arasy/scene\"")
 	fmt.Fprintln(&out, "\t\"github.com/dhannyell/arasy/tilemap\"")
 	fmt.Fprintln(&out, ")")
 	fmt.Fprintln(&out)
@@ -207,8 +212,9 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "// %sTileObjectGroup holds one object group's visible tile objects, draw-ready\n", name)
 	fmt.Fprintf(&out, "// for tilemap.NewObjectView. Order places the group in the map draw order.\n")
 	fmt.Fprintf(&out, "type %sTileObjectGroup struct {\n\tName string\n\tOrder int\n\tTileObjects []tilemap.TileObject\n}\n\n", name)
-	fmt.Fprintf(&out, "// %sMap is the generated map data.\n", name)
-	fmt.Fprintf(&out, "type %sMap struct {\n\tLayers []%sLayer\n\tObjects []%sObject\n\tTileObjectGroups []%sTileObjectGroup\n}\n\n", name, name, name, name)
+	fmt.Fprintf(&out, "// %sMap is the generated map data. Collision is the solidity grid of the\n", name)
+	fmt.Fprintf(&out, "// layer marked class=\"collision\" in Tiled; it is zero when the map has none.\n")
+	fmt.Fprintf(&out, "type %sMap struct {\n\tLayers []%sLayer\n\tObjects []%sObject\n\tTileObjectGroups []%sTileObjectGroup\n\tCollision scene.CollisionGrid\n}\n\n", name, name, name, name)
 	if m.Orientation == "isometric" {
 		ratio := float64(m.TileWidth) / float64(m.TileHeight)
 		fmt.Fprintf(&out, "// %sSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.\n", name)
@@ -218,7 +224,15 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "func New%sMap(texture func(string) render.TextureID) %sMap {\n", name, name)
 	fmt.Fprintf(&out, "\treturn %sMap{\n\t\tLayers: []%sLayer{\n", name, name)
 
+	var collision *tiled.Layer
 	for index, layer := range m.Layers {
+		if layer.Class == "collision" {
+			if collision != nil {
+				return nil, fmt.Errorf("tilemap import: layers %q and %q are both class=\"collision\"; keep at most one", collision.Name, layer.Name)
+			}
+			collision = layer
+			continue
+		}
 		order := tilemapOrder(orders, layer.ID, index)
 		if err := writeTilemapLayer(&out, layer, order, m, options.cellSize, mappings); err != nil {
 			return nil, err
@@ -251,6 +265,11 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 		fmt.Fprintln(&out, "\t\t\t}},")
 	}
 	fmt.Fprintln(&out, "\t\t},")
+	if collision != nil {
+		if err := writeTilemapCollision(&out, collision, m, options.cellSize); err != nil {
+			return nil, err
+		}
+	}
 	fmt.Fprintln(&out, "\t}")
 	fmt.Fprintln(&out, "}")
 
@@ -275,7 +294,7 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 		return fmt.Errorf("tilemap import: layer %q has %d tiles, want %d", layer.Name, len(layer.Tiles), m.Width*m.Height)
 	}
 	if !layer.Visible || layer.Opacity != 1 || layer.Mode != "" && layer.Mode != "normal" {
-		return fmt.Errorf("tilemap import: layer %q uses visibility, opacity, or blend mode outside the v1 subset", layer.Name)
+		return fmt.Errorf("tilemap import: layer %q uses visibility, opacity, or blend mode outside the v1 subset; make it visible or mark class=\"collision\" for a data layer", layer.Name)
 	}
 
 	var tileset *tiled.Tileset
@@ -307,6 +326,21 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 	if tileset.TileOffset != nil {
 		offsetX = float64(tileset.TileOffset.X) * cellX
 		offsetY = float64(tileset.TileOffset.Y) * cellY
+	}
+
+	animations, err := tilemapAnimations(tileset)
+	if err != nil {
+		return fmt.Errorf("%w (layer %q)", err, layer.Name)
+	}
+	if len(animations) > 0 {
+		// The renderer advances flip-books through the raw texture grid; a
+		// margin, spacing, or partial-width column count would desync frames.
+		if tileset.Margin != 0 || tileset.Spacing != 0 {
+			return fmt.Errorf("tilemap import: layer %q animates tiles in a tileset with margin or spacing; re-pack the atlas without gaps", layer.Name)
+		}
+		if tileset.Image.Width != tileset.Columns*tileset.TileWidth {
+			return fmt.Errorf("tilemap import: layer %q animates tiles but the tileset columns do not span the image width", layer.Name)
+		}
 	}
 
 	tiles := make([]int16, len(layer.Tiles))
@@ -356,10 +390,107 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 	writeVec(out, float64(tileset.Spacing), float64(tileset.Spacing))
 	fmt.Fprint(out, ", Margin: ")
 	writeVec(out, float64(tileset.Margin), float64(tileset.Margin))
+	if len(animations) > 0 {
+		fmt.Fprint(out, ", Animations: []tilemap.Animation{")
+		for _, animation := range animations {
+			fmt.Fprintf(out, "{Tile: %d, Frames: %d, Rate: %s},", animation.tile, animation.frames, tilemapFloat32(animation.rate))
+		}
+		fmt.Fprint(out, "}")
+	}
 	fmt.Fprint(out, "}, Parallax: ")
 	writeVec32(out, layer.ParallaxX, layer.ParallaxY)
 	fmt.Fprintln(out, "},")
 	return nil
+}
+
+// writeTilemapCollision emits the solidity grid of the collision layer: any
+// non-empty cell is solid. The layer never draws, so visibility, opacity and
+// tileset images are ignored; only its offset places the grid in the world.
+func writeTilemapCollision(out *bytes.Buffer, layer *tiled.Layer, m *tiled.Map, cellSize float64) error {
+	if len(layer.Tiles) != m.Width*m.Height {
+		return fmt.Errorf("tilemap import: collision layer %q has %d tiles, want %d", layer.Name, len(layer.Tiles), m.Width*m.Height)
+	}
+	if layer.ParallaxX != 1 || layer.ParallaxY != 1 {
+		return fmt.Errorf("tilemap import: collision layer %q uses parallax; collision cells do not move with the camera", layer.Name)
+	}
+
+	wordsPerRow := (m.Width + 63) / 64
+	words := make([]uint64, wordsPerRow*m.Height)
+	for i, tile := range layer.Tiles {
+		if tile == nil || tile.Nil {
+			continue
+		}
+		x, y := i%m.Width, i/m.Width
+		words[y*wordsPerRow+x/64] |= 1 << uint(x%64)
+	}
+
+	cellX := cellSize / float64(m.TileWidth)
+	cellY := cellSize / float64(m.TileHeight)
+	fmt.Fprint(out, "\t\tCollision: scene.CollisionGrid{Words: []uint64{")
+	for _, word := range words {
+		fmt.Fprintf(out, "%#x,", word)
+	}
+	fmt.Fprintf(out, "}, W: %d, H: %d, Origin: ", m.Width, m.Height)
+	writeVec(out, layer.OffsetX*cellX, layer.OffsetY*cellY)
+	fmt.Fprint(out, ", CellSize: ")
+	writeVec(out, cellSize, cellSize)
+	fmt.Fprintln(out, "},")
+	return nil
+}
+
+// tilemapAnimationEntry is one validated flip-book, ready to emit.
+type tilemapAnimationEntry struct {
+	tile   int16
+	frames uint16
+	rate   float32
+}
+
+// tilemapAnimations collects the flip-book table of one tileset in tile-ID
+// order, so generation stays deterministic regardless of authoring order.
+func tilemapAnimations(tileset *tiled.Tileset) ([]tilemapAnimationEntry, error) {
+	var animations []tilemapAnimationEntry
+	for _, tile := range tileset.Tiles {
+		if len(tile.Animation) == 0 {
+			continue
+		}
+		if tile.ID > math.MaxInt16 {
+			return nil, fmt.Errorf("tilemap import: animated tile %d exceeds int16 atlas index capacity", tile.ID)
+		}
+		frames, rate, err := tiledFlipBook(tile)
+		if err != nil {
+			return nil, err
+		}
+		animations = append(animations, tilemapAnimationEntry{tile: int16(tile.ID), frames: frames, rate: rate})
+	}
+	slices.SortFunc(animations, func(a, b tilemapAnimationEntry) int {
+		return cmp.Compare(a.tile, b.tile)
+	})
+	return animations, nil
+}
+
+// tiledFlipBook validates one Tiled animation against the engine flip-book
+// subset and converts it: the frame count and the rate in frames per second.
+// The subset requires frames on consecutive ascending tile IDs starting at
+// the animated tile's own ID, all with one equal positive duration
+// (milliseconds in Tiled). Anything else must error with an instruction to
+// re-author the tileset, never drop data silently.
+func tiledFlipBook(tile *tiled.TilesetTile) (uint16, float32, error) {
+	if len(tile.Animation) > math.MaxUint16 {
+		return 0, 0, fmt.Errorf("tilemap import: animated tile %d has %d frames, more than the flip-book maximum %d", tile.ID, len(tile.Animation), math.MaxUint16)
+	}
+	duration := tile.Animation[0].Duration
+	if duration == 0 {
+		return 0, 0, fmt.Errorf("tilemap import: animated tile %d has a zero-duration frame; give every frame one positive duration", tile.ID)
+	}
+	for i, frame := range tile.Animation {
+		if frame.TileID != tile.ID+uint32(i) {
+			return 0, 0, fmt.Errorf("tilemap import: animated tile %d frame %d uses tile %d; re-author the sequence on consecutive tiles starting at %d", tile.ID, i, frame.TileID, tile.ID)
+		}
+		if frame.Duration != duration {
+			return 0, 0, fmt.Errorf("tilemap import: animated tile %d mixes frame durations (%dms and %dms); the flip-book advances at one constant rate", tile.ID, duration, frame.Duration)
+		}
+	}
+	return uint16(len(tile.Animation)), 1000 / float32(duration), nil
 }
 
 func tiledTileTransform(horizontal, vertical, diagonal bool) (uint8, float64) {
@@ -469,17 +600,20 @@ func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, m *tiled.Ma
 	centerX := pivotX + cos*(width/2) - sin*(-height/2)
 	centerY := pivotY + sin*(width/2) + cos*(-height/2)
 
-	column := int(tile.ID) % tileset.Columns
-	row := int(tile.ID) / tileset.Columns
-	srcX := float64(tileset.Margin) + float64(column)*float64(tileset.TileWidth+tileset.Spacing)
-	srcY := float64(tileset.Margin) + float64(row)*float64(tileset.TileHeight+tileset.Spacing)
+	// The same Atlas.SrcRect the runtime uses, evaluated at generation time.
+	src := tilemap.Atlas{
+		TileSize: math2d.Vec2{X: float64(tileset.TileWidth), Y: float64(tileset.TileHeight)},
+		Columns:  tileset.Columns,
+		Spacing:  math2d.Vec2{X: float64(tileset.Spacing), Y: float64(tileset.Spacing)},
+		Margin:   math2d.Vec2{X: float64(tileset.Margin), Y: float64(tileset.Margin)},
+	}.SrcRect(int16(tile.ID))
 
 	fmt.Fprintf(out, "\t\t\t{Texture: texture(%q), Dest: math2d.NewRect(", texture)
 	writeVec(out, centerX-width/2, centerY-height/2)
 	fmt.Fprint(out, ", ")
 	writeVec(out, width, height)
 	fmt.Fprint(out, "), Src: math2d.NewRect(")
-	writeVec(out, srcX, srcY)
+	writeVec(out, src.Min.X, src.Min.Y)
 	fmt.Fprint(out, ", ")
 	writeVec(out, float64(tileset.TileWidth), float64(tileset.TileHeight))
 	fmt.Fprint(out, "), Flip: ")

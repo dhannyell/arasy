@@ -200,6 +200,112 @@ func TestCompileTilemapDerivesSuggestedIsoViewRatio(t *testing.T) {
 	}
 }
 
+// collisionTestLayer builds one hand-made 2x2 collision layer. Loaded maps get
+// parallax 1 by default; hand-built layers must set it explicitly.
+func collisionTestLayer(name string, visible bool) *tiled.Layer {
+	solid := &tiled.LayerTile{ID: 0, Tileset: &tiled.Tileset{}}
+	return &tiled.Layer{
+		Name: name, Class: "collision", Visible: visible, Opacity: 1,
+		ParallaxX: 1, ParallaxY: 1,
+		Tiles: []*tiled.LayerTile{solid, nil, nil, solid},
+	}
+}
+
+// TestGenerateTilemapEmitsCollisionGrid proves an invisible class="collision"
+// layer becomes the solidity bitset instead of failing the visibility check.
+func TestGenerateTilemapEmitsCollisionGrid(t *testing.T) {
+	mapData := &tiled.Map{Orientation: "orthogonal", Width: 2, Height: 2, TileWidth: 16, TileHeight: 16}
+	mapData.Layers = []*tiled.Layer{collisionTestLayer("walls", false)}
+
+	generated, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Walls", cellSize: 4}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "scene.CollisionGrid{Words: []uint64{0x1, 0x2}, W: 2, H: 2"
+	if !strings.Contains(string(generated), want) {
+		t.Fatalf("generated map lacks the collision grid %q:\n%s", want, generated)
+	}
+}
+
+func TestGenerateTilemapRejectsTwoCollisionLayers(t *testing.T) {
+	mapData := &tiled.Map{Orientation: "orthogonal", Width: 2, Height: 2, TileWidth: 16, TileHeight: 16}
+	mapData.Layers = []*tiled.Layer{collisionTestLayer("walls", false), collisionTestLayer("water", true)}
+
+	_, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Walls", cellSize: 4}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "at most one") {
+		t.Fatalf("error = %v, want single-collision-layer rejection", err)
+	}
+}
+
+func TestGenerateTilemapRejectsCollisionParallax(t *testing.T) {
+	layer := collisionTestLayer("walls", false)
+	layer.ParallaxX = 0.5
+	mapData := &tiled.Map{Orientation: "orthogonal", Width: 2, Height: 2, TileWidth: 16, TileHeight: 16}
+	mapData.Layers = []*tiled.Layer{layer}
+
+	_, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Walls", cellSize: 4}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "parallax") {
+		t.Fatalf("error = %v, want collision parallax rejection", err)
+	}
+}
+
+// animatedTestMap builds one 1x1 hand-made map whose tileset animates tile 0
+// with the given frames. Columns span the image width, as the subset requires.
+func animatedTestMap(frames []*tiled.AnimationFrame) *tiled.Map {
+	tileset := &tiled.Tileset{
+		Columns: 2, TileWidth: 16, TileHeight: 16,
+		Image: &tiled.Image{Source: "anim.png", Width: 32, Height: 16},
+		Tiles: []*tiled.TilesetTile{{ID: 0, Animation: frames}},
+	}
+	mapData := &tiled.Map{Orientation: "orthogonal", Width: 1, Height: 1, TileWidth: 16, TileHeight: 16}
+	mapData.Layers = []*tiled.Layer{{
+		Name: "ground", Visible: true, Opacity: 1,
+		Tiles: []*tiled.LayerTile{{ID: 0, Tileset: tileset}},
+	}}
+	return mapData
+}
+
+// TestGenerateTilemapEmitsAnimations pins the Tiled-to-engine conversion: two
+// 100ms frames on consecutive IDs become Frames 2 at 10 frames per second.
+func TestGenerateTilemapEmitsAnimations(t *testing.T) {
+	mapData := animatedTestMap([]*tiled.AnimationFrame{
+		{TileID: 0, Duration: 100},
+		{TileID: 1, Duration: 100},
+	})
+
+	generated, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Anim", cellSize: 1}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Animations: []tilemap.Animation{{Tile: 0, Frames: 2, Rate: 10}}"
+	if !strings.Contains(string(generated), want) {
+		t.Fatalf("generated map lacks %q:\n%s", want, generated)
+	}
+}
+
+// TestGenerateTilemapRejectsIrregularAnimations closes the v1 subset: frame
+// sequences the flip-book cannot represent must error with an instruction,
+// never silently drop.
+func TestGenerateTilemapRejectsIrregularAnimations(t *testing.T) {
+	tests := []struct {
+		name   string
+		frames []*tiled.AnimationFrame
+	}{
+		{"non-consecutive IDs", []*tiled.AnimationFrame{{TileID: 0, Duration: 100}, {TileID: 2, Duration: 100}}},
+		{"does not start at own ID", []*tiled.AnimationFrame{{TileID: 1, Duration: 100}, {TileID: 2, Duration: 100}}},
+		{"unequal durations", []*tiled.AnimationFrame{{TileID: 0, Duration: 100}, {TileID: 1, Duration: 200}}},
+		{"zero duration", []*tiled.AnimationFrame{{TileID: 0, Duration: 0}, {TileID: 1, Duration: 0}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := generateTilemap(animatedTestMap(test.frames), tilemapImportFlags{packageName: "fixture", name: "Anim", cellSize: 1}, nil, nil)
+			if err == nil {
+				t.Fatal("irregular animation must fail the import")
+			}
+		})
+	}
+}
+
 func TestCompileTilemapRejectsMissingExternalTileset(t *testing.T) {
 	dir := t.TempDir()
 	source := filepath.Join(dir, "missing.tmx")
