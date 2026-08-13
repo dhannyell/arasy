@@ -50,6 +50,7 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 	}
 
 	w.contacts = w.contacts[:0]
+	w.gridContacts = w.gridContacts[:0]
 
 	w.applyLocomotion(dt)
 	w.applyAcceleration(dt)

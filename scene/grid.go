@@ -125,7 +125,6 @@ func (w *World) GridContacts() []GridContact {
 // Cells resolve in row-major order per entity; the position updates between
 // cells, so sliding along a wall stays stable.
 func (w *World) collideWithGrid() {
-	w.gridContacts = w.gridContacts[:0]
 	g := w.collisionGrid
 	if g == nil || g.W <= 0 || g.H <= 0 {
 		return
@@ -148,6 +147,9 @@ func (w *World) collideWithGrid() {
 // solid cell. Circles use their bounding box in v1.
 func (w *World) collideEntityWithGrid(id EntityID, half math2d.Vec2) {
 	g := w.collisionGrid
+	if g == nil {
+		return
+	}
 	transform, ok := w.transforms.get(id)
 	if !ok {
 		return
