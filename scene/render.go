@@ -631,6 +631,33 @@ func (w *World) debugContactCommands(color render.Color, pointRadius, lineWidth,
 		)
 	}
 
+	for _, contact := range w.gridContacts {
+		transform, ok := w.transforms.get(contact.Entity)
+		if !ok {
+			continue
+		}
+		// The entity was already pushed out by Depth, so stepping back along
+		// the normal lands the point on the touched cell face.
+		point := transform.Position.
+			Add(w.debugOffset(contact.Entity, transform.Position)).
+			Sub(contact.Normal.Mul(contact.Depth))
+		commands = append(commands,
+			render.DrawPoint{
+				Center:      point,
+				Radius:      pointRadius,
+				Color:       color,
+				BaseCommand: render.BaseCommand{LayerValue: layer},
+			},
+			render.DrawLine{
+				From:        point,
+				To:          point.Add(contact.Normal.Mul(normalLength)),
+				Width:       lineWidth,
+				Color:       color,
+				BaseCommand: render.BaseCommand{LayerValue: layer},
+			},
+		)
+	}
+
 	return commands
 }
 

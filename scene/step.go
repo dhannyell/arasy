@@ -58,6 +58,8 @@ func (w *World) Step(dt float64, config StepConfig) StepStats {
 	w.integrate(dt)
 	w.bounceEntitiesInside(config.Bounds, config.Bounce)
 
+	w.collideWithGrid()
+
 	collision := w.detectCircleOverlapsGridStats(cellSize)
 	w.resolveContacts(collision.contacts)
 

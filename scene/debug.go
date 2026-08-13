@@ -1,6 +1,7 @@
 package scene
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/dhannyell/arasy/math2d"
@@ -172,6 +173,13 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 				cfg.Style.Colliders.ColliderLayer,
 			)...,
 		)
+		// The collision grid is collision geometry, so it shares the flag and
+		// the style of the entity colliders.
+		cmds = append(cmds, w.debugCollisionGridCommands(
+			cfg.Style.Colliders.ColliderColor,
+			cfg.Style.Colliders.ColliderStrokeWidth,
+			cfg.Style.Colliders.ColliderLayer,
+		)...)
 	}
 	if layers.Has(DebugContacts) {
 		cmds = append(
@@ -204,6 +212,57 @@ func (w *World) DebugCommands(layers DebugLayers, opts ...DebugOption) []render.
 	}
 
 	return cmds
+}
+
+// debugCollisionGridCache memoizes the collision grid's solid-cell overlay.
+// The grid mutates rarely (SetSolid), so the per-frame cost is one word-slice
+// comparison instead of a full cell scan and command rebuild.
+type debugCollisionGridCache struct {
+	words       []uint64
+	w, h        int
+	origin      math2d.Vec2
+	cellSize    math2d.Vec2
+	color       render.Color
+	strokeWidth float64
+	layer       int
+	commands    []render.Command
+	built       bool
+}
+
+// debugCollisionGridCommands returns the solid-cell overlay of the collision
+// grid, rebuilding it only when the grid or the style changed.
+func (w *World) debugCollisionGridCommands(color render.Color, strokeWidth float64, layer int) []render.Command {
+	g := w.collisionGrid
+	if g == nil || g.W <= 0 || g.H <= 0 {
+		return nil
+	}
+	cache := &w.debugCollisionGrid
+	if cache.built &&
+		cache.w == g.W && cache.h == g.H &&
+		cache.origin == g.Origin && cache.cellSize == g.CellSize &&
+		cache.color == color && cache.strokeWidth == strokeWidth && cache.layer == layer &&
+		slices.Equal(cache.words, g.Words) {
+		return cache.commands
+	}
+
+	rects := g.debugSolidCellRects()
+	commands := make([]render.Command, 0, len(rects))
+	for _, rect := range rects {
+		commands = append(commands, render.DrawRect{
+			Rect:        rect,
+			Stroke:      color,
+			StrokeWidth: strokeWidth,
+			BaseCommand: render.BaseCommand{LayerValue: layer},
+		})
+	}
+
+	cache.words = append(cache.words[:0], g.Words...)
+	cache.w, cache.h = g.W, g.H
+	cache.origin, cache.cellSize = g.Origin, g.CellSize
+	cache.color, cache.strokeWidth, cache.layer = color, strokeWidth, layer
+	cache.commands = commands
+	cache.built = true
+	return commands
 }
 
 // debugGridCache memoizes the grid overlay. The grid is a pure function of

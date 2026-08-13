@@ -28,6 +28,7 @@ const (
 	tagLocomotion
 	tagMoveIntent
 	tagHopTween
+	tagCollisionGrid
 )
 
 // ChecksumComponentStores counts the component stores covered by Checksum.
@@ -94,6 +95,24 @@ func (w *World) checksum(sim, content bool) uint64 {
 			continue
 		}
 		d.hash(w, h, buf[:])
+	}
+	// The grid hashes after the stores so worlds without one keep the
+	// historical checksum stream that goldens pin.
+	if sim && w.collisionGrid != nil {
+		g := w.collisionGrid
+		if _, err := h.Write([]byte{tagCollisionGrid}); err != nil {
+			slog.Error("Failed to generate checksum", "err", err.Error())
+			return 0
+		}
+		hashU64(h, buf[:], uint64(int64(g.W)))
+		hashU64(h, buf[:], uint64(int64(g.H)))
+		hashF64(h, buf[:], g.Origin.X)
+		hashF64(h, buf[:], g.Origin.Y)
+		hashF64(h, buf[:], g.CellSize.X)
+		hashF64(h, buf[:], g.CellSize.Y)
+		for _, word := range g.Words {
+			hashU64(h, buf[:], word)
+		}
 	}
 
 	return h.Sum64()

@@ -59,6 +59,14 @@ type World struct {
 	contacts         []Contact
 	collisionScratch collisionScratch
 
+	// collisionGrid is the static solidity grid, or nil. Simulation state:
+	// cloned deep and covered by SimChecksum when set.
+	collisionGrid *CollisionGrid
+
+	// gridContacts are the grid contacts of one tick. Transient per-tick —
+	// never cloned or checksummed, like contacts.
+	gridContacts []GridContact
+
 	entityCountCache int
 	entityCountDirty bool
 
@@ -115,6 +123,10 @@ type World struct {
 	// debugGrid memoizes the static grid overlay. Transient: derived from the
 	// overlay configuration, never cloned or checksummed.
 	debugGrid debugGridCache
+
+	// debugCollisionGrid memoizes the solid-cell overlay. Transient: derived
+	// from the collision grid and the style, never cloned or checksummed.
+	debugCollisionGrid debugCollisionGridCache
 }
 
 func NewWorld() *World {
@@ -140,10 +152,15 @@ func (w *World) Clone() *World {
 		entityCountDirty: w.entityCountDirty,
 		projection:       w.projection,
 		sortAxis:         w.sortAxis,
-		// contacts are transient per-tick — not cloned
+		// contacts and gridContacts are transient per-tick — not cloned
 		// collisionScratch is transient broad-phase working memory — not cloned
 		// renderSortScratch is transient render working memory — not cloned
 		// debugGrid is a derived overlay cache — not cloned
+	}
+	if w.collisionGrid != nil {
+		grid := *w.collisionGrid
+		grid.Words = append([]uint64(nil), grid.Words...)
+		c.collisionGrid = &grid
 	}
 	for i := range componentDefs {
 		componentDefs[i].clone(c, w)
