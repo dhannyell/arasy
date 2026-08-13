@@ -11,26 +11,31 @@ import (
 // so culling does not discard an overlapping neighbor chunk. It applies
 // Camera.View to all chunk corners before culling, as retained batches do.
 func VisibleChunks(l *Layer, cam render.Camera, atlas ...Atlas) []ChunkCoord {
+	return visibleChunksInto(nil, l, cam, atlas...)
+}
+
+// visibleChunksInto appends the visible chunks to dst so callers can reuse a
+// buffer across frames.
+func visibleChunksInto(dst []ChunkCoord, l *Layer, cam render.Camera, atlas ...Atlas) []ChunkCoord {
 	if l == nil || l.W <= 0 || l.H <= 0 || len(l.Tiles) < l.W*l.H {
-		return nil
+		return dst
 	}
 	view := cam.Resolve().World
 	if view.Width() <= 0 || view.Height() <= 0 {
-		return nil
+		return dst
 	}
 
 	chunksX := (l.W-1)/ChunkSize + 1
 	chunksY := (l.H-1)/ChunkSize + 1
-	visible := make([]ChunkCoord, 0, chunksX*chunksY)
 	for cy := range chunksY {
 		for cx := range chunksX {
 			bounds := renderbatch.BoundsForView(chunkBounds(l, cx, cy, atlas...), cam.View)
 			if renderbatch.IntersectsView(bounds, view) {
-				visible = append(visible, ChunkCoord{X: cx, Y: cy})
+				dst = append(dst, ChunkCoord{X: cx, Y: cy})
 			}
 		}
 	}
-	return visible
+	return dst
 }
 
 func chunkBounds(l *Layer, cx, cy int, atlas ...Atlas) math2d.Rect {

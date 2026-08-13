@@ -11,5 +11,6 @@
   <object id="7" name="spawn" class="Spawn" x="64" y="0">
    <properties><property name="team" value="blue"/></properties>
   </object>
+  <object id="8" name="ladder" gid="2147483649" x="128" y="64" width="64" height="64"/>
  </objectgroup>
 </map>

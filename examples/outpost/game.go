@@ -99,9 +99,7 @@ type Game struct {
 	// Presentation-only, rebuilt or refreshed without entering State.
 	static          []render.Command
 	projection      render.Projection
-	ground          tilemap.Layer
-	groundAtlas     tilemap.Atlas
-	groundBuffer    []render.SpriteInstance
+	ground          *tilemap.View
 	terrainUploaded bool
 	hoverI          int
 	hoverJ          int
@@ -124,9 +122,8 @@ func NewGame() (*Game, error) {
 	}
 	groundMap := NewOutpostMap(m.Texture)
 	return &Game{
-		assets:      m,
-		ground:      groundMap.Layers[0].Layer,
-		groundAtlas: groundMap.Layers[0].Atlas,
+		assets: m,
+		ground: tilemap.NewView(groundMap.Layers[0].Layer, groundMap.Layers[0].Atlas, groundBatchBase),
 	}, nil
 }
 
@@ -144,13 +141,12 @@ func (g *Game) Setup() runtime.Config {
 			Aspect: render.AspectFit,
 			View:   isoView,
 		},
-		Clear:                render.RGBA8(24, 26, 40, 255),
-		InputBindings:        cursorBindings(),
-		SimulationHz:         60,
-		FPS:                  60,
-		HistoryLen:           600,
-		DisableDefaultSplash: true,
-		Assets:               g.assets,
+		Clear:         render.RGBA8(24, 26, 40, 255),
+		InputBindings: cursorBindings(),
+		SimulationHz:  60,
+		FPS:           60,
+		HistoryLen:    600,
+		Assets:        g.assets,
 	}
 }
 
@@ -206,7 +202,7 @@ func (g *Game) Init(ctx *runtime.UpdateContext) {
 	// which way up is.
 	g.projection = projection
 
-	g.publishAllGround(ctx.Batches)
+	g.ground.Publish(ctx.Batches)
 	g.static = buildStaticBoard(projection)
 	spawnProps(ctx.World, projection)
 
@@ -254,7 +250,7 @@ func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
 	g.trackHover(ctx)
 	g.handleClicks(ctx)
 	g.steerCursor(ctx, dt)
-	g.publishDirtyGround(ctx.Batches)
+	g.ground.Publish(ctx.Batches)
 }
 
 func (g *Game) PostStep(ctx *runtime.UpdateContext, _ scene.StepStats) {
@@ -369,13 +365,13 @@ func hopFlight(from, to math2d.Vec2) (duration, apex float64) {
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	if !g.terrainUploaded {
-		ctx.UpdateTexture(g.groundAtlas.Texture, terrainAtlasImage())
+		ctx.UpdateTexture(g.ground.Atlas.Texture, terrainAtlasImage())
 		g.terrainUploaded = true
 	}
 	minimapTexture := ctx.Assets.Texture("minimap")
 	ctx.AddTargetPass(g.minimapCamera(), g.minimapCommands(), minimapTexture)
 
-	cmds := g.appendGroundBatches(g.commands[:0], ctx.Camera())
+	cmds := g.ground.Commands(g.commands[:0], ctx.Camera(), layerGround)
 	cmds = append(cmds, g.static...)
 	cmds = g.appendClouds(cmds, ctx.Time)
 	cmds = g.appendWater(cmds, ctx.Time)
@@ -444,40 +440,6 @@ func (g *Game) minimapPanel(camera render.Camera, texture render.TextureID) rend
 		},
 		Tint: render.RGBA(1, 1, 1, 0.92),
 	}
-}
-
-func (g *Game) appendGroundBatches(cmds []render.Command, cam render.Camera) []render.Command {
-	for _, chunk := range tilemap.VisibleChunks(&g.ground, cam.ForLayer(layerGround), g.groundAtlas) {
-		cmds = append(cmds, render.DrawSpriteBatch{
-			BaseCommand: render.BaseCommand{LayerValue: layerGround},
-			Batch:       groundBatchID(chunk),
-		})
-	}
-	return cmds
-}
-
-func (g *Game) publishAllGround(batches *runtime.BatchPort) {
-	for y := 0; y < g.ground.H; y += tilemap.ChunkSize {
-		for x := 0; x < g.ground.W; x += tilemap.ChunkSize {
-			g.publishGroundChunk(batches, tilemap.ChunkCoord{X: x / tilemap.ChunkSize, Y: y / tilemap.ChunkSize})
-		}
-	}
-}
-
-func (g *Game) publishDirtyGround(batches *runtime.BatchPort) {
-	for _, chunk := range g.ground.DirtyChunks() {
-		g.publishGroundChunk(batches, chunk)
-	}
-}
-
-func (g *Game) publishGroundChunk(batches *runtime.BatchPort, chunk tilemap.ChunkCoord) {
-	instances := g.ground.Chunk(chunk.X, chunk.Y, g.groundAtlas, g.groundBuffer)
-	g.groundBuffer = instances
-	batches.UpdateSprites(groundBatchID(chunk), instances)
-}
-
-func groundBatchID(chunk tilemap.ChunkCoord) render.SpriteBatchID {
-	return groundBatchBase + render.SpriteBatchID(chunk.Y*256+chunk.X)
 }
 
 // appendClouds drifts soft shadow blobs across the island interior. They are

@@ -16,6 +16,8 @@ type OrthogonalFlipsProperty struct {
 }
 
 // OrthogonalFlipsObject is raw object-layer data; games choose how to map it to entities.
+// A tile object carries its atlas index in Tile with the texture of its
+// tileset; Position is the tile's bottom-left corner, as Tiled anchors it.
 type OrthogonalFlipsObject struct {
 	Group      string
 	ID         uint32
@@ -24,32 +26,52 @@ type OrthogonalFlipsObject struct {
 	Position   math2d.Vec2
 	Size       math2d.Vec2
 	Rotation   float64
+	Tile       int16 // Atlas index into Texture; -1 when the object has no tile.
+	Texture    string
+	Flip       render.SpriteFlip
 	Properties []OrthogonalFlipsProperty
 }
 
 // OrthogonalFlipsLayer combines a tile layer with its atlas and Tiled parallax factor.
+// Order is the layer's position in the map draw order; pass it as the render layer.
 type OrthogonalFlipsLayer struct {
 	Name     string
+	Order    int
 	Layer    tilemap.Layer
 	Atlas    tilemap.Atlas
 	Parallax math2d.Vec2
 }
 
+// OrthogonalFlipsTileObjectGroup holds one object group's visible tile objects, draw-ready
+// for tilemap.NewObjectView. Order places the group in the map draw order.
+type OrthogonalFlipsTileObjectGroup struct {
+	Name        string
+	Order       int
+	TileObjects []tilemap.TileObject
+}
+
 // OrthogonalFlipsMap is the generated map data.
 type OrthogonalFlipsMap struct {
-	Layers  []OrthogonalFlipsLayer
-	Objects []OrthogonalFlipsObject
+	Layers           []OrthogonalFlipsLayer
+	Objects          []OrthogonalFlipsObject
+	TileObjectGroups []OrthogonalFlipsTileObjectGroup
 }
 
 // NewOrthogonalFlipsMap builds the map with texture names resolved by texture.
 func NewOrthogonalFlipsMap(texture func(string) render.TextureID) OrthogonalFlipsMap {
 	return OrthogonalFlipsMap{
 		Layers: []OrthogonalFlipsLayer{
-			{Name: "all-gid-orientations", Layer: tilemap.Layer{Tiles: []int16{0, 0, 0, 0, 0, 0, 0, 0}, W: 8, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 2, Y: 2}, Flips: []render.SpriteFlip{render.FlipNone, render.FlipX, render.FlipY, render.FlipX | render.FlipY, render.FlipY, render.FlipNone, render.FlipNone, render.FlipX}, Rotations: []float64{0, 0, 0, 0, 1.5707963267948966, 1.5707963267948966, -1.5707963267948966, 1.5707963267948966}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 2, Y: 2}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
-			{Name: "parallax", Layer: tilemap.Layer{Tiles: []int16{0, -1, -1, -1, -1, -1, -1, -1}, W: 8, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 2, Y: 2}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 2, Y: 2}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 0.3, Y: 1}},
+			{Name: "all-gid-orientations", Order: 0, Layer: tilemap.Layer{Tiles: []int16{0, 0, 0, 0, 0, 0, 0, 0}, W: 8, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 2, Y: 2}, Flips: []render.SpriteFlip{render.FlipNone, render.FlipX, render.FlipY, render.FlipX | render.FlipY, render.FlipY, render.FlipNone, render.FlipNone, render.FlipX}, Rotations: []float64{0, 0, 0, 0, 1.5707963267948966, 1.5707963267948966, -1.5707963267948966, 1.5707963267948966}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 2, Y: 2}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
+			{Name: "parallax", Order: 1, Layer: tilemap.Layer{Tiles: []int16{0, -1, -1, -1, -1, -1, -1, -1}, W: 8, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 2, Y: 2}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 2, Y: 2}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 0.3, Y: 1}},
 		},
 		Objects: []OrthogonalFlipsObject{
-			{Group: "objects", ID: 7, Name: "spawn", Class: "Spawn", Position: math2d.Vec2{X: 2, Y: 0}, Size: math2d.Vec2{X: 0, Y: 0}, Rotation: 0, Properties: []OrthogonalFlipsProperty{{Name: "team", Type: "", Value: "blue"}}},
+			{Group: "objects", ID: 7, Name: "spawn", Class: "Spawn", Position: math2d.Vec2{X: 2, Y: 0}, Size: math2d.Vec2{X: 0, Y: 0}, Rotation: 0, Tile: -1, Properties: []OrthogonalFlipsProperty{{Name: "team", Type: "", Value: "blue"}}},
+			{Group: "objects", ID: 8, Name: "ladder", Class: "", Position: math2d.Vec2{X: 4, Y: 2}, Size: math2d.Vec2{X: 2, Y: 2}, Rotation: 0, Tile: 0, Texture: "asymmetric", Flip: render.FlipX, Properties: []OrthogonalFlipsProperty{}},
+		},
+		TileObjectGroups: []OrthogonalFlipsTileObjectGroup{
+			{Name: "objects", Order: 2, TileObjects: []tilemap.TileObject{
+				{Texture: texture("asymmetric"), Dest: math2d.NewRect(math2d.Vec2{X: 4, Y: 0}, math2d.Vec2{X: 2, Y: 2}), Src: math2d.NewRect(math2d.Vec2{X: 0, Y: 0}, math2d.Vec2{X: 64, Y: 64}), Flip: render.FlipX, Rotation: 0},
+			}},
 		},
 	}
 }

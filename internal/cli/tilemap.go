@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"go/format"
 	"go/token"
@@ -85,7 +86,11 @@ func compileTilemap(source string, options tilemapImportFlags) error {
 		}
 		return fmt.Errorf("tilemap import: load %q: %w", source, err)
 	}
-	generated, err := generateTilemap(mapData, options, mappings)
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return fmt.Errorf("tilemap import: read %q: %w", source, err)
+	}
+	generated, err := generateTilemap(mapData, options, mappings, tilemapLayerOrders(raw))
 	if err != nil {
 		return err
 	}
@@ -121,7 +126,44 @@ func parseTilemapTextureMappings(values []string) ([]tilemapTextureMapping, erro
 	return mappings, nil
 }
 
-func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilemapTextureMapping) ([]byte, error) {
+// tilemapLayerOrders maps each layer and object-group ID to its position in
+// the map's document order, which is Tiled's draw order. The go-tiled split
+// slices do not preserve that interleaving.
+func tilemapLayerOrders(source []byte) map[uint32]int {
+	orders := map[uint32]int{}
+	decoder := xml.NewDecoder(bytes.NewReader(source))
+	depth, next := 0, 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return orders
+		}
+		switch element := token.(type) {
+		case xml.StartElement:
+			depth++
+			if depth != 2 {
+				continue
+			}
+			switch element.Name.Local {
+			case "layer", "objectgroup", "imagelayer", "group":
+			default:
+				continue
+			}
+			for _, attr := range element.Attr {
+				if attr.Name.Local == "id" {
+					if id, err := strconv.ParseUint(attr.Value, 10, 32); err == nil {
+						orders[uint32(id)] = next
+					}
+				}
+			}
+			next++
+		case xml.EndElement:
+			depth--
+		}
+	}
+}
+
+func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilemapTextureMapping, orders map[uint32]int) ([]byte, error) {
 	if m.Infinite {
 		return nil, fmt.Errorf("tilemap import: infinite maps use Tiled chunks; export a finite map")
 	}
@@ -156,11 +198,17 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "// %sProperty is one custom property authored in Tiled.\n", name)
 	fmt.Fprintf(&out, "type %sProperty struct {\n\tName string\n\tType string\n\tValue string\n}\n\n", name)
 	fmt.Fprintf(&out, "// %sObject is raw object-layer data; games choose how to map it to entities.\n", name)
-	fmt.Fprintf(&out, "type %sObject struct {\n\tGroup string\n\tID uint32\n\tName string\n\tClass string\n\tPosition math2d.Vec2\n\tSize math2d.Vec2\n\tRotation float64\n\tProperties []%sProperty\n}\n\n", name, name)
+	fmt.Fprintf(&out, "// A tile object carries its atlas index in Tile with the texture of its\n")
+	fmt.Fprintf(&out, "// tileset; Position is the tile's bottom-left corner, as Tiled anchors it.\n")
+	fmt.Fprintf(&out, "type %sObject struct {\n\tGroup string\n\tID uint32\n\tName string\n\tClass string\n\tPosition math2d.Vec2\n\tSize math2d.Vec2\n\tRotation float64\n\tTile int16 // Atlas index into Texture; -1 when the object has no tile.\n\tTexture string\n\tFlip render.SpriteFlip\n\tProperties []%sProperty\n}\n\n", name, name)
 	fmt.Fprintf(&out, "// %sLayer combines a tile layer with its atlas and Tiled parallax factor.\n", name)
-	fmt.Fprintf(&out, "type %sLayer struct {\n\tName string\n\tLayer tilemap.Layer\n\tAtlas tilemap.Atlas\n\tParallax math2d.Vec2\n}\n\n", name)
+	fmt.Fprintf(&out, "// Order is the layer's position in the map draw order; pass it as the render layer.\n")
+	fmt.Fprintf(&out, "type %sLayer struct {\n\tName string\n\tOrder int\n\tLayer tilemap.Layer\n\tAtlas tilemap.Atlas\n\tParallax math2d.Vec2\n}\n\n", name)
+	fmt.Fprintf(&out, "// %sTileObjectGroup holds one object group's visible tile objects, draw-ready\n", name)
+	fmt.Fprintf(&out, "// for tilemap.NewObjectView. Order places the group in the map draw order.\n")
+	fmt.Fprintf(&out, "type %sTileObjectGroup struct {\n\tName string\n\tOrder int\n\tTileObjects []tilemap.TileObject\n}\n\n", name)
 	fmt.Fprintf(&out, "// %sMap is the generated map data.\n", name)
-	fmt.Fprintf(&out, "type %sMap struct {\n\tLayers []%sLayer\n\tObjects []%sObject\n}\n\n", name, name, name)
+	fmt.Fprintf(&out, "type %sMap struct {\n\tLayers []%sLayer\n\tObjects []%sObject\n\tTileObjectGroups []%sTileObjectGroup\n}\n\n", name, name, name, name)
 	if m.Orientation == "isometric" {
 		ratio := float64(m.TileWidth) / float64(m.TileHeight)
 		fmt.Fprintf(&out, "// %sSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.\n", name)
@@ -171,7 +219,8 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "\treturn %sMap{\n\t\tLayers: []%sLayer{\n", name, name)
 
 	for index, layer := range m.Layers {
-		if err := writeTilemapLayer(&out, layer, index, m, options.cellSize, mappings); err != nil {
+		order := tilemapOrder(orders, layer.ID, index)
+		if err := writeTilemapLayer(&out, layer, order, m, options.cellSize, mappings); err != nil {
 			return nil, err
 		}
 	}
@@ -179,8 +228,27 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintf(&out, "\t\tObjects: []%sObject{\n", name)
 	for _, group := range m.ObjectGroups {
 		for _, object := range group.Objects {
-			writeTilemapObject(&out, object, group.Name, options.cellSize, m.TileWidth, m.TileHeight, name)
+			if err := writeTilemapObject(&out, object, group.Name, m, options.cellSize, mappings, name); err != nil {
+				return nil, err
+			}
 		}
+	}
+	fmt.Fprintln(&out, "\t\t},")
+	fmt.Fprintf(&out, "\t\tTileObjectGroups: []%sTileObjectGroup{\n", name)
+	for index, group := range m.ObjectGroups {
+		var objects bytes.Buffer
+		for _, object := range group.Objects {
+			if err := writeTilemapTileObject(&objects, object, m, options.cellSize, mappings); err != nil {
+				return nil, err
+			}
+		}
+		if objects.Len() == 0 {
+			continue
+		}
+		order := tilemapOrder(orders, group.ID, len(m.Layers)+index)
+		fmt.Fprintf(&out, "\t\t\t{Name: %q, Order: %d, TileObjects: []tilemap.TileObject{\n", group.Name, order)
+		out.Write(objects.Bytes())
+		fmt.Fprintln(&out, "\t\t\t}},")
 	}
 	fmt.Fprintln(&out, "\t\t},")
 	fmt.Fprintln(&out, "\t}")
@@ -193,7 +261,16 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	return generated, nil
 }
 
-func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, layerIndex int, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping) error {
+// tilemapOrder returns the document draw order of a layer ID, or fallback for
+// maps old enough to lack layer IDs.
+func tilemapOrder(orders map[uint32]int, id uint32, fallback int) int {
+	if order, ok := orders[id]; ok {
+		return order
+	}
+	return fallback
+}
+
+func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping) error {
 	if len(layer.Tiles) != m.Width*m.Height {
 		return fmt.Errorf("tilemap import: layer %q has %d tiles, want %d", layer.Name, len(layer.Tiles), m.Width*m.Height)
 	}
@@ -252,7 +329,7 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, layerIndex int, m 
 		hasRotations = hasRotations || rotation != 0
 	}
 
-	fmt.Fprintf(out, "\t\t\t{Name: %q, Layer: tilemap.Layer{Tiles: []int16{", layer.Name)
+	fmt.Fprintf(out, "\t\t\t{Name: %q, Order: %d, Layer: tilemap.Layer{Tiles: []int16{", layer.Name, order)
 	writeInt16s(out, tiles)
 	fmt.Fprintf(out, "}, W: %d, H: %d, Origin: ", m.Width, m.Height)
 	writeVec(out, layer.OffsetX*cellX, layer.OffsetY*cellY)
@@ -282,7 +359,6 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, layerIndex int, m 
 	fmt.Fprint(out, "}, Parallax: ")
 	writeVec32(out, layer.ParallaxX, layer.ParallaxY)
 	fmt.Fprintln(out, "},")
-	_ = layerIndex
 	return nil
 }
 
@@ -316,16 +392,100 @@ func tileFlip(horizontal, vertical bool) uint8 {
 	return flip
 }
 
-func writeTilemapObject(out *bytes.Buffer, object *tiled.Object, group string, cellSize float64, tileWidth, tileHeight int, name string) {
+func writeTilemapObject(out *bytes.Buffer, object *tiled.Object, group string, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping, name string) error {
+	tile, texture, flip, err := tilemapObjectTile(object, m, mappings)
+	if err != nil {
+		return err
+	}
 	fmt.Fprintf(out, "\t\t\t{Group: %q, ID: %d, Name: %q, Class: %q, Position: ", group, object.ID, object.Name, object.Class)
-	writeVec(out, object.X*cellSize/float64(tileWidth), object.Y*cellSize/float64(tileHeight))
+	writeVec(out, object.X*cellSize/float64(m.TileWidth), object.Y*cellSize/float64(m.TileHeight))
 	fmt.Fprint(out, ", Size: ")
-	writeVec(out, object.Width*cellSize/float64(tileWidth), object.Height*cellSize/float64(tileHeight))
-	fmt.Fprintf(out, ", Rotation: %s, Properties: []%sProperty{", tilemapFloat(object.Rotation), name)
+	writeVec(out, object.Width*cellSize/float64(m.TileWidth), object.Height*cellSize/float64(m.TileHeight))
+	fmt.Fprintf(out, ", Rotation: %s, Tile: %d", tilemapFloat(object.Rotation), tile)
+	if tile >= 0 {
+		fmt.Fprintf(out, ", Texture: %q, Flip: ", texture)
+		writeFlips(out, []uint8{flip})
+	} else {
+		fmt.Fprint(out, ", ")
+	}
+	fmt.Fprintf(out, "Properties: []%sProperty{", name)
 	for _, property := range object.Properties {
 		fmt.Fprintf(out, "{Name: %q, Type: %q, Value: %q},", property.Name, property.Type, property.Value)
 	}
 	fmt.Fprintln(out, "}},")
+	return nil
+}
+
+// tilemapObjectTile decodes a tile object's GID into the atlas index, texture
+// name and source flip. Objects without a GID report tile -1.
+func tilemapObjectTile(object *tiled.Object, m *tiled.Map, mappings []tilemapTextureMapping) (int16, string, uint8, error) {
+	tile, texture, err := tilemapObjectLayerTile(object, m, mappings)
+	if err != nil || tile == nil {
+		return -1, "", 0, err
+	}
+	return int16(tile.ID), texture, tileFlip(tile.HorizontalFlip, tile.VerticalFlip), nil
+}
+
+// tilemapObjectLayerTile resolves and validates a tile object's GID. Objects
+// without a GID return a nil tile.
+func tilemapObjectLayerTile(object *tiled.Object, m *tiled.Map, mappings []tilemapTextureMapping) (*tiled.LayerTile, string, error) {
+	if object.GID == 0 {
+		return nil, "", nil
+	}
+	tile, err := m.TileGIDToTile(object.GID)
+	if err != nil {
+		return nil, "", fmt.Errorf("tilemap import: object %d: %w", object.ID, err)
+	}
+	if tile.DiagonalFlip {
+		return nil, "", fmt.Errorf("tilemap import: object %d uses a diagonal tile flip; rotate the object instead", object.ID)
+	}
+	if tile.ID > math.MaxInt16 {
+		return nil, "", fmt.Errorf("tilemap import: object %d tile %d exceeds int16 atlas index capacity", object.ID, tile.ID)
+	}
+	tileset := tile.Tileset
+	if tileset == nil || tileset.Image == nil || tileset.Image.Source == "" || tileset.Columns <= 0 || tileset.TileWidth <= 0 || tileset.TileHeight <= 0 {
+		return nil, "", fmt.Errorf("tilemap import: object %d needs one grid tileset with an image, columns, and tile size", object.ID)
+	}
+	return tile, tilemapTextureName(tileset.Image.Source, mappings), nil
+}
+
+// writeTilemapTileObject emits one draw-ready tilemap.TileObject. Tiled
+// anchors a tile object at its bottom-left and rotates clockwise around that
+// anchor; the emitted Dest center absorbs that pivot, since sprite instances
+// rotate around their center.
+func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping) error {
+	tile, texture, err := tilemapObjectLayerTile(object, m, mappings)
+	if err != nil || tile == nil || !object.Visible {
+		return err
+	}
+	tileset := tile.Tileset
+
+	width := object.Width * cellSize / float64(m.TileWidth)
+	height := object.Height * cellSize / float64(m.TileHeight)
+	pivotX := object.X * cellSize / float64(m.TileWidth)
+	pivotY := object.Y * cellSize / float64(m.TileHeight)
+	rotation := object.Rotation * math.Pi / 180
+	sin, cos := math.Sincos(rotation)
+	centerX := pivotX + cos*(width/2) - sin*(-height/2)
+	centerY := pivotY + sin*(width/2) + cos*(-height/2)
+
+	column := int(tile.ID) % tileset.Columns
+	row := int(tile.ID) / tileset.Columns
+	srcX := float64(tileset.Margin) + float64(column)*float64(tileset.TileWidth+tileset.Spacing)
+	srcY := float64(tileset.Margin) + float64(row)*float64(tileset.TileHeight+tileset.Spacing)
+
+	fmt.Fprintf(out, "\t\t\t{Texture: texture(%q), Dest: math2d.NewRect(", texture)
+	writeVec(out, centerX-width/2, centerY-height/2)
+	fmt.Fprint(out, ", ")
+	writeVec(out, width, height)
+	fmt.Fprint(out, "), Src: math2d.NewRect(")
+	writeVec(out, srcX, srcY)
+	fmt.Fprint(out, ", ")
+	writeVec(out, float64(tileset.TileWidth), float64(tileset.TileHeight))
+	fmt.Fprint(out, "), Flip: ")
+	writeFlips(out, []uint8{tileFlip(tile.HorizontalFlip, tile.VerticalFlip)})
+	fmt.Fprintf(out, "Rotation: %s},\n", tilemapFloat(rotation))
+	return nil
 }
 
 func tilemapTextureName(source string, mappings []tilemapTextureMapping) string {

@@ -16,6 +16,8 @@ type IsometricTallProperty struct {
 }
 
 // IsometricTallObject is raw object-layer data; games choose how to map it to entities.
+// A tile object carries its atlas index in Tile with the texture of its
+// tileset; Position is the tile's bottom-left corner, as Tiled anchors it.
 type IsometricTallObject struct {
 	Group      string
 	ID         uint32
@@ -24,21 +26,35 @@ type IsometricTallObject struct {
 	Position   math2d.Vec2
 	Size       math2d.Vec2
 	Rotation   float64
+	Tile       int16 // Atlas index into Texture; -1 when the object has no tile.
+	Texture    string
+	Flip       render.SpriteFlip
 	Properties []IsometricTallProperty
 }
 
 // IsometricTallLayer combines a tile layer with its atlas and Tiled parallax factor.
+// Order is the layer's position in the map draw order; pass it as the render layer.
 type IsometricTallLayer struct {
 	Name     string
+	Order    int
 	Layer    tilemap.Layer
 	Atlas    tilemap.Atlas
 	Parallax math2d.Vec2
 }
 
+// IsometricTallTileObjectGroup holds one object group's visible tile objects, draw-ready
+// for tilemap.NewObjectView. Order places the group in the map draw order.
+type IsometricTallTileObjectGroup struct {
+	Name        string
+	Order       int
+	TileObjects []tilemap.TileObject
+}
+
 // IsometricTallMap is the generated map data.
 type IsometricTallMap struct {
-	Layers  []IsometricTallLayer
-	Objects []IsometricTallObject
+	Layers           []IsometricTallLayer
+	Objects          []IsometricTallObject
+	TileObjectGroups []IsometricTallTileObjectGroup
 }
 
 // IsometricTallSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.
@@ -48,8 +64,9 @@ const IsometricTallSuggestedIsoViewRatio = 2
 func NewIsometricTallMap(texture func(string) render.TextureID) IsometricTallMap {
 	return IsometricTallMap{
 		Layers: []IsometricTallLayer{
-			{Name: "resolved-terrain", Layer: tilemap.Layer{Tiles: []int16{0, 0}, W: 2, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 8, Y: 8}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 16, Y: 32}, Offset: math2d.Vec2{X: -4, Y: -12}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
+			{Name: "resolved-terrain", Order: 0, Layer: tilemap.Layer{Tiles: []int16{0, 0}, W: 2, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 8, Y: 8}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 16, Y: 32}, Offset: math2d.Vec2{X: -4, Y: -12}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
 		},
-		Objects: []IsometricTallObject{},
+		Objects:          []IsometricTallObject{},
+		TileObjectGroups: []IsometricTallTileObjectGroup{},
 	}
 }

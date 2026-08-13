@@ -151,7 +151,7 @@ func TestGenerateTilemapRejectsUnsupportedMaps(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := generateTilemap(test.mapData, tilemapImportFlags{packageName: "fixture", name: "Fixture", cellSize: 1}, nil)
+			_, err := generateTilemap(test.mapData, tilemapImportFlags{packageName: "fixture", name: "Fixture", cellSize: 1}, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
@@ -191,7 +191,7 @@ func TestCompileTilemapDerivesSuggestedIsoViewRatio(t *testing.T) {
 			Columns: 1, TileWidth: 32, TileHeight: 32, Image: &tiled.Image{Source: "terrain.png"},
 		}}},
 	}}
-	generated, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Square", cellSize: 1}, nil)
+	generated, err := generateTilemap(mapData, tilemapImportFlags{packageName: "fixture", name: "Square", cellSize: 1}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

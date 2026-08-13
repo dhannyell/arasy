@@ -16,6 +16,8 @@ type OutpostProperty struct {
 }
 
 // OutpostObject is raw object-layer data; games choose how to map it to entities.
+// A tile object carries its atlas index in Tile with the texture of its
+// tileset; Position is the tile's bottom-left corner, as Tiled anchors it.
 type OutpostObject struct {
 	Group      string
 	ID         uint32
@@ -24,21 +26,35 @@ type OutpostObject struct {
 	Position   math2d.Vec2
 	Size       math2d.Vec2
 	Rotation   float64
+	Tile       int16 // Atlas index into Texture; -1 when the object has no tile.
+	Texture    string
+	Flip       render.SpriteFlip
 	Properties []OutpostProperty
 }
 
 // OutpostLayer combines a tile layer with its atlas and Tiled parallax factor.
+// Order is the layer's position in the map draw order; pass it as the render layer.
 type OutpostLayer struct {
 	Name     string
+	Order    int
 	Layer    tilemap.Layer
 	Atlas    tilemap.Atlas
 	Parallax math2d.Vec2
 }
 
+// OutpostTileObjectGroup holds one object group's visible tile objects, draw-ready
+// for tilemap.NewObjectView. Order places the group in the map draw order.
+type OutpostTileObjectGroup struct {
+	Name        string
+	Order       int
+	TileObjects []tilemap.TileObject
+}
+
 // OutpostMap is the generated map data.
 type OutpostMap struct {
-	Layers  []OutpostLayer
-	Objects []OutpostObject
+	Layers           []OutpostLayer
+	Objects          []OutpostObject
+	TileObjectGroups []OutpostTileObjectGroup
 }
 
 // OutpostSuggestedIsoViewRatio is the map's tile width divided by its tile height, for a matching Camera.View.
@@ -48,8 +64,9 @@ const OutpostSuggestedIsoViewRatio = 1
 func NewOutpostMap(texture func(string) render.TextureID) OutpostMap {
 	return OutpostMap{
 		Layers: []OutpostLayer{
-			{Name: "ground", Layer: tilemap.Layer{Tiles: []int16{2, 2, 2, 0, 0, 0, 0, -1, -1, -1, 2, 2, 0, 0, 1, 0, 0, -1, -1, -1, 0, 0, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0, 3, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 3, 3, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0}, W: 10, H: 8, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 8, Y: 8}}, Atlas: tilemap.Atlas{Texture: texture("terrain_atlas"), TileSize: math2d.Vec2{X: 32, Y: 32}, Columns: 4, DrawSize: math2d.Vec2{X: 8, Y: 8}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
+			{Name: "ground", Order: 0, Layer: tilemap.Layer{Tiles: []int16{2, 2, 2, 0, 0, 0, 0, -1, -1, -1, 2, 2, 0, 0, 1, 0, 0, -1, -1, -1, 0, 0, 0, 0, 1, 0, 0, 0, -1, -1, 0, 0, 3, 0, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, 3, 3, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0}, W: 10, H: 8, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 8, Y: 8}}, Atlas: tilemap.Atlas{Texture: texture("terrain_atlas"), TileSize: math2d.Vec2{X: 32, Y: 32}, Columns: 4, DrawSize: math2d.Vec2{X: 8, Y: 8}, Offset: math2d.Vec2{X: 0, Y: 0}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
 		},
-		Objects: []OutpostObject{},
+		Objects:          []OutpostObject{},
+		TileObjectGroups: []OutpostTileObjectGroup{},
 	}
 }
