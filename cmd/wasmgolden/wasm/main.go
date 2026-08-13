@@ -9,40 +9,17 @@ import (
 	"github.com/dhannyell/arasy/cmd/wasmgolden"
 	"github.com/dhannyell/arasy/platform/wasm"
 	"github.com/dhannyell/arasy/render"
-	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {
 	params := js.Global().Get("URLSearchParams").New(js.Global().Get("location").Get("search"))
 
-	var game runtime.Game
-	var err error
-	switch params.Call("get", "fixture").String() {
-	case "particles":
-		game, err = wasmgolden.NewParticleGolden()
-	case "sprite-array":
-		game, err = wasmgolden.NewSpriteArrayGolden()
-	case "retained-batches":
-		game, err = wasmgolden.NewRetainedBatchesGolden()
-	case "view":
-		game, err = wasmgolden.NewViewConformanceGolden()
-	case "parallax":
-		game, err = wasmgolden.NewParallaxConformanceGolden()
-	case "flip":
-		game, err = wasmgolden.NewFlipConformanceGolden()
-	case "passes":
-		game, err = wasmgolden.NewCameraPassesGolden()
-	case "post":
-		game, err = wasmgolden.NewPostGolden()
-	case "rtt":
-		game, err = wasmgolden.NewRTTGolden()
-	case "rtt-array":
-		game, err = wasmgolden.NewRTTArrayGolden()
-	case "boot":
-		game, err = wasmgolden.NewBoot()
-	default:
-		game, err = wasmgolden.New()
+	fixture := params.Call("get", "fixture")
+	fixtureName := ""
+	if fixture.Type() == js.TypeString {
+		fixtureName = fixture.String()
 	}
+	game, err := wasmgolden.NewFixture(fixtureName)
 	if err != nil {
 		panic(err)
 	}
