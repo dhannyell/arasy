@@ -1,7 +1,6 @@
 package wasm
 
 import (
-	"encoding/binary"
 	"math"
 
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
@@ -10,31 +9,13 @@ import (
 	"github.com/dhannyell/arasy/render"
 )
 
-// Retained sprite batch GPU layouts. The record stride is fixed by
-// tess.SpriteStride; the animation record and uniform layouts must match the
-// WGSL SpriteAnim/BatchUniforms structs. tess.SpriteUniformSize is the shared
-// camera uniform layout used by every sprite/text pipeline.
+// Retained sprite batch GPU layouts. The record and uniform layouts are the
+// shared tess serializations, so the wasm and native shaders read identical
+// bytes.
 const (
-	spriteBatchAnimStride      = 32
-	spriteBatchAnimUniformSize = 96
+	spriteBatchAnimStride      = tess.SpriteAnimStride
+	spriteBatchAnimUniformSize = tess.SpriteBatchAnimUniformSize
 )
-
-type spriteUniformWriter struct {
-	dst    []byte
-	offset int
-}
-
-func (w *spriteUniformWriter) f32(value float64) {
-	binary.LittleEndian.PutUint32(w.dst[w.offset:], math.Float32bits(float32(value)))
-	w.offset += 4
-}
-
-func (w *spriteUniformWriter) u32(value uint32) {
-	binary.LittleEndian.PutUint32(w.dst[w.offset:], value)
-	w.offset += 4
-}
-
-func (w *spriteUniformWriter) skip(bytes int) { w.offset += bytes }
 
 // spriteBatchRange is one consecutive span of batch records sharing a bind
 // target. The array path binds one 2d-array group for every non-missing
@@ -106,7 +87,7 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 		plan.records = tess.AppendRetainedSpriteRecord(plan.records, inst, texW, texH, layer, magenta)
 
 		if animated {
-			plan.anims = appendSpriteBatchAnimRecord(plan.anims, inst, texW, texH)
+			plan.anims = tess.AppendSpriteAnimRecord(plan.anims, inst, texW, texH)
 		}
 
 		if b := float64(inst.Animation.Bounce); math.Abs(b) > plan.maxBounce {
@@ -140,32 +121,6 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 		plan.count++
 	}
 	return plan
-}
-
-// appendSpriteBatchAnimRecord serializes the per-instance animation data the
-// animated sprite shaders read next to the base record: flip-book grid
-// (validated against the texture; an invalid sequence packs Frames=0, the
-// same static-Src degradation as the CPU reference), rate, phase and bounce.
-func appendSpriteBatchAnimRecord(dst []byte, inst render.SpriteInstance, texW, texH int) []byte {
-	anim := inst.Animation
-	frames := uint32(0)
-	cellsPerRow := uint32(0)
-	baseIndex := uint32(0)
-	if cpr, base, ok := renderbatch.FlipBookCells(inst, texW, texH); ok {
-		frames = uint32(anim.Frames)
-		cellsPerRow = uint32(cpr)
-		baseIndex = uint32(base)
-	}
-	var buf [spriteBatchAnimStride]byte
-	writer := spriteUniformWriter{dst: buf[:]}
-	writer.u32(frames)
-	writer.u32(cellsPerRow)
-	writer.u32(baseIndex)
-	writer.skip(4) // alignment pad
-	writer.f32(float64(anim.Rate))
-	writer.f32(float64(anim.Phase))
-	writer.f32(float64(anim.Bounce))
-	return append(dst, buf[:]...)
 }
 
 // spriteBatchInflatedBounds returns the batch bounds inflated by the
@@ -230,22 +185,3 @@ func uniformArenaSlotCapacity(current, required int) int {
 	return current
 }
 
-// packSpriteBatchAnimUniforms packs one arena slot: the shared camera uniform
-// followed by the animation uniform block consumed by the animated sprite
-// shaders.
-func packSpriteBatchAnimUniforms(dst []byte, camera render.Camera, w, h int, anim render.SpriteBatchAnimation) {
-	tess.PackSpriteUniforms(dst, camera, w, h)
-	writer := spriteUniformWriter{dst: dst, offset: tess.SpriteUniformSize}
-	writer.f32(float64(renderbatch.WrapTime(anim.Time)))
-	writer.f32(anim.BounceHz)
-	writer.f32(anim.Intensity)
-	writer.f32(0)
-	writer.f32(anim.Pulse.Center.X)
-	writer.f32(anim.Pulse.Center.Y)
-	writer.f32(anim.Pulse.Radius)
-	writer.f32(anim.Pulse.Width)
-	writer.f32(anim.Pulse.Boost)
-	writer.f32(0)
-	writer.f32(0)
-	writer.f32(0)
-}

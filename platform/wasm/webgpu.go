@@ -563,7 +563,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		}
 		plan := plans[drawRuns[i].pass]
 		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
-		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, plan.width, plan.height, drawRuns[i].spriteBatch.Animation)
+		tess.PackSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, plan.width, plan.height, drawRuns[i].spriteBatch.Animation)
 		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
 		drawRuns[i].batchSlot = offset
 	}

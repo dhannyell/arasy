@@ -85,6 +85,12 @@ type Renderer struct {
 	targetTextGlyphPipeline *wgpu.RenderPipeline
 	spritePipelineLayout    *wgpu.PipelineLayout
 	textGlyphPipelineLayout *wgpu.PipelineLayout
+	// Animated retained sprite batches: flip-book and bounce run in the vertex
+	// shader, so the pipeline needs its own layout (animation records at
+	// binding 4, a larger dynamic uniform slot at binding 3).
+	spriteBatchAnimPipelineLayout *wgpu.PipelineLayout
+	spriteBatchAnimPipeline       *wgpu.RenderPipeline
+	targetSpriteBatchAnimPipeline *wgpu.RenderPipeline
 	mipPipeline             *wgpu.RenderPipeline
 	postSampler             *wgpu.Sampler
 	postPipelines           map[string]*wgpu.RenderPipeline
@@ -131,6 +137,13 @@ type Renderer struct {
 	spriteUniformSlotSize int
 	spriteUniformOffsets  []uint32
 	spriteUniformEntries  []nativeUniformEntry
+	// One dynamic-offset slot per animated DrawSpriteBatch command per frame;
+	// each slot packs the effective camera plus the command's render clock.
+	batchAnimUniform         *wgpu.Buffer
+	batchAnimUniformCap      int
+	batchAnimUniformSlotSize int
+	batchAnimOffsets         []uint32
+	batchAnimScratch         [tess.SpriteBatchAnimUniformSize]byte
 	tessPassFrames        []tess.Frame
 	passPlans             []nativePassPlan
 	particleGroupOf       []int
@@ -526,6 +539,10 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		r.recordErr(err)
 		return
 	}
+	if err := r.prepareSpriteBatchAnimUniforms(runs, plans); err != nil {
+		r.recordErr(err)
+		return
+	}
 	solid, textured := r.tess.Streams()
 	sprites := r.tess.SpriteStream()
 	textGlyphs := r.tess.TextGlyphStream()
@@ -787,6 +804,7 @@ func (r *Renderer) Close() {
 	releaseBuffer(&r.textGlyphBuffer)
 	releaseBuffer(&r.textLabelBuffer)
 	releaseBuffer(&r.spriteUniform)
+	releaseBuffer(&r.batchAnimUniform)
 	releasePipeline(&r.solidPipeline)
 	releasePipeline(&r.texturedPipeline)
 	releasePipeline(&r.spritePipeline)
@@ -803,7 +821,13 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.targetTexturedAddPipeline)
 	releasePipeline(&r.targetSpriteAddPipeline)
 	releasePipeline(&r.targetTextGlyphAddPipeline)
+	releasePipeline(&r.spriteBatchAnimPipeline)
+	releasePipeline(&r.targetSpriteBatchAnimPipeline)
 	releasePipeline(&r.mipPipeline)
+	if r.spriteBatchAnimPipelineLayout != nil {
+		r.spriteBatchAnimPipelineLayout.Release()
+		r.spriteBatchAnimPipelineLayout = nil
+	}
 	if r.spritePipelineLayout != nil {
 		r.spritePipelineLayout.Release()
 		r.spritePipelineLayout = nil
@@ -842,6 +866,9 @@ func (r *Renderer) createPipelines() error {
 	if r.spritePipelineLayout, err = r.createSpritePipelineLayout(); err != nil {
 		return err
 	}
+	if r.spriteBatchAnimPipelineLayout, err = r.createSpriteBatchAnimPipelineLayout(); err != nil {
+		return err
+	}
 	if r.textGlyphPipelineLayout, err = r.createTextGlyphPipelineLayout(); err != nil {
 		return err
 	}
@@ -877,6 +904,18 @@ func (r *Renderer) createPipelines() error {
 		nil,
 		premultipliedBlend(),
 		r.spritePipelineLayout,
+	); err != nil {
+		return err
+	}
+
+	if r.spriteBatchAnimPipeline, err = r.createPipeline(
+		"sprite batch animated",
+		shaders.SpriteBatchAnimWGSL,
+		r.device.config.Format,
+		r.msaaSamples,
+		nil,
+		premultipliedBlend(),
+		r.spriteBatchAnimPipelineLayout,
 	); err != nil {
 		return err
 	}
@@ -963,6 +1002,9 @@ func (r *Renderer) createTargetPipelines() error {
 	if r.targetSpritePipeline, err = r.createPipeline("target sprite", shaders.SpriteWGSL, format, 1, nil, premultipliedBlend(), r.spritePipelineLayout); err != nil {
 		return err
 	}
+	if r.targetSpriteBatchAnimPipeline, err = r.createPipeline("target sprite batch animated", shaders.SpriteBatchAnimWGSL, format, 1, nil, premultipliedBlend(), r.spriteBatchAnimPipelineLayout); err != nil {
+		return err
+	}
 	if r.targetTextGlyphPipeline, err = r.createPipeline("target text glyph", shaders.TextGlyphWGSL, format, 1, nil, alphaBlend(), r.textGlyphPipelineLayout); err != nil {
 		return err
 	}
@@ -1014,6 +1056,39 @@ func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
 	layout.Release()
 	if err != nil {
 		return nil, fmt.Errorf("create sprite pipeline layout: %w", err)
+	}
+	return pipelineLayout, nil
+}
+
+func (r *Renderer) createSpriteBatchAnimPipelineLayout() (*wgpu.PipelineLayout, error) {
+	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+		Entries: []wgpu.BindGroupLayoutEntry{
+			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
+				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
+			}},
+			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: wgpu.SamplerBindingLayout{
+				Type: wgpu.SamplerBindingTypeFiltering,
+			}},
+			{Binding: 2, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+			{Binding: 3, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: tess.SpriteBatchAnimUniformSize,
+			}},
+			{Binding: 4, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
+				Type: wgpu.BufferBindingTypeReadOnlyStorage,
+			}},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create sprite batch anim bind group layout: %w", err)
+	}
+	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
+	})
+	layout.Release()
+	if err != nil {
+		return nil, fmt.Errorf("create sprite batch anim pipeline layout: %w", err)
 	}
 	return pipelineLayout, nil
 }
@@ -1162,9 +1237,18 @@ func (r *Renderer) createBuffers() error {
 	r.textLabelCap = gpubuffer.InitialCapacity
 	r.spriteUniformSlotSize = uniformSlotSize(tess.SpriteUniformSize, r.device.device.GetLimits().MinUniformBufferOffsetAlignment)
 	r.spriteUniformCap = 64
-	r.spriteUniform, err = r.newBuffer(
+	if r.spriteUniform, err = r.newBuffer(
 		"sprite uniforms",
 		r.spriteUniformSlotSize*r.spriteUniformCap,
+		wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst,
+	); err != nil {
+		return err
+	}
+	r.batchAnimUniformSlotSize = uniformSlotSize(tess.SpriteBatchAnimUniformSize, r.device.device.GetLimits().MinUniformBufferOffsetAlignment)
+	r.batchAnimUniformCap = 8
+	r.batchAnimUniform, err = r.newBuffer(
+		"sprite batch anim uniforms",
+		r.batchAnimUniformSlotSize*r.batchAnimUniformCap,
 		wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst,
 	)
 	return err
@@ -1203,6 +1287,38 @@ func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
 		return err
 	}
 	for _, batch := range r.spriteBatches {
+		if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureBatchAnimUniformCapacity grows the animated-batch uniform arena.
+// Replacing the buffer invalidates every animated batch bind group that
+// references it, so they are rebuilt here.
+func (r *Renderer) ensureBatchAnimUniformCapacity(required int) error {
+	if required <= r.batchAnimUniformCap {
+		return nil
+	}
+	next := gpubuffer.GrowCapacity(r.batchAnimUniformCap, required)
+	buffer, err := r.newBuffer(
+		"sprite batch anim uniforms",
+		r.batchAnimUniformSlotSize*next,
+		wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst,
+	)
+	if err != nil {
+		return err
+	}
+	old := r.batchAnimUniform
+	r.batchAnimUniform, r.batchAnimUniformCap = buffer, next
+	if old != nil {
+		old.Release()
+	}
+	for _, batch := range r.spriteBatches {
+		if !batch.animated {
+			continue
+		}
 		if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
 			return err
 		}
@@ -1317,6 +1433,53 @@ func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans [
 		offsets[index] = r.spriteUniformEntries[offsets[index]].offset
 	}
 	return offsets, nil
+}
+
+// prepareSpriteBatchAnimUniforms packs one arena slot per animated
+// DrawSpriteBatch run: the effective layer camera plus the command's
+// animation block. Runs without an animated batch keep offset 0.
+func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans []nativePassPlan) error {
+	if cap(r.batchAnimOffsets) < len(runs) {
+		r.batchAnimOffsets = make([]uint32, len(runs))
+	} else {
+		r.batchAnimOffsets = r.batchAnimOffsets[:len(runs)]
+	}
+	clear(r.batchAnimOffsets)
+	required := 0
+	for _, run := range runs {
+		if run.Kind != tess.DrawRunSpriteBatch {
+			continue
+		}
+		if batch := r.spriteBatches[run.SpriteBatch.Batch]; batch != nil && batch.animated {
+			required++
+		}
+	}
+	if required == 0 {
+		return nil
+	}
+	if err := r.ensureBatchAnimUniformCapacity(required); err != nil {
+		return err
+	}
+	slot := 0
+	for index, run := range runs {
+		if run.Kind != tess.DrawRunSpriteBatch {
+			continue
+		}
+		batch := r.spriteBatches[run.SpriteBatch.Batch]
+		if batch == nil || !batch.animated {
+			continue
+		}
+		plan := plans[run.Pass]
+		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		tess.PackSpriteBatchAnimUniforms(r.batchAnimScratch[:], camera, plan.width, plan.height, run.SpriteBatch.Animation)
+		offset := uint32(slot * r.batchAnimUniformSlotSize)
+		if err := r.device.queue.TryWriteBuffer(r.batchAnimUniform, uint64(offset), r.batchAnimScratch[:]); err != nil {
+			return fmt.Errorf("upload sprite batch anim uniform: %w", err)
+		}
+		r.batchAnimOffsets[index] = offset
+		slot++
+	}
+	return nil
 }
 
 func (r *Renderer) ensureBuffers(solid, textured, sprites, glyphs, labels int) error {
@@ -1705,7 +1868,7 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
+		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
 			return err
 		}
 	}
@@ -1720,7 +1883,7 @@ func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex in
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
+		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
 			return err
 		}
 	}
@@ -1826,6 +1989,7 @@ func (r *Renderer) drawRun(
 	pass *wgpu.RenderPassEncoder,
 	run tess.StreamRun,
 	uniformOffset uint32,
+	batchAnimOffset uint32,
 	camera render.Camera,
 	viewport math2d.Rect,
 	scissor *nativeScissorState,
@@ -1928,12 +2092,19 @@ func (r *Renderer) drawRun(
 				if rg.bindGroup == nil || rg.count == 0 {
 					continue
 				}
-				if renderTarget {
-					pass.SetPipeline(pick(additive, r.targetSpriteAddPipeline, r.targetSpritePipeline))
+				if batch.animated {
+					// The animated pipeline has no additive variant, matching
+					// the wasm backend.
+					pass.SetPipeline(pick(renderTarget, r.targetSpriteBatchAnimPipeline, r.spriteBatchAnimPipeline))
+					pass.SetBindGroup(0, rg.bindGroup, []uint32{batchAnimOffset})
 				} else {
-					pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
+					if renderTarget {
+						pass.SetPipeline(pick(additive, r.targetSpriteAddPipeline, r.targetSpritePipeline))
+					} else {
+						pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
+					}
+					pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
 				}
-				pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
 				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
 			}
 		}

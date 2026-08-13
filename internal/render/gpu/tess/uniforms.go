@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"math"
 
+	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -26,6 +27,32 @@ func PackSpriteUniforms(dst []byte, camera render.Camera, w, h int) {
 	}
 	for i, value := range values {
 		binary.LittleEndian.PutUint32(dst[i*4:], math.Float32bits(float32(value)))
+	}
+}
+
+// SpriteBatchAnimUniformSize is the camera block plus the animation block of
+// the animated sprite batch shaders. Keep it in sync with their WGSL
+// BatchUniforms struct.
+const SpriteBatchAnimUniformSize = 96
+
+// PackSpriteBatchAnimUniforms packs one animated-batch uniform slot: the
+// shared camera data, then wrapped time, bounce and pulse parameters. Time is
+// wrapped on the CPU so every shader agrees with renderbatch's evaluation.
+func PackSpriteBatchAnimUniforms(dst []byte, camera render.Camera, w, h int, anim render.SpriteBatchAnimation) {
+	PackSpriteUniforms(dst, camera, w, h)
+	values := [12]float64{
+		float64(renderbatch.WrapTime(anim.Time)),
+		anim.BounceHz,
+		anim.Intensity,
+		0,
+		anim.Pulse.Center.X,
+		anim.Pulse.Center.Y,
+		anim.Pulse.Radius,
+		anim.Pulse.Width,
+		anim.Pulse.Boost,
+	}
+	for i, value := range values {
+		binary.LittleEndian.PutUint32(dst[SpriteUniformSize+i*4:], math.Float32bits(float32(value)))
 	}
 }
 

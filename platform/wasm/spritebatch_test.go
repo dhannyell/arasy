@@ -326,7 +326,7 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 	}
 
 	var slot [spriteBatchAnimUniformSize]byte
-	packSpriteBatchAnimUniforms(slot[:], camera, 16, 16, anim)
+	tess.PackSpriteBatchAnimUniforms(slot[:], camera, 16, 16, anim)
 
 	var cameraOnly [tess.SpriteUniformSize]byte
 	tess.PackSpriteUniforms(cameraOnly[:], camera, 16, 16)

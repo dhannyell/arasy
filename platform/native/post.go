@@ -823,7 +823,7 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 			}
 			plan := plans[run.Pass]
 			effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-			if err := r.drawRun(finalPass, run, uniformOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, false, &last); err != nil {
+			if err := r.drawRun(finalPass, run, uniformOffsets[i], r.batchAnimOffsets[i], effective, nativePassViewport(plan.camera, plan.extra, width, height), &scissor, width, height, -1, false, false, &last); err != nil {
 				finalPass.Release()
 				return err
 			}
@@ -864,7 +864,7 @@ func (r *Renderer) drawNativePostPlanRuns(pass *wgpu.RenderPassEncoder, runs []t
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, -1, false, false, &last); err != nil {
+		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, -1, false, false, &last); err != nil {
 			return err
 		}
 	}

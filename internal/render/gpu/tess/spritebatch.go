@@ -1,8 +1,10 @@
 package tess
 
 import (
+	"encoding/binary"
 	"math"
 
+	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -91,4 +93,32 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 		tint: tint, textureLayer: textureLayer,
 	}
 	return append(dst, spriteBytes([]spriteRecord{record})...)
+}
+
+// SpriteAnimStride is the byte size of one retained animation record. Keep it
+// in sync with the WGSL SpriteAnim struct of the animated batch shaders.
+const SpriteAnimStride = 32
+
+// AppendSpriteAnimRecord appends the per-instance animation record the
+// animated sprite batch shaders read next to the base record. An invalid
+// flip-book sequence packs Frames=0, the same static-Src degradation as the
+// CPU reference in renderbatch.AnimatedSrc.
+func AppendSpriteAnimRecord(dst []byte, inst render.SpriteInstance, texW, texH int) []byte {
+	anim := inst.Animation
+	frames := uint32(0)
+	cellsPerRow := uint32(0)
+	baseIndex := uint32(0)
+	if cpr, base, ok := renderbatch.FlipBookCells(inst, texW, texH); ok {
+		frames = uint32(anim.Frames)
+		cellsPerRow = uint32(cpr)
+		baseIndex = uint32(base)
+	}
+	var buf [SpriteAnimStride]byte
+	binary.LittleEndian.PutUint32(buf[0:], frames)
+	binary.LittleEndian.PutUint32(buf[4:], cellsPerRow)
+	binary.LittleEndian.PutUint32(buf[8:], baseIndex)
+	binary.LittleEndian.PutUint32(buf[16:], math.Float32bits(float32(anim.Rate)))
+	binary.LittleEndian.PutUint32(buf[20:], math.Float32bits(float32(anim.Phase)))
+	binary.LittleEndian.PutUint32(buf[24:], math.Float32bits(float32(anim.Bounce)))
+	return append(dst, buf[:]...)
 }
