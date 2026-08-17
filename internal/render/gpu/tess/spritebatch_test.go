@@ -83,11 +83,15 @@ func TestAppendRetainedSpriteRecordWritesFlipFlags(t *testing.T) {
 func TestAppendRetainedSpriteRecordMissingTextureWhiteTint(t *testing.T) {
 	inst := render.SpriteInstance{
 		Dest: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}),
+		Src:  math2d.NewRect(math2d.Vec2{X: 100, Y: 100}, math2d.Vec2{X: 8, Y: 8}),
 		Tint: render.RGBA(1, 0, 0, 0.5),
 	}
 	records := AppendRetainedSpriteRecord(nil, inst, 0, 0, 0, true)
 	if got := binary.LittleEndian.Uint32(records[56:]); got != 0xffffffff {
-		t.Fatalf("tint = %#x, want forced white for the magenta placeholder", got)
+		t.Fatalf("tint = %#x, want forced white for the diagnostic placeholder", got)
+	}
+	if got := retainedF32(records, 8); got != 2 {
+		t.Fatalf("halfWidth = %v, want missing texture to ignore Src", got)
 	}
 }
 

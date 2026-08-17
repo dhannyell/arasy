@@ -1,6 +1,7 @@
 package tess
 
 import (
+	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -87,11 +88,6 @@ func pushQuad(m *Mesh, a, b, c, d [2]float32, col render.Color) {
 	pushTri(m, a, c, d, col)
 }
 
-// missingTexturePlaceholder mirrors platform/raster/renderer.go's
-// missingTextureColor: an opaque magenta fill drawn in place of a
-// render.DrawImage/DrawImageQuad whose texture id could not be resolved.
-var missingTexturePlaceholder = render.RGBA8(255, 0, 255, 255)
-
 // DrawRunKind identifies the WebGPU pipeline needed for one ordered run.
 type DrawRunKind uint8
 
@@ -111,7 +107,7 @@ const (
 	DrawRunTextBatch
 )
 
-// appendMissingTexture emits a solid magenta quad from screen-space corners
+// appendMissingTexture emits the shared diagnostic pattern from screen-space corners
 // (TL, TR, BR, BL), in place of a DrawImage or DrawImageQuad command whose
 // texture id could not be resolved through TexSizes.
 func appendMissingTexture(m *Mesh, c ctx, corners [4]math2d.Vec2, clip math2d.Rect) {
@@ -121,8 +117,13 @@ func appendMissingTexture(m *Mesh, c ctx, corners [4]math2d.Vec2, clip math2d.Re
 		corners[1].X, corners[1].Y,
 		corners[2].X, corners[2].Y,
 		corners[3].X, corners[3].Y,
-		missingTexturePlaceholder,
+		internalrender.MissingTextureBackground(),
 	)
+
+	lines, width := internalrender.MissingTextureMark(corners)
+	for _, line := range lines {
+		appendLineQuad(m, c, line[0], line[1], width, internalrender.MissingTextureMarkColor())
+	}
 
 	if clip.Width() > 0 && clip.Height() > 0 {
 		clipped := clipTriangles(m.Vertices[start:], clipRect(c, clip))

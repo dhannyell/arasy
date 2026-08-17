@@ -41,11 +41,11 @@ func spriteFlags(projectCorners bool, flip render.SpriteFlip) uint32 {
 // the (base) Src cell, packed tint and texture layer — but with the always-open
 // clip sentinel instead of a per-command clip.
 //
-// whiteTint forces the opaque-white tint used for missing textures, so the
-// backend's 1x1 magenta placeholder texture paints the same magenta the
-// streaming missing-texture path draws. A degenerate Src (clamped empty, as
-// streaming's srcUV reports) zeroes the quad size instead of skipping, since
-// retained records cannot be dropped without reordering the batch.
+// whiteTint forces the opaque-white tint and full UV range used for missing
+// textures, so source rectangles cannot hide or recolor the diagnostic
+// placeholder. A degenerate Src (clamped empty, as streaming's srcUV reports)
+// zeroes the quad size instead of skipping, since retained records cannot be
+// dropped without reordering the batch.
 func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, texH int, textureLayer uint32, whiteTint bool) []byte {
 	minX, maxX := inst.Dest.Min.X, inst.Dest.Max.X
 	if minX > maxX {
@@ -59,7 +59,7 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 	uvMin := [2]float32{}
 	uvMax := [2]float32{1, 1}
 	srcOK := true
-	if inst.Src != (math2d.Rect{}) {
+	if !whiteTint && inst.Src != (math2d.Rect{}) {
 		uv, ok := srcUV(inst.Src, texW, texH)
 		if !ok {
 			srcOK = false

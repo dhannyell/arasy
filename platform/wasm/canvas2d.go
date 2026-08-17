@@ -10,6 +10,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/internal/render/frameplan"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
@@ -513,7 +514,7 @@ func (c *Canvas2D) drawImageQuad(cmd render.DrawImageQuad, camera render.Camera)
 
 	bitmap, found := c.textures[cmd.Texture]
 	if !found || !bitmap.Truthy() {
-		c.fillScreenQuad(corners)
+		c.drawMissingTextureQuad(corners)
 		return
 	}
 	sx, sy, sw, sh, ok := imageSource(cmd.Src, bitmap)
@@ -669,20 +670,30 @@ func imageSource(src math2d.Rect, bitmap js.Value) (x, y, w, h float64, ok bool)
 }
 
 func (c *Canvas2D) drawImagePlaceholder(x, y, w, h, rotation float64) {
-	c.ctx.Set("fillStyle", "rgb(255, 0, 255)")
+	corners := [4]math2d.Vec2{
+		{X: x, Y: y},
+		{X: x + w, Y: y},
+		{X: x + w, Y: y + h},
+		{X: x, Y: y + h},
+	}
 	if rotation == 0 {
-		c.ctx.Call("fillRect", x, y, w, h)
+		c.drawMissingTextureQuad(corners)
 		return
 	}
 	c.ctx.Call("save")
 	c.ctx.Call("translate", x+w/2, y+h/2)
 	c.ctx.Call("rotate", rotation)
-	c.ctx.Call("fillRect", -w/2, -h/2, w, h)
+	c.drawMissingTextureQuad([4]math2d.Vec2{
+		{X: -w / 2, Y: -h / 2},
+		{X: w / 2, Y: -h / 2},
+		{X: w / 2, Y: h / 2},
+		{X: -w / 2, Y: h / 2},
+	})
 	c.ctx.Call("restore")
 }
 
-func (c *Canvas2D) fillScreenQuad(corners [4]math2d.Vec2) {
-	c.ctx.Set("fillStyle", "rgb(255, 0, 255)")
+func (c *Canvas2D) drawMissingTextureQuad(corners [4]math2d.Vec2) {
+	c.ctx.Set("fillStyle", cssColor(internalrender.MissingTextureBackground()))
 	c.ctx.Call("beginPath")
 	c.ctx.Call("moveTo", corners[0].X, corners[0].Y)
 	for _, corner := range corners[1:] {
@@ -690,6 +701,16 @@ func (c *Canvas2D) fillScreenQuad(corners [4]math2d.Vec2) {
 	}
 	c.ctx.Call("closePath")
 	c.ctx.Call("fill")
+
+	lines, width := internalrender.MissingTextureMark(corners)
+	c.ctx.Set("strokeStyle", cssColor(internalrender.MissingTextureMarkColor()))
+	c.ctx.Set("lineWidth", width)
+	for _, line := range lines {
+		c.ctx.Call("beginPath")
+		c.ctx.Call("moveTo", line[0].X, line[0].Y)
+		c.ctx.Call("lineTo", line[1].X, line[1].Y)
+		c.ctx.Call("stroke")
+	}
 }
 
 func cssColor(c render.Color) string {

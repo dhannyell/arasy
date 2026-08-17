@@ -20,10 +20,10 @@ const (
 // spriteBatchRange is one consecutive span of batch records sharing a bind
 // target. The array path binds one 2d-array group for every non-missing
 // texture (texture is zero); the fallback binds per consecutive texture.
-// magenta selects the 1x1 missing-texture placeholder texture.
+// missing selects the shared diagnostic placeholder texture.
 type spriteBatchRange struct {
 	texture render.TextureID
-	magenta bool
+	missing bool
 	start   int
 	count   int
 }
@@ -50,7 +50,7 @@ type spriteBatchPlan struct {
 // packed, and the clip sentinel stays always open (the retained clip is the
 // command's draw-time scissor). Non-finite instances are dropped (counted in
 // nonFinite so the adapter can warn once). Instances whose texture is
-// missing join a magenta range with a forced white tint, preserving the
+// missing join a diagnostic range with a forced white tint, preserving the
 // streaming placeholder without solid-geometry fallbacks.
 func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arrayEnabled bool) spriteBatchPlan {
 	plan := spriteBatchPlan{}
@@ -65,7 +65,7 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 
 	type rangeKey struct {
 		texture render.TextureID
-		magenta bool
+		missing bool
 	}
 	lastKey := rangeKey{}
 	hasLast := false
@@ -79,12 +79,12 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 		plan.hasRotation = plan.hasRotation || inst.Rotation != 0
 
 		texW, texH, found := sizes.Lookup(inst.Texture)
-		magenta := !found
+		missing := !found
 		layer := uint32(0)
-		if arrayEnabled && !magenta {
+		if arrayEnabled && !missing {
 			layer = uint32(inst.Texture - 1)
 		}
-		plan.records = tess.AppendRetainedSpriteRecord(plan.records, inst, texW, texH, layer, magenta)
+		plan.records = tess.AppendRetainedSpriteRecord(plan.records, inst, texW, texH, layer, missing)
 
 		if animated {
 			plan.anims = tess.AppendSpriteAnimRecord(plan.anims, inst, texW, texH)
@@ -104,8 +104,8 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 			}
 		}
 
-		key := rangeKey{texture: inst.Texture, magenta: magenta}
-		if arrayEnabled && !magenta {
+		key := rangeKey{texture: inst.Texture, missing: missing}
+		if arrayEnabled && !missing {
 			key.texture = 0
 		}
 		recordIndex := plan.count
@@ -113,7 +113,7 @@ func planSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes, arr
 			plan.ranges[len(plan.ranges)-1].count++
 		} else {
 			plan.ranges = append(plan.ranges, spriteBatchRange{
-				texture: key.texture, magenta: key.magenta,
+				texture: key.texture, missing: key.missing,
 				start: recordIndex, count: 1,
 			})
 			lastKey, hasLast = key, true
@@ -184,4 +184,3 @@ func uniformArenaSlotCapacity(current, required int) int {
 	}
 	return current
 }
-

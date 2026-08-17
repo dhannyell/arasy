@@ -19,6 +19,7 @@ import (
 // texture.
 type nativeSpriteBatchRange struct {
 	texture   render.TextureID
+	missing   bool
 	start     int
 	count     int
 	bindGroup *wgpu.BindGroup
@@ -80,9 +81,14 @@ func planNativeSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSize
 		if plan.animated {
 			plan.anims = tess.AppendSpriteAnimRecord(plan.anims, inst, texW, texH)
 		}
-		if len(plan.ranges) == 0 || plan.ranges[len(plan.ranges)-1].texture != inst.Texture {
+		texture := inst.Texture
+		if !found {
+			texture = 0
+		}
+		if len(plan.ranges) == 0 || plan.ranges[len(plan.ranges)-1].texture != texture || plan.ranges[len(plan.ranges)-1].missing != !found {
 			plan.ranges = append(plan.ranges, nativeSpriteBatchRange{
-				texture: inst.Texture,
+				texture: texture,
+				missing: !found,
 				start:   plan.count,
 				count:   1,
 			})
@@ -148,7 +154,7 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 			}
 		}
 		for i := range batch.ranges {
-			texture, ok := textureFor(r.textures, batch.ranges[i].texture)
+			texture, ok := r.spriteBatchTexture(batch.ranges[i])
 			if !ok || nativeTextureSampleView(texture) == nil {
 				continue
 			}
@@ -213,7 +219,7 @@ func (r *Renderer) rebuildSpriteBatchBindGroups(batch *nativeSpriteBatch) error 
 			batch.ranges[i].bindGroup.Release()
 			batch.ranges[i].bindGroup = nil
 		}
-		texture, ok := textureFor(r.textures, batch.ranges[i].texture)
+		texture, ok := r.spriteBatchTexture(batch.ranges[i])
 		if !ok || nativeTextureSampleView(texture) == nil {
 			continue
 		}
@@ -224,6 +230,13 @@ func (r *Renderer) rebuildSpriteBatchBindGroups(batch *nativeSpriteBatch) error 
 		batch.ranges[i].bindGroup = bindGroup
 	}
 	return nil
+}
+
+func (r *Renderer) spriteBatchTexture(rg nativeSpriteBatchRange) (gpuTexture, bool) {
+	if rg.missing {
+		return r.missingTexture, nativeTextureSampleView(r.missingTexture) != nil
+	}
+	return textureFor(r.textures, rg.texture)
 }
 
 func nativeTextureSampleView(texture gpuTexture) *wgpu.TextureView {

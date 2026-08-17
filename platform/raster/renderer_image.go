@@ -2,17 +2,15 @@ package raster
 
 import (
 	"image"
-	"image/color"
 	"log/slog"
 	"math"
 	"sync"
 
+	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
 )
-
-var missingTextureColor = color.RGBA{R: 255, G: 0, B: 255, A: 255}
 
 type resolvedImageDraw struct {
 	texture  *image.RGBA
@@ -63,7 +61,7 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 // destination rect's world-space corners (rotated first, if Rotation is set)
 // become a quad, and drawImageQuad maps the texture onto the transformed quad.
 // This matches the Canvas2D and WebGPU backends instead of drawing a
-// placeholder. A missing texture falls out as a magenta transformed quad.
+// placeholder. A missing texture falls out as a transformed diagnostic quad.
 func (r *Renderer) drawTransformedImage(img *image.RGBA, command render.DrawImage) {
 	dest := command.Dest
 	corners := [4]math2d.Vec2{
@@ -104,7 +102,13 @@ func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw)
 	if command.texture == nil {
 		if command.rotation == 0 {
 			rect := image.Rect(int(destX), int(destY), int(screenMax.X), int(screenMax.Y))
-			fillRect(img, rect.Intersect(r.clipBounds(img, rect, command.clip)), missingTextureColor)
+			bounds := rect.Intersect(r.clipBounds(img, rect, command.clip))
+			drawMissingTexture(img, [4]math2d.Vec2{
+				{X: destX, Y: destY},
+				{X: screenMax.X, Y: destY},
+				{X: screenMax.X, Y: screenMax.Y},
+				{X: destX, Y: screenMax.Y},
+			}, bounds)
 			return
 		}
 
@@ -115,7 +119,7 @@ func (r *Renderer) drawResolvedImage(img *image.RGBA, command resolvedImageDraw)
 		offsetX, offsetY := -destW/2, -destH/2
 		corners := rotatedRectCorners(anchor, offsetX, offsetY, destW, destH, command.rotation)
 		bounds := r.clipBounds(img, rotatedRectBounds(anchor, offsetX, offsetY, destW, destH, command.rotation), command.clip)
-		fillPolygon(img, corners[:], bounds, missingTextureColor)
+		drawMissingTexture(img, corners, bounds)
 		return
 	}
 
@@ -203,7 +207,7 @@ func (r *Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) 
 
 	tex := r.Textures.Lookup(command.Texture)
 	if tex == nil {
-		fillPolygon(img, corners[:], bounds, missingTextureColor)
+		drawMissingTexture(img, corners, bounds)
 		return
 	}
 
@@ -243,6 +247,14 @@ func (r *Renderer) drawImageQuad(img *image.RGBA, command render.DrawImageQuad) 
 			}
 			img.SetRGBA(x, y, blendRGBA(img.RGBAAt(x, y), c))
 		}
+	}
+}
+
+func drawMissingTexture(img *image.RGBA, corners [4]math2d.Vec2, bounds image.Rectangle) {
+	fillPolygon(img, corners[:], bounds, toRGBA(internalrender.MissingTextureBackground()))
+	lines, width := internalrender.MissingTextureMark(corners)
+	for _, line := range lines {
+		drawLine(img, line[0], line[1], width, bounds, toRGBA(internalrender.MissingTextureMarkColor()))
 	}
 }
 

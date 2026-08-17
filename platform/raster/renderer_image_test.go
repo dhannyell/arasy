@@ -362,34 +362,34 @@ func TestDrawImageTintZero(t *testing.T) {
 	assertPixel(t, img.At(2, 2), color.RGBA{R: 255, G: 255, B: 0, A: 255}) // yellow
 }
 
-// TestDrawImageMissingTexture renders the magenta placeholder for out-of-range
-// and zero TextureIDs.
+// TestDrawImageMissingTexture renders the diagnostic placeholder for
+// out-of-range and zero TextureIDs.
 func TestDrawImageMissingTexture(t *testing.T) {
-	renderer := imageRenderer(4, 4)
+	renderer := imageRenderer(8, 6)
 	renderer.Textures = pixel.Registry{nil} // no textures loaded
 
 	img := renderer.Render([]render.Command{
 		render.DrawImage{
 			Texture: 42, // out of range
-			Dest:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 2, Y: 2}),
+			Dest:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 4, Y: 4}),
 		},
 		render.DrawImage{
 			Texture: 0, // special "missing" id
-			Dest:    math2d.NewRect(math2d.Vec2{X: 2, Y: 0}, math2d.Vec2{X: 2, Y: 2}),
+			Dest:    math2d.NewRect(math2d.Vec2{X: 4, Y: 0}, math2d.Vec2{X: 4, Y: 4}),
 		},
 	})
 
 	magenta := color.RGBA{R: 255, G: 0, B: 255, A: 255}
 	black := color.RGBA{R: 0, G: 0, B: 0, A: 255}
 
-	// Both destinations show magenta.
-	assertPixel(t, img.At(0, 0), magenta)
-	assertPixel(t, img.At(1, 1), magenta)
-	assertPixel(t, img.At(2, 0), magenta)
-	assertPixel(t, img.At(3, 1), magenta)
+	// Both destinations retain magenta around a black diagonal mark.
+	assertPixel(t, img.At(0, 2), magenta)
+	assertPixel(t, img.At(1, 1), black)
+	assertPixel(t, img.At(4, 2), magenta)
+	assertPixel(t, img.At(5, 1), black)
 
 	// Pixel outside both dests stays clear.
-	assertPixel(t, img.At(0, 3), black)
+	assertPixel(t, img.At(0, 5), black)
 }
 
 // TestDrawImageClip restricts drawing to the Clip rect — only the covered
@@ -453,7 +453,7 @@ func TestDrawImageRotation180(t *testing.T) {
 	assertPixel(t, img.At(0, 1), black)
 }
 
-// TestDrawImageMissingTextureRotated renders the magenta placeholder for a
+// TestDrawImageMissingTextureRotated renders the diagnostic placeholder for a
 // missing texture with a rotated Dest. The placeholder must cover the
 // rotated quad the image would have occupied, not the unrotated Dest rect:
 // a corner of the original axis-aligned rect falls outside the rotated
@@ -474,8 +474,8 @@ func TestDrawImageMissingTextureRotated(t *testing.T) {
 	magenta := color.RGBA{R: 255, G: 0, B: 255, A: 255}
 	black := color.RGBA{R: 0, G: 0, B: 0, A: 255}
 
-	// Center of Dest is always covered, rotated or not.
-	assertPixel(t, img.At(20, 20), magenta)
+	// Center of Dest carries the black X, rotated or not.
+	assertPixel(t, img.At(20, 20), black)
 
 	// (19,15) sits above the unrotated Dest (whose top edge is at y=16) but
 	// inside the 45°-rotated square's upper tip: only a rotation-aware

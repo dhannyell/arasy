@@ -67,13 +67,14 @@ type Renderer struct {
 	log      *slog.Logger
 	manifest asset.Manifest
 
-	fontProvider  *fontatlas.Provider
-	particles     *gpuParticles
-	textures      []gpuTexture
-	texSizes      tess.TexSizes
-	textAtlases   map[tess.AtlasKey]gpuTextAtlas
-	spriteBatches map[render.SpriteBatchID]*nativeSpriteBatch
-	tess          tess.Builder
+	fontProvider   *fontatlas.Provider
+	particles      *gpuParticles
+	textures       []gpuTexture
+	missingTexture gpuTexture
+	texSizes       tess.TexSizes
+	textAtlases    map[tess.AtlasKey]gpuTextAtlas
+	spriteBatches  map[render.SpriteBatchID]*nativeSpriteBatch
+	tess           tess.Builder
 
 	solidPipeline           *wgpu.RenderPipeline
 	texturedPipeline        *wgpu.RenderPipeline
@@ -91,16 +92,16 @@ type Renderer struct {
 	spriteBatchAnimPipelineLayout *wgpu.PipelineLayout
 	spriteBatchAnimPipeline       *wgpu.RenderPipeline
 	targetSpriteBatchAnimPipeline *wgpu.RenderPipeline
-	mipPipeline             *wgpu.RenderPipeline
-	postSampler             *wgpu.Sampler
-	postPipelines           map[string]*wgpu.RenderPipeline
-	postUniforms            []*wgpu.Buffer
-	postSceneA              nativePostTarget
-	postSceneB              nativePostTarget
-	postBloom               []nativePostTarget
-	postWidth               int
-	postHeight              int
-	postDisabled            bool
+	mipPipeline                   *wgpu.RenderPipeline
+	postSampler                   *wgpu.Sampler
+	postPipelines                 map[string]*wgpu.RenderPipeline
+	postUniforms                  []*wgpu.Buffer
+	postSceneA                    nativePostTarget
+	postSceneB                    nativePostTarget
+	postBloom                     []nativePostTarget
+	postWidth                     int
+	postHeight                    int
+	postDisabled                  bool
 	// postBindGroups caches one bind group per {pipeline, sampled targets,
 	// uniform slot}; a steady chain creates none per frame. Released whenever
 	// a post target is recreated.
@@ -144,9 +145,9 @@ type Renderer struct {
 	batchAnimUniformSlotSize int
 	batchAnimOffsets         []uint32
 	batchAnimScratch         [tess.SpriteBatchAnimUniformSize]byte
-	tessPassFrames        []tess.Frame
-	passPlans             []nativePassPlan
-	particleGroupOf       []int
+	tessPassFrames           []tess.Frame
+	passPlans                []nativePassPlan
+	particleGroupOf          []int
 
 	msaaTexture *wgpu.Texture
 	msaaView    *wgpu.TextureView
@@ -248,6 +249,10 @@ func NewRenderer(
 	}
 	resources := renderer.textureResources()
 	renderer.textures, renderer.texSizes = buildTextures(manifest, resources, log)
+	renderer.missingTexture, err = buildMissingTexture(resources)
+	if err != nil {
+		return nil, fmt.Errorf("create missing texture placeholder: %w", err)
+	}
 	if err = renderer.rebuildSpriteBindGroups(); err != nil {
 		return nil, err
 	}
@@ -785,6 +790,8 @@ func (r *Renderer) Close() {
 		texture.release()
 	}
 	r.textures = nil
+	r.missingTexture.release()
+	r.missingTexture = gpuTexture{}
 	if r.timing != nil {
 		r.timing.release()
 		r.timing = nil

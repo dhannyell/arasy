@@ -78,7 +78,7 @@ func TestGoldenImages(t *testing.T) {
 			Dest:     math2d.NewRect(math2d.Vec2{X: 5, Y: 35}, math2d.Vec2{X: 25, Y: 25}),
 			Rotation: math.Pi / 6,
 		},
-		// 5 — Missing texture (ID 99) → magenta placeholder.
+		// 5 — Missing texture (ID 99) → diagnostic placeholder.
 		render.DrawImage{
 			Texture: 99,
 			Dest:    math2d.NewRect(math2d.Vec2{X: 38, Y: 35}, math2d.Vec2{X: 20, Y: 20}),
@@ -126,7 +126,7 @@ func TestGoldenImageQuads(t *testing.T) {
 			Tint: render.RGBA(0.3, 0.9, 0.6, 0.75),
 		},
 		// 5 — Missing texture (ID 99) on a rotated (non-rectangular)
-		// quad -> magenta placeholder polygon.
+		// quad -> diagnostic placeholder polygon.
 		render.DrawImageQuad{
 			Texture: 99,
 			Corners: [4]math2d.Vec2{

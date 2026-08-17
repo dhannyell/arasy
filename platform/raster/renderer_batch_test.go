@@ -258,7 +258,7 @@ func TestSpriteBatchAnimationMatchesHelpers(t *testing.T) {
 }
 
 // TestSpriteBatchMissingTexturePlaceholder: an instance with an unknown
-// texture draws the same magenta placeholder as a streaming DrawImage.
+// texture draws the same diagnostic placeholder as a streaming DrawImage.
 func TestSpriteBatchMissingTexturePlaceholder(t *testing.T) {
 	renderer := imageRenderer(16, 16)
 	renderer.Textures = pixel.Registry{nil} // no textures loaded
@@ -275,8 +275,11 @@ func TestSpriteBatchMissingTexturePlaceholder(t *testing.T) {
 	})
 
 	assertImagesIdentical(t, direct, retained)
-	if got := retained.RGBAAt(8, 8); got != (color.RGBA{R: 255, G: 0, B: 255, A: 255}) {
-		t.Fatalf("placeholder pixel = %v, want magenta", got)
+	if got := retained.RGBAAt(8, 8); got != (color.RGBA{A: 255}) {
+		t.Fatalf("placeholder center = %v, want black X", got)
+	}
+	if got := retained.RGBAAt(4, 8); got != (color.RGBA{R: 255, B: 255, A: 255}) {
+		t.Fatalf("placeholder background = %v, want magenta", got)
 	}
 }
 
