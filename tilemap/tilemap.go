@@ -45,6 +45,14 @@ func (a Atlas) animationFor(tile int16) (Animation, bool) {
 	return Animation{}, false
 }
 
+// effectiveDrawSize returns DrawSize, or the layer cell size when unset.
+func (a Atlas) effectiveDrawSize(cell math2d.Vec2) math2d.Vec2 {
+	if a.DrawSize.X <= 0 || a.DrawSize.Y <= 0 {
+		return cell
+	}
+	return a.DrawSize
+}
+
 // SrcRect returns the atlas pixel rect of one tile index.
 func (a Atlas) SrcRect(tile int16) math2d.Rect {
 	column := int(tile) % a.Columns
@@ -72,6 +80,22 @@ type Layer struct {
 	dirty     map[ChunkCoord]struct{}
 }
 
+// chunksWide returns the number of chunk columns; zero for an empty layer.
+func (l *Layer) chunksWide() int {
+	if l.W <= 0 {
+		return 0
+	}
+	return (l.W-1)/ChunkSize + 1
+}
+
+// chunksHigh returns the number of chunk rows; zero for an empty layer.
+func (l *Layer) chunksHigh() int {
+	if l.H <= 0 {
+		return 0
+	}
+	return (l.H-1)/ChunkSize + 1
+}
+
 // Chunk returns the sprite instances for one chunk of the layer.
 // The returned slice reuses buf when it has enough capacity.
 func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render.SpriteInstance {
@@ -87,10 +111,7 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 	}
 	maxX := min(minX+ChunkSize, l.W)
 	maxY := min(minY+ChunkSize, l.H)
-	drawSize := a.DrawSize
-	if drawSize.X <= 0 || drawSize.Y <= 0 {
-		drawSize = l.CellSize
-	}
+	drawSize := a.effectiveDrawSize(l.CellSize)
 
 	buf = buf[:0]
 	for y := minY; y < maxY; y++ {

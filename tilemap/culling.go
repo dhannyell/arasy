@@ -25,8 +25,8 @@ func visibleChunksInto(dst []ChunkCoord, l *Layer, cam render.Camera, atlas ...A
 		return dst
 	}
 
-	chunksX := (l.W-1)/ChunkSize + 1
-	chunksY := (l.H-1)/ChunkSize + 1
+	chunksX := l.chunksWide()
+	chunksY := l.chunksHigh()
 	for cy := range chunksY {
 		for cx := range chunksX {
 			bounds := renderbatch.BoundsForView(chunkBounds(l, cx, cy, atlas...), cam.View)
@@ -54,10 +54,7 @@ func chunkBounds(l *Layer, cx, cy int, atlas ...Atlas) math2d.Rect {
 	if len(atlas) == 0 {
 		return math2d.NewRectFromCorners(first, last)
 	}
-	drawSize := atlas[0].DrawSize
-	if drawSize.X <= 0 || drawSize.Y <= 0 {
-		drawSize = l.CellSize
-	}
+	drawSize := atlas[0].effectiveDrawSize(l.CellSize)
 	offset := atlas[0].Offset
 	min := first.Add(math2d.Vec2{X: offset.X, Y: l.CellSize.Y - drawSize.Y + offset.Y})
 	max := last.Add(math2d.Vec2{X: offset.X + drawSize.X - l.CellSize.X, Y: offset.Y})

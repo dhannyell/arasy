@@ -29,12 +29,7 @@ func NewView(layer Layer, atlas Atlas, base render.SpriteBatchID) *View {
 
 // Batches returns the number of batch IDs the view occupies from its base.
 func (v *View) Batches() int {
-	if v.Layer.W <= 0 || v.Layer.H <= 0 {
-		return 0
-	}
-	wide := (v.Layer.W-1)/ChunkSize + 1
-	high := (v.Layer.H-1)/ChunkSize + 1
-	return wide * high
+	return v.Layer.chunksWide() * v.Layer.chunksHigh()
 }
 
 // Publish uploads the layer's chunks to the sink: every chunk on the first
@@ -78,6 +73,5 @@ func (v *View) Commands(dst []render.Command, cam render.Camera, layer int, time
 }
 
 func (v *View) batchID(chunk ChunkCoord) render.SpriteBatchID {
-	chunksWide := (v.Layer.W-1)/ChunkSize + 1
-	return v.base + render.SpriteBatchID(chunk.Y*chunksWide+chunk.X)
+	return v.base + render.SpriteBatchID(chunk.Y*v.Layer.chunksWide()+chunk.X)
 }
