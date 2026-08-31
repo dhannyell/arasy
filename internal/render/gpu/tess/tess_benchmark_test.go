@@ -376,6 +376,23 @@ func BenchmarkTessBuild(b *testing.B) {
 	})
 }
 
+// BenchmarkAppendRetainedSpriteRecord measures the per-record serialization a
+// chunk republish pays; the retained upload path must not allocate per sprite.
+func BenchmarkAppendRetainedSpriteRecord(b *testing.B) {
+	inst := render.SpriteInstance{
+		Texture:  1,
+		Dest:     math2d.NewRect(math2d.Vec2{X: 2, Y: 4}, math2d.Vec2{X: 6, Y: 12}),
+		Src:      math2d.NewRect(math2d.Vec2{X: 2, Y: 0}, math2d.Vec2{X: 2, Y: 2}),
+		Rotation: 0.25,
+		Tint:     render.RGBA(1, 0, 0, 1),
+	}
+	dst := make([]byte, 0, SpriteStride)
+	b.ReportAllocs()
+	for b.Loop() {
+		dst = AppendRetainedSpriteRecord(dst[:0], inst, 4, 4, 2, false)
+	}
+}
+
 // BenchmarkTessSplashCircles measures the actual large-circle workload that
 // motivated maxError=0.125. The custom metrics make geometry growth visible
 // alongside CPU time when comparing tess benchmark reports.

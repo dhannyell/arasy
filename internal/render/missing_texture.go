@@ -1,3 +1,5 @@
+// Package render holds render diagnostics shared by every backend, like the
+// canonical missing-texture placeholder.
 package render
 
 import (
