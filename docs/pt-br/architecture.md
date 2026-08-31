@@ -34,6 +34,12 @@ platform/* -> asset/pixel -> asset
 `math2d` contém matemática 2D pura, como `Vec2` e `Rect`. O pacote não possui
 dependências de engine ou plataforma.
 
+### `fixed` (módulo externo)
+
+`github.com/dhannyell/fixed` (futuro `arasy-engine/fixed`) fornece o tipo
+Q32.32 determinístico da simulação — `Q`, `Vec2`, `Rot` e trigonometria em
+voltas; a engine o consome através do `dmath`.
+
 ### `render`
 
 `render` define comandos independentes de backend, cores, medição de texto,
