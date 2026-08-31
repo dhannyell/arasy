@@ -175,9 +175,11 @@ func (w *World) collideEntityWithGrid(id EntityID, half math2d.Vec2) {
 			if !hit {
 				continue
 			}
-			w.gridContacts = append(w.gridContacts, GridContact{
-				Entity: id, CellX: x, CellY: y, Normal: normal, Depth: depth,
-			})
+			if !w.hasGridContact(id, x, y) {
+				w.gridContacts = append(w.gridContacts, GridContact{
+					Entity: id, CellX: x, CellY: y, Normal: normal, Depth: depth,
+				})
+			}
 			if body.InvMass <= 0 {
 				continue
 			}
@@ -197,6 +199,18 @@ func (w *World) collideEntityWithGrid(id EntityID, half math2d.Vec2) {
 	if moved {
 		w.transforms.set(id, transform)
 	}
+}
+
+// hasGridContact reports whether this tick already recorded a contact between
+// the entity and the cell. Substeps and the main grid pass can both visit the
+// same cell; games must see one contact per pair per tick.
+func (w *World) hasGridContact(id EntityID, x, y int) bool {
+	for _, contact := range w.gridContacts {
+		if contact.Entity == id && contact.CellX == x && contact.CellY == y {
+			return true
+		}
+	}
+	return false
 }
 
 // aabbCellPenetration reports how a moving entity AABB penetrates one solid

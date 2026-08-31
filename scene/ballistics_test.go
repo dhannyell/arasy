@@ -387,6 +387,27 @@ func TestBallisticsAntiTunnelingAgainstCollisionGrid(t *testing.T) {
 			}
 		})
 	}
+
+	// A kinematic body (InvMass 0) never resolves, so every substep and the
+	// main grid pass revisit the same wall cell in one tick. Games must still
+	// see one contact per (entity, cell) pair.
+	t.Run("kinematic contact dedup", func(t *testing.T) {
+		w := build("circle", 16)
+		w.SetBody(1, scene.Body{InvMass: 0})
+		w.Step(1.0/60.0, config)
+		contacts := w.GridContacts()
+		if len(contacts) == 0 {
+			t.Fatal("kinematic pass-through did not report a grid contact")
+		}
+		seen := map[[3]int]bool{}
+		for _, contact := range contacts {
+			key := [3]int{int(contact.Entity), contact.CellX, contact.CellY}
+			if seen[key] {
+				t.Fatalf("duplicate grid contact for entity %d cell (%d, %d)", contact.Entity, contact.CellX, contact.CellY)
+			}
+			seen[key] = true
+		}
+	})
 }
 
 func TestBallisticsDeterminism(t *testing.T) {
