@@ -251,7 +251,7 @@ func TestDrawImageQuadClip(t *testing.T) {
 	assertPixel(t, img.At(3, 3), black)
 }
 
-// TestDrawImageQuadMissingTexture renders the magenta placeholder polygon
+// TestDrawImageQuadMissingTexture renders the diagnostic placeholder polygon
 // when the texture id is unknown.
 func TestDrawImageQuadMissingTexture(t *testing.T) {
 	renderer := imageRenderer(4, 4)
@@ -265,6 +265,7 @@ func TestDrawImageQuadMissingTexture(t *testing.T) {
 	})
 
 	magenta := color.RGBA{R: 255, G: 0, B: 255, A: 255}
-	assertPixel(t, img.At(0, 0), magenta)
-	assertPixel(t, img.At(3, 3), magenta)
+	black := color.RGBA{A: 255}
+	assertPixel(t, img.At(0, 2), magenta)
+	assertPixel(t, img.At(1, 1), black)
 }

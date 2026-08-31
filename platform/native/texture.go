@@ -8,6 +8,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/asset/pixel"
+	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/oliverbestmann/webgpu/wgpu"
@@ -69,6 +70,17 @@ func buildTextures(manifest asset.Manifest, resources textureResources, log *slo
 		sizes[declaration.ID] = [2]int{width, height}
 	}
 	return textures, sizes
+}
+
+func buildMissingTexture(resources textureResources) (gpuTexture, error) {
+	placeholder := internalrender.MissingTextureRGBA()
+	return resources.createGPUTexture(
+		placeholder.Pix,
+		internalrender.MissingTextureSize,
+		internalrender.MissingTextureSize,
+		1,
+		false,
+	)
 }
 
 func (r textureResources) createGPUTexture(pixels []byte, width, height, levels int, dynamic bool) (gpuTexture, error) {

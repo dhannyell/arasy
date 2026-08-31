@@ -82,6 +82,7 @@ func AppendImage(m *TexMesh, c ctx, cmd render.DrawImage, texW, texH int) {
 	if !ok {
 		return
 	}
+	uv = flipUV(uv, cmd.Flip)
 	tint := texTint(cmd.Tint)
 
 	start := len(m.Vertices)
@@ -104,7 +105,7 @@ func appendSpriteRecord(dst *[]spriteRecord, c ctx, cmd render.DrawImage, texW, 
 	// rotation still travels as an angle for the shader, while no temporary
 	// UV/clip vectors or color conversion are needed on the wasm hot loop.
 	if cmd.Dest.Min.X < cmd.Dest.Max.X && cmd.Dest.Min.Y < cmd.Dest.Max.Y &&
-		cmd.Src == (math2d.Rect{}) && cmd.Clip == (math2d.Rect{}) && cmd.Tint == (render.Color{}) {
+		cmd.Src == (math2d.Rect{}) && cmd.Clip == (math2d.Rect{}) && cmd.Tint == (render.Color{}) && cmd.Flip == render.FlipNone {
 		*dst = append(*dst, spriteRecord{
 			centerX:    float32((cmd.Dest.Min.X + cmd.Dest.Max.X) * 0.5),
 			centerY:    float32((cmd.Dest.Min.Y + cmd.Dest.Max.Y) * 0.5),
@@ -160,10 +161,23 @@ func appendSpriteRecord(dst *[]spriteRecord, c ctx, cmd render.DrawImage, texW, 
 		uvMin, uvMax,
 		[2]float32{float32(clipMin.X), float32(clipMin.Y)},
 		[2]float32{float32(clipMax.X), float32(clipMax.Y)},
+		spriteFlags(false, cmd.Flip),
 		tint,
 		textureLayer,
 	)
 	return true
+}
+
+func flipUV(uv [4][2]float32, flip render.SpriteFlip) [4][2]float32 {
+	if flip&render.FlipX != 0 {
+		uv[0], uv[1] = uv[1], uv[0]
+		uv[3], uv[2] = uv[2], uv[3]
+	}
+	if flip&render.FlipY != 0 {
+		uv[0], uv[3] = uv[3], uv[0]
+		uv[1], uv[2] = uv[2], uv[1]
+	}
+	return uv
 }
 
 func packSpriteTint(tint render.Color) uint32 {

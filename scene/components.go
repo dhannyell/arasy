@@ -312,10 +312,10 @@ type Ballistics struct {
 
 	// Substeps enables opt-in continuous collision for fast projectiles: the
 	// horizontal move is split into this many equal sub-moves, each resolved
-	// against static colliders, so a projectile faster than its own radius per
-	// tick cannot tunnel through thin walls. 0 or 1 keeps the cheap single-step
-	// path (the default for slow entities). Requires a CircleCollider and a
-	// dynamic Body (InvMass > 0) to be resolved.
+	// against static colliders, so a projectile faster than its collider extent
+	// per tick cannot tunnel through thin walls. 0 or 1 keeps the cheap
+	// single-step path (the default for slow entities). Requires a circle or
+	// rect collider and a dynamic Body (InvMass > 0) to be resolved.
 	Substeps int
 }
 

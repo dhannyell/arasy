@@ -10,9 +10,8 @@ const (
 	terrainAtlasColumns = 4
 )
 
-// terrainAtlasImage creates the small atlas used by the retained ground
-// batches. Its pixels are presentation-only; the board layout remains the
-// readable text fixture in board.go.
+// terrainAtlasImage creates the small atlas referenced by the generated Tiled
+// ground map. Its pixels are presentation-only.
 func terrainAtlasImage() *image.RGBA {
 	colors := [...]color.RGBA{
 		{R: 126, G: 156, B: 90, A: 255},

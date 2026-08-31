@@ -341,6 +341,75 @@ func TestBallisticsAntiTunneling(t *testing.T) {
 	}
 }
 
+func TestBallisticsAntiTunnelingAgainstCollisionGrid(t *testing.T) {
+	build := func(shape string, substeps int) *scene.World {
+		w := scene.NewWorld()
+		id := w.Spawn()
+		w.SetTransform(id, scene.Transform{Position: math2d.Vec2{X: 0.5, Y: 0.5}, Scale: math2d.Vec2{X: 1, Y: 1}})
+		w.SetVelocity(id, scene.Velocity{Linear: math2d.Vec2{X: 120}})
+		w.SetHeight(id, scene.Height{})
+		w.SetBallistics(id, scene.Ballistics{Substeps: substeps})
+		if shape == "circle" {
+			w.SetCircleCollider(id, scene.CircleCollider{Radius: 0.1})
+		} else {
+			w.SetRectCollider(id, scene.RectCollider{HalfExtends: math2d.Vec2{X: 0.1, Y: 0.1}})
+		}
+		w.SetBody(id, scene.Body{InvMass: 1})
+
+		grid := scene.NewCollisionGrid(4, 1, math2d.Vec2{}, math2d.Vec2{X: 1, Y: 1})
+		grid.SetSolid(1, 0, true)
+		w.SetCollisionGrid(grid)
+		return w
+	}
+
+	config := scene.StepConfig{
+		Bounds: math2d.Rect{Min: math2d.Vec2{X: -100, Y: -100}, Max: math2d.Vec2{X: 100, Y: 100}},
+		Bounce: scene.BounceConfig{OpenSides: scene.SideLeft | scene.SideRight | scene.SideTop | scene.SideBottom},
+	}
+
+	for _, shape := range []string{"circle", "rect"} {
+		t.Run(shape, func(t *testing.T) {
+			withSubsteps := build(shape, 16)
+			withSubsteps.Step(1.0/60.0, config)
+			transform, _ := withSubsteps.Transform(1)
+			if transform.Position.X >= 1 {
+				t.Fatalf("projectile with substeps crossed the grid wall: x=%v", transform.Position.X)
+			}
+			if len(withSubsteps.GridContacts()) == 0 {
+				t.Fatal("substep collision did not retain its grid contact")
+			}
+
+			withoutSubsteps := build(shape, 0)
+			withoutSubsteps.Step(1.0/60.0, config)
+			transform, _ = withoutSubsteps.Transform(1)
+			if transform.Position.X <= 2 {
+				t.Fatalf("control projectile did not cross the grid wall: x=%v", transform.Position.X)
+			}
+		})
+	}
+
+	// A kinematic body (InvMass 0) never resolves, so every substep and the
+	// main grid pass revisit the same wall cell in one tick. Games must still
+	// see one contact per (entity, cell) pair.
+	t.Run("kinematic contact dedup", func(t *testing.T) {
+		w := build("circle", 16)
+		w.SetBody(1, scene.Body{InvMass: 0})
+		w.Step(1.0/60.0, config)
+		contacts := w.GridContacts()
+		if len(contacts) == 0 {
+			t.Fatal("kinematic pass-through did not report a grid contact")
+		}
+		seen := map[[3]int]bool{}
+		for _, contact := range contacts {
+			key := [3]int{int(contact.Entity), contact.CellX, contact.CellY}
+			if seen[key] {
+				t.Fatalf("duplicate grid contact for entity %d cell (%d, %d)", contact.Entity, contact.CellX, contact.CellY)
+			}
+			seen[key] = true
+		}
+	})
+}
+
 func TestBallisticsDeterminism(t *testing.T) {
 	run := func() uint64 {
 		w := scene.NewWorld()

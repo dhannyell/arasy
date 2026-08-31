@@ -8,6 +8,7 @@ require (
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/jfreymuth/oggvorbis v1.0.5
+	github.com/lafriks/go-tiled v0.15.0
 	github.com/oliverbestmann/webgpu v1.34.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/image v0.43.0

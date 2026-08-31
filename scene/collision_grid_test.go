@@ -4,8 +4,157 @@ import (
 	"testing"
 
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/scene"
 )
+
+// TestCollisionGridWordBoundaries proves the bitset addressing stays correct
+// where a row crosses a 64-bit word: cells 63 and 64 live in different words.
+func TestCollisionGridWordBoundaries(t *testing.T) {
+	grid := scene.NewCollisionGrid(130, 2, math2d.Vec2{}, math2d.Vec2{X: 1, Y: 1})
+
+	grid.SetSolid(63, 0, true)
+	grid.SetSolid(64, 1, true)
+	grid.SetSolid(129, 1, true)
+
+	if !grid.Solid(63, 0) || !grid.Solid(64, 1) || !grid.Solid(129, 1) {
+		t.Fatal("set cells must read back solid")
+	}
+	// Rows must not share words: cell 64 of row 1 stays out of row 0.
+	if grid.Solid(64, 0) || grid.Solid(63, 1) || grid.Solid(129, 0) {
+		t.Fatal("cells in other rows must stay empty")
+	}
+
+	grid.SetSolid(63, 0, false)
+	if grid.Solid(63, 0) {
+		t.Fatal("cleared cell must read back empty")
+	}
+}
+
+func TestCollisionGridIgnoresOutOfRangeCells(t *testing.T) {
+	grid := scene.NewCollisionGrid(4, 4, math2d.Vec2{}, math2d.Vec2{X: 1, Y: 1})
+
+	grid.SetSolid(-1, 0, true)
+	grid.SetSolid(0, 4, true)
+
+	if grid.Solid(-1, 0) || grid.Solid(0, 4) || grid.Solid(4, 0) {
+		t.Fatal("cells outside the grid must be empty")
+	}
+	for _, word := range grid.Words {
+		if word != 0 {
+			t.Fatal("out-of-range writes must not touch the bitset")
+		}
+	}
+}
+
+// TestCollisionGridSolidInRect covers the world-to-cell conversion edges: a
+// rect edge exactly on a cell boundary must not enter the next cell.
+func TestCollisionGridSolidInRect(t *testing.T) {
+	grid := scene.NewCollisionGrid(100, 4, math2d.Vec2{X: 10, Y: 10}, math2d.Vec2{X: 2, Y: 2})
+	grid.SetSolid(70, 2, true)
+
+	cases := []struct {
+		name string
+		rect math2d.Rect
+		want bool
+	}{
+		{"over the solid cell", math2d.NewRect(math2d.Vec2{X: 151, Y: 15}, math2d.Vec2{X: 1, Y: 1}), true},
+		{"spans many empty words then hits", math2d.NewRect(math2d.Vec2{X: 11, Y: 15}, math2d.Vec2{X: 141, Y: 1}), true},
+		{"stops on the cell boundary", math2d.NewRect(math2d.Vec2{X: 11, Y: 15}, math2d.Vec2{X: 139, Y: 1}), false},
+		{"wrong row", math2d.NewRect(math2d.Vec2{X: 151, Y: 11}, math2d.Vec2{X: 1, Y: 1}), false},
+		{"outside the grid", math2d.NewRect(math2d.Vec2{X: -50, Y: -50}, math2d.Vec2{X: 10, Y: 10}), false},
+	}
+	for _, c := range cases {
+		if got := grid.SolidInRect(c.rect); got != c.want {
+			t.Errorf("%s: SolidInRect = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// wallWorld builds a world with one solid cell at (2, 2) of a 4x4 grid of
+// 10-unit cells at the origin: the solid cell spans (20,20)-(30,30).
+func wallWorld() *scene.World {
+	world := scene.NewWorld()
+	grid := scene.NewCollisionGrid(4, 4, math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10})
+	grid.SetSolid(2, 2, true)
+	world.SetCollisionGrid(grid)
+	return world
+}
+
+// TestWorldStepResolvesGridContact proves a dynamic circle overlapping a
+// solid cell is pushed out along the least-penetration axis and its inward
+// velocity is reflected, and that the contact reports the hit cell.
+func TestWorldStepResolvesGridContact(t *testing.T) {
+	world := wallWorld()
+	// Circle centered left of the wall face at x=20, overlapping it by 1.
+	entity := spawnCollidableCircle(world, math2d.Vec2{X: 17, Y: 25}, 4)
+	world.SetVelocity(entity, scene.Velocity{Linear: math2d.Vec2{X: 5}})
+
+	world.Step(0, scene.StepConfig{Bounds: math2d.NewRect(math2d.Vec2{X: -100, Y: -100}, math2d.Vec2{X: 200, Y: 200})})
+
+	contacts := world.GridContacts()
+	if len(contacts) != 1 {
+		t.Fatalf("grid contacts = %d, want 1", len(contacts))
+	}
+	contact := contacts[0]
+	if contact.Entity != entity || contact.CellX != 2 || contact.CellY != 2 {
+		t.Fatalf("contact = %+v, want entity %d at cell (2, 2)", contact, entity)
+	}
+	if contact.Normal.X != -1 || contact.Normal.Y != 0 || contact.Depth != 1 {
+		t.Fatalf("contact normal/depth = %+v/%v, want (-1, 0)/1", contact.Normal, contact.Depth)
+	}
+	transform, _ := world.Transform(entity)
+	if transform.Position.X != 16 || transform.Position.Y != 25 {
+		t.Fatalf("position = %+v, want pushed out to (16, 25)", transform.Position)
+	}
+	velocity, _ := world.Velocity(entity)
+	// Restitution 1 reflects the inward velocity: +5 becomes -5.
+	if velocity.Linear.X != -5 {
+		t.Fatalf("velocity.X = %v, want -5 after reflection", velocity.Linear.X)
+	}
+}
+
+// TestWorldStepGridContactStaticEntity proves an immovable entity still
+// reports the contact without moving: games read it, physics skips it.
+func TestWorldStepGridContactStaticEntity(t *testing.T) {
+	world := wallWorld()
+	entity := world.Spawn()
+	world.SetTransform(entity, scene.Transform{Position: math2d.Vec2{X: 17, Y: 25}, Scale: math2d.Vec2{X: 1, Y: 1}})
+	world.SetCircleCollider(entity, scene.CircleCollider{Radius: 4})
+
+	world.Step(0, scene.StepConfig{Bounds: math2d.NewRect(math2d.Vec2{X: -100, Y: -100}, math2d.Vec2{X: 200, Y: 200})})
+
+	if len(world.GridContacts()) != 1 {
+		t.Fatalf("grid contacts = %d, want 1", len(world.GridContacts()))
+	}
+	transform, _ := world.Transform(entity)
+	if transform.Position.X != 17 {
+		t.Fatalf("position.X = %v, want unchanged 17", transform.Position.X)
+	}
+}
+
+// TestCollisionGridCloneAndChecksum proves the grid is simulation state: the
+// clone owns its bitset, and SimChecksum sees the grid and its mutations.
+func TestCollisionGridCloneAndChecksum(t *testing.T) {
+	world := wallWorld()
+	base := scene.NewWorld()
+	if world.SimChecksum() == base.SimChecksum() {
+		t.Fatal("setting a collision grid must change SimChecksum")
+	}
+
+	clone := world.Clone()
+	if clone.SimChecksum() != world.SimChecksum() {
+		t.Fatal("clone must reproduce the grid checksum")
+	}
+
+	world.CollisionGrid().SetSolid(0, 0, true)
+	if clone.CollisionGrid().Solid(0, 0) {
+		t.Fatal("clone shares the bitset with the source (shallow copy)")
+	}
+	if clone.SimChecksum() == world.SimChecksum() {
+		t.Fatal("mutating the source grid must diverge the checksums")
+	}
+}
 
 func TestWorldDetectCircleOverlapsGridMatchesNarrowPhase(t *testing.T) {
 	world := scene.NewWorld()
@@ -136,5 +285,72 @@ func TestWorldDetectCircleOverlapsGridMarksCandidateDebugCells(t *testing.T) {
 
 	if candidates != 1 {
 		t.Fatalf("candidate debug cells = %d, want 1", candidates)
+	}
+}
+
+// TestDebugCommandsDrawCollisionGridCells proves the colliders overlay shows
+// the collision grid and merges each horizontal run of solid cells into one
+// rect: the merge is what keeps the command count low on long floors.
+func TestDebugCommandsDrawCollisionGridCells(t *testing.T) {
+	world := scene.NewWorld()
+	grid := scene.NewCollisionGrid(4, 4, math2d.Vec2{}, math2d.Vec2{X: 10, Y: 10})
+	grid.SetSolid(0, 2, true)
+	grid.SetSolid(1, 2, true)
+	grid.SetSolid(2, 2, true)
+	grid.SetSolid(3, 0, true)
+	world.SetCollisionGrid(grid)
+
+	var rects []render.DrawRect
+	for _, cmd := range world.DebugCommands(scene.DebugColliders) {
+		if rect, ok := cmd.(render.DrawRect); ok {
+			rects = append(rects, rect)
+		}
+	}
+	if len(rects) != 2 {
+		t.Fatalf("grid overlay rects = %d, want 2 (one per solid run)", len(rects))
+	}
+	run := math2d.NewRect(math2d.Vec2{X: 0, Y: 20}, math2d.Vec2{X: 30, Y: 10})
+	if rects[0].Rect != run && rects[1].Rect != run {
+		t.Fatalf("no rect covers the merged run %v: %v", run, rects)
+	}
+
+	// The overlay is cached; mutating the grid must invalidate it.
+	world.CollisionGrid().SetSolid(3, 0, false)
+	var after int
+	for _, cmd := range world.DebugCommands(scene.DebugColliders) {
+		if _, ok := cmd.(render.DrawRect); ok {
+			after++
+		}
+	}
+	if after != 1 {
+		t.Fatalf("rects after clearing a cell = %d, want 1", after)
+	}
+}
+
+// TestDebugCommandsDrawGridContacts proves the contacts overlay includes grid
+// contacts: without them a body resting on imported terrain shows no contact.
+func TestDebugCommandsDrawGridContacts(t *testing.T) {
+	world := wallWorld()
+	entity := spawnCollidableCircle(world, math2d.Vec2{X: 17, Y: 25}, 4)
+	world.SetVelocity(entity, scene.Velocity{Linear: math2d.Vec2{X: 5}})
+
+	world.Step(0, scene.StepConfig{Bounds: math2d.NewRect(math2d.Vec2{X: -100, Y: -100}, math2d.Vec2{X: 200, Y: 200})})
+
+	var points []render.DrawPoint
+	var lines []render.DrawLine
+	for _, cmd := range world.DebugCommands(scene.DebugContacts) {
+		switch c := cmd.(type) {
+		case render.DrawPoint:
+			points = append(points, c)
+		case render.DrawLine:
+			lines = append(lines, c)
+		}
+	}
+	if len(points) != 1 || len(lines) != 1 {
+		t.Fatalf("grid contact overlay = %d points, %d lines, want 1 and 1", len(points), len(lines))
+	}
+	// The wall pushed with normal (-1, 0); the normal line must point -X.
+	if lines[0].To.X >= lines[0].From.X {
+		t.Fatalf("grid contact normal line must point away from the wall: %+v", lines[0])
 	}
 }

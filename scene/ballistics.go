@@ -182,7 +182,8 @@ func (w *World) substepFastColliders(dt float64) {
 		if _, hasVel := w.velocities.get(id); !hasVel {
 			continue
 		}
-		if _, hasCollider := w.circleColliders.get(id); !hasCollider {
+		half, hasCollider := w.colliderHalfExtents(id)
+		if !hasCollider {
 			continue
 		}
 
@@ -202,6 +203,7 @@ func (w *World) substepFastColliders(dt float64) {
 			transform.Position.Y += float64(vel.Linear.Y * subDt)
 			w.transforms.set(id, transform)
 			w.resolveAgainstStatics(id)
+			w.collideEntityWithGrid(id, half)
 		}
 
 		if w.ccdMoved == nil {

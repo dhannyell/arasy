@@ -1,6 +1,9 @@
 package tilemap
 
 import (
+	"cmp"
+	"slices"
+
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -13,6 +16,51 @@ type Atlas struct {
 	Texture  render.TextureID // Texture that contains the tiles.
 	TileSize math2d.Vec2      // Size of one tile in the atlas.
 	Columns  int              // Number of tiles in each atlas row.
+	DrawSize math2d.Vec2      // World size of each tile; zero uses Layer.CellSize.
+	Offset   math2d.Vec2      // World offset after bottom-aligning DrawSize.
+	Spacing  math2d.Vec2      // Pixel gap between atlas tiles.
+	Margin   math2d.Vec2      // Pixel border before the first atlas tile.
+	// Animations lists the flip-book tiles. The flip-book advances through
+	// the texture grid, so it requires zero Margin and Spacing.
+	Animations []Animation
+}
+
+// Animation gives one atlas index a flip-book: Frames consecutive atlas
+// cells starting at Tile, advancing at Rate frames per second. Presentation
+// state: the frame resolves at draw time from the render clock, so animated
+// layers never re-upload their chunks.
+type Animation struct {
+	Tile   int16
+	Frames uint16
+	Rate   float32
+}
+
+// animationFor returns the flip-book of one atlas index, if any.
+func (a Atlas) animationFor(tile int16) (Animation, bool) {
+	for _, animation := range a.Animations {
+		if animation.Tile == tile {
+			return animation, true
+		}
+	}
+	return Animation{}, false
+}
+
+// effectiveDrawSize returns DrawSize, or the layer cell size when unset.
+func (a Atlas) effectiveDrawSize(cell math2d.Vec2) math2d.Vec2 {
+	if a.DrawSize.X <= 0 || a.DrawSize.Y <= 0 {
+		return cell
+	}
+	return a.DrawSize
+}
+
+// SrcRect returns the atlas pixel rect of one tile index.
+func (a Atlas) SrcRect(tile int16) math2d.Rect {
+	column := int(tile) % a.Columns
+	row := int(tile) / a.Columns
+	return math2d.NewRect(math2d.Vec2{
+		X: a.Margin.X + float64(column)*(a.TileSize.X+a.Spacing.X),
+		Y: a.Margin.Y + float64(row)*(a.TileSize.Y+a.Spacing.Y),
+	}, a.TileSize)
 }
 
 // ChunkCoord identifies a tilemap chunk by its column and row.
@@ -23,11 +71,29 @@ type ChunkCoord struct {
 
 // Layer stores tile indices and their world placement.
 type Layer struct {
-	Tiles    []int16     // Atlas indices in row-major order; -1 is empty.
-	W, H     int         // Layer width and height in cells.
-	Origin   math2d.Vec2 // World edge of tile (0,0).
-	CellSize math2d.Vec2 // Tile size in world units.
-	dirty    map[ChunkCoord]struct{}
+	Tiles     []int16             // Atlas indices in row-major order; -1 is empty.
+	Flips     []render.SpriteFlip // Optional per-cell source flips; nil means no flips.
+	Rotations []float64           // Optional per-cell rotations after flipping; nil means no rotation.
+	W, H      int                 // Layer width and height in cells.
+	Origin    math2d.Vec2         // World edge of tile (0,0).
+	CellSize  math2d.Vec2         // Tile size in world units.
+	dirty     map[ChunkCoord]struct{}
+}
+
+// chunksWide returns the number of chunk columns; zero for an empty layer.
+func (l *Layer) chunksWide() int {
+	if l.W <= 0 {
+		return 0
+	}
+	return (l.W-1)/ChunkSize + 1
+}
+
+// chunksHigh returns the number of chunk rows; zero for an empty layer.
+func (l *Layer) chunksHigh() int {
+	if l.H <= 0 {
+		return 0
+	}
+	return (l.H-1)/ChunkSize + 1
 }
 
 // Chunk returns the sprite instances for one chunk of the layer.
@@ -45,48 +111,88 @@ func (l *Layer) Chunk(cx, cy int, a Atlas, buf []render.SpriteInstance) []render
 	}
 	maxX := min(minX+ChunkSize, l.W)
 	maxY := min(minY+ChunkSize, l.H)
+	drawSize := a.effectiveDrawSize(l.CellSize)
 
 	buf = buf[:0]
 	for y := minY; y < maxY; y++ {
 		for x := minX; x < maxX; x++ {
-			tile := l.Tiles[y*l.W+x]
+			index := y*l.W + x
+			tile := l.Tiles[index]
 			if tile < 0 {
 				continue
 			}
-			atlasX := int(tile) % a.Columns
-			atlasY := int(tile) / a.Columns
-			buf = append(buf, render.SpriteInstance{
+			position := l.Origin.Add(math2d.Vec2{
+				X: float64(x)*l.CellSize.X + a.Offset.X,
+				Y: float64(y)*l.CellSize.Y + l.CellSize.Y - drawSize.Y + a.Offset.Y,
+			})
+			instance := render.SpriteInstance{
 				Texture:        a.Texture,
 				ProjectCorners: true,
-				Dest: math2d.NewRect(
-					l.Origin.Add(math2d.Vec2{
-						X: float64(x) * l.CellSize.X,
-						Y: float64(y) * l.CellSize.Y,
-					}),
-					l.CellSize,
-				),
-				Src: math2d.NewRect(
-					math2d.Vec2{
-						X: float64(atlasX) * a.TileSize.X,
-						Y: float64(atlasY) * a.TileSize.Y,
-					},
-					a.TileSize,
-				),
-			})
+				Dest:           math2d.NewRect(position, drawSize),
+				Src:            a.SrcRect(tile),
+			}
+			if animation, ok := a.animationFor(tile); ok {
+				instance.Animation = render.SpriteAnimation{Frames: animation.Frames, Rate: animation.Rate}
+			}
+			if len(l.Flips) == len(l.Tiles) {
+				instance.Flip = l.Flips[index]
+			}
+			if len(l.Rotations) == len(l.Tiles) {
+				instance.Rotation = l.Rotations[index]
+			}
+			buf = append(buf, instance)
 		}
 	}
 	return buf
 }
 
-// SetTile changes one cell and marks its chunk for regeneration.
+// SetTile changes one cell and clears its source transform.
 // Coordinates outside the layer are ignored.
 func (l *Layer) SetTile(x, y int, tile int16) {
+	l.SetTileTransform(x, y, tile, render.FlipNone, 0)
+}
+
+// SetTileFlip changes one cell's atlas index and source flip.
+// Coordinates outside the layer are ignored.
+func (l *Layer) SetTileFlip(x, y int, tile int16, flip render.SpriteFlip) {
+	l.SetTileTransform(x, y, tile, flip, 0)
+}
+
+// SetTileTransform changes one cell's atlas index, source flip and rotation.
+// Flip happens before rotation, matching render.SpriteInstance and Tiled's
+// diagonal GID decomposition. Optional transform slices stay nil until a cell
+// needs a non-zero value.
+func (l *Layer) SetTileTransform(x, y int, tile int16, flip render.SpriteFlip, rotation float64) {
 	if x < 0 || y < 0 || x >= l.W || y >= l.H || len(l.Tiles) < l.W*l.H {
 		return
 	}
 	index := y*l.W + x
-	if l.Tiles[index] == tile {
+	oldFlip := render.FlipNone
+	if len(l.Flips) == len(l.Tiles) {
+		oldFlip = l.Flips[index]
+	}
+	oldRotation := 0.0
+	if len(l.Rotations) == len(l.Tiles) {
+		oldRotation = l.Rotations[index]
+	}
+	if l.Tiles[index] == tile && oldFlip == flip && oldRotation == rotation {
 		return
+	}
+	if flip != render.FlipNone || len(l.Flips) == len(l.Tiles) {
+		if len(l.Flips) != len(l.Tiles) {
+			flips := make([]render.SpriteFlip, len(l.Tiles))
+			copy(flips, l.Flips)
+			l.Flips = flips
+		}
+		l.Flips[index] = flip
+	}
+	if rotation != 0 || len(l.Rotations) == len(l.Tiles) {
+		if len(l.Rotations) != len(l.Tiles) {
+			rotations := make([]float64, len(l.Tiles))
+			copy(rotations, l.Rotations)
+			l.Rotations = rotations
+		}
+		l.Rotations[index] = rotation
 	}
 	l.Tiles[index] = tile
 	if l.dirty == nil {
@@ -105,15 +211,12 @@ func (l *Layer) DirtyChunks() []ChunkCoord {
 	for chunk := range l.dirty {
 		chunks = append(chunks, chunk)
 	}
-	for i := 1; i < len(chunks); i++ {
-		for j := i; j > 0 && chunkBefore(chunks[j], chunks[j-1]); j-- {
-			chunks[j], chunks[j-1] = chunks[j-1], chunks[j]
+	slices.SortFunc(chunks, func(a, b ChunkCoord) int {
+		if c := cmp.Compare(a.Y, b.Y); c != 0 {
+			return c
 		}
-	}
+		return cmp.Compare(a.X, b.X)
+	})
 	l.dirty = nil
 	return chunks
-}
-
-func chunkBefore(a, b ChunkCoord) bool {
-	return a.Y < b.Y || a.Y == b.Y && a.X < b.X
 }

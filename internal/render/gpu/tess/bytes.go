@@ -181,12 +181,12 @@ func appendSprite(
 	dst []spriteRecord,
 	centerX, centerY, halfWidth, halfHeight, rotation float32,
 	uvMin, uvMax, clipMin, clipMax [2]float32,
-	tint, textureLayer uint32,
+	flags, tint, textureLayer uint32,
 ) []spriteRecord {
 	return append(dst, spriteRecord{
 		centerX: centerX, centerY: centerY, halfWidth: halfWidth, halfHeight: halfHeight,
-		rotation: rotation,
-		uvMinX:   uvMin[0], uvMinY: uvMin[1], uvMaxX: uvMax[0], uvMaxY: uvMax[1],
+		rotation: rotation, flags: flags,
+		uvMinX: uvMin[0], uvMinY: uvMin[1], uvMaxX: uvMax[0], uvMaxY: uvMax[1],
 		clipMinX: clipMin[0], clipMinY: clipMin[1], clipMaxX: clipMax[0], clipMaxY: clipMax[1],
 		tint: tint, textureLayer: textureLayer,
 	})

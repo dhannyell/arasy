@@ -66,3 +66,17 @@ func TestVisibleChunksReturnsNilForInvalidLayerOrCamera(t *testing.T) {
 		t.Fatalf("malformed layer chunks = %v, want nil", got)
 	}
 }
+
+func TestVisibleChunksIncludesOverhangingAtlasNeighbor(t *testing.T) {
+	layer := Layer{Tiles: make([]int16, 2*ChunkSize), W: 2 * ChunkSize, H: 1, CellSize: math2d.Vec2{X: 1, Y: 1}}
+	cam := render.Camera{
+		World:    math2d.NewRect(math2d.Vec2{X: 29.5, Y: 0}, math2d.Vec2{X: 1, Y: 1}),
+		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1, Y: 1}),
+	}
+	atlas := Atlas{Offset: math2d.Vec2{X: -2}}
+	got := VisibleChunks(&layer, cam, atlas)
+	want := []ChunkCoord{{X: 0, Y: 0}, {X: 1, Y: 0}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("visible chunks = %v, want %v", got, want)
+	}
+}

@@ -69,6 +69,8 @@ const CORNERS = array<vec2f, 6>(
   vec2f(-1.0, -1.0), vec2f(1.0, 1.0), vec2f(-1.0, 1.0),
 );
 const PROJECT_CORNERS = 1u;
+const FLIP_X = 2u;
+const FLIP_Y = 4u;
 
 const TWO_PI = 6.283185307179586;
 
@@ -132,7 +134,10 @@ fn vs_main(@builtin(vertex_index) vertex_index : u32) -> VSOut {
 
   var out : VSOut;
   out.position = vec4f(clip_pos, 0.0, 1.0);
-  out.uv = mix(uv_min, uv_max, corner * 0.5 + vec2f(0.5));
+  var uv_factor = corner * 0.5 + vec2f(0.5);
+  if ((sprite.flags & FLIP_X) != 0u) { uv_factor.x = 1.0 - uv_factor.x; }
+  if ((sprite.flags & FLIP_Y) != 0u) { uv_factor.y = 1.0 - uv_factor.y; }
+  out.uv = mix(uv_min, uv_max, uv_factor);
   out.tint = unpack4x8unorm(sprite.tint);
   out.screen_pos = vec2f(
 		(clip_pos.x + 1.0) / u.screen_to_clip_scale.x,

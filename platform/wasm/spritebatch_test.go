@@ -80,7 +80,7 @@ func TestPlanSpriteBatchArrayPathSingleRange(t *testing.T) {
 	if len(plan.ranges) != 1 {
 		t.Fatalf("ranges = %d, want 1 (homogeneous array collapses the batch)", len(plan.ranges))
 	}
-	if plan.ranges[0].start != 0 || plan.ranges[0].count != 4 || plan.ranges[0].magenta {
+	if plan.ranges[0].start != 0 || plan.ranges[0].count != 4 || plan.ranges[0].missing {
 		t.Fatalf("range = %+v, want {start 0, count 4}", plan.ranges[0])
 	}
 	wantLayers := []uint32{0, 0, 1, 0}
@@ -128,11 +128,11 @@ func TestPlanSpriteBatchMissingTexturePlaceholder(t *testing.T) {
 	missing.Tint = render.RGBA(1, 0, 0, 0.5)
 	plan := planSpriteBatch([]render.SpriteInstance{tinted, missing}, batchTestSizes(), false)
 
-	if len(plan.ranges) != 2 || plan.ranges[0].magenta || !plan.ranges[1].magenta {
-		t.Fatalf("ranges = %+v, want a texture range followed by a magenta range", plan.ranges)
+	if len(plan.ranges) != 2 || plan.ranges[0].missing || !plan.ranges[1].missing {
+		t.Fatalf("ranges = %+v, want a texture range followed by a missing-texture range", plan.ranges)
 	}
 	if got := recordU32(t, plan.records, 1, 56); got != 0xffffffff {
-		t.Fatalf("missing-texture tint = %#x, want forced white so the placeholder stays magenta", got)
+		t.Fatalf("missing-texture tint = %#x, want forced white so the placeholder keeps its colors", got)
 	}
 	if got := recordU32(t, plan.records, 0, 56); got == 0xffffffff {
 		t.Fatal("present-texture tint was forced white; only missing textures may be")
@@ -326,7 +326,7 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 	}
 
 	var slot [spriteBatchAnimUniformSize]byte
-	packSpriteBatchAnimUniforms(slot[:], camera, 16, 16, anim)
+	tess.PackSpriteBatchAnimUniforms(slot[:], camera, 16, 16, anim)
 
 	var cameraOnly [tess.SpriteUniformSize]byte
 	tess.PackSpriteUniforms(cameraOnly[:], camera, 16, 16)
@@ -357,4 +357,3 @@ func TestPackSpriteBatchAnimUniformsLayout(t *testing.T) {
 		}
 	}
 }
-

@@ -84,19 +84,11 @@ func (w *World) bounceEntitiesInside(bounds math2d.Rect, cfg BounceConfig) {
 			continue
 		}
 
-		// Determine the size (radius or extent).
-		// precedence: a circle collider on the same entity wins over a rect.
-		var extentX, extentY float64
-
-		if circle, isCircle := w.circleColliders.get(id); isCircle {
-			extentX = circle.Radius
-			extentY = circle.Radius
-		} else if rect, isRect := w.rectColliders.get(id); isRect {
-			extentX = rect.HalfExtends.X
-			extentY = rect.HalfExtends.Y
-		} else {
+		half, hasCollider := w.colliderHalfExtents(id)
+		if !hasCollider {
 			continue
 		}
+		extentX, extentY := half.X, half.Y
 
 		factor := wallRestitutionFactor(w, id, cfg)
 
@@ -386,55 +378,50 @@ func (w *World) rectVsRect(pair entityPair, colliderA, colliderB RectCollider) (
 		return Contact{}, false
 	}
 
-	minAX := transformA.Position.X - colliderA.HalfExtends.X
-	maxAX := transformA.Position.X + colliderA.HalfExtends.X
-	minAY := transformA.Position.Y - colliderA.HalfExtends.Y
-	maxAY := transformA.Position.Y + colliderA.HalfExtends.Y
+	a := math2d.NewRect(transformA.Position.Sub(colliderA.HalfExtends), colliderA.HalfExtends.Mul(2))
+	b := math2d.NewRect(transformB.Position.Sub(colliderB.HalfExtends), colliderB.HalfExtends.Mul(2))
 
-	minBX := transformB.Position.X - colliderB.HalfExtends.X
-	maxBX := transformB.Position.X + colliderB.HalfExtends.X
-	minBY := transformB.Position.Y - colliderB.HalfExtends.Y
-	maxBY := transformB.Position.Y + colliderB.HalfExtends.Y
-
-	// Bordas apenas encostando (overlap zero) não geram contato, consistente
-	// com o >= do círculo.
-	overlapX := min(maxAX, maxBX) - max(minAX, minBX)
-	if overlapX <= 0 {
+	normal, depth, ok := aabbPenetration(a, b)
+	if !ok {
 		return Contact{}, false
-	}
-
-	overlapY := min(maxAY, maxBY) - max(minAY, minBY)
-	if overlapY <= 0 {
-		return Contact{}, false
-	}
-
-	// Normal no eixo de menor penetração; sinal pela diferença de centros
-	// (A->B). Desempate X==Y -> eixo X; centros coincidentes -> +X/+Y.
-	if overlapX <= overlapY {
-		normalX := 1.0
-		if transformB.Position.X < transformA.Position.X {
-			normalX = -1.0
-		}
-
-		return Contact{
-			A:      pair.A,
-			B:      pair.B,
-			Normal: math2d.Vec2{X: normalX},
-			Depth:  overlapX,
-		}, true
-	}
-
-	normalY := 1.0
-	if transformB.Position.Y < transformA.Position.Y {
-		normalY = -1.0
 	}
 
 	return Contact{
 		A:      pair.A,
 		B:      pair.B,
-		Normal: math2d.Vec2{Y: normalY},
-		Depth:  overlapY,
+		Normal: normal,
+		Depth:  depth,
 	}, true
+}
+
+// aabbPenetration resolves two overlapping AABBs: the normal points a->b on
+// the axis of least penetration, with depth along it. Edges only touching
+// (zero overlap) do not count, consistent with the circle >=. Sign comes from
+// the center difference; ties X==Y pick the X axis, coincident centers +X/+Y.
+func aabbPenetration(a, b math2d.Rect) (math2d.Vec2, float64, bool) {
+	overlapX := min(a.Max.X, b.Max.X) - max(a.Min.X, b.Min.X)
+	if overlapX <= 0 {
+		return math2d.Vec2{}, 0, false
+	}
+
+	overlapY := min(a.Max.Y, b.Max.Y) - max(a.Min.Y, b.Min.Y)
+	if overlapY <= 0 {
+		return math2d.Vec2{}, 0, false
+	}
+
+	if overlapX <= overlapY {
+		normalX := 1.0
+		if b.Center().X < a.Center().X {
+			normalX = -1.0
+		}
+		return math2d.Vec2{X: normalX}, overlapX, true
+	}
+
+	normalY := 1.0
+	if b.Center().Y < a.Center().Y {
+		normalY = -1.0
+	}
+	return math2d.Vec2{Y: normalY}, overlapY, true
 }
 
 func (w *World) resolveCircleOverlaps() {
@@ -526,18 +513,18 @@ func (w *World) resolveContacts(contacts []Contact) {
 func (g *spatialHashGrid) populate(w *World) {
 	circleEntities := w.circleColliderEntities()
 
-	for i, id := range circleEntities {
+	for _, id := range circleEntities {
 		transform, ok := w.transforms.get(id)
 		if !ok {
 			continue
 		}
 
-		collider := w.circleColliders.dense[i]
+		half, _ := w.colliderHalfExtents(id)
 
-		minCellX := cellCoord(transform.Position.X-collider.Radius, g.cellSize)
-		maxCellX := cellCoord(transform.Position.X+collider.Radius, g.cellSize)
-		minCellY := cellCoord(transform.Position.Y-collider.Radius, g.cellSize)
-		maxCellY := cellCoord(transform.Position.Y+collider.Radius, g.cellSize)
+		minCellX := cellCoord(transform.Position.X-half.X, g.cellSize)
+		maxCellX := cellCoord(transform.Position.X+half.X, g.cellSize)
+		minCellY := cellCoord(transform.Position.Y-half.Y, g.cellSize)
+		maxCellY := cellCoord(transform.Position.Y+half.Y, g.cellSize)
 
 		for cellX := minCellX; cellX <= maxCellX; cellX++ {
 			for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -548,7 +535,7 @@ func (g *spatialHashGrid) populate(w *World) {
 	}
 
 	rectEntities := w.rectColliderEntities()
-	for i, id := range rectEntities {
+	for _, id := range rectEntities {
 		// D1 precedence: a circle collider on the same entity wins, so the rect
 		// is ignored. Skipping it here also avoids inserting the entity twice
 		// (which would create a spurious self-pair in entityPairs).
@@ -561,12 +548,12 @@ func (g *spatialHashGrid) populate(w *World) {
 			continue
 		}
 
-		collider := w.rectColliders.dense[i]
+		half, _ := w.colliderHalfExtents(id)
 
-		minCellX := cellCoord(transform.Position.X-collider.HalfExtends.X, g.cellSize)
-		maxCellX := cellCoord(transform.Position.X+collider.HalfExtends.X, g.cellSize)
-		minCellY := cellCoord(transform.Position.Y-collider.HalfExtends.Y, g.cellSize)
-		maxCellY := cellCoord(transform.Position.Y+collider.HalfExtends.Y, g.cellSize)
+		minCellX := cellCoord(transform.Position.X-half.X, g.cellSize)
+		maxCellX := cellCoord(transform.Position.X+half.X, g.cellSize)
+		minCellY := cellCoord(transform.Position.Y-half.Y, g.cellSize)
+		maxCellY := cellCoord(transform.Position.Y+half.Y, g.cellSize)
 
 		for cellX := minCellX; cellX <= maxCellX; cellX++ {
 			for cellY := minCellY; cellY <= maxCellY; cellY++ {
@@ -661,6 +648,18 @@ func (w *World) circleColliderEntities() []EntityID {
 
 func (w *World) rectColliderEntities() []EntityID {
 	return w.rectColliders.ids
+}
+
+// colliderHalfExtents returns the half extents of the entity's collider AABB.
+// Precedence: a circle collider on the same entity wins over a rect.
+func (w *World) colliderHalfExtents(id EntityID) (math2d.Vec2, bool) {
+	if circle, ok := w.circleColliders.get(id); ok {
+		return math2d.Vec2{X: circle.Radius, Y: circle.Radius}, true
+	}
+	if rect, ok := w.rectColliders.get(id); ok {
+		return rect.HalfExtends, true
+	}
+	return math2d.Vec2{}, false
 }
 
 func (w *World) bodyOrDefault(id EntityID) Body {

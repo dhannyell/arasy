@@ -1,8 +1,10 @@
 package tess
 
 import (
+	"encoding/binary"
 	"math"
 
+	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 )
@@ -13,7 +15,25 @@ import (
 var retainedSpriteClipMin = [2]float32{-math.MaxFloat32, -math.MaxFloat32}
 var retainedSpriteClipMax = [2]float32{math.MaxFloat32, math.MaxFloat32}
 
-const projectedSpriteFlag uint32 = 1
+const (
+	projectedSpriteFlag uint32 = 1 << iota
+	flipXSpriteFlag
+	flipYSpriteFlag
+)
+
+func spriteFlags(projectCorners bool, flip render.SpriteFlip) uint32 {
+	flags := uint32(0)
+	if projectCorners {
+		flags |= projectedSpriteFlag
+	}
+	if flip&render.FlipX != 0 {
+		flags |= flipXSpriteFlag
+	}
+	if flip&render.FlipY != 0 {
+		flags |= flipYSpriteFlag
+	}
+	return flags
+}
 
 // AppendRetainedSpriteRecord appends one 64-byte sprite storage record for a
 // retained batch instance, serialized exactly like the streaming records of
@@ -21,11 +41,11 @@ const projectedSpriteFlag uint32 = 1
 // the (base) Src cell, packed tint and texture layer — but with the always-open
 // clip sentinel instead of a per-command clip.
 //
-// whiteTint forces the opaque-white tint used for missing textures, so the
-// backend's 1x1 magenta placeholder texture paints the same magenta the
-// streaming missing-texture path draws. A degenerate Src (clamped empty, as
-// streaming's srcUV reports) zeroes the quad size instead of skipping, since
-// retained records cannot be dropped without reordering the batch.
+// whiteTint forces the opaque-white tint and full UV range used for missing
+// textures, so source rectangles cannot hide or recolor the diagnostic
+// placeholder. A degenerate Src (clamped empty, as streaming's srcUV reports)
+// zeroes the quad size instead of skipping, since retained records cannot be
+// dropped without reordering the batch.
 func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, texH int, textureLayer uint32, whiteTint bool) []byte {
 	minX, maxX := inst.Dest.Min.X, inst.Dest.Max.X
 	if minX > maxX {
@@ -39,7 +59,7 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 	uvMin := [2]float32{}
 	uvMax := [2]float32{1, 1}
 	srcOK := true
-	if inst.Src != (math2d.Rect{}) {
+	if !whiteTint && inst.Src != (math2d.Rect{}) {
 		uv, ok := srcUV(inst.Src, texW, texH)
 		if !ok {
 			srcOK = false
@@ -58,10 +78,7 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 	if !whiteTint {
 		tint = packSpriteTint(inst.Tint)
 	}
-	flags := uint32(0)
-	if inst.ProjectCorners {
-		flags = projectedSpriteFlag
-	}
+	flags := spriteFlags(inst.ProjectCorners, inst.Flip)
 
 	record := spriteRecord{
 		centerX:    float32((minX + maxX) * 0.5),
@@ -76,4 +93,32 @@ func AppendRetainedSpriteRecord(dst []byte, inst render.SpriteInstance, texW, te
 		tint: tint, textureLayer: textureLayer,
 	}
 	return append(dst, spriteBytes([]spriteRecord{record})...)
+}
+
+// SpriteAnimStride is the byte size of one retained animation record. Keep it
+// in sync with the WGSL SpriteAnim struct of the animated batch shaders.
+const SpriteAnimStride = 32
+
+// AppendSpriteAnimRecord appends the per-instance animation record the
+// animated sprite batch shaders read next to the base record. An invalid
+// flip-book sequence packs Frames=0, the same static-Src degradation as the
+// CPU reference in renderbatch.AnimatedSrc.
+func AppendSpriteAnimRecord(dst []byte, inst render.SpriteInstance, texW, texH int) []byte {
+	anim := inst.Animation
+	frames := uint32(0)
+	cellsPerRow := uint32(0)
+	baseIndex := uint32(0)
+	if cpr, base, ok := renderbatch.FlipBookCells(inst, texW, texH); ok {
+		frames = uint32(anim.Frames)
+		cellsPerRow = uint32(cpr)
+		baseIndex = uint32(base)
+	}
+	var buf [SpriteAnimStride]byte
+	binary.LittleEndian.PutUint32(buf[0:], frames)
+	binary.LittleEndian.PutUint32(buf[4:], cellsPerRow)
+	binary.LittleEndian.PutUint32(buf[8:], baseIndex)
+	binary.LittleEndian.PutUint32(buf[16:], math.Float32bits(float32(anim.Rate)))
+	binary.LittleEndian.PutUint32(buf[20:], math.Float32bits(float32(anim.Phase)))
+	binary.LittleEndian.PutUint32(buf[24:], math.Float32bits(float32(anim.Bounce)))
+	return append(dst, buf[:]...)
 }

@@ -7,6 +7,7 @@ import (
 	"syscall/js"
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
+	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/math2d"
@@ -141,11 +142,11 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 		if batch.animated {
 			// The bind group's texture view dimension must match its
 			// layout: spriteRangeTexture returns a 2d-array view on the
-			// homogeneous array path (except for the magenta placeholder,
+			// homogeneous array path (except for the diagnostic placeholder,
 			// always plain 2d), so the layout choice must follow the same
 			// condition the draw-time pipeline selection uses below.
 			layout := r.spriteBatchAnimLayout
-			if r.spriteArrayEnabled && !rg.magenta {
+			if r.spriteArrayEnabled && !rg.missing {
 				layout = r.spriteBatchAnimArrayLayout
 			}
 			tex := r.spriteRangeTexture(rg)
@@ -162,7 +163,7 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 			})
 			continue
 		}
-		if r.spriteArrayEnabled && !rg.magenta {
+		if r.spriteArrayEnabled && !rg.missing {
 			groups[i] = r.device.Call("createBindGroup", map[string]any{
 				"layout": r.spriteArrayLayout,
 				"entries": []any{
@@ -189,9 +190,9 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 
 // spriteRangeTexture resolves the texture view one range binds: the shared
 // 2d-array view on the homogeneous array path, the declared texture on the
-// fallback path, or the 1x1 magenta placeholder for missing textures.
+// fallback path, or the shared diagnostic placeholder for missing textures.
 func (r *webgpuRenderer) spriteRangeTexture(rg spriteBatchRange) js.Value {
-	if rg.magenta {
+	if rg.missing {
 		return r.spritePlaceholderView()
 	}
 	if r.spriteArrayEnabled {
@@ -212,17 +213,22 @@ func (r *webgpuRenderer) rebuildRetainedSpriteBindGroups() {
 	}
 }
 
-// spritePlaceholderView lazily creates the 1x1 opaque-magenta texture that
-// stands in for missing textures in retained batches, preserving the
-// streaming placeholder without solid-geometry fallbacks.
+// spritePlaceholderView lazily uploads the shared missing-texture pattern for
+// retained batches, which cannot use the streaming solid-geometry fallback.
 func (r *webgpuRenderer) spritePlaceholderView() js.Value {
 	if !r.spritePlaceholder.IsUndefined() && !r.spritePlaceholder.IsNull() {
 		return r.spritePlaceholder
 	}
-	texture := jsHandle(r.dev.CreateTexture(gpu.TextureDesc(1, 1, 1)))
+	placeholder := internalrender.MissingTextureRGBA()
+	texture := jsHandle(r.dev.CreateTexture(gpu.TextureDesc(
+		internalrender.MissingTextureSize,
+		internalrender.MissingTextureSize,
+		1,
+	)))
 	r.dev.WriteTexture(
-		map[string]any{"texture": texture}, []byte{255, 0, 255, 255},
-		gpu.TextureWriteLayout(4, 1), gpu.TextureWriteSize(1, 1))
+		map[string]any{"texture": texture}, placeholder.Pix,
+		gpu.TextureWriteLayout(4*internalrender.MissingTextureSize, internalrender.MissingTextureSize),
+		gpu.TextureWriteSize(internalrender.MissingTextureSize, internalrender.MissingTextureSize))
 	r.spritePlaceholder = jsHandle(r.dev.CreateView(texture, nil))
 	return r.spritePlaceholder
 }

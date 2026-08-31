@@ -76,18 +76,6 @@ var boardMap = [boardRows]string{
 	".f....f...",
 }
 
-// groundLegend turns the authored board into the presentation layer. Water
-// remains a recessed vector surface; the other terrain types use atlas cells.
-var groundLegend = map[rune]int16{
-	'.': 0,  // grass
-	'f': 1,  // forest floor
-	'M': 2,  // rock
-	'm': 2,  // rock
-	'B': 3,  // path
-	'L': 3,  // path
-	'~': -1, // water is painted below the ground layer
-}
-
 func terrainAt(i, j int) terrain {
 	if i < 0 || j < 0 || i >= boardCols || j >= boardRows {
 		return terrainGrass

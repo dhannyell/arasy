@@ -78,6 +78,10 @@ test('renders layer parallax across retained and streaming content', async ({ pa
   );
 });
 
+test('renders source flips before rotation in streaming and retained sprites', async ({ page }, testInfo) => {
+  await expectFixtureScreenshot(page, testInfo, 'flip', 'flip.png');
+});
+
 test('renders two camera passes with independent viewports', async ({ page }, testInfo) => {
   await expectFixtureScreenshot(page, testInfo, 'passes', 'passes.png');
 });

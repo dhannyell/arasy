@@ -148,7 +148,7 @@ type webgpuRenderer struct {
 	spriteArrayEnabled   bool
 
 	// Retained sprite batches: registry keyed by game-chosen ID, the shared
-	// animated-uniform arena, and the lazily created 1x1 magenta placeholder
+	// animated-uniform arena, and the lazily created diagnostic placeholder
 	// view. Content is render-only.
 	spriteBatches                      map[render.SpriteBatchID]*gpuSpriteBatch
 	spriteBatchAnimLayout              js.Value
@@ -563,7 +563,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		}
 		plan := plans[drawRuns[i].pass]
 		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
-		packSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, plan.width, plan.height, drawRuns[i].spriteBatch.Animation)
+		tess.PackSpriteBatchAnimUniforms(r.batchArenaScratch[:], camera, plan.width, plan.height, drawRuns[i].spriteBatch.Animation)
 		r.queue.Call("writeBuffer", r.batchUniformBuffer, offset, bytesToJS(r.batchArenaScratch[:]))
 		drawRuns[i].batchSlot = offset
 	}
@@ -1053,18 +1053,18 @@ func (r *webgpuRenderer) drawRun(
 		}
 		for i, rg := range batch.ranges {
 			if batch.animated {
-				if renderTarget && r.spriteArrayEnabled && !rg.magenta {
+				if renderTarget && r.spriteArrayEnabled && !rg.missing {
 					pass.Call("setPipeline", r.targetSpriteBatchAnimArrayPipeline)
 				} else if renderTarget {
 					pass.Call("setPipeline", r.targetSpriteBatchAnimPipeline)
-				} else if r.spriteArrayEnabled && !rg.magenta {
+				} else if r.spriteArrayEnabled && !rg.missing {
 					pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
 				} else {
 					pass.Call("setPipeline", r.spriteBatchAnimPipeline)
 				}
 				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
 			} else {
-				if r.spriteArrayEnabled && !rg.magenta {
+				if r.spriteArrayEnabled && !rg.missing {
 					if renderTarget {
 						pass.Call("setPipeline", r.targetSpriteArrayPipeline)
 					} else {
