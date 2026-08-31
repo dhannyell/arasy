@@ -62,8 +62,13 @@ func TestIsometricTallFixtureStaysGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if mapData.TileWidth != 32 || mapData.TileHeight != 16 || len(mapData.Tilesets) != 1 {
-		t.Fatalf("isometric fixture = %#v, want 2:1 map with one tileset", mapData)
+	if mapData.TileWidth != 32 || mapData.TileHeight != 16 || len(mapData.Tilesets) != 1 || len(mapData.ObjectGroups) != 1 {
+		t.Fatalf("isometric fixture = %#v, want 2:1 map with one tileset and one object group", mapData)
+	}
+	// Isometric object pixels divide by the tile height on both axes; the
+	// generated fixture pins the converted positions byte-for-byte.
+	if divX, divY := tilemapObjectPixelDivisors(mapData); divX != 16 || divY != 16 {
+		t.Fatalf("isometric object divisors = (%v, %v), want tile height on both axes", divX, divY)
 	}
 	tileset := mapData.Tilesets[0]
 	if tileset.TileOffset == nil || tileset.TileOffset.X != -16 || tileset.TileOffset.Y != -24 || len(tileset.WangSets) != 1 {
@@ -327,17 +332,50 @@ func TestCompileTilemapPreservesObjectLayerSemantics(t *testing.T) {
 	}
 }
 
-func TestValidateTilemapObjectGroupRejectsUnsupportedPresentation(t *testing.T) {
-	tests := []*tiled.ObjectGroup{
-		{Name: "opacity", Opacity: 0.5, ParallaxX: 1, ParallaxY: 1, DrawOrder: "topdown"},
-		{Name: "parallax", Opacity: 1, ParallaxX: 0.5, ParallaxY: 1, DrawOrder: "topdown"},
-		{Name: "blend", Opacity: 1, ParallaxX: 1, ParallaxY: 1, Mode: "multiply", DrawOrder: "topdown"},
-		{Name: "draw order", Opacity: 1, ParallaxX: 1, ParallaxY: 1, DrawOrder: "unknown"},
+// TestCompileTilemapRejectsIsometricTileObjects closes the v1 subset: Tiled
+// draws isometric tile objects as unprojected billboards, which the projected
+// ObjectView path cannot reproduce.
+func TestCompileTilemapRejectsIsometricTileObjects(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "iso-objects.tmx")
+	data := `<?xml version="1.0" encoding="UTF-8"?>
+<map orientation="isometric" renderorder="right-down" width="1" height="1" tilewidth="32" tileheight="16">
+ <tileset firstgid="1" name="tiles" tilewidth="32" tileheight="16" tilecount="1" columns="1">
+  <image source="tiles.png" width="32" height="16"/>
+ </tileset>
+ <objectgroup id="1" name="props" draworder="topdown">
+  <object id="1" gid="1" x="16" y="8" width="32" height="16"/>
+ </objectgroup>
+</map>`
+	if err := os.WriteFile(source, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	for _, group := range tests {
-		if err := validateTilemapObjectGroup(group); err == nil {
-			t.Fatalf("object group %q must reject unsupported presentation", group.Name)
+	err := compileTilemap(source, tilemapImportFlags{output: filepath.Join(dir, "out.go"), packageName: "fixture", name: "IsoObjects", cellSize: 1})
+	if err == nil || !strings.Contains(err.Error(), "tile object on an isometric map") {
+		t.Fatalf("error = %v, want isometric tile-object rejection", err)
+	}
+}
+
+func TestValidateTilemapObjectGroupRejectsUnsupportedPresentation(t *testing.T) {
+	tests := []struct {
+		group       *tiled.ObjectGroup
+		orientation string
+	}{
+		{group: &tiled.ObjectGroup{Name: "opacity", Opacity: 0.5, ParallaxX: 1, ParallaxY: 1, DrawOrder: "topdown"}, orientation: "orthogonal"},
+		{group: &tiled.ObjectGroup{Name: "parallax", Opacity: 1, ParallaxX: 0.5, ParallaxY: 1, DrawOrder: "topdown"}, orientation: "orthogonal"},
+		{group: &tiled.ObjectGroup{Name: "blend", Opacity: 1, ParallaxX: 1, ParallaxY: 1, Mode: "multiply", DrawOrder: "topdown"}, orientation: "orthogonal"},
+		{group: &tiled.ObjectGroup{Name: "draw order", Opacity: 1, ParallaxX: 1, ParallaxY: 1, DrawOrder: "unknown"}, orientation: "orthogonal"},
+		// Screen-pixel offsets have no answer in isometric object space.
+		{group: &tiled.ObjectGroup{Name: "iso offset", Opacity: 1, ParallaxX: 1, ParallaxY: 1, DrawOrder: "topdown", OffsetX: 8}, orientation: "isometric"},
+	}
+	for _, test := range tests {
+		if err := validateTilemapObjectGroup(test.group, test.orientation); err == nil {
+			t.Fatalf("object group %q must reject unsupported presentation", test.group.Name)
 		}
+	}
+	ortho := &tiled.ObjectGroup{Name: "ortho offset", Opacity: 1, ParallaxX: 1, ParallaxY: 1, DrawOrder: "topdown", OffsetX: 8}
+	if err := validateTilemapObjectGroup(ortho, "orthogonal"); err != nil {
+		t.Fatalf("orthogonal group offsets stay in the subset: %v", err)
 	}
 }
 
@@ -441,6 +479,19 @@ func TestWriteTilemapLayerRejectsMultipleTilesets(t *testing.T) {
 	err := writeTilemapLayer(&out, layer, 0, &tiled.Map{Width: 2, Height: 1, TileWidth: 16, TileHeight: 16}, 1, nil)
 	if err == nil || !strings.Contains(err.Error(), "more than one tileset") {
 		t.Fatalf("error = %v, want multiple-tileset rejection", err)
+	}
+}
+
+// TestWriteTilemapLayerRejectsDiagonalOnNonSquareDraw pins the guard: the
+// diagonal decomposition is a 90-degree rotation of the drawn rect, valid
+// only when that rect is square.
+func TestWriteTilemapLayerRejectsDiagonalOnNonSquareDraw(t *testing.T) {
+	tileset := &tiled.Tileset{Columns: 1, TileWidth: 16, TileHeight: 32, Image: &tiled.Image{Source: "tall.png"}}
+	layer := &tiled.Layer{Opacity: 1, Visible: true, Tiles: []*tiled.LayerTile{{ID: 0, Tileset: tileset, DiagonalFlip: true}}}
+	var out bytes.Buffer
+	err := writeTilemapLayer(&out, layer, 0, &tiled.Map{Width: 1, Height: 1, TileWidth: 16, TileHeight: 16}, 1, nil)
+	if err == nil || !strings.Contains(err.Error(), "diagonal flip") {
+		t.Fatalf("error = %v, want non-square diagonal rejection", err)
 	}
 }
 

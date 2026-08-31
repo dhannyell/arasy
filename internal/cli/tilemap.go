@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/scene"
 	"github.com/dhannyell/arasy/tilemap"
 	"github.com/lafriks/go-tiled"
 	"github.com/spf13/cobra"
@@ -241,7 +242,7 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	fmt.Fprintln(&out, "\t\t},")
 	fmt.Fprintf(&out, "\t\tObjects: []%sObject{\n", name)
 	for _, group := range m.ObjectGroups {
-		if err := validateTilemapObjectGroup(group); err != nil {
+		if err := validateTilemapObjectGroup(group, m.Orientation); err != nil {
 			return nil, err
 		}
 		for _, object := range group.Objects {
@@ -286,12 +287,17 @@ func generateTilemap(m *tiled.Map, options tilemapImportFlags, mappings []tilema
 	return generated, nil
 }
 
-func validateTilemapObjectGroup(group *tiled.ObjectGroup) error {
+func validateTilemapObjectGroup(group *tiled.ObjectGroup, orientation string) error {
 	if group.Opacity != 1 || group.ParallaxX != 1 || group.ParallaxY != 1 || group.Mode != "" && group.Mode != "normal" {
 		return fmt.Errorf("tilemap import: object layer %q uses opacity, parallax, or blend mode outside the v1 subset", group.Name)
 	}
 	if group.DrawOrder != "index" && group.DrawOrder != "topdown" {
 		return fmt.Errorf("tilemap import: object layer %q uses unsupported draw order %q", group.Name, group.DrawOrder)
+	}
+	// Group offsets are screen pixels, but isometric objects live in isometric
+	// pixels; mixing the two spaces has no world-unit answer in the v1 subset.
+	if orientation == "isometric" && (group.OffsetX != 0 || group.OffsetY != 0) {
+		return fmt.Errorf("tilemap import: object layer %q uses an offset on an isometric map, outside the v1 subset; move the objects instead", group.Name)
 	}
 	return nil
 }
@@ -372,7 +378,7 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 	tiles := make([]int16, len(layer.Tiles))
 	flips := make([]uint8, len(layer.Tiles))
 	rotations := make([]float64, len(layer.Tiles))
-	hasFlips, hasRotations := false, false
+	hasFlips, hasRotations, hasDiagonal := false, false, false
 	for i, tile := range layer.Tiles {
 		tiles[i] = -1
 		if tile == nil || tile.Nil {
@@ -387,6 +393,12 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 		rotations[i] = rotation
 		hasFlips = hasFlips || flip != 0
 		hasRotations = hasRotations || rotation != 0
+		hasDiagonal = hasDiagonal || tile.DiagonalFlip
+	}
+	// The diagonal decomposition rotates the drawn rect 90 degrees around its
+	// center, which only reproduces Tiled when that rect is square.
+	if hasDiagonal && drawX != drawY {
+		return fmt.Errorf("tilemap import: layer %q uses a diagonal flip but draws non-square tiles (%g x %g world units); remove the diagonal flip or make the draw size square", layer.Name, drawX, drawY)
 	}
 
 	fmt.Fprintf(out, "\t\t\t{Name: %q, Order: %d, Layer: tilemap.Layer{Tiles: []int16{", layer.Name, order)
@@ -432,6 +444,8 @@ func writeTilemapLayer(out *bytes.Buffer, layer *tiled.Layer, order int, m *tile
 // writeTilemapCollision emits the solidity grid of the collision layer: any
 // non-empty cell is solid. The layer never draws, so visibility, opacity and
 // tileset images are ignored; only its offset places the grid in the world.
+// The grid builds through scene.NewCollisionGrid so the word packing stays
+// owned by scene.
 func writeTilemapCollision(out *bytes.Buffer, layer *tiled.Layer, m *tiled.Map, cellSize float64) error {
 	if len(layer.Tiles) != m.Width*m.Height {
 		return fmt.Errorf("tilemap import: collision layer %q has %d tiles, want %d", layer.Name, len(layer.Tiles), m.Width*m.Height)
@@ -440,26 +454,27 @@ func writeTilemapCollision(out *bytes.Buffer, layer *tiled.Layer, m *tiled.Map, 
 		return fmt.Errorf("tilemap import: collision layer %q uses parallax; collision cells do not move with the camera", layer.Name)
 	}
 
-	wordsPerRow := (m.Width + 63) / 64
-	words := make([]uint64, wordsPerRow*m.Height)
+	cellX := cellSize / float64(m.TileWidth)
+	cellY := cellSize / float64(m.TileHeight)
+	grid := scene.NewCollisionGrid(m.Width, m.Height,
+		math2d.Vec2{X: layer.OffsetX * cellX, Y: layer.OffsetY * cellY},
+		math2d.Vec2{X: cellSize, Y: cellSize},
+	)
 	for i, tile := range layer.Tiles {
 		if tile == nil || tile.Nil {
 			continue
 		}
-		x, y := i%m.Width, i/m.Width
-		words[y*wordsPerRow+x/64] |= 1 << uint(x%64)
+		grid.SetSolid(i%m.Width, i/m.Width, true)
 	}
 
-	cellX := cellSize / float64(m.TileWidth)
-	cellY := cellSize / float64(m.TileHeight)
 	fmt.Fprint(out, "\t\tCollision: scene.CollisionGrid{Words: []uint64{")
-	for _, word := range words {
+	for _, word := range grid.Words {
 		fmt.Fprintf(out, "%#x,", word)
 	}
-	fmt.Fprintf(out, "}, W: %d, H: %d, Origin: ", m.Width, m.Height)
-	writeVec(out, layer.OffsetX*cellX, layer.OffsetY*cellY)
+	fmt.Fprintf(out, "}, W: %d, H: %d, Origin: ", grid.W, grid.H)
+	writeVec(out, grid.Origin.X, grid.Origin.Y)
 	fmt.Fprint(out, ", CellSize: ")
-	writeVec(out, cellSize, cellSize)
+	writeVec(out, grid.CellSize.X, grid.CellSize.Y)
 	fmt.Fprintln(out, "},")
 	return nil
 }
@@ -549,15 +564,26 @@ func tileFlip(horizontal, vertical bool) uint8 {
 	return flip
 }
 
+// tilemapObjectPixelDivisors converts Tiled object pixels to map cells.
+// Isometric maps store object coordinates in isometric pixels, which divide
+// by the tile height on both axes; orthogonal maps divide X by the tile width.
+func tilemapObjectPixelDivisors(m *tiled.Map) (float64, float64) {
+	if m.Orientation == "isometric" {
+		return float64(m.TileHeight), float64(m.TileHeight)
+	}
+	return float64(m.TileWidth), float64(m.TileHeight)
+}
+
 func writeTilemapObject(out *bytes.Buffer, object *tiled.Object, group string, offsetX, offsetY float64, m *tiled.Map, cellSize float64, mappings []tilemapTextureMapping, name string) error {
 	tile, texture, flip, err := tilemapObjectTile(object, m, mappings)
 	if err != nil {
 		return err
 	}
+	divX, divY := tilemapObjectPixelDivisors(m)
 	fmt.Fprintf(out, "\t\t\t{Group: %q, ID: %d, Name: %q, Class: %q, Position: ", group, object.ID, object.Name, object.Class)
-	writeVec(out, (object.X+offsetX)*cellSize/float64(m.TileWidth), (object.Y+offsetY)*cellSize/float64(m.TileHeight))
+	writeVec(out, (object.X+offsetX)*cellSize/divX, (object.Y+offsetY)*cellSize/divY)
 	fmt.Fprint(out, ", Size: ")
-	writeVec(out, object.Width*cellSize/float64(m.TileWidth), object.Height*cellSize/float64(m.TileHeight))
+	writeVec(out, object.Width*cellSize/divX, object.Height*cellSize/divY)
 	fmt.Fprintf(out, ", Rotation: %s, Tile: %d", tilemapFloat(object.Rotation), tile)
 	if tile >= 0 {
 		fmt.Fprintf(out, ", Texture: %q, Flip: ", texture)
@@ -614,6 +640,11 @@ func writeTilemapTileObject(out *bytes.Buffer, object *tiled.Object, offsetX, of
 	tile, texture, err := tilemapObjectLayerTile(object, m, mappings)
 	if err != nil || tile == nil || !object.Visible {
 		return err
+	}
+	// Tiled draws isometric tile objects as unprojected billboards; the
+	// projected ObjectView path would skew them, a silent lie about the editor.
+	if m.Orientation == "isometric" {
+		return fmt.Errorf("tilemap import: object %d is a tile object on an isometric map, outside the v1 subset; hide its layer to keep the data without drawing", object.ID)
 	}
 	tileset := tile.Tileset
 

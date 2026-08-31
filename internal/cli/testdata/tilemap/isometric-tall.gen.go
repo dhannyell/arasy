@@ -69,7 +69,9 @@ func NewIsometricTallMap(texture func(string) render.TextureID) IsometricTallMap
 		Layers: []IsometricTallLayer{
 			{Name: "resolved-terrain", Order: 0, Layer: tilemap.Layer{Tiles: []int16{0, 0}, W: 2, H: 1, Origin: math2d.Vec2{X: 0, Y: 0}, CellSize: math2d.Vec2{X: 8, Y: 8}}, Atlas: tilemap.Atlas{Texture: texture("asymmetric"), TileSize: math2d.Vec2{X: 64, Y: 64}, Columns: 1, DrawSize: math2d.Vec2{X: 16, Y: 32}, Offset: math2d.Vec2{X: -4, Y: -12}, Spacing: math2d.Vec2{X: 0, Y: 0}, Margin: math2d.Vec2{X: 0, Y: 0}}, Parallax: math2d.Vec2{X: 1, Y: 1}},
 		},
-		Objects:          []IsometricTallObject{},
+		Objects: []IsometricTallObject{
+			{Group: "markers", ID: 1, Name: "spawn", Class: "", Position: math2d.Vec2{X: 8, Y: 4}, Size: math2d.Vec2{X: 4, Y: 2}, Rotation: 0, Tile: -1, Properties: []IsometricTallProperty{}},
+		},
 		TileObjectGroups: []IsometricTallTileObjectGroup{},
 	}
 }
