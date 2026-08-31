@@ -3,6 +3,7 @@ package fixedprobe
 import (
 	"fmt"
 	"math"
+	"math/bits"
 	"testing"
 
 	"github.com/dhannyell/fixed"
@@ -226,5 +227,163 @@ func BenchmarkSpinDecayDivider(b *testing.B) {
 			}
 		}
 		benchSinkRaw = acc
+	})
+}
+
+// BenchmarkContactSolverDivider mimics the solver's kNormal pattern: one
+// invariant divisor per contact, five dependent divisions by it (four
+// substeps plus relaxation). The div side pays Q.Div per use, as under
+// D-006. The prepared side pays one preparation per contact plus the
+// inlined Möller–Granlund use, restricted to the solver domain: positive
+// divisor, no saturation reachable. Each op covers one contact.
+func BenchmarkContactSolverDivider(b *testing.B) {
+	const contacts = 256
+	one := fixed.One()
+	denoms := make([]fixed.Q, contacts)
+	state := uint64(11)
+	for i := range denoms {
+		// kNormal-like magnitudes: [1.25, 4) with live fraction bits.
+		denoms[i] = fixed.FromRaw(int64(5<<30 + probeRand64(&state)%(11<<30)))
+	}
+
+	// The inlined use block must match Q.Div bit for bit before it is
+	// allowed to produce a number.
+	x := fixed.FromInt(2)
+	xr := uint64(x.Raw())
+	for i := range 4 * contacts {
+		d := denoms[i&(contacts-1)]
+		p := prepareDivider(d)
+		for range 5 {
+			x = x.Div(d).Add(one)
+
+			hi, lo := xr>>32, xr<<32
+			u1 := hi<<p.s | lo>>(64-p.s)
+			u0 := lo << p.s
+			q1, q0 := bits.Mul64(p.v, u1)
+			var c uint64
+			q0, c = bits.Add64(q0, u0, 0)
+			q1, _ = bits.Add64(q1, u1, c)
+			q1++
+			r := u0 - q1*p.dn
+			if r > q0 {
+				q1--
+				r += p.dn
+			}
+			if r >= p.dn {
+				q1++
+			}
+			xr = uint64(fixed.FromRaw(int64(q1)).Add(one).Raw())
+		}
+		if uint64(x.Raw()) != xr {
+			b.Fatalf("inline reciprocal diverged from Q.Div at contact %d", i)
+		}
+	}
+	// The branchless correction variant must agree too.
+	x = fixed.FromInt(2)
+	xr = uint64(x.Raw())
+	for i := range 4 * contacts {
+		d := denoms[i&(contacts-1)]
+		p := prepareDivider(d)
+		for range 5 {
+			x = x.Div(d).Add(one)
+
+			hi, lo := xr>>32, xr<<32
+			u1 := hi<<p.s | lo>>(64-p.s)
+			u0 := lo << p.s
+			q1, q0 := bits.Mul64(p.v, u1)
+			var c uint64
+			q0, c = bits.Add64(q0, u0, 0)
+			q1, _ = bits.Add64(q1, u1, c)
+			q1++
+			r := u0 - q1*p.dn
+			_, b1 := bits.Sub64(q0, r, 0)
+			q1 -= b1
+			r += p.dn & -b1
+			_, b2 := bits.Sub64(r, p.dn, 0)
+			q1 += 1 - b2
+			xr = uint64(fixed.FromRaw(int64(q1)).Add(one).Raw())
+		}
+		if uint64(x.Raw()) != xr {
+			b.Fatalf("branchless reciprocal diverged from Q.Div at contact %d", i)
+		}
+	}
+
+	b.Run("div", func(b *testing.B) {
+		x := fixed.FromInt(2)
+		i := 0
+		for range b.N {
+			d := denoms[i&(contacts-1)]
+			for range 5 {
+				x = x.Div(d).Add(one)
+			}
+			i++
+		}
+		benchSinkRaw = x.Raw()
+	})
+	b.Run("prepared", func(b *testing.B) {
+		xr := uint64(fixed.FromInt(2).Raw())
+		i := 0
+		for range b.N {
+			p := prepareDivider(denoms[i&(contacts-1)])
+			for range 5 {
+				hi, lo := xr>>32, xr<<32
+				u1 := hi<<p.s | lo>>(64-p.s)
+				u0 := lo << p.s
+				q1, q0 := bits.Mul64(p.v, u1)
+				var c uint64
+				q0, c = bits.Add64(q0, u0, 0)
+				q1, _ = bits.Add64(q1, u1, c)
+				q1++
+				r := u0 - q1*p.dn
+				if r > q0 {
+					q1--
+					r += p.dn
+				}
+				if r >= p.dn {
+					q1++
+				}
+				xr = uint64(fixed.FromRaw(int64(q1)).Add(one).Raw())
+			}
+			i++
+		}
+		benchSinkRaw = int64(xr)
+	})
+	b.Run("prepare-only", func(b *testing.B) {
+		// Isolates the setup: the reciprocal is a worst-case DIVQ
+		// (64-bit quotient), so it is not one cheap division.
+		var acc uint64
+		i := 0
+		for range b.N {
+			p := prepareDivider(denoms[i&(contacts-1)])
+			acc += p.v
+			i++
+		}
+		benchSinkRaw = int64(acc)
+	})
+	b.Run("prepared-branchless", func(b *testing.B) {
+		xr := uint64(fixed.FromInt(2).Raw())
+		i := 0
+		for range b.N {
+			p := prepareDivider(denoms[i&(contacts-1)])
+			for range 5 {
+				hi, lo := xr>>32, xr<<32
+				u1 := hi<<p.s | lo>>(64-p.s)
+				u0 := lo << p.s
+				q1, q0 := bits.Mul64(p.v, u1)
+				var c uint64
+				q0, c = bits.Add64(q0, u0, 0)
+				q1, _ = bits.Add64(q1, u1, c)
+				q1++
+				r := u0 - q1*p.dn
+				_, b1 := bits.Sub64(q0, r, 0)
+				q1 -= b1
+				r += p.dn & -b1
+				_, b2 := bits.Sub64(r, p.dn, 0)
+				q1 += 1 - b2
+				xr = uint64(fixed.FromRaw(int64(q1)).Add(one).Raw())
+			}
+			i++
+		}
+		benchSinkRaw = int64(xr)
 	})
 }
