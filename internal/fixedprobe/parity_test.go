@@ -174,3 +174,53 @@ func TestFixedMirrorStaysNearFloatMirror(t *testing.T) {
 		})
 	}
 }
+
+// probeRand64 walks a deterministic splitmix64 sequence for test inputs.
+func probeRand64(state *uint64) uint64 {
+	*state += 0x9e3779b97f4a7c15
+	z := *state
+	z = (z ^ z>>30) * 0xbf58476d1ce4e5b9
+	z = (z ^ z>>27) * 0x94d049bb133111eb
+	return z ^ z>>31
+}
+
+// TestPreparedDividerMatchesDiv checks the reciprocal path against Q.Div
+// bit for bit: the consumer denominator, adversarial ones, and random pairs.
+func TestPreparedDividerMatchesDiv(t *testing.T) {
+	denoms := []fixed.Q{
+		fixed.One().Add(qSpinDecay.Mul(benchProbeDtQ)),
+		fixed.One(),
+		fixed.One().Neg(),
+		fixed.FromRaw(1),
+		fixed.FromRaw(-1),
+		fixed.MaxValue(),
+		fixed.MinValue(),
+		fixed.FromRatio(3, 2),
+	}
+	nums := []fixed.Q{
+		fixed.Zero(),
+		fixed.FromRaw(1),
+		fixed.FromRaw(-1),
+		fixed.One(),
+		fixed.One().Neg(),
+		fixed.MaxValue(),
+		fixed.MinValue(),
+	}
+	state := uint64(7)
+	for range 1000 {
+		denoms = append(denoms, fixed.FromRaw(int64(probeRand64(&state)|1)))
+	}
+	for range 1000 {
+		nums = append(nums, fixed.FromRaw(int64(probeRand64(&state))))
+	}
+	for _, d := range denoms {
+		p := prepareDivider(d)
+		for _, n := range nums {
+			want := n.Div(d)
+			if got := p.div(n); !got.Eq(want) {
+				t.Fatalf("prepared div %#x / %#x = %#x, want %#x",
+					n.Raw(), d.Raw(), got.Raw(), want.Raw())
+			}
+		}
+	}
+}

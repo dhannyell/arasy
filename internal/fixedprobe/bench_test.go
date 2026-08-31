@@ -196,3 +196,35 @@ func BenchmarkScalarOps(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkSpinDecayDivider pays one Div per entity against one prepared
+// reciprocal per tick, on the invariant spin decay denominator. Each op
+// covers 1000 entities.
+func BenchmarkSpinDecayDivider(b *testing.B) {
+	denom := fixed.One().Add(qSpinDecay.Mul(benchProbeDtQ))
+	omegas := make([]fixed.Q, 1000)
+	state := uint64(3)
+	for i := range omegas {
+		// Spins in the consumer's magnitude range, both signs.
+		omegas[i] = fixed.FromRaw(int64(probeRand64(&state)) >> 20)
+	}
+	b.Run("div", func(b *testing.B) {
+		var acc int64
+		for range b.N {
+			for _, o := range omegas {
+				acc += o.Div(denom).Raw()
+			}
+		}
+		benchSinkRaw = acc
+	})
+	b.Run("prepared", func(b *testing.B) {
+		var acc int64
+		for range b.N {
+			p := prepareDivider(denom)
+			for _, o := range omegas {
+				acc += p.div(o).Raw()
+			}
+		}
+		benchSinkRaw = acc
+	})
+}
