@@ -14,4 +14,9 @@
 // such as Abs, IsNaN, IsInf, Signbit, Float64bits, Float64frombits, NaN, Inf,
 // and math.Pi. These operations have one result for each input on every
 // supported platform.
+//
+// The trigonometric functions delegate to the integer kernel of the
+// github.com/dhannyell/fixed module. Integer operations carry the same
+// reproducibility promise. Exp, Log, and Pow keep float bodies: their range
+// exceeds the Q32.32 format.
 package dmath

@@ -92,9 +92,10 @@ func TestInvalidInputsReturnNaN(t *testing.T) {
 // TestSinCosPythagoreanIdentity checks the relationship between the sine and
 // cosine implementations across many reduction quadrants.
 func TestSinCosPythagoreanIdentity(t *testing.T) {
+	// Budget 2026-08-31: twice the 2⁻²⁰ kernel error.
 	for x := -300.0; x <= 300.0; x += 0.037 {
 		s, c := dmath.Sin(x), dmath.Cos(x)
-		if d := math.Abs(s*s + c*c - 1); d > 1e-12 {
+		if d := math.Abs(s*s + c*c - 1); d > 2e-6 {
 			t.Fatalf("Sin^2+Cos^2 at x=%v deviates from 1 by %g", x, d)
 		}
 	}
@@ -104,8 +105,11 @@ func TestSinCosPythagoreanIdentity(t *testing.T) {
 // implementations. It stays away from 0 and pi, where the inverse amplifies
 // small errors.
 func TestAcosInvertsCos(t *testing.T) {
+	// Budget 2026-08-31: the 2⁻²⁰ kernel error of Cos is
+	// amplified by 1/sin(x), up to 10 at the interval ends, plus the
+	// error of Acos itself.
 	for x := 0.1; x <= math.Pi-0.1; x += 0.0137 {
-		if d := math.Abs(dmath.Acos(dmath.Cos(x)) - x); d > 1e-9 {
+		if d := math.Abs(dmath.Acos(dmath.Cos(x)) - x); d > 2e-5 {
 			t.Fatalf("Acos(Cos(%v)) deviates by %g", x, d)
 		}
 	}
@@ -189,46 +193,54 @@ func TestExpLogExtremes(t *testing.T) {
 // implementation, but it is not an exactness gate: dmath promises
 // reproducibility, not bit equality with libm.
 func TestStaysNearTheStandardLibrary(t *testing.T) {
+	// The float bodies (Exp, Log, Pow) hold a relative tolerance. The
+	// integer trig bodies hold an absolute one: the kernel promises
+	// absolute error 2⁻²⁰, and near the zeros of sine a relative error
+	// carries no information. (Re-calibrated 2026-08-31.)
 	const tol = 1e-9
+	const trigTol = 2e-6
 	rel := func(got, want float64) float64 {
 		if want == 0 {
 			return math.Abs(got - want)
 		}
 		return math.Abs((got - want) / want)
 	}
-	check := func(name string, worst float64) {
+	abs := func(got, want float64) float64 {
+		return math.Abs(got - want)
+	}
+	check := func(name string, worst, limit float64) {
 		t.Helper()
-		t.Logf("%s: max relative error %.3g", name, worst)
-		if worst > tol {
-			t.Errorf("%s: max relative error %.3g exceeds %g", name, worst, tol)
+		t.Logf("%s: max error %.3g (limit %.3g)", name, worst, limit)
+		if worst > limit {
+			t.Errorf("%s: max error %.3g exceeds %g", name, worst, limit)
 		}
 	}
 
 	worstSin, worstCos := 0.0, 0.0
 	sweep := func(from, to, step float64) {
 		for x := from; x <= to; x += step {
-			if e := rel(dmath.Sin(x), math.Sin(x)); e > worstSin {
+			if e := abs(dmath.Sin(x), math.Sin(x)); e > worstSin {
 				worstSin = e
 			}
-			if e := rel(dmath.Cos(x), math.Cos(x)); e > worstCos {
+			if e := abs(dmath.Cos(x), math.Cos(x)); e > worstCos {
 				worstCos = e
 			}
 		}
 	}
 	sweep(-1000, 1000, 0.037)
 	sweep(1048000, 1048576, 0.37) // near the supported range limit
-	check("Sin", worstSin)
-	check("Cos", worstCos)
+	check("Sin", worstSin, trigTol)
+	check("Cos", worstCos, trigTol)
 
 	worst := 0.0
 	for y := -5.0; y <= 5.0; y += 0.31 {
 		for x := -5.0; x <= 5.0; x += 0.31 {
-			if e := rel(dmath.Atan2(y, x), math.Atan2(y, x)); e > worst {
+			if e := abs(dmath.Atan2(y, x), math.Atan2(y, x)); e > worst {
 				worst = e
 			}
 		}
 	}
-	check("Atan2", worst)
+	check("Atan2", worst, trigTol)
 
 	worst = 0.0
 	for x := -700.0; x <= 700.0; x += 0.37 {
@@ -236,7 +248,7 @@ func TestStaysNearTheStandardLibrary(t *testing.T) {
 			worst = e
 		}
 	}
-	check("Exp", worst)
+	check("Exp", worst, tol)
 
 	worst = 0.0
 	for x := 1e-6; x <= 1e6; x *= 1.003 {
@@ -244,19 +256,19 @@ func TestStaysNearTheStandardLibrary(t *testing.T) {
 			worst = e
 		}
 	}
-	check("Log", worst)
+	check("Log", worst, tol)
 
 	worstAsin, worstAcos := 0.0, 0.0
 	for x := -0.999; x <= 0.999; x += 0.0037 {
-		if e := rel(dmath.Asin(x), math.Asin(x)); e > worstAsin {
+		if e := abs(dmath.Asin(x), math.Asin(x)); e > worstAsin {
 			worstAsin = e
 		}
-		if e := rel(dmath.Acos(x), math.Acos(x)); e > worstAcos {
+		if e := abs(dmath.Acos(x), math.Acos(x)); e > worstAcos {
 			worstAcos = e
 		}
 	}
-	check("Asin", worstAsin)
-	check("Acos", worstAcos)
+	check("Asin", worstAsin, trigTol)
+	check("Acos", worstAcos, trigTol)
 
 	worst = 0.0
 	for _, base := range []float64{0.07, 0.5, 1.5, 2, 3, 10} {
@@ -271,78 +283,81 @@ func TestStaysNearTheStandardLibrary(t *testing.T) {
 			worst = e
 		}
 	}
-	check("Pow", worst)
+	check("Pow", worst, tol)
 }
 
 // Golden tables recorded from the reference implementation on x86-64. They
 // are shared by every supported architecture.
+//
+// 2026-08-31: trigonometry bits re-pinned — the bodies now delegate to the
+// integer kernel of the fixed module. The Exp/Log/Pow goldens are untouched.
 
 var sinGolden = []golden1{
 	{0, 0x0000000000000000},
-	{1e-09, 0x3E112E0BE826D695},
-	{-1e-09, 0xBE112E0BE826D695},
-	{0.1, 0x3FB98EAECB8BCB2C},
-	{-0.1, 0xBFB98EAECB8BCB2C},
-	{0.5, 0x3FDEAEE8744B05F0},
-	{1, 0x3FEAED548F090CEE},
-	{-1, 0xBFEAED548F090CEE},
-	{0.5235987755982989, 0x3FE0000000000001},
-	{0.7853981633974483, 0x3FE6A09E667F3BC4},
-	{1.0471975511965979, 0x3FEBB67AE8584CAB},
+	{1e-09, 0x0000000000000000},
+	{-1e-09, 0x0000000000000000},
+	{0.1, 0x3FB98EAE7A000000},
+	{-0.1, 0xBFB98EAE7A000000},
+	{0.5, 0x3FDEAEE856000000},
+	{1, 0x3FEAED545E600000},
+	{-1, 0xBFEAED545E600000},
+	{0.5235987755982989, 0x3FDFFFFF73000000},
+	{0.7853981633974483, 0x3FE6A09E66800000},
+	{1.0471975511965979, 0x3FEBB67A6E800000},
 	{1.5707963267948966, 0x3FF0000000000000},
-	{2.0943951023931957, 0x3FEBB67AE8584CAA},
-	{3.141592653589793, 0x3CA1A62633100000},
-	{-3.141592653589793, 0xBCA1A62633100000},
+	{2.0943951023931957, 0x3FEBB67A6EE00000},
+	{3.141592653589793, 0x0000000000000000},
+	{-3.141592653589793, 0x0000000000000000},
 	{4.71238898038469, 0xBFF0000000000000},
-	{6.283185307179586, 0xBCB1A62633100000},
-	{-6.283185307179586, 0x3CB1A62633100000},
-	{2, 0x3FED18F6EAD1B446},
-	{-2, 0xBFED18F6EAD1B446},
-	{5, 0xBFEEAF81F5E09933},
-	{10, 0xBFE1689EF5F34F54},
-	{-10, 0x3FE1689EF5F34F54},
-	{100, 0xBFE03425B78C4DB8},
-	{-100, 0x3FE03425B78C4DB8},
-	{1234.5678, 0x3FB3FA00084EE3DD},
-	{100000, 0x3FA24DAA9C527E96},
-	{-100000, 0xBFA24DAA9C527E96},
-	{1.0485755e+06, 0xBFC4CB305757FA66},
-	{1.048576e+06, 0x3FD526CCB2FC8655},
-	{-1.048576e+06, 0xBFD526CCB2FC8655},
+	{6.283185307179586, 0x0000000000000000},
+	{-6.283185307179586, 0x0000000000000000},
+	{2, 0x3FED18F68E000000},
+	{-2, 0xBFED18F68E000000},
+	{5, 0xBFEEAF815EA00000},
+	{10, 0xBFE1689EF0C00000},
+	{-10, 0x3FE1689EF0C00000},
+	{100, 0xBFE0342592600000},
+	{-100, 0x3FE0342592600000},
+	{1234.5678, 0x3FB3F9FFF1000000},
+	{100000, 0x3FA24DAA50000000},
+	{-100000, 0xBFA24DAA50000000},
+	{1.0485755e+06, 0xBFC4CB2FF9000000},
+	{1.048576e+06, 0x3FD526CC4C800000},
+	{-1.048576e+06, 0xBFD526CC4C800000},
 }
 
 var cosGolden = []golden1{
 	{0, 0x3FF0000000000000},
 	{1e-09, 0x3FF0000000000000},
 	{-1e-09, 0x3FF0000000000000},
-	{0.1, 0x3FEFD712F9A817C0},
-	{-0.1, 0x3FEFD712F9A817C0},
-	{0.5, 0x3FEC1528065B7D50},
-	{1, 0x3FE14A280FB5068E},
-	{-1, 0x3FE14A280FB5068E},
-	{0.5235987755982989, 0x3FEBB67AE8584CAA},
-	{0.7853981633974483, 0x3FE6A09E667F3C85},
-	{1.0471975511965979, 0x3FE0000000000000},
-	{1.5707963267948966, 0x3C91A62633100000},
-	{2.0943951023931957, 0xBFE0000000000002},
+	{0.1, 0x3FEFD71299000000},
+	{-0.1, 0x3FEFD71299000000},
+	{0.5, 0x3FEC1527EBE00000},
+	{1, 0x3FE14A27F1000000},
+	{-1, 0x3FE14A27F1000000},
+	{0.5235987755982989, 0x3FEBB67A6EE00000},
+	{0.7853981633974483, 0x3FE6A09E66800000},
+	{1.0471975511965979, 0x3FDFFFFF74400000},
+	{1.5707963267948966, 0x0000000000000000},
+	{2.0943951023931957, 0xBFDFFFFF73000000},
 	{3.141592653589793, 0xBFF0000000000000},
 	{-3.141592653589793, 0xBFF0000000000000},
-	{4.71238898038469, 0xBCAA79394CA00000},
+	{4.71238898038469, 0x0000000000000000},
 	{6.283185307179586, 0x3FF0000000000000},
 	{-6.283185307179586, 0x3FF0000000000000},
-	{2, 0xBFDAA22657537205},
-	{-2, 0xBFDAA22657537205},
-	{5, 0x3FD22785706B4ADA},
-	{10, 0xBFEAD9AC890C6B1F},
-	{-10, 0xBFEAD9AC890C6B1F},
-	{100, 0x3FEB981DBF665FE0},
-	{-100, 0x3FEB981DBF665FE0},
-	{1234.5678, 0xBFEFE7053DC31387},
-	{100000, 0xBFEFFAC3841B3DA7},
-	{-100000, 0xBFEFFAC3841B3DA7},
-	{1.0485755e+06, 0x3FEF932EC65B1D71},
-	{1.048576e+06, 0x3FEE33ADA92FE2AE},
-	{-1.048576e+06, 0x3FEE33ADA92FE2AE},
+	{2, 0xBFDAA22602400000},
+	{-2, 0xBFDAA22602400000},
+	{5, 0x3FD2278515800000},
+	{10, 0xBFEAD9AC82400000},
+	{-10, 0xBFEAD9AC82400000},
+	{100, 0x3FEB981D7F600000},
+	{-100, 0x3FEB981D7F600000},
+	{1234.5678, 0xBFEFE70510400000},
+	{100000, 0xBFEFFAC2FD200000},
+	{-100000, 0xBFEFFAC2FD200000},
+	{1.0485755e+06, 0x3FEF932E34800000},
+	{1.048576e+06, 0x3FEE33AD17A00000},
+	{-1.048576e+06, 0x3FEE33AD17A00000},
 }
 
 var atan2Golden = []golden2{
@@ -354,20 +369,20 @@ var atan2Golden = []golden2{
 	{1, -1, 0x4002D97C7F3321D2},
 	{-1, 1, 0xBFE921FB54442D18},
 	{-1, -1, 0xC002D97C7F3321D2},
-	{2, 1, 0x3FF1B6E192EBC5A3},
-	{1, 2, 0x3FDDAC6705619DD3},
-	{-3, 4, 0xBFE4978FA3269EE1},
-	{3, -4, 0x4003FC176B7A8560},
-	{5, -12, 0x4005F97315270DDA},
-	{-5, -12, 0xC005F97315270DDA},
-	{0.5, 0.8660254037844386, 0x3FE0C152382D734C},
-	{1e-09, 1, 0x3E112E0BE826D695},
-	{1, 1e-09, 0x3FF921FB53FF74E8},
-	{123.456, -78.9, 0x40011DA0A7C4A94E},
+	{2, 1, 0x3FF1B6E192C53D24},
+	{1, 2, 0x3FDDAC6705FBBFD1},
+	{-3, 4, 0xBFE4978FA355AA3A},
+	{3, -4, 0x4003FC176B6EC28A},
+	{5, -12, 0x4005F9731DE3BD70},
+	{-5, -12, 0xC005F9731DE3BD70},
+	{0.5, 0.8660254037844386, 0x3FE0C1521C6D4338},
+	{1e-09, 1, 0x0000000000000000},
+	{1, 1e-09, 0x3FF921FB54442D18},
+	{123.456, -78.9, 0x40011DA09D9D4D0A},
 	{1e+300, 1e+300, 0x3FE921FB54442D18},
 	{1e-300, 1e-300, 0x3FE921FB54442D18},
-	{0.41421356237309503, 1, 0x3FD921FB545464AB},
-	{1, 0.41421356237309503, 0x3FF2D97C7F2F13ED},
+	{0.41421356237309503, 1, 0x3FD921FB2B6CF4AF},
+	{1, 0.41421356237309503, 0x3FF2D97C8968EFEC},
 }
 
 var expGolden = []golden1{
@@ -439,31 +454,31 @@ var powGolden = []golden2{
 
 var asinGolden = []golden1{
 	{-1, 0xBFF921FB54442D18},
-	{-0.99, 0xBFF6DE3C6F33D51D},
-	{-0.75, 0xBFEB235315C680DC},
-	{-0.5, 0xBFE0C152382D734C},
-	{-0.1, 0xBFB9A49276037884},
+	{-0.99, 0xBFF6DE3C71FC6436},
+	{-0.75, 0xBFEB235320FCAED9},
+	{-0.5, 0xBFE0C1521C6D4338},
+	{-0.1, 0xBFB9A492578A22C4},
 	{0, 0x0000000000000000},
-	{0.1, 0x3FB9A49276037884},
-	{0.5, 0x3FE0C152382D734C},
+	{0.1, 0x3FB9A492578A22C4},
+	{0.5, 0x3FE0C1521C6D4338},
 	{0.7071067811865476, 0x3FE921FB54442D18},
-	{0.75, 0x3FEB235315C680DC},
-	{0.99, 0x3FF6DE3C6F33D51D},
+	{0.75, 0x3FEB235320FCAED9},
+	{0.99, 0x3FF6DE3C71FC6436},
 	{1, 0x3FF921FB54442D18},
 }
 
 var acosGolden = []golden1{
 	{-1, 0x400921FB54442D18},
-	{-0.99, 0x4008001BE1BC011A},
-	{-0.75, 0x400359D26F93B6C3},
-	{-0.5, 0x4000C152382D735F},
-	{-0.1, 0x3FFABC447BA464A0},
+	{-0.99, 0x4008001BE32048A7},
+	{-0.75, 0x400359D272614242},
+	{-0.5, 0x4000C152313D675A},
+	{-0.1, 0x3FFABC4479BCCF44},
 	{0, 0x3FF921FB54442D18},
-	{0.1, 0x3FF787B22CE3F590},
-	{0.5, 0x3FF0C152382D7372},
+	{0.1, 0x3FF787B22ECB8AEC},
+	{0.5, 0x3FF0C152460D8B7C},
 	{0.7071067811865476, 0x3FE921FB54442D18},
-	{0.75, 0x3FE720A392C1D954},
-	{0.99, 0x3FC21DF72882BFD8},
+	{0.75, 0x3FE720A3878BAB57},
+	{0.99, 0x3FC21DF7123E4713},
 	{1, 0x0000000000000000},
 }
 
