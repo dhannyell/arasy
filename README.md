@@ -240,6 +240,21 @@ Read [Scrubbing and replay](docs/en/scrubbing.md) for the full contract.
 
 ## Examples
 
+Every example runs in the browser. Click an image to play it.
+
+<table>
+<tr>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/2048/"><img src="examples/2048/2048.png" alt="2048"></a><br><b>2048</b> · <a href="https://dhannyell.github.io/arasy/examples/2048/">Play</a> · <a href="examples/2048">Source</a></td>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/breakout/"><img src="examples/breakout/breakout.png" alt="Breakout"></a><br><b>Breakout</b> · <a href="https://dhannyell.github.io/arasy/examples/breakout/">Play</a> · <a href="examples/breakout">Source</a></td>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/particles/"><img src="examples/particles/particles.png" alt="Particles"></a><br><b>Particles</b> · <a href="https://dhannyell.github.io/arasy/examples/particles/">Play</a> · <a href="examples/particles">Source</a></td>
+</tr>
+<tr>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/postfx/"><img src="examples/postfx/postfx.png" alt="Post effects"></a><br><b>Post effects</b> · <a href="https://dhannyell.github.io/arasy/examples/postfx/">Play</a> · <a href="examples/postfx">Source</a></td>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/rhythm/"><img src="examples/rhythm/rhythm.png" alt="Rhythm"></a><br><b>Rhythm</b> · <a href="https://dhannyell.github.io/arasy/examples/rhythm/">Play</a> · <a href="examples/rhythm">Source</a></td>
+<td align="center" width="33%"><a href="https://dhannyell.github.io/arasy/examples/outpost/"><img src="examples/outpost/outpost.png" alt="Outpost"></a><br><b>Outpost</b> · <a href="https://dhannyell.github.io/arasy/examples/outpost/">Play</a> · <a href="examples/outpost">Source</a></td>
+</tr>
+</table>
+
 | Example | Shows |
 | --- | --- |
 | [`breakout`](examples/breakout) | Physics, contacts, UI overlay, dev panel, and golden replays |
@@ -256,9 +271,9 @@ Read [Scrubbing and replay](docs/en/scrubbing.md) for the full contract.
 | [`splashscreen`](examples/splashscreen) | The boot splash playlist |
 | [`assets`](examples/assets) | The texture and sprite manifest pipeline |
 
-Each example has a `native`, `wasm`, or `raster` entry point, or a
-combination of them. The [`bench`](examples/bench) directory holds stress
-scenes for performance work.
+Each example has its own README with a link that runs it in the browser.
+Each example also has a `native` or `raster` entry point, or both. The
+[`bench`](examples/bench) directory holds stress scenes for performance work.
 
 ## The `arasy` CLI
 
