@@ -1,0 +1,65 @@
+name: Examples on Pages
+
+# Builds every example with a WASM entry point and publishes it to GitHub
+# Pages. It runs only on demand, so the published site changes only when a
+# maintainer decides it should.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: build the arasy CLI
+        run: go build -o "$RUNNER_TEMP/arasy" ./cmd/arasy
+
+      # Each example lands at the same path it has in the repository, so the
+      # link in its README is predictable: examples/<name>/ on the site.
+      - name: build the examples
+        run: |
+          mkdir -p site
+          {
+            echo '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            echo '<title>Arasy examples</title></head><body>'
+            echo '<h1>Arasy examples</h1><ul>'
+          } > site/index.html
+          for entry in $(git ls-files 'examples/**/wasm/main.go' | sort); do
+            dir="${entry%/wasm/main.go}"
+            echo "::group::$dir"
+            "$RUNNER_TEMP/arasy" build "./$dir/wasm" -o "site/$dir" --title "Arasy - ${dir#examples/}"
+            echo "::endgroup::"
+            echo "<li><a href=\"$dir/\">${dir#examples/}</a></li>" >> site/index.html
+          done
+          {
+            echo '</ul><p><a href="https://github.com/dhannyell/arasy">Source on GitHub</a></p>'
+            echo '</body></html>'
+          } >> site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
