@@ -22,13 +22,21 @@ import (
 
 // Options configures an offline raster render run.
 type Options struct {
-	Width     int
-	Height    int
-	Frames    int     // number of simulation frames to render for animated outputs
-	FrameDT   float64 // seconds per frame
-	PNG       string  // output path for a single PNG of the initial frame; empty = skip
+	Width   int
+	Height  int
+	Frames  int     // number of simulation frames to render for animated outputs
+	FrameDT float64 // seconds per frame
+	PNG     string  // output path for a single PNG of the initial frame; empty = skip
+	// Settle is how many seconds of simulation to run before the single
+	// PNG is taken. The default of zero renders the frame the game opens
+	// on, which is the wrong frame for anything that has not happened
+	// yet: an emitter has emitted nothing at t=0, a fade has not begun
+	// and an animation is on its first cell. Settling costs a few
+	// hundred cheap sim steps and no encoding, unlike rendering a whole
+	// sequence to look at one moment of it.
 	GIF       string  // output path for an animated GIF; empty = skip
 	FramesDir string  // output directory for frame-0000.png sequence; empty = skip
+	Settle    float64 // seconds of simulation to run before the single PNG
 	Log       *slog.Logger
 }
 
@@ -79,6 +87,21 @@ func Run(game runtime.Game, opts Options) error {
 	}
 
 	target := frameTarget{r: &r, target: r.NewTarget(), textures: textures}
+	if opts.Settle > 0 {
+		step := opts.FrameDT
+		if step <= 0 {
+			step = 1.0 / 60
+		}
+		dur := time.Duration(step * float64(time.Second))
+		for t := 0.0; t < opts.Settle; t += step {
+			// The frame is rendered and thrown away, not just stepped: an
+			// emitter is driven by its draw command and never advances on a
+			// tick it was not drawn on, so a settle that only advanced time
+			// would arrive at the right moment with an empty particle system.
+			driver.RenderFrame(dur, &target)
+			driver.AdvanceTime(dur)
+		}
+	}
 	if opts.PNG != "" {
 		driver.RenderFrame(0, &target)
 		img := target.img
