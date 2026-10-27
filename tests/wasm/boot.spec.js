@@ -1,7 +1,8 @@
 const { test, expect } = require('@playwright/test');
 
 const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
-const minimumFadeObservationMillis = 100;
+// enginesplash.Fade: the splash fade-in, in frame time, before handoff.
+const splashFadeMillis = 150;
 
 for (const scenario of [
   {
@@ -37,7 +38,8 @@ for (const scenario of [
     await page.addInitScript(renderer => {
       const probe = {
         rendererReadyAt: 0,
-        firstFrameAt: 0,
+        splashStartFrameTime: 0,
+        firstFrameTime: 0,
         bootPresentAtFirstFrame: false,
         canvasVisibilityAtFirstFrame: '',
       };
@@ -52,6 +54,18 @@ for (const scenario of [
         originalInfo(...args);
       };
 
+      // The splash advances by requestAnimationFrame timestamps, so the probe
+      // reads the same clock instead of the wall clock.
+      let frameTime = 0;
+      const requestFrame = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = callback => requestFrame(timestamp => {
+        frameTime = timestamp;
+        if (probe.rendererReadyAt > 0 && probe.splashStartFrameTime === 0) {
+          probe.splashStartFrameTime = timestamp;
+        }
+        callback(timestamp);
+      });
+
       let firstFrame = false;
       Object.defineProperty(window, 'arasyFirstFrame', {
         configurable: true,
@@ -59,7 +73,7 @@ for (const scenario of [
         set: value => {
           if (value === true && firstFrame === false) {
             const canvas = document.getElementById('ar-canvas');
-            probe.firstFrameAt = performance.now();
+            probe.firstFrameTime = frameTime;
             probe.bootPresentAtFirstFrame = document.getElementById('ar-boot') !== null;
             probe.canvasVisibilityAtFirstFrame =
               canvas === null ? '' : getComputedStyle(canvas).visibility;
@@ -105,8 +119,10 @@ for (const scenario of [
 
     const probe = await page.evaluate(() => window.arasyBootProbe);
     expect(probe.rendererReadyAt).toBeGreaterThan(0);
-    expect(probe.firstFrameAt - probe.rendererReadyAt)
-      .toBeGreaterThanOrEqual(minimumFadeObservationMillis);
+    expect(probe.splashStartFrameTime).toBeGreaterThan(0);
+    // The margin absorbs float rounding of the frame timestamps.
+    expect(probe.firstFrameTime - probe.splashStartFrameTime)
+      .toBeGreaterThanOrEqual(splashFadeMillis - 1);
     expect(probe.bootPresentAtFirstFrame).toBe(true);
     expect(probe.canvasVisibilityAtFirstFrame).toBe('hidden');
     await expect(boot).toHaveCount(0);

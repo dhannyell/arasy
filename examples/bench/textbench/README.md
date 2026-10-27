@@ -1,8 +1,12 @@
 # Text render benchmark
 
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/bench/textbench/)
+
+![A frame of the example](textbench.png)
+
 Build and serve the standalone browser benchmark:
 
-```powershell
+```bash
 go run ./cmd/arasy dev ./examples/bench/textbench/wasm -a 127.0.0.1:8093
 ```
 

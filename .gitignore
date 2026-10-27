@@ -74,7 +74,7 @@ docs/assets/brand/*
 docs/assets/brand/arasy/*
 !docs/assets/brand/arasy/splash/
 docs/assets/brand/arasy/splash/*
-!docs/assets/brand/arasy/splash/arasy-splash-readme.gif
+!docs/assets/brand/arasy/splash/arasy-splash-wide-readme.gif
 dist/
 
 # Windows resource objects (icons) are generated per game by go-winres and

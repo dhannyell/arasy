@@ -1,8 +1,12 @@
 # Shape render benchmark
 
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/bench/shapebench/)
+
+![A frame of the example](shapebench.png)
+
 Build and serve the standalone browser benchmark:
 
-```powershell
+```bash
 go run ./cmd/arasy dev ./examples/bench/shapebench/wasm -a 127.0.0.1:8094
 ```
 

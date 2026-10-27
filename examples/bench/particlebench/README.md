@@ -1,8 +1,12 @@
 # WebGPU particle benchmark
 
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/bench/particlebench/)
+
+![A frame of the example](particlebench.png)
+
 Build and serve the standalone browser benchmark:
 
-```powershell
+```bash
 go run ./cmd/arasy dev ./examples/bench/particlebench/wasm -a 127.0.0.1:8091
 ```
 

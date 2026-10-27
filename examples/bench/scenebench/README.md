@@ -1,8 +1,12 @@
 # Scene simulation benchmark
 
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/bench/scenebench/)
+
+![A frame of the example](scenebench.png)
+
 Build and serve the standalone browser benchmark:
 
-```powershell
+```bash
 go run ./cmd/arasy dev ./examples/bench/scenebench/wasm -a 127.0.0.1:8095
 ```
 
