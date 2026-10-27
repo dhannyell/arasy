@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/brand/arasy/splash/arasy-splash-readme.gif" alt="Arasy Engine" width="720">
+<img src="docs/assets/brand/arasy/splash/arasy-splash-wide-readme.gif" alt="Arasy Engine" width="800">
 
 **A deterministic, data-driven 2D game engine written in Go.**
 
