@@ -10,6 +10,7 @@ import (
 
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/halftone"
 	"github.com/dhannyell/arasy/render"
 	"github.com/oliverbestmann/webgpu/wgpu"
 )
@@ -36,6 +37,8 @@ const (
 	nativePostGrain        = "grain"
 	nativePostScanlines    = "scanlines"
 	nativePostRadialBlur   = "radial-blur"
+	nativePostHalftone     = "halftone"
+	nativePostFocusCombine = "focus-combine"
 )
 
 type nativePostTarget struct {
@@ -111,6 +114,9 @@ func (r *Renderer) createPostResources() error {
 		nativePostGrain:       {"post grain", shaders.PostGrainWGSL, "fs_main"},
 		nativePostScanlines:   {"post scanlines", shaders.PostScanlinesWGSL, "fs_main"},
 		nativePostRadialBlur:  {"post radial blur", shaders.PostRadialBlurWGSL, "fs_main"},
+		nativePostHalftone:    {"post halftone", shaders.PostHalftoneWGSL, "fs_main"},
+		// FocusBlur shares Blur's pyramid and only owns its weighted mix.
+		nativePostFocusCombine: {"post focus combine", shaders.PostFocusBlurWGSL, "fs_main"},
 	} {
 		samples := uint32(1)
 		if key == nativePostFinalBlit {
@@ -151,9 +157,20 @@ func (r *Renderer) disablePost(err error) {
 	r.postBloom = nil
 }
 
+// nativePostLUTOffset is where the halftone threshold table starts in the
+// post uniform, after the 64 bytes of scalar parameters every effect shares;
+// nativePostUniformSize fits the table for the widest cell. Only Halftone and
+// the FocusBlur mix upload past the scalar block.
+const (
+	nativePostLUTOffset   = 64
+	nativePostScalarSize  = nativePostLUTOffset
+	nativePostFocusSize   = nativePostLUTOffset + 8*render.FocusBlurMaxPoints
+	nativePostUniformSize = nativePostLUTOffset + 4*halftone.MaxCell*halftone.MaxCell
+)
+
 func (r *Renderer) ensurePostUniforms(count int) error {
 	for len(r.postUniforms) < count {
-		buffer, err := r.newBuffer("post uniform", 64, wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst)
+		buffer, err := r.newBuffer("post uniform", nativePostUniformSize, wgpu.BufferUsageUniform|wgpu.BufferUsageCopyDst)
 		if err != nil {
 			return err
 		}
@@ -272,10 +289,16 @@ func nativePostBloomPasses(effect render.Bloom) int {
 // buffer at index. The scratch is cleared first so unwritten fields keep the
 // deterministic zero the per-call allocation used to give them.
 func (r *Renderer) writePostUniform(index int, write func([]byte)) error {
+	return r.writePostUniformSized(index, nativePostScalarSize, write)
+}
+
+// writePostUniformSized uploads only the first size bytes. A shader never
+// reads past its own Params, so the stale tail of the buffer is harmless.
+func (r *Renderer) writePostUniformSized(index, size int, write func([]byte)) error {
 	if err := r.ensurePostUniforms(index + 1); err != nil {
 		return err
 	}
-	data := r.postUniformScratch[:]
+	data := r.postUniformScratch[:size]
 	clear(data)
 	write(data)
 	if err := r.device.queue.TryWriteBuffer(r.postUniforms[index], 0, data); err != nil {
@@ -415,6 +438,24 @@ func (r *Renderer) postParams(index int, effect render.PostEffect, camera render
 			nativePostF32(dst, 24, float64(height))
 		})
 		return nativePostRadialBlur, err
+	case render.Halftone:
+		err := r.writePostUniformSized(index, nativePostUniformSize, func(dst []byte) {
+			nativePostF32(dst, 0, effect.CellSize)
+			nativePostF32(dst, 4, float64(effect.Levels))
+			nativePostF32(dst, 8, float64(effect.Shape))
+			nativePostF32(dst, 12, effect.Strength)
+			nativePostF32(dst, 20, float64(width))
+			nativePostF32(dst, 24, float64(height))
+			cell := halftone.Cell(effect.CellSize)
+			nativePostF32(dst, 16, float64(halftone.Pixel(effect.Pixel)))
+			nativePostF32(dst, 28, float64(cell))
+			nativePostF32(dst, 32, effect.Noise)
+			nativePostU32(dst, 36, halftone.NoiseTick(effect.Seed, effect.NoiseRate, time))
+			for i, m := range halftone.Thresholds(effect.Shape, cell) {
+				nativePostF32(dst, nativePostLUTOffset+4*i, float64(m))
+			}
+		})
+		return nativePostHalftone, err
 	default:
 		return "", nil
 	}
@@ -436,7 +477,59 @@ func (r *Renderer) encodeNativeBlur(encoder *wgpu.CommandEncoder, source nativeP
 	if strength == 0 {
 		return nil
 	}
-	passes := nativePostBlurPasses(effect)
+	return r.encodeNativePyramidBlur(encoder, source, sourceID, destination, nativePostBlurPasses(effect), index,
+		nativePostBlurCombine, nativePostScalarSize, func(data []byte) { nativePostF32(data, 0, strength) })
+}
+
+// encodeNativeFocusBlur is encodeNativeBlur with the focus points, radius
+// and falloff handed to a combine that weights the mix per pixel.
+func (r *Renderer) encodeNativeFocusBlur(encoder *wgpu.CommandEncoder, source nativePostTarget, sourceID int, destination *wgpu.TextureView, effect render.FocusBlur, camera render.Camera, index int) error {
+	strength := nativeClampPostStrength(effect.Strength)
+	if strength == 0 {
+		return nil
+	}
+	points := effect.Points
+	if len(points) > render.FocusBlurMaxPoints {
+		points = points[:render.FocusBlurMaxPoints]
+	}
+	passes := nativePostBlurPasses(render.Blur{Passes: effect.Passes})
+	return r.encodeNativePyramidBlur(encoder, source, sourceID, destination, passes, index,
+		nativePostFocusCombine, nativePostFocusSize, func(data []byte) {
+			half, rounding := nativeFocusRegion(effect, camera)
+			nativePostF32(data, 0, strength)
+			nativePostF32(data, 4, math.Abs(camera.WorldScalarToScreen(effect.Falloff)))
+			nativePostF32(data, 8, float64(len(points)))
+			nativePostF32(data, 12, rounding)
+			nativePostF32(data, 16, half[0])
+			nativePostF32(data, 20, float64(source.width))
+			nativePostF32(data, 24, float64(source.height))
+			nativePostF32(data, 28, half[1])
+			for i, p := range points {
+				at := camera.WorldToScreen(p)
+				nativePostF32(data, nativePostLUTOffset+8*i, at.X)
+				nativePostF32(data, nativePostLUTOffset+8*i+4, at.Y)
+			}
+		})
+}
+
+// nativeFocusRegion mirrors platform/raster/postfx.go focusRegion.
+func nativeFocusRegion(effect render.FocusBlur, camera render.Camera) (half [2]float64, rounding float64) {
+	half = [2]float64{
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.X)),
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.Y)),
+	}
+	rounding = math.Abs(camera.WorldScalarToScreen(effect.Rounding))
+	if half[0] == 0 && half[1] == 0 {
+		half = [2]float64{rounding, rounding}
+	}
+	rounding = math.Min(rounding, math.Min(half[0], half[1]))
+	return half, rounding
+}
+
+// encodeNativePyramidBlur runs the dual-Kawase pyramid over the scene and
+// hands the sharp and blurred images to the named combine pipeline, whose
+// uniform of combineSize bytes writeCombine fills.
+func (r *Renderer) encodeNativePyramidBlur(encoder *wgpu.CommandEncoder, source nativePostTarget, sourceID int, destination *wgpu.TextureView, passes, index int, combine string, combineSize int, writeCombine func([]byte)) error {
 	if err := r.ensurePostBloom(passes); err != nil {
 		return err
 	}
@@ -480,10 +573,10 @@ func (r *Renderer) encodeNativeBlur(encoder *wgpu.CommandEncoder, source nativeP
 		}
 	}
 	combineIndex := index + 2*passes + 1
-	if err := r.writePostUniform(combineIndex, func(data []byte) { nativePostF32(data, 0, strength) }); err != nil {
+	if err := r.writePostUniformSized(combineIndex, combineSize, writeCombine); err != nil {
 		return err
 	}
-	return r.encodeNativePostCombine2(encoder, nativePostBlurCombine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
+	return r.encodeNativePostCombine2(encoder, combine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 }
 
 // encodeNativePostCombine2 is encodePostCombine generalized over the
@@ -785,6 +878,18 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 			sourceID, destID = destID, sourceID
 			continue
 		}
+		if focus, ok := effect.(render.FocusBlur); ok {
+			if nativeClampPostStrength(focus.Strength) == 0 {
+				continue
+			}
+			if err := r.encodeNativeFocusBlur(encoder, source, sourceID, destView, focus, camera, uniformIndex); err != nil {
+				return err
+			}
+			uniformIndex += 16
+			source, destination = destination, source
+			sourceID, destID = destID, sourceID
+			continue
+		}
 		name, err := r.postParams(uniformIndex, effect, camera, chain.Time, width, height)
 		if err != nil {
 			return err
@@ -879,10 +984,12 @@ func nativePostEffectEncodes(effect render.PostEffect) bool {
 		return effect.Intensity != 0
 	case render.Blur:
 		return nativeClampPostStrength(effect.Strength) != 0
+	case render.FocusBlur:
+		return nativeClampPostStrength(effect.Strength) != 0
 	case render.Vignette, render.ColorGrade, render.Pixelate,
 		render.ChromaticAberration, render.Shockwave, render.LensRain,
 		render.Fade, render.CircleWipe, render.Dissolve, render.FilmGrain,
-		render.Scanlines, render.RadialBlur:
+		render.Scanlines, render.RadialBlur, render.Halftone:
 		return true
 	default:
 		return false

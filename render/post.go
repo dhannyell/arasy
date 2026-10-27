@@ -170,6 +170,78 @@ type RadialBlur struct {
 	Strength float64
 }
 
+// FocusBlur blurs the frame everywhere but around its focus points, the
+// depth-of-field of a lens whose plane of focus follows the action. Points
+// are world positions; the nearest one decides each pixel's sharpness.
+type FocusBlur struct {
+	// Points are kept sharp. At most 16 are used; none blurs the whole frame.
+	Points []math2d.Vec2
+	// Extent is the half-size of the sharp region around each point and
+	// Rounding its corner radius, both in world units. Rounding is clamped
+	// to the smaller half-extent: equal to it the region is an ellipse-like
+	// stadium, zero a rectangle. A zero Extent uses Rounding as a circle.
+	Extent   math2d.Vec2
+	Rounding float64
+	// Falloff is how much farther past the region's edge the blur takes to
+	// reach Strength, in world units.
+	Falloff float64
+	// Strength is the mix between the sharp and blurred image at full
+	// distance, clamped to [0, 1]. Zero is identity.
+	Strength float64
+	// Passes controls the dual-Kawase pyramid. Zero uses the default of three;
+	// active values are clamped to the range [1, 5].
+	Passes int
+}
+
+// FocusBlurMaxPoints is how many focus points a FocusBlur carries to the
+// backends; extras are ignored.
+const FocusBlurMaxPoints = 16
+
+// HalftoneShape selects how the dot grows as the tone darkens.
+type HalftoneShape int
+
+const (
+	// HalftoneRound grows a disc from the cell centre.
+	HalftoneRound HalftoneShape = iota
+	// HalftoneCross grows an X along the cell diagonals.
+	HalftoneCross
+	// HalftonePlus grows a + along the axes from two centres per cell, on
+	// a checkerboard lattice: at mid tones the arms of neighbouring dots
+	// nearly meet and leave single-pixel diamonds of the other tone
+	// between them, the screen of classic monochrome dithered art. Best
+	// with an even CellSize; 4 gives a five-pixel + per dot.
+	HalftonePlus
+)
+
+// Halftone quantises luma to Levels tones and dithers the remainder with a
+// screen-locked dot grid, the cluster-dot screen of print and of monochrome
+// dithered games.
+type Halftone struct {
+	// CellSize is the dot grid pitch in dither pixels, rounded to whole
+	// pixels and capped at 16. Zero or fewer uses 8.
+	CellSize float64
+	// Pixel is the size of one dither pixel in screen pixels, so the dots
+	// can share the grid of a scene drawn at lower resolution (a Pixelate
+	// of the same size before it). Zero or fewer uses 1.
+	Pixel float64
+	// Levels is how many tones survive. Zero or fewer uses 2.
+	Levels int
+	// Shape selects how the dot grows as the tone darkens.
+	Shape HalftoneShape
+	// Strength mixes source and result, clamped to [0,1]. Zero is identity.
+	Strength float64
+	// Noise is the amplitude, in threshold units, of a per-pixel random
+	// offset added to the dither threshold, so pixels near a tone boundary
+	// flicker between tones while flat regions hold still. Zero is a static
+	// screen; around 0.2 reads as film grain.
+	Noise float64
+	// NoiseRate is how many times per second the noise is redrawn. Zero or
+	// fewer uses 12; the reference material runs well below the frame rate.
+	NoiseRate float64
+	// Seed keys the noise.
+	Seed uint32
+}
+
 // PostChain applies a user-authored chain of fullscreen effects to the frame.
 // It is render-only: it travels as a Command and is not simulation state, so
 // it does not enter snapshots, checksums, recordings, or replay. The last
@@ -205,5 +277,7 @@ func (Dissolve) isPostEffect()            {}
 func (FilmGrain) isPostEffect()           {}
 func (Scanlines) isPostEffect()           {}
 func (RadialBlur) isPostEffect()          {}
+func (Halftone) isPostEffect()            {}
+func (FocusBlur) isPostEffect()           {}
 
 func (PostChain) isRenderCommand() {}

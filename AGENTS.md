@@ -25,10 +25,10 @@ referenced documents when you need subsystem detail.
 - Use `runtime.Driver` as the behavioral API for games and platforms.
 - Keep `runtime` free of backend, browser, HTTP, image, and JSON concepts.
 - Keep render commands backend-agnostic.
-- Treat `render.PostChain` as render-only vocabulary with the fourteen fixed
+- Treat `render.PostChain` as render-only vocabulary with the sixteen fixed
   effects: `Vignette`, `ColorGrade`, `Pixelate`, `ChromaticAberration`,
   `Bloom`, `Shockwave`, `LensRain`, `Blur`, `Fade`, `CircleWipe`, `Dissolve`,
-  `FilmGrain`, `Scanlines`, and `RadialBlur`.
+  `FilmGrain`, `Scanlines`, `RadialBlur`, `Halftone`, and `FocusBlur`.
 - The render reference is tiered. Raster is the exact oracle for the 2D
   command vocabulary. For screen effects the shared WGSL shaders define the
   behavior; raster mirrors them as a reference inside a measured conformance

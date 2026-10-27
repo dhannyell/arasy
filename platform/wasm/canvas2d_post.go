@@ -25,6 +25,11 @@ package wasm
 //   - Scanlines fills hard half-period bands instead of the sin^2 profile.
 //   - RadialBlur draws the source three extra times scaled around the focus
 //     at decreasing alpha, instead of per-pixel streak sampling.
+//   - FocusBlur draws a filter-blurred copy at globalAlpha = Strength, then
+//     redraws the sharp source clipped to the focus boxes. The falloff is
+//     one half-alpha step at Falloff/2, not a smoothstep.
+//   - Halftone is skipped with the post.effect_unsupported diagnostic,
+//     because Canvas2D cannot threshold per pixel without a CPU readback.
 //
 // Raster is the semantic reference. WebGPU and native mirror it exactly in
 // WGSL; Canvas2D is intentionally an approximation or skip for the entries
@@ -38,6 +43,7 @@ import (
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/render/frameplan"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
 )
@@ -200,7 +206,13 @@ func (c *Canvas2D) applyCanvasPostEffect(source, destination, destinationCtx js.
 		}
 		c.canvasRadialBlur(source, destination, destinationCtx, effect, camera, width, height)
 		return true
-	case render.Bloom, render.ChromaticAberration, render.Shockwave:
+	case render.FocusBlur:
+		if clampPostStrength(effect.Strength) == 0 {
+			return false
+		}
+		c.canvasFocusBlur(source, destination, destinationCtx, effect, camera, width, height)
+		return true
+	case render.Bloom, render.ChromaticAberration, render.Shockwave, render.Halftone:
 		c.warnUnsupportedPostEffect(effect)
 		return false
 	default:
@@ -300,6 +312,58 @@ func (c *Canvas2D) canvasBlur(source, destination, destinationCtx js.Value, effe
 	destinationCtx.Call("drawImage", source, 0, 0, width, height)
 	destinationCtx.Set("filter", "none")
 	destinationCtx.Call("restore")
+}
+
+// canvasFocusBlur mixes a blurred copy over the sharp source, then restores
+// the sharp source inside the focus boxes.
+func (c *Canvas2D) canvasFocusBlur(source, destination, destinationCtx js.Value, effect render.FocusBlur, camera render.Camera, width, height int) {
+	passes := postBlurPasses(render.Blur{Passes: effect.Passes})
+	copyCanvas(source, destination, destinationCtx, width, height)
+
+	destinationCtx.Call("save")
+	destinationCtx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+	destinationCtx.Set("globalAlpha", clampPostStrength(effect.Strength))
+	destinationCtx.Set("filter", fmt.Sprintf("blur(%gpx)", float64(passes)*2.5))
+	destinationCtx.Call("drawImage", source, 0, 0, width, height)
+	destinationCtx.Set("filter", "none")
+	destinationCtx.Call("restore")
+
+	points := effect.Points
+	if len(points) == 0 {
+		return
+	}
+	if len(points) > render.FocusBlurMaxPoints {
+		points = points[:render.FocusBlurMaxPoints]
+	}
+	half, rounding := focusRegion(effect, camera)
+	// Half alpha at Falloff/2 matches the smoothstep midpoint.
+	if falloff := math.Abs(camera.WorldScalarToScreen(effect.Falloff)); falloff > 0 {
+		canvasFocusRegions(destinationCtx, source, points, camera, half, rounding, falloff/2, 0.5, width, height)
+	}
+	canvasFocusRegions(destinationCtx, source, points, camera, half, rounding, 0, 1, width, height)
+}
+
+// canvasFocusRegions draws the sharp source at alpha, clipped to the focus
+// boxes grown by grow pixels.
+func canvasFocusRegions(ctx, source js.Value, points []math2d.Vec2, camera render.Camera, half [2]float64, rounding, grow, alpha float64, width, height int) {
+	ctx.Call("save")
+	ctx.Call("setTransform", 1, 0, 0, 1, 0, 0)
+	ctx.Call("beginPath")
+	rounded := ctx.Get("roundRect").Truthy()
+	for _, p := range points {
+		at := camera.WorldToScreen(p)
+		x, y := at.X-half[0]-grow, at.Y-half[1]-grow
+		w, h := 2*(half[0]+grow), 2*(half[1]+grow)
+		if rounded {
+			ctx.Call("roundRect", x, y, w, h, rounding+grow)
+		} else {
+			ctx.Call("rect", x, y, w, h)
+		}
+	}
+	ctx.Call("clip")
+	ctx.Set("globalAlpha", alpha)
+	ctx.Call("drawImage", source, 0, 0, width, height)
+	ctx.Call("restore")
 }
 
 // canvasFade fills the destination with Color at globalAlpha = Amount,
@@ -660,6 +724,10 @@ func postEffectDiagnosticID(effect render.PostEffect) uint64 {
 		return 13
 	case render.RadialBlur:
 		return 14
+	case render.Halftone:
+		return 15
+	case render.FocusBlur:
+		return 16
 	default:
 		return 0
 	}

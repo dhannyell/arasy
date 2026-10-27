@@ -46,6 +46,7 @@ const (
 	passesWebGPUBudget        = 0.0150
 	passesWebGPUMSAAOffBudget = 0.0150
 	postWebGPUBudget          = 0.075
+	postStylizeWebGPUBudget   = 0.005
 	rttWebGPUBudget           = 0.050
 )
 
@@ -69,6 +70,11 @@ func TestConformancePostWebGPU(t *testing.T) {
 	// Canvas2D intentionally uses documented approximations for this fixture;
 	// the tight conformance comparison is reserved for the GPU mirror.
 	assertConformance(t, "post", "webgpu", 2, frameChannelTol, postWebGPUBudget)
+}
+
+func TestConformancePostStylizeWebGPU(t *testing.T) {
+	// Canvas2D skips Halftone, so only the GPU mirror is compared.
+	assertConformance(t, "post-stylize", "webgpu", 1, frameChannelTol, postStylizeWebGPUBudget)
 }
 
 func TestConformanceViewCanvas2D(t *testing.T) {
@@ -170,6 +176,8 @@ func newFixtureGame(fixture string) (runtime.Game, error) {
 		return NewParticleGolden()
 	case "post":
 		return NewPostGolden()
+	case "post-stylize":
+		return NewPostStylizeGolden()
 	case "view":
 		return NewViewConformanceGolden()
 	case "parallax":

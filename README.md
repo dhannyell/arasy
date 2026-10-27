@@ -1,343 +1,359 @@
-# Arasy
-[![CI](https://github.com/dhannyell/arasy/actions/workflows/ci.yml/badge.svg)](...)
+<div align="center">
 
-Arasy is an experimental 2D engine written in Go.
+<img src="docs/assets/brand/arasy/splash/arasy-splash-readme.gif" alt="Arasy Engine" width="720">
 
-The project is focused on learning, clarity, deterministic simulation, and low coupling between core engine concepts and rendering backends. It currently provides a small foundation for 2D math, fixed timestep loops, render commands, a portable runtime driver, a raster renderer, and a lightweight scene/entity model.
+**A deterministic, data-driven 2D game engine written in Go.**
 
-Arasy is not trying to compete with commercial engines. The goal is to build a compact, inspectable engine from first principles using mostly the Go standard library.
+Write the game once. Run it in a native window, in the browser, or headless —<br>
+with bit-identical simulation, rewind, and replay on every platform.
 
-## Status
+[![Release](https://img.shields.io/github/v/release/dhannyell/arasy)](https://github.com/dhannyell/arasy/releases)
+[![CI](https://github.com/dhannyell/arasy/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dhannyell/arasy/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/dhannyell/arasy.svg)](https://pkg.go.dev/github.com/dhannyell/arasy)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/dhannyell/arasy)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Arasy is in early development.
+[Getting started](#getting-started) ·
+[Examples](#examples) ·
+[Documentation](#documentation) ·
+[Architecture](#architecture) ·
+[Contributing](#contributing)
 
-Current capabilities:
+</div>
 
-- 2D vector and rectangle math.
-- Fixed timestep helper.
-- Camera with aspect-ratio modes (stretch, fit, expand).
-- Backend-agnostic render commands: rectangles, circles, lines, arcs, points, images, and text, with layer-based draw ordering and manifest-selected TTF/OTF fonts.
-- Runtime package with a portable `Game` contract, automatic fixed-timestep world stepping, input mapping, dev controls (pause, step, speed, reset), and optional rewind history.
-- Backend-agnostic audio intents with deterministic one-shot cues, continuous tracks, and Web Audio playback in the web canvas host.
-- Immediate-mode UI package with basic widgets, pointer interaction, theme support, and three coordinate spaces (reference canvas, playfield, screen).
-- Raster renderer using Go's standard `image` packages, including proportional OpenType text rendering and alpha blending.
-- WASM/WebGPU renderer with per-font, per-pixel-size glyph atlases; the built-in bitmap font remains the zero-value fallback.
-- Scene world with entities and components: transform, circle/rect sprite, velocity, acceleration, damping, body (inverse mass + restitution), and circle/rect collider.
-- Physics step pipeline: acceleration → integration → bounds bounce (per-side open mask + optional wall restitution) → spatial-grid broad-phase → contact resolution (positional correction + restitution impulses) → damping.
-- Deterministic simulation: sorted broad-phase pairs and a per-tick world checksum for sync verification.
-- Debug overlays: colliders, contacts, spatial grid, velocities, entity IDs, input state, and a runtime stats HUD.
-- WebSocket canvas platform with live simulation, browser input, and dev controls including rewind (back, back-to-tick, back-seconds).
-- Offline raster platform producing PNG, animated GIF, and frame-by-frame sequences.
-- Playable demos: football, breakout, 2048, Rhythm, and the UI-focused manager demo.
+---
 
-## Project Structure
+> [!NOTE]
+> Arasy follows [semantic versioning](https://semver.org). Before `v1.0.0`, a
+> minor release can change the public API. Each release lists its changes in
+> the [release notes](https://github.com/dhannyell/arasy/releases).
 
-```text
-math2d/
-  Basic 2D math primitives such as Vec2 and Rect.
+## Why Arasy
 
-render/
-  Backend-agnostic rendering types, colors, commands, and camera.
+- **Deterministic by contract.** The driver owns a fixed timestep. Simulation
+  results match bit for bit on x86-64, arm64, and WebAssembly, and CI checks
+  the same checksum golden on all three.
+- **Time is a first-class tool.** Rewind, scrub back and forth, fork a
+  timeline, and replay a recorded session. A per-tick checksum proves that
+  every replay is exact.
+- **One game, three hosts.** A game implements one small interface. A native
+  desktop host, a browser host, and an offline raster host all drive it
+  through the same `runtime.Driver`.
+- **Data-driven.** Textures, sprite sheets, fonts, audio, particles, splash
+  screens, and tile maps come from layered manifests, not from code.
+- **Small and inspectable.** Packages have one job each and a strict
+  dependency direction. The engine core uses mostly the Go standard library.
 
-scene/
-  Entity/component world, physics simulation systems (movement, bounds
-  bounce, spatial-grid collision), debug overlay builders, and a
-  deterministic world checksum.
+## Features
 
-input/
-  Typed input mapping system (device codes → semantic actions), pointer
-  state, and a per-tick event buffer.
+| Area | What you get |
+| --- | --- |
+| **Simulation** | Entity/component world, fixed-tick physics (integration, bounds, spatial-grid broad phase, contact resolution), deterministic RNG through `ctx.Rand`, and reproducible transcendental math in `dmath` |
+| **Time control** | Rewind history, bidirectional scrubbing, timeline forking, `.arrp` replay recordings, and simulation and content checksums |
+| **Rendering** | Backend-agnostic render commands: shapes, images, sprite sheets, TTF/OTF text, layers, cameras with aspect modes, and retained sprite batches with interpolation |
+| **Post-processing** | Sixteen fullscreen effects in `render.PostChain`, from bloom and color grading to shockwave, lens rain, halftone, and focus blur, all implemented in shared WGSL |
+| **2.5D** | Tilted ground planes, sprite planes, height, depth ordering, and isometric projection |
+| **Content** | Particles, presentation timelines and easing, animated SVG compiled to render commands, Tiled map import, and a boot splash playlist |
+| **UI** | Immediate-mode widgets, themes, tabs and panels, and three coordinate spaces (reference canvas, playfield, and screen) |
+| **Audio** | One-shot cues and continuous tracks that stay consistent under rewind, scrub, and replay |
+| **Dev tools** | In-game dev panel with pause, single step, speed, rewind, and debug overlays for colliders, contacts, the spatial grid, velocities, entity IDs, and runtime stats |
+| **Tooling** | The `arasy` CLI scaffolds, runs, builds, packages, and checks games for determinism hazards |
 
-ui/
-  Immediate-mode UI widgets, themes, and pointer interaction helpers.
+## Platforms
 
-audio/
-  Backend-agnostic audio vocabulary for clip IDs, one-shot cues, continuous
-  tracks, and rewindable track state. Clip paths are declared in asset
-  manifests.
+| Host | Package | Backend |
+| --- | --- | --- |
+| Native desktop | `platform/native` | WebGPU (wgpu-native) on Vulkan or DirectX 12, GLFW windowing |
+| Browser | `platform/wasm` | WebGPU, with automatic Canvas2D fallback |
+| Offline | `platform/raster` | Pure Go software rasterizer for PNG, animated GIF, and frame sequences |
 
-asset/
-  Layered data-driven manifests for textures, sprites, fonts, and audio.
-  The typeface subpackage parses TTF/OTF and provides deterministic metrics.
+Native support follows three tiers. See [Distribution](docs/en/distribution.md#platform-support)
+for the details.
 
-runtime/
-  Orchestration hub: platform-agnostic Game contract, Context, Driver,
-  input/control plumbing, fixed timestep pump, frame production, dev controls,
-  audio output, and optional rewind history. The only behavioral API platforms
-  need to drive.
+| Tier | Targets |
+| --- | --- |
+| Supported and tested | `windows/amd64` |
+| Supported, tested in CI | `linux/amd64` |
+| Best effort, compiled in CI | `darwin/arm64`, `linux/arm64`, `windows/arm64` |
 
-platform/raster/
-  Software renderer that draws render commands into image.RGBA, plus an
-  offline runner producing PNG/GIF/frame-sequence output.
-  
-platform/wasm/
-    Web Assembly platform that draws render commands into browser canvas using
-    WebGPU. Automatic fallback to software rendering if GPU is not available or 
-    not supported.
+The raster renderer is the exact reference for the 2D command vocabulary.
+CI compares golden images and replay fixtures against it.
 
-cmd/demos/
-  A collection of simple demos covering various engine capabilities for a quick start. 
+## Getting started
 
-cmd/benchsave/
-  Cross-platform helper that runs Go benchmarks and saves a Markdown report.
+### Requirements
 
-docs/
-  Language-separated guides under en/ and pt-br/, plus project assets.
+- Go 1.26 or newer.
+- For the native host: a C toolchain (cgo). On Debian or Ubuntu, also install
+  the GLFW, ALSA, and Vulkan development headers listed in
+  [Distribution](docs/en/distribution.md#no-cross-compilation).
+- For the browser host: a browser with WebGPU. Other browsers use the
+  Canvas2D fallback.
+
+Run `arasy doctor` at any time to check the environment.
+
+### Install the CLI
+
+```bash
+go install github.com/dhannyell/arasy/cmd/arasy@latest
 ```
 
-## Requirements
+### Create a project
 
-- Go 1.26 or newer, based on the current `go.mod`.
+`arasy new` creates a game with native and browser entry points:
 
-## Quick Start
+```bash
+arasy new example.com/hello
+cd hello
+go mod tidy
+arasy dev ./wasm
+```
 
-A game implements `runtime.Game`: configure once, populate a `scene.World`,
-drive entities in `Update`, and return backend-agnostic render commands from
-`Render`. The runtime steps the world automatically after `Update`; use
-`ctx.HoldSimulation()` for menus or ready states, and implement
-`runtime.PostStepper` to react to same-tick contacts.
+`arasy dev` serves the browser build at `http://127.0.0.1:8080` and rebuilds
+when you reload the page. Use `arasy run ./native` to open a native window.
+
+### Run an example
+
+The examples live in the repository. Clone it and run them from the root:
+
+```bash
+git clone https://github.com/dhannyell/arasy.git
+cd arasy
+```
+
+```bash
+arasy run ./examples/breakout/native
+```
+
+```bash
+arasy dev ./examples/breakout/wasm
+```
+
+Most examples also have a `raster` entry point that renders offline without a
+window or a GPU:
+
+```bash
+go run ./examples/outpost/raster
+```
+
+## A minimal game
+
+A game implements `runtime.Game`. `Setup` returns the configuration once,
+`Init` fills the world, `Update` runs once per fixed tick, and `Render`
+returns render commands. The driver steps the world after each `Update`.
 
 ```go
+package hello
+
+import (
+	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/render"
+	"github.com/dhannyell/arasy/runtime"
+	"github.com/dhannyell/arasy/scene"
+)
+
+// Game is a ball that bounces inside a 16x9 world.
 type Game struct {
-	runtime.StateSlot[GlobalState]
-
-	player scene.EntityID
-}
-
-type GlobalState struct {
-	Score int
+	ball scene.EntityID
 }
 
 func (g *Game) Setup() runtime.Config {
+	world := math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 16, Y: 9})
 	return runtime.Config{
 		Camera: render.Camera{
-			World:    math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 75}),
-			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 800, Y: 600}),
-			Aspect:   render.AspectExpand,
+			World:    world,
+			Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 1280, Y: 720}),
 		},
-		Clear:        render.RGBA(0.05, 0.08, 0.10, 1),
-		Bounds:       math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 100, Y: 75}),
+		Bounds:       world,
+		Clear:        render.RGBA(0.04, 0.05, 0.08, 1),
 		SimulationHz: 60,
 		FPS:          60,
 	}
 }
 
 func (g *Game) Init(ctx *runtime.UpdateContext) {
-	g.player = ctx.World.Spawn()
-	ctx.World.SetTransform(g.player, scene.Transform{
-		Position: math2d.Vec2{X: 50, Y: 37.5},
-		Scale:    math2d.Vec2{X: 1, Y: 1},
-	})
-	ctx.World.SetCircleSprite(g.player, scene.CircleSprite{
-		Radius: 3,
-		Color:  render.RGBA(0.9, 0.2, 0.15, 1),
-		Layer:  10,
+	g.ball = ctx.World.SpawnBundle(scene.Bundle{
+		Transform:      &scene.Transform{Position: math2d.Vec2{X: 8, Y: 4.5}},
+		Velocity:       &scene.Velocity{Linear: math2d.Vec2{X: 3, Y: 2}},
+		CircleSprite:   &scene.CircleSprite{Radius: 0.35, BaseSprite: scene.BaseSprite{Color: render.RGBA(0.3, 0.9, 1, 1)}},
+		CircleCollider: &scene.CircleCollider{Radius: 0.35},
+		Body:           &scene.Body{InvMass: 1, Restitution: 1},
 	})
 }
 
-func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {
-	// Read input and update world components here.
-}
+func (g *Game) Update(ctx *runtime.UpdateContext, dt float64) {}
 
 func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
-	return ctx.World.RenderCommands()
+	return ctx.World.RenderCommandsInto(nil, ctx.Alpha)
 }
 ```
 
-Embedding `runtime.StateSlot[T]` is optional. Use it when the game has global
-state that is not tied to a single entity, such as score, lives, match phase, or
-the last tick that triggered a visual effect. The runtime captures and restores
-that state together with rewind history:
+A host runs the game. This is the native entry point:
 
 ```go
-g.State.Score++
-```
-
-Run the game through a platform package, such as `platform/raster` for offline
-PNG/frame output or `platform/wasm` for an interactive browser canvas.
-
-```go
-//go:build js && wasm
-
 package main
 
 import (
-	"log/slog"
-
-	"github.com/dhannyell/arasy/cmd/demos/breakout"
-	"github.com/dhannyell/arasy/platform/wasm"
+	"example.com/hello"
+	"github.com/dhannyell/arasy/platform/native"
 	"github.com/dhannyell/arasy/runtime"
 )
 
 func main() {
-	log := wasm.NewConsoleLogger(slog.LevelInfo)
-	if err := wasm.Run(&breakout.Breakout{}, wasm.Options{
-		// DevTools needs the arr_dev build tag: arasy dev adds it, arasy
-		// build --devtools produces a dev build with the panel.
-		DevTools:      true,
-		Log:           log,
-		RecordReplay:  true,
-		ForceCanvas2D: false,
-		GameFactory:   func() runtime.Game { return &breakout.Breakout{} },
+	log, closeLog := native.NewLogger("hello")
+	defer func() { _ = closeLog() }()
+
+	if err := native.Run(&hello.Game{}, native.Options{
+		Title:       "hello",
+		Log:         log,
+		DevTools:    true,
+		GameFactory: func() runtime.Game { return &hello.Game{} },
 	}); err != nil {
-		log.Error("wasm host failed", "err", err)
+		log.Error("native host failed", "err", err)
 	}
 }
 ```
 
-## Running Tests
+The browser entry point is the same program with `wasm.Run` and
+`wasm.Options`. Read the [runtime guide](docs/en/runtime.md) for input,
+global state with `runtime.StateSlot[T]`, post-step hooks, and rewind.
 
-```powershell
-go test ./...
-```
+## Determinism
 
-## Running The Offline Demo
+Replay, rewind, and checksums work only when every machine computes the same
+bits. Code that runs in `Update` or `PostStep`, or that changes state in a
+`StateSlot`, is simulation code and must follow four rules:
 
-Generate a static PNG and a frame-by-frame PNG sequence:
+| Hazard | Use instead |
+| --- | --- |
+| `math` transcendentals such as `math.Sin` or `math.Exp` | `dmath` |
+| Map iteration whose result depends on order | An ordered slice of keys |
+| `math/rand`, `math/rand/v2`, or `crypto/rand` | `ctx.Rand` |
+| `time.Now`, `time.Since`, or `time.Until` | The simulation tick |
 
-```powershell
-go run ./cmd/demos/football/raster
-```
+`arasy build` refuses code that breaks these rules and names the fix for each
+finding. `arasy doctor` reports the same findings as warnings. Render-only
+code is free to use `math`; mark a render-only file with the `//arasy:render`
+directive. A direct `go build` does not run these checks.
 
-Output files:
+Read [Scrubbing and replay](docs/en/scrubbing.md) for the full contract.
+
+## Examples
+
+| Example | Shows |
+| --- | --- |
+| [`breakout`](examples/breakout) | Physics, contacts, UI overlay, dev panel, and golden replays |
+| [`2048`](examples/2048) | Grid game logic, scrubbing, and golden replays |
+| [`rhythm`](examples/rhythm) | Audio-synced input judgment and deterministic calibration |
+| [`football`](examples/football) | Team movement, collisions, and a controlled player |
+| [`uimanager`](examples/uimanager) | A data-heavy management UI with no physics |
+| [`tabs`](examples/tabs) | The tab widget and titled panels |
+| [`outpost`](examples/outpost) | Isometric 2.5D island with a retained tile map |
+| [`parallax`](examples/parallax) | Camera layers, repeated backdrops, and an infinite floor |
+| [`particles`](examples/particles) | The data-driven particle system |
+| [`postfx`](examples/postfx) | Every post-processing effect behind a live control panel |
+| [`vectoranim`](examples/vectoranim) | Compiled and hand-authored vector animation |
+| [`splashscreen`](examples/splashscreen) | The boot splash playlist |
+| [`assets`](examples/assets) | The texture and sprite manifest pipeline |
+
+Each example has a `native`, `wasm`, or `raster` entry point, or a
+combination of them. The [`bench`](examples/bench) directory holds stress
+scenes for performance work.
+
+## The `arasy` CLI
+
+| Command | Purpose |
+| --- | --- |
+| `arasy new <module>` | Create a game project |
+| `arasy dev [pkg]` | Serve a browser build that rebuilds on reload, or run a native build with `-p native` |
+| `arasy run [pkg]` | Build and run a native game |
+| `arasy build [pkg]` | Build a static browser directory, or a native executable with `-p native` |
+| `arasy pack [pkg]` | Build a game and package it as a ZIP |
+| `arasy serve [dir]` | Serve a finished browser build |
+| `arasy doctor [pkg]` | Check the development environment and the determinism rules |
+| `arasy watch` | Watch a recorded replay live, in the browser, or as a GIF |
+| `arasy assets validate` | Validate layered asset directories |
+| `arasy atlas` | Pack a frame sequence into a sprite sheet |
+| `arasy svg` | Compile an animated SVG into render commands |
+| `arasy tilemap import` | Compile a Tiled map into tile map data |
+| `arasy stencil` | Render an art guide sheet for a camera projection |
+
+Run `arasy <command> --help` for the flags of each command.
+
+## Architecture
+
+Dependencies point in one direction. Engine packages never import a host.
 
 ```text
-output/renderdemo.png
-output/frames/frame-0000.png
-output/frames/frame-0001.png
-...
+cmd/, examples/  ->  platform/*  ->  runtime  ->  scene, render, input, ui, audio, asset  ->  math2d
 ```
 
-The PNG is a static high-resolution render. The frame sequence is used to validate movement and rendering, and can be combined into a video with external tools such as `ffmpeg`.
+| Package | Responsibility |
+| --- | --- |
+| [`math2d`](math2d) | Pure 2D math: vectors and rectangles |
+| [`dmath`](dmath) | Reproducible transcendental functions for simulation code |
+| [`render`](render) | Backend-agnostic render commands, cameras, colors, and post effects |
+| [`scene`](scene) | The world, component stores, simulation systems, and checksums |
+| [`runtime`](runtime) | The game contract, the driver, fixed ticks, input, rewind, and replay |
+| [`input`](input) | Semantic input mapping and pointer state |
+| [`ui`](ui) | Immediate-mode widgets drawn with render commands |
+| [`audio`](audio) | Backend-agnostic cues and tracks |
+| [`asset`](asset) | Layered manifests for textures, sprites, fonts, and audio |
+| [`particle`](particle) | Data-driven particle effects |
+| [`anim`](anim), [`ease`](ease) | Presentation timelines and easing curves |
+| [`tilemap`](tilemap) | Tile layers converted into retained sprite batches |
+| [`platform/native`](platform/native) | Desktop host |
+| [`platform/wasm`](platform/wasm) | Browser host |
+| [`platform/raster`](platform/raster) | Offline host and reference renderer |
 
-Rhythm also has an offline smoke render:
-
-```powershell
-go run ./examples/rhythm/raster
-```
-
-The 2.5D showcase renders offline the same way: `examples/outpost` is an
-isometric island with a retained tilemap, extruded volumes, and hopping units:
-The post-processing example exposes all seven fullscreen effects behind one
-interactive control panel. Its scene is procedural, so it needs no assets:
-
-```powershell
-go run ./examples/postfx/raster
-go run -tags arr_dev ./examples/postfx/native
-```
-
-The 2.5D examples render offline the same way: `examples/groundplane` (a
-tilted court with a bouncing ball) and `examples/outpost` (an isometric
-island of extruded volumes with hopping units):
-
-```powershell
-go run ./examples/outpost/raster
-```
-
-For the interactive demo, build the WASM entry point and serve `output/wasm/rhythm`
-with the local development server. Use `D`, `F`, `J`, and `K` for the four lanes;
-left/right arrows adjust the deterministic calibration offset.
-
-## Running The Browser Demos
-
-Compile the demo for WASM:
-
-```powershell
-# Football: WASD or arrow keys move the controlled player
-$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/football/app.wasm ./cmd/demos/football/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH                                                 
-
-# Breakout: A/D or arrow keys move the paddle, Space launches the ball
-$env:GOOS='js'; $env:GOARCH='wasm'; go build -o output/wasm/breakout/app.wasm ./cmd/demos/breakout/wasm; Remove-Item Env:GOOS; Remove-Item Env:GOARCH                                                 
-```
-
-Run the Wasm server, pointing it to the generated Wasm file.
-```powershell
- go run ./cmd/wasmserve -dir .\output\wasm\breakout\ -title "Arasy wasm" -addr 127.0.0.1:8080   
-```
-Then open `http://localhost:8080` in your browser.
-Both demos include a screen-space UI overlay (score panel, reset button) and
-the dev control bar: pause, single-step, speed, rewind, and debug overlay
-toggles (colliders, contacts, spatial grid, velocities, entity IDs, runtime
-stats).
-
-## Measuring Performance
-
-For comprehensive documentation on benchmarking workflows, baselines, and interpreting results, see [`benchmarks/README.md`](benchmarks/README.md).
-
-Quick start:
-
-```powershell
-# List benchmark suites
-go run ./cmd/benchsave -list-suites
-
-# Run one suite and compare against the baseline
-go run ./cmd/benchsave -suite runtime -compare baseline
-
-# Update the baseline after an intentional change
-go run ./cmd/benchsave -suite runtime -profile decision -update-baseline
-```
-
-## Reproducible Math in Simulation
-
-Replays, rewind, and checksums only work when every machine computes the
-same bits. Standard-library transcendentals (`math.Sin`, `math.Exp`, ...)
-delegate to platform libm implementations, so their last bits vary per
-architecture. The `dmath` package provides reproducible replacements.
-
-The rule for game code:
-
-- If it runs in `Update` or `PostStep`, or mutates state that enters a
-  `StateSlot`, it is simulation code: use `dmath`, never `math`
-  transcendentals. Exact operations (`+ - * /`, `math.Sqrt`, `math.Mod`)
-  are always fine.
-- Render-only code may use `math` freely. If a whole file is render-only,
-  mark it with the `//arasy:render` directive before the package clause.
-
-The same heuristic covers three more hazards in simulation code:
-
-- Map iteration: Go deliberately randomizes map order, so a result that
-  depends on it cannot replay reliably. Iterate an ordered slice of keys
-  instead. A loop that provably does not depend on iteration order (pure
-  membership work, commutative writes) can carry the
-  `//arasy:order-insensitive` directive on the comment line above it;
-  state the reason in the same comment.
-- Randomness outside `ctx.Rand` (`math/rand`, `math/rand/v2`,
-  `crypto/rand`): it bypasses the recorded stream.
-- Wall-clock reads (`time.Now`, `time.Since`, `time.Until`): simulation
-  time is the fixed tick; presentation time arrives through `ctx.Time`.
-  `time.Duration` remains allowed in an API; only the clock reads are
-  forbidden.
-
-`arasy build` enforces these rules and reports the recommended fix for each
-finding (`dmath`, `ctx.Rand`, the simulation tick, or a directive).
-`arasy doctor` reports the same findings as warnings. A direct `go build` does
-not run these project checks, so the guarantee applies only to the `arasy`
-build path. The `--skip-determinism-check` flag is available when a finding is
-known to be safe.
-
-## Design Goals
-
-- Keep engine packages independent from application-specific rules.
-- Prefer small, explicit APIs over large abstractions.
-- Keep rendering commands backend-agnostic.
-- Favor deterministic simulation where practical.
-- Use tests to document behavior.
-- Use the Go standard library whenever it is reasonable.
-- Add complexity only when the project pressure justifies it.
+Read [Architecture](docs/en/architecture.md) for the full layering rules and
+[CONTEXT.md](CONTEXT.md) for the project vocabulary.
 
 ## Documentation
 
-- Runtime guide: [Portuguese](docs/pt-br/runtime.md) | [English](docs/en/runtime.md)
-- UI guide: [Portuguese](docs/pt-br/ui.md) | [English](docs/en/ui.md)
-- Math visual guide: [Portuguese](docs/pt-br/math2d-visual-guide.md) | [English](docs/en/math2d-visual-guide.md)
-- Camera, world, and viewport: [Portuguese](docs/pt-br/camera-world-viewport.md) | [English](docs/en/camera-world-viewport.md)
-- Bidirectional time scrubbing: [Portuguese](docs/pt-br/scrubbing.md) | [English](docs/en/scrubbing.md)
-- Test structure conventions: [Portuguese](docs/pt-br/testing.md) | [English](docs/en/testing.md)
-- Animation: [Portuguese](docs/pt-br/animation.md) | [English](docs/en/animation.md)
-- Vector graphics and SVG compilation: [Portuguese](docs/pt-br/vector-graphics.md) | [English](docs/en/vector-graphics.md)
-- 2.5D: tilt, planes, height, and depth order: [Portuguese](docs/pt-br/2-5d.md) | [English](docs/en/2-5d.md)
-- 2.5D gaps survey: [Portuguese](docs/pt-br/2-5d-gaps.md) | [English](docs/en/2-5d-gaps.md)
+Every guide exists in English and in Brazilian Portuguese.
+
+| Guide | English | Português |
+| --- | --- | --- |
+| Architecture | [en](docs/en/architecture.md) | [pt-br](docs/pt-br/architecture.md) |
+| Runtime | [en](docs/en/runtime.md) | [pt-br](docs/pt-br/runtime.md) |
+| Scrubbing and replay | [en](docs/en/scrubbing.md) | [pt-br](docs/pt-br/scrubbing.md) |
+| Camera, world, and viewport | [en](docs/en/camera-world-viewport.md) | [pt-br](docs/pt-br/camera-world-viewport.md) |
+| Render batches and interpolation | [en](docs/en/render-batches.md) | [pt-br](docs/pt-br/render-batches.md) |
+| 2.5D projection | [en](docs/en/2-5d.md) | [pt-br](docs/pt-br/2-5d.md) |
+| Animation | [en](docs/en/animation.md) | [pt-br](docs/pt-br/animation.md) |
+| Vector graphics | [en](docs/en/vector-graphics.md) | [pt-br](docs/pt-br/vector-graphics.md) |
+| UI | [en](docs/en/ui.md) | [pt-br](docs/pt-br/ui.md) |
+| Audio | [en](docs/en/audio.md) | [pt-br](docs/pt-br/audio.md) |
+| Boot splash | [en](docs/en/boot-splash.md) | [pt-br](docs/pt-br/boot-splash.md) |
+| Math visual guide | [en](docs/en/math2d-visual-guide.md) | [pt-br](docs/pt-br/math2d-visual-guide.md) |
+| Testing | [en](docs/en/testing.md) | [pt-br](docs/pt-br/testing.md) |
+| Development commands | [en](docs/en/development.md) | [pt-br](docs/pt-br/development.md) |
+| Distribution | [en](docs/en/distribution.md) | — |
+| Benchmarks | [en](benchmarks/README.md) | — |
+
+API reference: [pkg.go.dev/github.com/dhannyell/arasy](https://pkg.go.dev/github.com/dhannyell/arasy).
+
+## Contributing
+
+Bug reports, questions, and pull requests are welcome on
+[GitHub](https://github.com/dhannyell/arasy/issues).
+
+Before you open a pull request, run the same gates as CI:
+
+```bash
+gofmt -l .
+go vet ./...
+go test ./...
+golangci-lint run ./...
+```
+
+A change to the browser host or to shared engine packages must also pass the
+WebAssembly build. A pull request that changes a golden image or a replay
+fixture must explain why. [Development commands](docs/en/development.md)
+lists every gate, and [AGENTS.md](AGENTS.md) lists the engineering rules.
 
 ## License
 
-Arasy is licensed under the [MIT License](LICENSE).
+Arasy is released under the [MIT License](LICENSE). Third-party assets and
+fonts are listed in [CREDITS.md](CREDITS.md).

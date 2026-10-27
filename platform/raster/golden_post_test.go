@@ -89,6 +89,22 @@ func TestGoldenPostRadialBlur(t *testing.T) {
 	)))
 }
 
+func TestGoldenPostHalftone(t *testing.T) {
+	assertGolden(t, "post_halftone", postRenderer().Render(postCommands(
+		render.Halftone{CellSize: 4, Levels: 2, Shape: render.HalftonePlus, Strength: 1},
+	)))
+}
+
+func TestGoldenPostFocusBlur(t *testing.T) {
+	assertGolden(t, "post_focusblur", postRenderer().Render(postCommands(render.FocusBlur{
+		Points:   []math2d.Vec2{{X: 28, Y: 28}},
+		Extent:   math2d.Vec2{X: 14, Y: 14},
+		Rounding: 6,
+		Falloff:  10,
+		Strength: 1,
+	})))
+}
+
 func TestGoldenPostChainAndBelowLayer(t *testing.T) {
 	commands := []render.Command{
 		render.DrawRect{

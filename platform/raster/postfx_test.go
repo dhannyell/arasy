@@ -408,6 +408,82 @@ func TestRadialBlurKeepsUniformImageUnchanged(t *testing.T) {
 	}
 }
 
+func TestHalftoneZeroStrengthIsIdentity(t *testing.T) {
+	src := solidPostImage(16, 16, color.RGBA{R: 80, G: 110, B: 140, A: 255})
+	got := applyHalftone(src, render.Halftone{Strength: 0}, 0)
+
+	if !bytes.Equal(src.Pix, got.Pix) {
+		t.Fatal("zero-strength halftone changed pixels")
+	}
+}
+
+// An ordered dither must keep a flat tone's brightness: a quarter gray turns
+// a quarter of each cell white and the rest black, with nothing in between.
+func TestHalftoneDithersAFlatGrayToTwoTonesAtItsMean(t *testing.T) {
+	src := solidPostImage(16, 16, color.RGBA{R: 64, G: 64, B: 64, A: 255})
+	got := applyHalftone(src, render.Halftone{CellSize: 8, Levels: 2, Strength: 1}, 0)
+
+	white := 0
+	for i := 0; i < len(got.Pix); i += 4 {
+		switch got.Pix[i] {
+		case 255:
+			white++
+		case 0:
+		default:
+			t.Fatalf("pixel %d = %d, want 0 or 255", i/4, got.Pix[i])
+		}
+	}
+	if white != 16*16/4 {
+		t.Fatalf("white pixels = %d, want %d", white, 16*16/4)
+	}
+}
+
+func TestFocusBlurZeroStrengthIsIdentity(t *testing.T) {
+	src := solidPostImage(16, 16, color.RGBA{R: 80, G: 110, B: 140, A: 255})
+	got := applyFocusBlur(src, render.FocusBlur{Strength: 0}, render.Camera{})
+
+	if !bytes.Equal(src.Pix, got.Pix) {
+		t.Fatal("zero-strength focus blur changed pixels")
+	}
+}
+
+// The focus region must stay pixel-exact while the frame outside it blurs.
+func TestFocusBlurKeepsTheFocusRegionSharp(t *testing.T) {
+	src := checkerPostImage(32, 32)
+	camera := render.Camera{World: imageRect(0, 0, 32, 32), Viewport: imageRect(0, 0, 32, 32)}
+	got := applyFocusBlur(src, render.FocusBlur{
+		Points:   []math2d.Vec2{{X: 8, Y: 8}},
+		Extent:   math2d.Vec2{X: 4, Y: 4},
+		Falloff:  4,
+		Strength: 1,
+	}, camera)
+
+	for y := 4; y < 12; y++ {
+		for x := 4; x < 12; x++ {
+			if got.RGBAAt(x, y) != src.RGBAAt(x, y) {
+				t.Fatalf("pixel (%d, %d) inside the focus region changed", x, y)
+			}
+		}
+	}
+	if got.RGBAAt(28, 28) == src.RGBAAt(28, 28) {
+		t.Fatal("pixel (28, 28) far from the focus point stayed sharp")
+	}
+}
+
+func checkerPostImage(width, height int) *image.RGBA {
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := range height {
+		for x := range width {
+			value := uint8(0)
+			if (x+y)%2 == 0 {
+				value = 255
+			}
+			img.SetRGBA(x, y, color.RGBA{R: value, G: value, B: value, A: 255})
+		}
+	}
+	return img
+}
+
 func solidPostImage(width, height int, value color.RGBA) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {

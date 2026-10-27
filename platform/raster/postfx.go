@@ -4,6 +4,7 @@ import (
 	"image"
 	"math"
 
+	"github.com/dhannyell/arasy/internal/render/halftone"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
@@ -102,6 +103,10 @@ func postEffectIdentity(effect render.PostEffect, camera render.Camera) bool {
 		return clamp01(effect.Intensity) == 0 && clamp01(effect.MaskStrength) == 0
 	case render.RadialBlur:
 		return clamp01(effect.Strength) == 0
+	case render.Halftone:
+		return clamp01(effect.Strength) == 0
+	case render.FocusBlur:
+		return clamp01(effect.Strength) == 0
 	default:
 		return false
 	}
@@ -137,6 +142,10 @@ func applyPostEffectInto(dst, src *image.RGBA, effect render.PostEffect, camera 
 		return applyScanlinesInto(dst, src, effect)
 	case render.RadialBlur:
 		return applyRadialBlurInto(dst, src, effect, camera)
+	case render.Halftone:
+		return applyHalftoneInto(dst, src, effect, time)
+	case render.FocusBlur:
+		return applyFocusBlurInto(dst, src, effect, camera, sc)
 	default:
 		return false
 	}
@@ -478,7 +487,27 @@ func applyBlurInto(dst, src *image.RGBA, effect render.Blur, sc *postScratch) bo
 		return false
 	}
 
-	passes := effect.Passes
+	blurred := kawaseBlur(src, effect.Passes, sc)
+	for y := 0; y < blurred.height; y++ {
+		for x := 0; x < blurred.width; x++ {
+			sharp := pixelAt(src, src.Bounds().Min.X+x, src.Bounds().Min.Y+y)
+			soft := blurred.at(x, y)
+			setPixel(dst, dst.Bounds().Min.X+x, dst.Bounds().Min.Y+y, postPixel{
+				r: sharp.r + (soft.r-sharp.r)*strength,
+				g: sharp.g + (soft.g-sharp.g)*strength,
+				b: sharp.b + (soft.b-sharp.b)*strength,
+				a: sharp.a + (soft.a-sharp.a)*strength,
+			})
+		}
+	}
+	return true
+}
+
+// kawaseBlur runs the whole image through the dual-Kawase pyramid and
+// returns the full-size blurred result. Slots mirror applyBloomInto's
+// pyramid layout so the effects share the same scratch pool without any of
+// them growing extra buffers.
+func kawaseBlur(src *image.RGBA, passes int, sc *postScratch) *postBuffer {
 	if passes == 0 {
 		passes = 3
 	}
@@ -492,8 +521,6 @@ func applyBlurInto(dst, src *image.RGBA, effect render.Blur, sc *postScratch) bo
 		}
 	}
 
-	// Slots mirror applyBloomInto's pyramid layout so the two effects share
-	// the same scratch pool without either one growing extra buffers.
 	levels := make([]*postBuffer, passes+1)
 	levels[0] = base
 	for level := 1; level <= passes; level++ {
@@ -508,20 +535,88 @@ func applyBlurInto(dst, src *image.RGBA, effect render.Blur, sc *postScratch) bo
 		upsampleKawase(up, blurred)
 		blurred = up
 	}
+	return blurred
+}
 
+func applyFocusBlur(src *image.RGBA, effect render.FocusBlur, camera render.Camera) *image.RGBA {
+	if clamp01(effect.Strength) == 0 {
+		return src
+	}
+
+	dst := image.NewRGBA(src.Bounds())
+	applyFocusBlurInto(dst, src, effect, camera, &postScratch{})
+	return dst
+}
+
+// applyFocusBlurInto is applyBlurInto with the mix weighted per pixel by
+// the distance to the nearest focus region: sharp inside its rounded box,
+// fully blurred Falloff past its edge, smoothstepped between.
+func applyFocusBlurInto(dst, src *image.RGBA, effect render.FocusBlur, camera render.Camera, sc *postScratch) bool {
+	strength := clamp01(effect.Strength)
+	if strength == 0 {
+		return false
+	}
+	points := effect.Points
+	if len(points) > render.FocusBlurMaxPoints {
+		points = points[:render.FocusBlurMaxPoints]
+	}
+	screen := make([]math2d.Vec2, len(points))
+	for i, p := range points {
+		screen[i] = camera.WorldToScreen(p)
+	}
+	half, rounding := focusRegion(effect, camera)
+	falloff := math.Max(math.Abs(camera.WorldScalarToScreen(effect.Falloff)), 1e-3)
+
+	blurred := kawaseBlur(src, effect.Passes, sc)
 	for y := 0; y < blurred.height; y++ {
 		for x := 0; x < blurred.width; x++ {
+			weight := strength
+			if len(screen) > 0 {
+				at := math2d.Vec2{X: float64(x) + 0.5, Y: float64(y) + 0.5}
+				nearest := math.Inf(1)
+				for _, p := range screen {
+					nearest = math.Min(nearest, roundedBoxDistance(at.Sub(p), half, rounding))
+				}
+				weight = strength * smoothstep(0, falloff, nearest)
+			}
 			sharp := pixelAt(src, src.Bounds().Min.X+x, src.Bounds().Min.Y+y)
 			soft := blurred.at(x, y)
 			setPixel(dst, dst.Bounds().Min.X+x, dst.Bounds().Min.Y+y, postPixel{
-				r: sharp.r + (soft.r-sharp.r)*strength,
-				g: sharp.g + (soft.g-sharp.g)*strength,
-				b: sharp.b + (soft.b-sharp.b)*strength,
-				a: sharp.a + (soft.a-sharp.a)*strength,
+				r: sharp.r + (soft.r-sharp.r)*weight,
+				g: sharp.g + (soft.g-sharp.g)*weight,
+				b: sharp.b + (soft.b-sharp.b)*weight,
+				a: sharp.a + (soft.a-sharp.a)*weight,
 			})
 		}
 	}
 	return true
+}
+
+// focusRegion resolves a FocusBlur's sharp region to screen pixels: the
+// half-size of the box the corner rounding is carved from, and the
+// rounding itself, clamped so the box is never inverted.
+func focusRegion(effect render.FocusBlur, camera render.Camera) (half math2d.Vec2, rounding float64) {
+	half = math2d.Vec2{
+		X: math.Abs(camera.WorldScalarToScreen(effect.Extent.X)),
+		Y: math.Abs(camera.WorldScalarToScreen(effect.Extent.Y)),
+	}
+	rounding = math.Abs(camera.WorldScalarToScreen(effect.Rounding))
+	if half.X == 0 && half.Y == 0 {
+		half = math2d.Vec2{X: rounding, Y: rounding}
+	}
+	rounding = math.Min(rounding, math.Min(half.X, half.Y))
+	return half, rounding
+}
+
+// roundedBoxDistance is the signed distance from offset to a box of the
+// given half-size with its corners rounded: negative inside, zero on the
+// edge, growing linearly outside so a falloff in pixels means what it says.
+func roundedBoxDistance(offset, half math2d.Vec2, rounding float64) float64 {
+	qx := math.Abs(offset.X) - (half.X - rounding)
+	qy := math.Abs(offset.Y) - (half.Y - rounding)
+	outside := math.Hypot(math.Max(qx, 0), math.Max(qy, 0))
+	inside := math.Min(math.Max(qx, qy), 0)
+	return outside + inside - rounding
 }
 
 func applyFade(src *image.RGBA, effect render.Fade) *image.RGBA {
@@ -769,7 +864,7 @@ func applyRadialBlurInto(dst, src *image.RGBA, effect render.RadialBlur, camera 
 			deltaX := (center.X - (float64(x) + 0.5)) * strength * 0.15
 			deltaY := (center.Y - (float64(y) + 0.5)) * strength * 0.15
 			var r, g, b, a float64
-			for i := 0; i < radialBlurTaps; i++ {
+			for i := range radialBlurTaps {
 				t := float64(i) / (radialBlurTaps - 1)
 				sample := sampleBilinear(src, float64(x)+deltaX*t, float64(y)+deltaY*t)
 				r += sample.r
@@ -869,6 +964,60 @@ func applyLensRainInto(dst, src *image.RGBA, effect render.LensRain, time float6
 				pixel = statics[i].apply(src, pixel, x, y, effect.Refraction)
 			}
 			pixel = erode.apply(src, pixel, x, y, effect.Refraction)
+			setPixel(dst, x, y, pixel)
+		}
+	}
+	return true
+}
+
+func applyHalftone(src *image.RGBA, effect render.Halftone, time float64) *image.RGBA {
+	if clamp01(effect.Strength) == 0 {
+		return src
+	}
+
+	dst := image.NewRGBA(src.Bounds())
+	applyHalftoneInto(dst, src, effect, time)
+	return dst
+}
+
+func applyHalftoneInto(dst, src *image.RGBA, effect render.Halftone, time float64) bool {
+	strength := clamp01(effect.Strength)
+	if strength == 0 {
+		return false
+	}
+	cell := halftone.Cell(effect.CellSize)
+	scale := halftone.Pixel(effect.Pixel)
+	table := halftone.Thresholds(effect.Shape, cell)
+	levels := max(effect.Levels, 2)
+	steps := float64(levels - 1)
+	noise := effect.Noise
+	seed := halftone.NoiseTick(effect.Seed, effect.NoiseRate, time)
+
+	bounds := src.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		gy := (y - bounds.Min.Y) / scale
+		row := table[gy%cell*cell:]
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			pixel := pixelAt(src, x, y)
+			luma := 0.2126*pixel.r + 0.7152*pixel.g + 0.0722*pixel.b
+
+			gx := (x - bounds.Min.X) / scale
+			m := float64(row[gx%cell])
+			if noise != 0 {
+				// The noise is keyed on the dither pixel, not the screen
+				// pixel, so it shares the grid with the dots.
+				hash := particle.Hash3([3]uint32{uint32(gx), uint32(gy), seed})
+				m += (particle.Float01(hash[0]) - 0.5) * noise
+			}
+			toned := clamp01(math.Round(luma*steps+m-0.5) / steps)
+
+			// Adding the tone change to every channel keeps the dither one
+			// step deep whatever the colour; scaling by toned/luma would
+			// amplify it by 1/luma, a 14x swing on saturated blue.
+			shift := (toned - luma) * strength
+			pixel.r += shift
+			pixel.g += shift
+			pixel.b += shift
 			setPixel(dst, x, y, pixel)
 		}
 	}

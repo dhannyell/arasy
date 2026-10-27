@@ -65,7 +65,16 @@ benchmarks/runs/
 
 CLAUDE.md
 tools/brand/
-docs/assets/
+# Brand assets stay local, except the README banner. Git cannot re-include a
+# file under an ignored directory, so each parent level is reopened in turn.
+docs/assets/*
+!docs/assets/brand/
+docs/assets/brand/*
+!docs/assets/brand/arasy/
+docs/assets/brand/arasy/*
+!docs/assets/brand/arasy/splash/
+docs/assets/brand/arasy/splash/*
+!docs/assets/brand/arasy/splash/arasy-splash-readme.gif
 dist/
 
 # Windows resource objects (icons) are generated per game by go-winres and

@@ -123,9 +123,9 @@ type webgpuRenderer struct {
 	// steady chain creates zero bind groups per frame. Cleared whenever a
 	// post target is recreated.
 	postBindGroups map[postBindKey]js.Value
-	// postUniformScratch and postUniformJS stage one 64-byte uniform write
-	// so writeBuffer does not allocate a Go slice and a JS array per effect.
-	postUniformScratch [64]byte
+	// postUniformScratch and postUniformJS stage one uniform write so
+	// writeBuffer does not allocate a Go slice and a JS array per effect.
+	postUniformScratch [postUniformSize]byte
 	postUniformJS      js.Value
 
 	solidBuffer          js.Value

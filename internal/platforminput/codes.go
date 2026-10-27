@@ -85,6 +85,10 @@ func KeyboardCode(code string) (input.SourceCode, bool) {
 		return input.KeyPageUp, true
 	case "PageDown":
 		return input.KeyPageDown, true
+	case "BracketLeft":
+		return input.KeyLeftBracket, true
+	case "BracketRight":
+		return input.KeyRightBracket, true
 	default:
 		return 0, false
 	}

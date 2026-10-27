@@ -155,3 +155,12 @@ var PostScanlinesWGSL string
 //
 //go:embed post_radialblur.wgsl
 var PostRadialBlurWGSL string
+
+//go:embed post_halftone.wgsl
+var PostHalftoneWGSL string
+
+// PostFocusBlurWGSL mirrors platform/raster/postfx.go applyFocusBlurInto's
+// final mix; the pyramid is post_bloom.wgsl's.
+//
+//go:embed post_focusblur.wgsl
+var PostFocusBlurWGSL string

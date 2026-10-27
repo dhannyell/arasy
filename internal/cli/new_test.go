@@ -122,3 +122,24 @@ func TestGeneratedGoModTracksTheEngineReplace(t *testing.T) {
 		t.Fatalf("generated projects replace %s with %q, but the engine uses %q", webgpuModule, webgpuReplace, want)
 	}
 }
+
+// A generated go.mod must require a version the module proxy can resolve.
+// Only a released CLI knows one; a local build must name a replace instead.
+func TestEngineVersionRequiresAResolvableVersion(t *testing.T) {
+	cases := []struct {
+		mainVersion, replace, want string
+		wantErr                    bool
+	}{
+		{mainVersion: "v0.1.0", want: "v0.1.0"},
+		{mainVersion: "v0.1.1-0.20261027120000-abcdef123456", want: "v0.1.1-0.20261027120000-abcdef123456"},
+		{mainVersion: "(devel)", wantErr: true},
+		{mainVersion: "v0.1.1-0.20261027120000-abcdef123456+dirty", wantErr: true},
+		{mainVersion: "(devel)", replace: "../arasy", want: "v0.0.0"},
+	}
+	for _, c := range cases {
+		got, err := engineVersion(c.mainVersion, c.replace)
+		if (err != nil) != c.wantErr || got != c.want {
+			t.Errorf("engineVersion(%q, %q) = %q, %v; want %q, error %v", c.mainVersion, c.replace, got, err, c.want, c.wantErr)
+		}
+	}
+}
