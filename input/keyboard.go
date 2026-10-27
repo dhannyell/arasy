@@ -49,12 +49,16 @@ const (
 	KeyEnd
 	KeyPageUp
 	KeyPageDown
+
+	// Bracket keys, the usual pair for stepping a value up and down.
+	KeyLeftBracket
+	KeyRightBracket
 )
 
 // keyCodeCount bounds the keyboard catalogue, so a per-tick snapshot of held
 // keys is a fixed array rather than a map: cheap to clone into a rewind
 // snapshot and iterated in a fixed order.
-const keyCodeCount = int(KeyPageDown) + 1
+const keyCodeCount = int(KeyRightBracket) + 1
 
 func Keyboard(code SourceCode) Source {
 	return Source{
@@ -64,5 +68,5 @@ func Keyboard(code SourceCode) Source {
 }
 
 func isKeyboardCode(code SourceCode) bool {
-	return code >= KeyA && code <= KeyPageDown
+	return code >= KeyA && code <= KeyRightBracket
 }

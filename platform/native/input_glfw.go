@@ -89,6 +89,10 @@ func translateKey(key glfw.Key) (input.SourceCode, bool) {
 		return input.KeyPageUp, true
 	case glfw.KeyPageDown:
 		return input.KeyPageDown, true
+	case glfw.KeyLeftBracket:
+		return input.KeyLeftBracket, true
+	case glfw.KeyRightBracket:
+		return input.KeyRightBracket, true
 	default:
 		return 0, false
 	}
