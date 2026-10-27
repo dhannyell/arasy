@@ -10,6 +10,7 @@ import (
 
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/halftone"
 	"github.com/dhannyell/arasy/platform/wasm/gpu"
 	"github.com/dhannyell/arasy/render"
 )
@@ -36,6 +37,19 @@ const (
 	postPipelineGrain        = "grain"
 	postPipelineScanlines    = "scanlines"
 	postPipelineRadialBlur   = "radial-blur"
+	postPipelineHalftone     = "halftone"
+	postPipelineFocusCombine = "focus-combine"
+)
+
+// postLUTOffset is where the halftone threshold table (or the FocusBlur
+// points) starts in the post uniform, after the 64 bytes of scalar
+// parameters every effect shares. Each effect uploads only what its shader
+// reads; postUniformSize fits the table for the widest cell.
+const (
+	postLUTOffset   = 64
+	postScalarSize  = postLUTOffset
+	postFocusSize   = postLUTOffset + 8*render.FocusBlurMaxPoints
+	postUniformSize = postLUTOffset + 4*halftone.MaxCell*halftone.MaxCell
 )
 
 // webgpuPostTarget is a single-sample texture used by the post-process
@@ -95,6 +109,9 @@ func (r *webgpuRenderer) initPostResources() {
 		postPipelineGrain:       r.createPostPipeline(postPipelineGrain, shaders.PostGrainWGSL, "fs_main", 1),
 		postPipelineScanlines:   r.createPostPipeline(postPipelineScanlines, shaders.PostScanlinesWGSL, "fs_main", 1),
 		postPipelineRadialBlur:  r.createPostPipeline(postPipelineRadialBlur, shaders.PostRadialBlurWGSL, "fs_main", 1),
+		postPipelineHalftone:    r.createPostPipeline(postPipelineHalftone, shaders.PostHalftoneWGSL, "fs_main", 1),
+		// FocusBlur shares Blur's pyramid and only owns its weighted mix.
+		postPipelineFocusCombine: r.createPostPipeline(postPipelineFocusCombine, shaders.PostFocusBlurWGSL, "fs_main", 1),
 	}
 }
 
@@ -120,7 +137,7 @@ func (r *webgpuRenderer) createPostPipeline(label, source, fragmentEntry string,
 func (r *webgpuRenderer) ensurePostUniforms(count int) {
 	for len(r.postUniforms) < count {
 		r.postUniforms = append(r.postUniforms,
-			jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(64, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst))))
+			jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(postUniformSize, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst))))
 	}
 }
 
@@ -230,15 +247,21 @@ func (r *webgpuRenderer) disablePost(err error) {
 // buffer at index. The scratch is cleared first so unwritten fields keep the
 // deterministic zero the per-call allocation used to give them.
 func postUniformBuffer(r *webgpuRenderer, index int, values func([]byte)) {
+	postUniformBufferSized(r, index, postScalarSize, values)
+}
+
+// postUniformBufferSized uploads only the first size bytes. A shader never
+// reads past its own Params, so the stale tail of the buffer is harmless.
+func postUniformBufferSized(r *webgpuRenderer, index, size int, values func([]byte)) {
 	r.ensurePostUniforms(index + 1)
-	data := r.postUniformScratch[:]
+	data := r.postUniformScratch[:size]
 	clear(data)
 	values(data)
 	if r.postUniformJS.IsUndefined() {
-		r.postUniformJS = js.Global().Get("Uint8Array").New(len(data))
+		r.postUniformJS = js.Global().Get("Uint8Array").New(postUniformSize)
 	}
 	js.CopyBytesToJS(r.postUniformJS, data)
-	r.queue.Call("writeBuffer", r.postUniforms[index], 0, r.postUniformJS)
+	r.queue.Call("writeBuffer", r.postUniforms[index], 0, r.postUniformJS, 0, size)
 }
 
 func putPostF32(dst []byte, index int, value float64) {
@@ -380,6 +403,24 @@ func (r *webgpuRenderer) postParams(index int, effect render.PostEffect, camera 
 			putPostF32(dst, 24, float64(height))
 		})
 		return postPipelineRadialBlur
+	case render.Halftone:
+		cell := halftone.Cell(effect.CellSize)
+		postUniformBufferSized(r, index, postUniformSize, func(dst []byte) {
+			putPostF32(dst, 0, effect.CellSize)
+			putPostF32(dst, 4, float64(effect.Levels))
+			putPostF32(dst, 8, float64(effect.Shape))
+			putPostF32(dst, 12, effect.Strength)
+			putPostF32(dst, 16, float64(halftone.Pixel(effect.Pixel)))
+			putPostF32(dst, 20, float64(width))
+			putPostF32(dst, 24, float64(height))
+			putPostF32(dst, 28, float64(cell))
+			putPostF32(dst, 32, effect.Noise)
+			putPostU32(dst, 36, halftone.NoiseTick(effect.Seed, effect.NoiseRate, time))
+			for i, m := range halftone.Thresholds(effect.Shape, cell) {
+				putPostF32(dst, postLUTOffset+4*i, float64(m))
+			}
+		})
+		return postPipelineHalftone
 	default:
 		return ""
 	}
@@ -397,11 +438,63 @@ func postBlurPasses(effect render.Blur) int {
 // the scene (no bright pass) and combines with a sharp/blurred mix instead of
 // an additive combine.
 func (r *webgpuRenderer) encodeBlur(encoder js.Value, source webgpuPostTarget, sourceID int, destination js.Value, effect render.Blur, index int) error {
-	strength := effect.Strength
-	if strength <= 0 {
+	strength := clampPostStrength(effect.Strength)
+	if strength == 0 {
 		return nil
 	}
-	passes := postBlurPasses(effect)
+	return r.encodePyramidBlur(encoder, source, sourceID, destination, postBlurPasses(effect), index,
+		postPipelineBlurCombine, postScalarSize, func(data []byte) { putPostF32(data, 0, strength) })
+}
+
+// encodeFocusBlur is encodeBlur with the focus points, radius and falloff
+// handed to a combine that weights the mix per pixel.
+func (r *webgpuRenderer) encodeFocusBlur(encoder js.Value, source webgpuPostTarget, sourceID int, destination js.Value, effect render.FocusBlur, camera render.Camera, index int) error {
+	strength := clampPostStrength(effect.Strength)
+	if strength == 0 {
+		return nil
+	}
+	points := effect.Points
+	if len(points) > render.FocusBlurMaxPoints {
+		points = points[:render.FocusBlurMaxPoints]
+	}
+	passes := postBlurPasses(render.Blur{Passes: effect.Passes})
+	return r.encodePyramidBlur(encoder, source, sourceID, destination, passes, index,
+		postPipelineFocusCombine, postFocusSize, func(data []byte) {
+			half, rounding := focusRegion(effect, camera)
+			putPostF32(data, 0, strength)
+			putPostF32(data, 4, math.Abs(camera.WorldScalarToScreen(effect.Falloff)))
+			putPostF32(data, 8, float64(len(points)))
+			putPostF32(data, 12, rounding)
+			putPostF32(data, 16, half[0])
+			putPostF32(data, 20, float64(source.width))
+			putPostF32(data, 24, float64(source.height))
+			putPostF32(data, 28, half[1])
+			for i, p := range points {
+				at := camera.WorldToScreen(p)
+				putPostF32(data, postLUTOffset+8*i, at.X)
+				putPostF32(data, postLUTOffset+8*i+4, at.Y)
+			}
+		})
+}
+
+// focusRegion mirrors platform/raster/postfx.go focusRegion.
+func focusRegion(effect render.FocusBlur, camera render.Camera) (half [2]float64, rounding float64) {
+	half = [2]float64{
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.X)),
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.Y)),
+	}
+	rounding = math.Abs(camera.WorldScalarToScreen(effect.Rounding))
+	if half[0] == 0 && half[1] == 0 {
+		half = [2]float64{rounding, rounding}
+	}
+	rounding = math.Min(rounding, math.Min(half[0], half[1]))
+	return half, rounding
+}
+
+// encodePyramidBlur runs the dual-Kawase pyramid over the scene and hands the
+// sharp and blurred images to the named combine pipeline, whose uniform of
+// combineSize bytes writeCombine fills.
+func (r *webgpuRenderer) encodePyramidBlur(encoder js.Value, source webgpuPostTarget, sourceID int, destination js.Value, passes, index int, combine string, combineSize int, writeCombine func([]byte)) error {
 	if err := r.ensureBloomTargets(passes); err != nil {
 		return err
 	}
@@ -436,8 +529,8 @@ func (r *webgpuRenderer) encodeBlur(encoder js.Value, source webgpuPostTarget, s
 		r.encodePostPass(encoder, postPipelineBlurUp, postSourceBloom+level+1, src.view, dst.view, uniformIndex)
 	}
 	combineIndex := index + 2*passes + 1
-	postUniformBuffer(r, combineIndex, func(data []byte) { putPostF32(data, 0, strength) })
-	r.encodePostCombine2(encoder, postPipelineBlurCombine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
+	postUniformBufferSized(r, combineIndex, combineSize, writeCombine)
+	r.encodePostCombine2(encoder, combine, sourceID, source.view, r.postBloom[0].view, destination, combineIndex)
 	return nil
 }
 
@@ -720,6 +813,18 @@ func (r *webgpuRenderer) renderPostFramePasses(
 			sourceID, destID = destID, sourceID
 			continue
 		}
+		if focus, ok := effect.(render.FocusBlur); ok {
+			if clampPostStrength(focus.Strength) == 0 {
+				continue
+			}
+			if err := r.encodeFocusBlur(encoder, source, sourceID, destView, focus, camera, uniformIndex); err != nil {
+				return err
+			}
+			uniformIndex += 16
+			source, destination = destination, source
+			sourceID, destID = destID, sourceID
+			continue
+		}
 		pipelineName := r.postParams(uniformIndex, effect, camera, chain.Time, w, h)
 		uniformIndex++
 		if pipelineName == "" {
@@ -776,10 +881,12 @@ func postEffectEncodes(effect render.PostEffect) bool {
 		return effect.Intensity != 0
 	case render.Blur:
 		return clampPostStrength(effect.Strength) != 0
+	case render.FocusBlur:
+		return clampPostStrength(effect.Strength) != 0
 	case render.Vignette, render.ColorGrade, render.Pixelate,
 		render.ChromaticAberration, render.Shockwave, render.LensRain,
 		render.Fade, render.CircleWipe, render.Dissolve, render.FilmGrain,
-		render.Scanlines, render.RadialBlur:
+		render.Scanlines, render.RadialBlur, render.Halftone:
 		return true
 	default:
 		return false
