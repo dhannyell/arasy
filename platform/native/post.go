@@ -989,7 +989,7 @@ func nativePostEffectEncodes(effect render.PostEffect) bool {
 	case render.Vignette, render.ColorGrade, render.Pixelate,
 		render.ChromaticAberration, render.Shockwave, render.LensRain,
 		render.Fade, render.CircleWipe, render.Dissolve, render.FilmGrain,
-		render.Scanlines, render.RadialBlur:
+		render.Scanlines, render.RadialBlur, render.Halftone:
 		return true
 	default:
 		return false
