@@ -1,6 +1,15 @@
 const { test, expect } = require('@playwright/test');
 const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
 
+// Canvas2D draws text with the system font and approximates LensRain, so
+// these goldens match only the platform that recorded them.
+function skipCanvas2DOnLinux(testInfo) {
+  test.skip(
+    testInfo.project.name === 'canvas2d' && process.platform === 'linux',
+    'Canvas2D golden recorded on Windows.',
+  );
+}
+
 async function expectFixtureScreenshot(page, testInfo, fixture, screenshot, options = '') {
   const expectedRenderer = testInfo.project.name;
   const messages = [];
@@ -92,6 +101,7 @@ test('renders two camera passes without WebGPU MSAA', async ({ page }, testInfo)
 });
 
 test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
+  skipCanvas2DOnLinux(testInfo);
   await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
 });
 
@@ -100,9 +110,11 @@ test('renders Halftone and FocusBlur', async ({ page }, testInfo) => {
 });
 
 test('renders RTT through sprite, textured, retained, and post paths', async ({ page }, testInfo) => {
+  skipCanvas2DOnLinux(testInfo);
   await expectFixtureScreenshot(page, testInfo, 'rtt', 'rtt.png');
 });
 
 test('renders RTT while preserving the sprite texture array', async ({ page }, testInfo) => {
+  skipCanvas2DOnLinux(testInfo);
   await expectFixtureScreenshot(page, testInfo, 'rtt-array', 'rtt-array.png');
 });
