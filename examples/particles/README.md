@@ -1,5 +1,9 @@
 # Particle example
 
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/particles/)
+
+![A frame of the example](particles.png)
+
 This example showcases Arasy's particle system in four seasonal scenes:
 
 - spring: petals, leaves, pollen, butterflies, and dandelion seeds;
@@ -14,17 +18,13 @@ a fallback.
 
 ## Run
 
-From the repository root, run the following in PowerShell:
+From the repository root:
 
-```powershell
-$env:GOOS='js'; $env:GOARCH='wasm'
-go build -o output/wasm/particles/app.wasm ./examples/particles/wasm
-Remove-Item Env:GOOS; Remove-Item Env:GOARCH
-
-go run ./cmd/arasy dev -s output/wasm/particles -a 127.0.0.1:8090
+```bash
+go run ./cmd/arasy dev ./examples/particles/wasm
 ```
 
-Open `http://127.0.0.1:8090` in a browser. The buttons at the top switch between
+Then open the address that the command prints. The buttons at the top switch between
 seasons, and the control at the bottom changes particle density. The WASM
 platform development panel can be opened with the backtick key.
 

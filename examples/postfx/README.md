@@ -1,8 +1,13 @@
 # Post-processing example
 
-This example is a single visual test bench for the seven post effects exposed
-by `render.PostChain`: Vignette, ColorGrade, Pixelate, ChromaticAberration,
-Bloom, Shockwave, and LensRain.
+[![Run in your browser](https://img.shields.io/badge/Run_in_your_browser-2ea44f?style=for-the-badge)](https://dhannyell.github.io/arasy/examples/postfx/)
+
+![A frame of the example](postfx.png)
+
+This example is a single visual test bench for the post effects exposed by
+`render.PostChain`: Vignette, ColorGrade, Pixelate, ChromaticAberration,
+Bloom, Shockwave, LensRain, Blur, RadialBlur, Scanlines, FilmGrain, Fade,
+Dissolve, CircleWipe, and Halftone.
 
 The left panel toggles effects independently and selects the effect to inspect.
 The compact panel on the right exposes every field accepted by that effect,
@@ -17,24 +22,20 @@ and moving edges visible for every effect. The post chain stops at
 
 Native development build:
 
-```powershell
+```bash
 go run -tags arr_dev ./examples/postfx/native
 ```
 
 Offline raster render:
 
-```powershell
+```bash
 go run ./examples/postfx/raster
 ```
 
 Browser development build:
 
-```powershell
-$env:GOOS='js'; $env:GOARCH='wasm'
-go build -o output/wasm/postfx/app.wasm ./examples/postfx/wasm
-Remove-Item Env:GOOS; Remove-Item Env:GOARCH
-
-go run ./cmd/arasy dev -s output/wasm/postfx -a 127.0.0.1:8090
+```bash
+go run ./cmd/arasy dev ./examples/postfx/wasm
 ```
 
 The browser host uses WebGPU when available and can fall back to Canvas2D;
