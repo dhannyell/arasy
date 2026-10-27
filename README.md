@@ -51,7 +51,7 @@ with bit-identical simulation, rewind, and replay on every platform.
 | **Simulation** | Entity/component world, fixed-tick physics (integration, bounds, spatial-grid broad phase, contact resolution), deterministic RNG through `ctx.Rand`, and reproducible transcendental math in `dmath` |
 | **Time control** | Rewind history, bidirectional scrubbing, timeline forking, `.arrp` replay recordings, and simulation and content checksums |
 | **Rendering** | Backend-agnostic render commands: shapes, images, sprite sheets, TTF/OTF text, layers, cameras with aspect modes, and retained sprite batches with interpolation |
-| **Post-processing** | Fourteen fullscreen effects in `render.PostChain`, from bloom and color grading to shockwave, lens rain, and dissolve, all implemented in shared WGSL |
+| **Post-processing** | Sixteen fullscreen effects in `render.PostChain`, from bloom and color grading to shockwave, lens rain, halftone, and focus blur, all implemented in shared WGSL |
 | **2.5D** | Tilted ground planes, sprite planes, height, depth ordering, and isometric projection |
 | **Content** | Particles, presentation timelines and easing, animated SVG compiled to render commands, Tiled map import, and a boot splash playlist |
 | **UI** | Immediate-mode widgets, themes, tabs and panels, and three coordinate spaces (reference canvas, playfield, and screen) |
