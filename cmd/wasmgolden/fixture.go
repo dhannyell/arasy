@@ -27,6 +27,8 @@ func NewFixture(name string) (runtime.Game, error) {
 		return NewCameraPassesGolden()
 	case "post":
 		return NewPostGolden()
+	case "post-stylize":
+		return NewPostStylizeGolden()
 	case "rtt":
 		return NewRTTGolden()
 	case "rtt-array":
