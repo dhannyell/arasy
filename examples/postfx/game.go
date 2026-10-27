@@ -35,6 +35,7 @@ const (
 	effectFilmGrain
 	effectScanlines
 	effectRadialBlur
+	effectHalftone
 	effectCount
 )
 
@@ -53,6 +54,7 @@ var effectLabels = [...]string{
 	"Film grain",
 	"Scanlines",
 	"Radial blur",
+	"Halftone",
 }
 
 var effectMenuLabels = [...]string{
@@ -70,6 +72,7 @@ var effectMenuLabels = [...]string{
 	"Film grain",
 	"Scanlines",
 	"Radial blur",
+	"Halftone",
 }
 
 type demoState struct {
@@ -130,6 +133,11 @@ type demoState struct {
 
 	RadialBlurCenter   math2d.Vec2
 	RadialBlurStrength float64
+
+	HalftoneCellSize float64
+	HalftoneLevel    int
+	HalftoneShape    render.HalftoneShape
+	HalftoneStrength float64
 }
 
 // Game is the interactive post-processing showcase.
@@ -209,6 +217,10 @@ func (g *Game) Init(*runtime.UpdateContext) {
 	g.State.ScanlinesMask = 0.4
 	g.State.RadialBlurCenter = math2d.Vec2{X: viewW / 2, Y: viewH / 2}
 	g.State.RadialBlurStrength = 0.3
+	g.State.HalftoneCellSize = 8
+	g.State.HalftoneShape = render.HalftoneCross
+	g.State.HalftoneLevel = 2
+	g.State.HalftoneStrength = 1
 }
 
 // Update applies the control panel's caller-owned values to the game state.
@@ -371,6 +383,14 @@ func (g *Game) effects(_ float64) []render.PostEffect {
 	if g.State.Enabled[effectFade] {
 		effects = append(effects, render.Fade{Color: g.State.FadeColor, Amount: g.State.FadeAmount})
 	}
+	if g.State.Enabled[effectHalftone] {
+		effects = append(effects, render.Halftone{
+			CellSize: g.State.HalftoneCellSize,
+			Levels:   g.State.HalftoneLevel,
+			Shape:    g.State.HalftoneShape,
+			Strength: g.State.HalftoneStrength,
+		})
+	}
 	return effects
 }
 
@@ -475,6 +495,11 @@ func (g *Game) updateSelected(in ui.InteractScope, layout postfxHUDLayout) {
 		g.State.RadialBlurStrength = slider("postfx_radialblur_strength", layout.parametersSlots[0], g.State.RadialBlurStrength, 0, 1, 0.01)
 		g.State.RadialBlurCenter.X = slider("postfx_radialblur_center_x", layout.parametersSlots[1], g.State.RadialBlurCenter.X, 0, viewW, 4)
 		g.State.RadialBlurCenter.Y = slider("postfx_radialblur_center_y", layout.parametersSlots[2], g.State.RadialBlurCenter.Y, 0, viewH, 4)
+	case effectHalftone:
+		g.State.HalftoneStrength = slider("postfx_halftone_strength", layout.parametersSlots[0], g.State.HalftoneStrength, 0, 1, 0.01)
+		g.State.HalftoneLevel = int(slider("post_halftone_level", layout.parametersSlots[1], float64(g.State.HalftoneLevel), 2, 16, 1))
+		g.State.HalftoneShape = render.HalftoneShape(int(slider("post_halftone_shape", layout.parametersSlots[2], float64(g.State.HalftoneShape), 0, 2, 1)))
+		g.State.HalftoneCellSize = slider("postfx_halftone_cellsize", layout.parametersSlots[3], g.State.HalftoneCellSize, 4, 16, 1)
 	}
 }
 
@@ -562,6 +587,11 @@ func (g *Game) drawSelectedParameters(draw ui.DrawScope, layout postfxHUDLayout)
 		drawSlider("postfx_radialblur_strength", "strength", layout.parametersSlots[0], g.State.RadialBlurStrength, 0, 1, 0.01, "%.2f")
 		drawSlider("postfx_radialblur_center_x", "center X", layout.parametersSlots[1], g.State.RadialBlurCenter.X, 0, viewW, 4, "%.0f")
 		drawSlider("postfx_radialblur_center_y", "center Y", layout.parametersSlots[2], g.State.RadialBlurCenter.Y, 0, viewH, 4, "%.0f")
+	case effectHalftone:
+		drawSlider("postfx_halftone_strength", "strength", layout.parametersSlots[0], g.State.HalftoneStrength, 0, 1, 0.01, "%.2f")
+		drawSlider("post_halftone_level", "level", layout.parametersSlots[1], float64(g.State.HalftoneLevel), 2, 16, 1, "%.0f")
+		drawSlider("post_halftone_shape", "shape", layout.parametersSlots[2], float64(g.State.HalftoneShape), 0, 2, 1, "%.0f")
+		drawSlider("postfx_halftone_cellsize", "cell size", layout.parametersSlots[3], g.State.HalftoneCellSize, 4, 16, 1, "%.0f")
 	}
 }
 
@@ -595,6 +625,8 @@ func effectDescription(id effectID) string {
 		return "intensity / thickness / mask"
 	case effectRadialBlur:
 		return "strength / center"
+	case effectHalftone:
+		return "strength / level / shape / cell size"
 	default:
 		return ""
 	}
@@ -630,6 +662,8 @@ func effectTitle(id effectID) string {
 		return "SCANLINES"
 	case effectRadialBlur:
 		return "RADIAL BLUR"
+	case effectHalftone:
+		return "HALFTONE"
 	default:
 		return "POST FX"
 	}

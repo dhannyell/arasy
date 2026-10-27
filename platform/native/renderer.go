@@ -106,9 +106,9 @@ type Renderer struct {
 	// uniform slot}; a steady chain creates none per frame. Released whenever
 	// a post target is recreated.
 	postBindGroups map[nativePostBindKey]*wgpu.BindGroup
-	// postUniformScratch stages one 64-byte uniform write per effect without
+	// postUniformScratch stages one uniform write per effect without
 	// allocating.
-	postUniformScratch [64]byte
+	postUniformScratch [nativePostUniformSize]byte
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
