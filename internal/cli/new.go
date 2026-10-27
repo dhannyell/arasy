@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"text/template"
 	"unicode"
@@ -60,21 +61,46 @@ var newCmd = &cobra.Command{
 		if name == "" {
 			return fmt.Errorf("cannot derive a Go package name from %q", module)
 		}
+		mainVersion := ""
+		if info, ok := debug.ReadBuildInfo(); ok {
+			mainVersion = info.Main.Version
+		}
+		version, err := engineVersion(mainVersion, newEngineReplace)
+		if err != nil {
+			return err
+		}
 		if err := ensureDestinationEmpty(dir); err != nil {
 			return err
 		}
 		data := projectTemplateData{
 			Module: module, Name: name, GoVersion: strings.TrimPrefix(runtime.Version(), "go"),
-			EngineModule: "github.com/dhannyell/arasy", EngineVersion: "v0.0.0", EngineReplace: newEngineReplace,
+			EngineModule: "github.com/dhannyell/arasy", EngineVersion: version, EngineReplace: newEngineReplace,
 		}
 		if err := renderProject(dir, data); err != nil {
 			return err
 		}
-		_, err := fmt.Fprintf(cmd.OutOrStdout(),
+		_, err = fmt.Fprintf(cmd.OutOrStdout(),
 			"created %s\nnext steps:\n  cd %s\n  go mod tidy\n  arasy dev ./wasm     # browser, rebuilds on reload\n  arasy run ./native   # native window\n",
 			module, dir)
 		return err
 	},
+}
+
+// engineVersion picks the engine version that a generated go.mod requires.
+// A CLI installed with `go install ...@version` carries that version in its
+// build info. A local build carries "(devel)" or a "+dirty" pseudo-version,
+// which no module proxy can resolve, so it needs a replace instead.
+func engineVersion(mainVersion, replace string) (string, error) {
+	if replace != "" {
+		// The replace decides the source; the version only has to parse.
+		return "v0.0.0", nil
+	}
+	if strings.HasPrefix(mainVersion, "v") && !strings.Contains(mainVersion, "+") {
+		return mainVersion, nil
+	}
+	return "", fmt.Errorf("this arasy CLI is a development build (version %q); "+
+		"pass --engine-replace <path to the arasy repository>, "+
+		"or install a release with: go install github.com/dhannyell/arasy/cmd/arasy@latest", mainVersion)
 }
 
 func ensureDestinationEmpty(dir string) error {
@@ -101,7 +127,7 @@ func ensureDestinationEmpty(dir string) error {
 func init() {
 	newCmd.Flags().StringVarP(&newDir, "dir", "d", "", "destination directory (defaults to the module name)")
 	newCmd.Flags().StringVar(&newName, "name", "", "Go package name (defaults to the sanitized module name)")
-	newCmd.Flags().StringVar(&newEngineReplace, "engine-replace", "", "local arasy repository path; required to compile while the engine is private")
+	newCmd.Flags().StringVar(&newEngineReplace, "engine-replace", "", "local arasy repository path; required when this CLI is a development build")
 	rootCmd.AddCommand(newCmd)
 }
 
