@@ -11,7 +11,7 @@ import (
 	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 // nativeSpriteBatchRange keeps a consecutive span of records that shares one

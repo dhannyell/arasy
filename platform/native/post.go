@@ -12,7 +12,7 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/internal/render/halftone"
 	"github.com/dhannyell/arasy/render"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 const (

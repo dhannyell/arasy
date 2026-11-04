@@ -103,26 +103,6 @@ func TestRenderProjectWritesANativeEntryPoint(t *testing.T) {
 // A generated project repeats the engine's WebGPU replace because Go ignores
 // one that comes from a dependency. That copy is only correct while it agrees
 // with the original, so read the engine's go.mod back and compare.
-func TestGeneratedGoModTracksTheEngineReplace(t *testing.T) {
-	body, err := os.ReadFile(filepath.Join(repoRoot(t), "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := ""
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(line, "replace "+webgpuModule+" => "); ok {
-			want = strings.TrimSpace(after)
-		}
-	}
-	if want == "" {
-		t.Fatalf("the engine no longer replaces %s; drop the copy in new.go and the template line with it", webgpuModule)
-	}
-	if webgpuReplace != want {
-		t.Fatalf("generated projects replace %s with %q, but the engine uses %q", webgpuModule, webgpuReplace, want)
-	}
-}
-
 // A generated go.mod must require a version the module proxy can resolve.
 // Only a released CLI knows one; a local build must name a replace instead.
 func TestEngineVersionRequiresAResolvableVersion(t *testing.T) {

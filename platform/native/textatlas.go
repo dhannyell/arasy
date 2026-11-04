@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 type gpuTextAtlas struct {

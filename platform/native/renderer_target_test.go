@@ -12,7 +12,7 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 func TestResolveFramePassesSkipsUnavailableTargetOnce(t *testing.T) {
