@@ -625,6 +625,8 @@ const wasmShellHTML = `<!doctype html>
             instantiated = await WebAssembly.instantiateStreaming(resp, go.importObject);
         }
 
+        // The WebGPU binding reads this global to copy queue writes from wasm memory.
+        window.wasm = instantiated;
         waitForFirstFrame();
         go.run(instantiated.instance);
     } catch (e) {
