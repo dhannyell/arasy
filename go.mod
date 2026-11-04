@@ -4,6 +4,8 @@ go 1.26.4
 
 require (
 	github.com/dhannyell/fixed v0.2.0-alpha
+	github.com/dhannyell/go-slug v1.0.0
+	github.com/dhannyell/go-slug/text v1.0.0
 	github.com/dhannyell/webgpu v1.37.1
 	github.com/ebitengine/oto/v3 v3.4.0
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf
@@ -24,6 +26,7 @@ require (
 	github.com/dhannyell/webgpu/libs-linux v0.0.0-20260905020403-4ea5c475cbbd // indirect
 	github.com/dhannyell/webgpu/libs-windows v0.0.0-20260905020407-128027db48f4 // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect

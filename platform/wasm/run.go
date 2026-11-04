@@ -10,6 +10,7 @@ import (
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/platforminput"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
@@ -41,6 +42,10 @@ type Options struct {
 	// value is render.MSAADefault (4x); render.MSAAOff turns antialiasing
 	// off. The Canvas2D fallback ignores it.
 	MSAA render.MSAAMode
+	// GlyphOutlines enables render.GlyphSlug text. Set it to slug.Outlines. If it is
+	// nil, the host draws that text with the glyph atlas. The Canvas2D fallback
+	// ignores it.
+	GlyphOutlines slugcore.Factory
 	// FrameMetrics receives lightweight browser frame telemetry. The callback
 	// runs at most four times per second after a frame has been submitted.
 	// InputToSubmit measures browser-event arrival to render submission; it is
@@ -133,7 +138,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	// asking for them: the adapter feature has to be requested when the device
 	// is created, well before the panel is ever opened.
 	wantGPUTiming := opts.FrameMetrics != nil || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, opts.GlyphOutlines, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -171,13 +176,13 @@ func applyBrowserSplashPolicy(driver *runtime.Driver) {
 	}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) runtime.FrameRenderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, outlines slugcore.Factory, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 
-	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, msaa, log)
+	r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, msaa, outlines, log)
 	if err == nil {
 		log.Info("using webgpu renderer")
 		return r

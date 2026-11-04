@@ -29,7 +29,7 @@ func textBatchLabel(font render.FontID, text string) render.TextLabel {
 
 func TestPlanTextBatchBoundsMatchShaderCorners(t *testing.T) {
 	custom := customTextAtlas(1, 10)
-	plan := PlanTextBatch(testCamera(), 100, 100, []render.TextLabel{textBatchLabel(1, "A")}, func(render.FontID, int) *Atlas {
+	plan := PlanTextBatch(nil, testCamera(), 100, 100, []render.TextLabel{textBatchLabel(1, "A")}, func(render.FontID, int) *Atlas {
 		return custom
 	})
 
@@ -52,7 +52,7 @@ func TestPlanTextBatchAnchorUsesWorldToScreenUnderView(t *testing.T) {
 	camera := testCamera()
 	camera.View = math2d.Affine{A: 1, C: -1, B: 0.5, D: 0.5}
 	position := math2d.Vec2{X: 60, Y: 30}
-	plan := PlanTextBatch(camera, 100, 100, []render.TextLabel{{
+	plan := PlanTextBatch(nil, camera, 100, 100, []render.TextLabel{{
 		Position: position,
 		Text:     "A",
 		Size:     10,
@@ -88,7 +88,7 @@ func TestPlanTextBatchGroupsOnlyConsecutiveSameAtlas(t *testing.T) {
 		textBatchLabel(1, "A"),
 		textBatchLabel(0, "A"),
 	}
-	plan := PlanTextBatch(testCamera(), 100, 100, labels, resolve)
+	plan := PlanTextBatch(nil, testCamera(), 100, 100, labels, resolve)
 
 	want := []TextBatchRange{
 		{Key: builtin.Key, Start: 0, Count: 1},
@@ -121,7 +121,7 @@ func TestPlanTextBatchSkippedLabelMergesSurroundingRange(t *testing.T) {
 		textBatchLabel(2, "A"), // resolve fails, skipped entirely
 		textBatchLabel(0, "A"),
 	}
-	plan := PlanTextBatch(testCamera(), 100, 100, labels, resolve)
+	plan := PlanTextBatch(nil, testCamera(), 100, 100, labels, resolve)
 
 	if len(plan.Ranges) != 1 || plan.Ranges[0].Count != 2 {
 		t.Fatalf("ranges = %+v, want one merged range of 2 glyphs (the skipped label leaves no gap)", plan.Ranges)
@@ -129,17 +129,17 @@ func TestPlanTextBatchSkippedLabelMergesSurroundingRange(t *testing.T) {
 }
 
 func TestPlanTextBatchEmptyInputs(t *testing.T) {
-	if plan := PlanTextBatch(testCamera(), 100, 100, nil, func(render.FontID, int) *Atlas { return NewAtlas() }); plan.HasBounds || len(plan.Ranges) != 0 {
+	if plan := PlanTextBatch(nil, testCamera(), 100, 100, nil, func(render.FontID, int) *Atlas { return NewAtlas() }); plan.HasBounds || len(plan.Ranges) != 0 {
 		t.Fatalf("empty labels plan = %+v, want zero content", plan)
 	}
-	if plan := PlanTextBatch(testCamera(), 100, 100, []render.TextLabel{textBatchLabel(0, "A")}, nil); plan.HasBounds || len(plan.Ranges) != 0 {
+	if plan := PlanTextBatch(nil, testCamera(), 100, 100, []render.TextLabel{textBatchLabel(0, "A")}, nil); plan.HasBounds || len(plan.Ranges) != 0 {
 		t.Fatalf("nil resolve plan = %+v, want zero content", plan)
 	}
 }
 
 func TestPlanTextBatchDegeneratePixelSizeSkipsLabel(t *testing.T) {
 	degenerate := render.Camera{} // zero World/Viewport: WorldScalarToScreen returns 0
-	plan := PlanTextBatch(degenerate, 0, 0, []render.TextLabel{textBatchLabel(0, "A")}, func(render.FontID, int) *Atlas { return NewAtlas() })
+	plan := PlanTextBatch(nil, degenerate, 0, 0, []render.TextLabel{textBatchLabel(0, "A")}, func(render.FontID, int) *Atlas { return NewAtlas() })
 	if plan.HasBounds || len(plan.Ranges) != 0 {
 		t.Fatalf("degenerate-camera plan = %+v, want zero content (px <= 0 skips the label)", plan)
 	}
@@ -152,7 +152,7 @@ func TestTextBatchCoverageAggregatesRunesPerKey(t *testing.T) {
 		textBatchLabel(1, "BC"),
 		textBatchLabel(2, "Z"),
 	}
-	coverage := TextBatchCoverage(testCamera(), 100, 100, labels)
+	coverage := TextBatchCoverage(nil, testCamera(), 100, 100, labels)
 
 	if len(coverage) != 3 {
 		t.Fatalf("coverage keys = %d, want 3 (fonts 0, 1 and 2)", len(coverage))
@@ -185,7 +185,7 @@ func TestTextBatchCoverageAggregatesRunesPerKey(t *testing.T) {
 
 func TestTextBatchCoverageEmptyWhenTextless(t *testing.T) {
 	labels := []render.TextLabel{{Font: 0, Text: "", Size: 10}, {Font: 1, Text: "", Size: 10}}
-	if coverage := TextBatchCoverage(testCamera(), 100, 100, labels); coverage != nil {
+	if coverage := TextBatchCoverage(nil, testCamera(), 100, 100, labels); coverage != nil {
 		t.Fatalf("coverage = %v, want nil", coverage)
 	}
 }
@@ -196,11 +196,56 @@ func TestTextPixelSizeCapsOversizedAtlases(t *testing.T) {
 		Viewport: math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: 10_000, Y: 10_000}),
 		Aspect:   render.AspectFit,
 	}
-	coverage := TextBatchCoverage(camera, 10_000, 10_000, []render.TextLabel{
+	coverage := TextBatchCoverage(nil, camera, 10_000, 10_000, []render.TextLabel{
 		{Font: 1, Text: "large", Size: 10},
 	})
 	key := AtlasKey{Font: 1, PX: maxAtlasPixelSize}
 	if _, ok := coverage[key]; !ok {
 		t.Fatalf("coverage keys = %v, want capped key %+v", coverage, key)
+	}
+}
+
+// fakeSlug appends one record for each byte of the text.
+type fakeSlug struct{ font render.FontID }
+
+func (f fakeSlug) Has(font render.FontID) bool { return font == f.font }
+
+func (fakeSlug) AppendInstances(dst []byte, cmd render.DrawText, _ render.Camera, _, _ math2d.Vec2) ([]byte, math2d.Rect) {
+	dst = append(dst, make([]byte, len(cmd.Text)*SlugInstanceStride)...)
+	return dst, math2d.NewRect(cmd.Position, math2d.Vec2{X: 10, Y: 10})
+}
+
+// The ranges must keep the painter order of the labels.
+func TestPlanTextBatchKeepsSlugAndAtlasOrder(t *testing.T) {
+	const slugFont, atlasFont render.FontID = 1, 2
+	slugLabel := func(s string) render.TextLabel {
+		l := textBatchLabel(slugFont, s)
+		l.Strategy = render.GlyphSlug
+		return l
+	}
+	labels := []render.TextLabel{slugLabel("AA"), textBatchLabel(atlasFont, "A"), slugLabel("A"), slugLabel("AAA")}
+	cam := testCamera()
+	slug := fakeSlug{font: slugFont}
+
+	coverage := TextBatchCoverage(slug, cam, 100, 100, labels)
+	if len(coverage) != 1 {
+		t.Fatalf("coverage has %d atlases, want only the atlas label", len(coverage))
+	}
+	plan := PlanTextBatch(slug, cam, 100, 100, labels, customTextAtlas)
+	want := []struct {
+		slug         bool
+		start, count int
+	}{{true, 0, 2}, {false, 0, 1}, {true, 2, 4}}
+	if len(plan.Ranges) != len(want) {
+		t.Fatalf("got %d ranges, want %d: %+v", len(plan.Ranges), len(want), plan.Ranges)
+	}
+	for i, w := range want {
+		r := plan.Ranges[i]
+		if r.Slug != w.slug || r.Start != w.start || r.Count != w.count {
+			t.Errorf("range %d: got %+v, want %+v", i, r, w)
+		}
+	}
+	if got := len(plan.SlugInstances) / SlugInstanceStride; got != 6 {
+		t.Errorf("got %d Slug records, want 6", got)
 	}
 }

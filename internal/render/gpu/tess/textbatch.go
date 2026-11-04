@@ -10,8 +10,10 @@ import (
 // TextBatchRange is one consecutive span of a retained text batch's glyph
 // records sharing one atlas. Start and Count are glyph-record indices,
 // matching the streaming DrawRunText draw convention (firstVertex =
-// offset*6, vertexCount = count*6).
+// offset*6, vertexCount = count*6). A Slug range has no Key, and its indices
+// are records of TextBatchPlan.SlugInstances.
 type TextBatchRange struct {
+	Slug  bool
 	Key   AtlasKey
 	Start int
 	Count int
@@ -23,12 +25,14 @@ type TextBatchRange struct {
 // every active key (for staleness tracking across frames), and the
 // screen-space bounds of every visible glyph quad for whole-batch culling.
 type TextBatchPlan struct {
-	Glyphs    []byte
-	Labels    []byte
-	Ranges    []TextBatchRange
-	Atlases   map[AtlasKey]*Atlas
-	Bounds    math2d.Rect
-	HasBounds bool
+	Glyphs []byte
+	Labels []byte
+	Ranges []TextBatchRange
+	// SlugInstances holds the records of the Slug ranges.
+	SlugInstances []byte
+	Atlases       map[AtlasKey]*Atlas
+	Bounds        math2d.Rect
+	HasBounds     bool
 }
 
 // textPixelSize resolves the screen pixel size PlanTextBatch and
@@ -48,13 +52,13 @@ func textPixelSize(c ctx, size float64) int {
 // compiled in, its atlas grows dynamically like any user font. Providers
 // serving the fixed built-in bitmap atlas simply ignore the growth request.
 // Callers request coverage for these keys before PlanTextBatch, so a repack
-// never grows atlas coverage itself.
-func TextBatchCoverage(cam render.Camera, w, h int, labels []render.TextLabel) map[AtlasKey]map[rune]struct{} {
+// never grows atlas coverage itself. Labels that slug draws need no coverage.
+func TextBatchCoverage(slug SlugText, cam render.Camera, w, h int, labels []render.TextLabel) map[AtlasKey]map[rune]struct{} {
 	c := ctx{cam: cam, w: float64(w), h: float64(h)}
 	var coverage map[AtlasKey]map[rune]struct{}
 	for i := range labels {
 		label := &labels[i]
-		if label.Text == "" {
+		if label.Text == "" || drawsSlug(slug, label.Strategy, label.Font, label.Size) {
 			continue
 		}
 		px := textPixelSize(c, label.Size)
@@ -84,10 +88,11 @@ func TextBatchCoverage(cam render.Camera, w, h int, labels []render.TextLabel) m
 // no coverage growth; the caller is responsible for requesting coverage
 // (TextBatchCoverage) before calling PlanTextBatch. A nil result from
 // resolve skips the label, like an unresolvable atlas skips a streaming
-// DrawText.
-func PlanTextBatch(cam render.Camera, w, h int, labels []render.TextLabel, resolve func(font render.FontID, px int) *Atlas) TextBatchPlan {
+// DrawText. slug draws the labels with the GlyphSlug strategy, and a nil slug
+// draws them with an atlas. A Slug range follows the same painter order.
+func PlanTextBatch(slug SlugText, cam render.Camera, w, h int, labels []render.TextLabel, resolve func(font render.FontID, px int) *Atlas) TextBatchPlan {
 	plan := TextBatchPlan{}
-	if len(labels) == 0 || resolve == nil {
+	if len(labels) == 0 || (resolve == nil && slug == nil) {
 		return plan
 	}
 
@@ -95,16 +100,13 @@ func PlanTextBatch(cam render.Camera, w, h int, labels []render.TextLabel, resol
 	var glyphs []textGlyphRecord
 	var labelRecs []textLabelRecord
 	lastKey := AtlasKey{}
+	lastSlug := false
 	hasLast := false
 
 	for i := range labels {
 		label := &labels[i]
 		px := textPixelSize(c, label.Size)
 		if px <= 0 {
-			continue
-		}
-		atlas := resolve(label.Font, px)
-		if atlas == nil {
 			continue
 		}
 
@@ -118,6 +120,30 @@ func PlanTextBatch(cam render.Camera, w, h int, labels []render.TextLabel, resol
 			Baseline: label.Baseline,
 			Rotation: label.Rotation,
 		}
+		if drawsSlug(slug, label.Strategy, label.Font, label.Size) {
+			start := len(plan.SlugInstances) / SlugInstanceStride
+			var bounds math2d.Rect
+			plan.SlugInstances, bounds = slug.AppendInstances(plan.SlugInstances, cmd, c.cam, unclippedMin, unclippedMax)
+			added := len(plan.SlugInstances)/SlugInstanceStride - start
+			if added == 0 {
+				continue
+			}
+			if hasLast && lastSlug {
+				plan.Ranges[len(plan.Ranges)-1].Count += added
+			} else {
+				plan.Ranges = append(plan.Ranges, TextBatchRange{Slug: true, Start: start, Count: added})
+				lastSlug, hasLast = true, true
+			}
+			expandRect(&plan.Bounds, &plan.HasBounds, bounds)
+			continue
+		}
+		if resolve == nil {
+			continue
+		}
+		atlas := resolve(label.Font, px)
+		if atlas == nil {
+			continue
+		}
 		start := len(glyphs)
 		added := appendTextGlyphRecords(&glyphs, &labelRecs, c, cmd, atlas)
 		if added == 0 {
@@ -130,11 +156,11 @@ func PlanTextBatch(cam render.Camera, w, h int, labels []render.TextLabel, resol
 		}
 		plan.Atlases[rkey] = atlas
 
-		if hasLast && lastKey == rkey {
+		if hasLast && !lastSlug && lastKey == rkey {
 			plan.Ranges[len(plan.Ranges)-1].Count += added
 		} else {
 			plan.Ranges = append(plan.Ranges, TextBatchRange{Key: rkey, Start: start, Count: added})
-			lastKey, hasLast = rkey, true
+			lastKey, lastSlug, hasLast = rkey, false, true
 		}
 
 		lr := labelRecs[len(labelRecs)-1]
@@ -146,6 +172,29 @@ func PlanTextBatch(cam render.Camera, w, h int, labels []render.TextLabel, resol
 	plan.Glyphs = textGlyphBytes(glyphs)
 	plan.Labels = textLabelBytes(labelRecs)
 	return plan
+}
+
+// The GPU scissor applies the clip of a batch, and a parallax offset moves the
+// glyphs after the instance clip test, so batch instances have no clip.
+var (
+	unclippedMin = math2d.Vec2{X: -math.MaxFloat32, Y: -math.MaxFloat32}
+	unclippedMax = math2d.Vec2{X: math.MaxFloat32, Y: math.MaxFloat32}
+)
+
+// drawsSlug reports if the text goes to slug instead of a glyph atlas.
+func drawsSlug(slug SlugText, strategy render.GlyphStrategy, font render.FontID, size float64) bool {
+	return strategy == render.GlyphSlug && slug != nil && size > 0 && slug.Has(font)
+}
+
+func expandRect(bounds *math2d.Rect, has *bool, r math2d.Rect) {
+	if !*has {
+		*bounds, *has = r, true
+		return
+	}
+	bounds.Min.X = min(bounds.Min.X, r.Min.X)
+	bounds.Min.Y = min(bounds.Min.Y, r.Min.Y)
+	bounds.Max.X = max(bounds.Max.X, r.Max.X)
+	bounds.Max.Y = max(bounds.Max.Y, r.Max.Y)
 }
 
 // expandTextBatchBounds grows bounds to cover one glyph quad's screen-space

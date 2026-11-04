@@ -19,6 +19,7 @@ import (
 // textBatchRange is one consecutive span of a retained text batch's glyph
 // records, bound to the GPU atlas its records index into.
 type textBatchRange struct {
+	slug      bool
 	key       tess.AtlasKey
 	start     int
 	count     int
@@ -42,7 +43,14 @@ type gpuTextBatch struct {
 	labelBuffer js.Value
 	glyphCap    int
 	labelCap    int
-	count       int // total packed glyph records
+	count       int // total packed glyph and Slug records
+
+	// slugBuffer holds the Slug records. uploadSlug creates slugBindGroup, because
+	// the buffers of the Pack can change until the upload.
+	slugBuffer     js.Value
+	slugCap        int
+	slugBindGroup  js.Value
+	slugGeneration uint32 // of the Pack that the records refer to
 
 	ranges  []textBatchRange
 	atlases map[tess.AtlasKey]*tess.Atlas
@@ -64,11 +72,14 @@ func (b *gpuTextBatch) destroy() {
 	if !b.labelBuffer.IsUndefined() && !b.labelBuffer.IsNull() {
 		b.labelBuffer.Call("destroy")
 	}
+	if !b.slugBuffer.IsUndefined() {
+		b.slugBuffer.Call("destroy")
+	}
 }
 
 // residentBytes reports the GPU bytes this batch holds, for accounting.
 func (b *gpuTextBatch) residentBytes() int {
-	return b.glyphCap + b.labelCap
+	return b.glyphCap + b.labelCap + b.slugCap
 }
 
 // applyTextBatchUpdates stores replaced labels for lazy repack at Render
@@ -126,7 +137,7 @@ func (r *webgpuRenderer) prepTextBatches(ids []render.TextBatchID, cam render.Ca
 		if !batch.dirty && batch.projKey == proj {
 			continue
 		}
-		for key, set := range tess.TextBatchCoverage(cam, w, h, batch.labels) {
+		for key, set := range tess.TextBatchCoverage(r.slug.engine, cam, w, h, batch.labels) {
 			runes := make([]rune, 0, len(set))
 			for ch := range set {
 				runes = append(runes, ch)
@@ -213,7 +224,8 @@ func (r *webgpuRenderer) preparePassTextBatches(passes []frameplan.Pass, built [
 }
 
 func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatchProjKey) bool {
-	if batch.dirty || batch.projKey != proj {
+	// A Pack reset moves the glyphs, so the old records would draw wrong glyphs.
+	if batch.dirty || batch.projKey != proj || batch.slugGeneration != r.slug.generation() {
 		return true
 	}
 	for key, oldAtlas := range batch.atlases {
@@ -229,7 +241,9 @@ func (r *webgpuRenderer) textBatchNeedsRepack(batch *gpuTextBatch, proj textBatc
 // Steady-state frames never reach this function: finalizeTextBatch only
 // calls it when content, projection, or atlas identity actually changed.
 func (r *webgpuRenderer) repackTextBatch(batch *gpuTextBatch, cam render.Camera, w, h int, proj textBatchProjKey) {
-	plan := tess.PlanTextBatch(cam, w, h, batch.labels, r.resolveFinalTextAtlas)
+	r.warnSlugBatchOff(batch.labels)
+	plan := tess.PlanTextBatch(r.slug.engine, cam, w, h, batch.labels, r.resolveFinalTextAtlas)
+	batch.slugGeneration = r.slug.generation()
 	batch.projKey = proj
 	batch.dirty = false
 
@@ -244,15 +258,20 @@ func (r *webgpuRenderer) repackTextBatch(batch *gpuTextBatch, cam render.Camera,
 	r.ensureTextBatchBuffers(batch, len(plan.Glyphs), len(plan.Labels))
 	r.queue.Call("writeBuffer", batch.glyphBuffer, 0, bytesToJS(plan.Glyphs))
 	r.queue.Call("writeBuffer", batch.labelBuffer, 0, bytesToJS(plan.Labels))
-	r.frameRetainedContentBytes += uint64(len(plan.Glyphs) + len(plan.Labels))
+	r.writeSlugBatch(batch, plan.SlugInstances)
+	r.frameRetainedContentBytes += uint64(len(plan.Glyphs) + len(plan.Labels) + len(plan.SlugInstances))
 
 	ranges := make([]textBatchRange, len(plan.Ranges))
 	for i, rg := range plan.Ranges {
+		if rg.Slug {
+			ranges[i] = textBatchRange{slug: true, start: rg.Start, count: rg.Count}
+			continue
+		}
 		ranges[i] = textBatchRange{key: rg.Key, start: rg.Start, count: rg.Count, bindGroup: r.createTextBatchBindGroup(batch, rg.Key)}
 	}
 	batch.ranges = ranges
 	batch.atlases = plan.Atlases
-	batch.count = len(plan.Glyphs) / tess.TextGlyphStride
+	batch.count = len(plan.Glyphs)/tess.TextGlyphStride + len(plan.SlugInstances)/tess.SlugInstanceStride
 	batch.bounds, batch.hasBounds = plan.Bounds, plan.HasBounds
 }
 
@@ -271,6 +290,9 @@ func (r *webgpuRenderer) createTextBatchBindGroup(batch *gpuTextBatch, key tess.
 func (r *webgpuRenderer) rebuildRetainedTextBindGroups() {
 	rebuild := func(batch *gpuTextBatch) {
 		for i := range batch.ranges {
+			if batch.ranges[i].slug {
+				continue
+			}
 			batch.ranges[i].bindGroup = r.createTextBatchBindGroup(batch, batch.ranges[i].key)
 		}
 	}

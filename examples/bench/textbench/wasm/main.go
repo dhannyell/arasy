@@ -7,6 +7,7 @@ import (
 
 	"github.com/dhannyell/arasy/examples/bench/textbench"
 	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/render/slug"
 )
 
 func main() {
@@ -15,6 +16,7 @@ func main() {
 	if err := wasm.Run(game, wasm.Options{
 		ForceCanvas2D: false,
 		Log:           log,
+		GlyphOutlines: slug.Outlines,
 		FrameMetrics: func(metrics wasm.FrameMetrics) {
 			game.ObserveFrame(
 				metrics.FPS,

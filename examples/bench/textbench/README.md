@@ -39,6 +39,7 @@ Controls:
   index). Unique text is the worst case for streaming layout because every
   label and glyph is emitted independently each frame; in retained mode it
   only matters on a republish.
+- `G` toggles the glyph strategy between the atlas and Slug outlines.
 - `P` toggles streaming/retained at the current label count. Leaving retained
   mode deletes the batch so stats reflect only the active mode.
 - `M` (retained mode only) cycles the mutated fraction of the batch:

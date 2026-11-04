@@ -17,6 +17,7 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/fontatlas"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/internal/renderbatch"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/platform/wasm/gpu"
@@ -187,6 +188,7 @@ type webgpuRenderer struct {
 	planner     frameplan.Planner
 
 	fontProvider *fontatlas.Provider
+	slug         wasmSlug
 	textAtlases  map[tess.AtlasKey]gpuTextAtlas
 
 	// texSizes maps TextureID to pixel dimensions for the textured
@@ -236,7 +238,7 @@ type webgpuRenderer struct {
 	lostCb       js.Func
 }
 
-func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) (*webgpuRenderer, error) {
+func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, outlines slugcore.Factory, log *slog.Logger) (*webgpuRenderer, error) {
 	fontProvider, err := fontatlas.New(manifest)
 	if err != nil {
 		return nil, err
@@ -327,6 +329,10 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 	r.textGlyphBuffer, r.textGlyphCap = r.createSpriteBuffer(64 * 1024)
 	r.textLabelBuffer, r.textLabelCap = r.createSpriteBuffer(64 * 1024)
 	r.texBuffer, r.texCap = r.createVertexBuffer(64 * 1024)
+	if outlines != nil {
+		r.slug.engine = outlines(fontProvider.Face)
+		r.tess.SetSlugText(r.slug.engine)
+	}
 	r.spriteBuffer, r.spriteCap = r.createSpriteBuffer(64 * 1024)
 	r.spriteArenaAlignment = device.Get("limits").Get("minUniformBufferOffsetAlignment").Int()
 	r.spriteArena = newUniformArena(tess.SpriteUniformSize, r.spriteArenaAlignment, 64)
@@ -433,6 +439,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	if w <= 0 || h <= 0 {
 		return
 	}
+	defer r.slug.endFrame()
 	var phaseStart float64
 	if r.sampleCPUTiming {
 		phaseStart = performanceNowMillis()
@@ -594,6 +601,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 	if len(spriteBytes) > 0 {
 		r.queue.Call("writeBuffer", r.spriteBuffer, 0, bytesToJS(spriteBytes))
 	}
+	r.uploadSlug()
 	var uploadEnd float64
 	if r.sampleCPUTiming {
 		uploadEnd = performanceNowMillis()
@@ -795,6 +803,8 @@ func gpuDrawRunFromTess(run tess.StreamRun, pass int) gpuDrawRun {
 		result.offset /= tess.SpriteStride
 	case tess.DrawRunText:
 		result.offset /= tess.TextGlyphStride
+	case tess.DrawRunSlugText:
+		result.offset /= tess.SlugInstanceStride
 	}
 	result.kind = run.Kind
 	return result
@@ -1023,6 +1033,17 @@ func (r *webgpuRenderer) drawRun(
 		}
 		pass.Call("setBindGroup", 0, atlas.glyphBindGroup, []any{run.uniformSlot})
 		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
+	case tess.DrawRunSlugText:
+		if r.slug.bindGroup.IsUndefined() {
+			return
+		}
+		if renderTarget {
+			pass.Call("setPipeline", pickJS(run.blend, r.slug.targetAdd, r.slug.target))
+		} else {
+			pass.Call("setPipeline", pickJS(run.blend, r.slug.mainAdd, r.slug.main))
+		}
+		pass.Call("setBindGroup", 0, r.slug.bindGroup, []any{run.uniformSlot})
+		pass.Call("draw", run.count*6, 1, run.offset*6, 0)
 	case tess.DrawRunParticles:
 		if r.particles == nil {
 			return
@@ -1093,16 +1114,20 @@ func (r *webgpuRenderer) drawRun(
 		if !applyClipScissor(pass, cmd.Clip, camera, viewport, 1, w, h, scissor) {
 			return
 		}
+		glyphPipeline, slugPipeline := r.textGlyphPipeline, r.slug.main
 		if renderTarget {
-			pass.Call("setPipeline", r.targetTextGlyphPipeline)
-		} else {
-			pass.Call("setPipeline", r.textGlyphPipeline)
+			glyphPipeline, slugPipeline = r.targetTextGlyphPipeline, r.slug.target
 		}
 		for _, rg := range batch.ranges {
-			if rg.bindGroup.IsUndefined() || rg.bindGroup.IsNull() {
+			bindGroup, pipeline := rg.bindGroup, glyphPipeline
+			if rg.slug {
+				bindGroup, pipeline = batch.slugBindGroup, slugPipeline
+			}
+			if bindGroup.IsUndefined() || bindGroup.IsNull() {
 				continue
 			}
-			pass.Call("setBindGroup", 0, rg.bindGroup, []any{run.uniformSlot})
+			pass.Call("setPipeline", pipeline)
+			pass.Call("setBindGroup", 0, bindGroup, []any{run.uniformSlot})
 			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
 		}
 		if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
@@ -1453,6 +1478,7 @@ func (r *webgpuRenderer) ensureSpriteUniformArena(required int) {
 		r.spriteArena.slotSize*r.spriteArena.slots, gpu.BufferUsageUniform|gpu.BufferUsageCopyDst)))
 	r.rebuildSpriteBindGroups()
 	r.rebuildTextGlyphBindGroups()
+	r.rebuildSlugBindGroup()
 	r.rebuildRetainedSpriteBindGroups()
 	r.rebuildRetainedTextBindGroups()
 	if !old.IsUndefined() && !old.IsNull() {

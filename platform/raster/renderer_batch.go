@@ -136,6 +136,7 @@ func (r *Renderer) drawTextBatch(img *image.RGBA, command render.DrawTextBatch) 
 			Align:       label.Align,
 			Baseline:    label.Baseline,
 			Rotation:    label.Rotation,
+			Strategy:    label.Strategy,
 		})
 	}
 }
