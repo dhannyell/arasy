@@ -147,6 +147,22 @@ renderer_benchmark_test.go
 Keep pixel assertions in small helpers, but leave the render command visible in
 the test. That makes visual failures easier to understand.
 
+### `platform/native`
+
+`TestRendererMatchesGoldens` draws the `cmd/wasmgolden` fixtures to an offscreen
+texture and compares the pixels with `platform/native/testdata/golden/`. The
+goldens are valid only for the GPU that recorded them, so the test is local and
+CI skips it:
+
+```powershell
+$env:ARASY_GPU_GOLDEN = "1"
+go test ./platform/native/ -run TestRendererMatchesGoldens
+go test ./platform/native/ -run TestRendererMatchesGoldens -update # only after an intentional visual change
+```
+
+The test uses the default font, not the `arr_no_default_font` build. Failed
+renders go to `platform/native/testdata/failures/`.
+
 ### `render`
 
 Separate camera transforms, aspect ratio, colors, and commands:

@@ -165,6 +165,22 @@ Os projetos `canvas2d` e `webgpu` usam baselines separados. O teste WebGPU deve
 falhar se o host cair silenciosamente para Canvas2D. Artefatos de diferença
 ficam em `test-results/` e nao devem ser commitados.
 
+### `platform/native`
+
+`TestRendererMatchesGoldens` desenha as fixtures de `cmd/wasmgolden` numa
+textura offscreen e compara os pixels com `platform/native/testdata/golden/`.
+Os goldens valem só para a GPU que os gravou, por isso o teste é local e o CI
+o ignora:
+
+```powershell
+$env:ARASY_GPU_GOLDEN = "1"
+go test ./platform/native/ -run TestRendererMatchesGoldens
+go test ./platform/native/ -run TestRendererMatchesGoldens -update # somente apos mudanca visual intencional
+```
+
+O teste usa a fonte padrão, não a build `arr_no_default_font`. Os renders que
+falham ficam em `platform/native/testdata/failures/`.
+
 ### `render`
 
 Separe transformação de camera, aspect ratio, cores e comandos:
