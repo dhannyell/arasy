@@ -147,7 +147,8 @@ func compareSlugFrames(t *testing.T, renderer *Renderer, got, want *image.RGBA) 
 }
 
 // newHeadlessRenderer returns a renderer on a device without a surface. It skips
-// the test on a machine without a GPU adapter.
+// the test without a hardware adapter: the tolerance of the comparison does not
+// hold on a software adapter, and the CI runners have only that kind.
 func newHeadlessRenderer(t *testing.T, manifest asset.Manifest, msaa render.MSAAMode, width, height int) *Renderer {
 	t.Helper()
 	d := &device{instance: wgpu.CreateInstance(nil)}
@@ -156,6 +157,10 @@ func newHeadlessRenderer(t *testing.T, manifest asset.Manifest, msaa render.MSAA
 	if err != nil {
 		d.destroy()
 		t.Skipf("no WebGPU adapter: %v", err)
+	}
+	if info := d.adapter.GetInfo(); info.AdapterType == wgpu.AdapterTypeCPU {
+		d.destroy()
+		t.Skipf("software WebGPU adapter: %s", info.Description)
 	}
 	if d.device, err = d.adapter.RequestDevice(nil); err != nil {
 		d.destroy()
@@ -166,7 +171,7 @@ func newHeadlessRenderer(t *testing.T, manifest asset.Manifest, msaa render.MSAA
 		Format: wgpu.TextureFormatRGBA8Unorm, Width: uint32(width), Height: uint32(height),
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	renderer, err := newRendererOn(d, render.RGBA(0, 0, 0, 1), manifest, msaa, 0, slug.Outlines, log)
+	renderer, err := newRenderer(d, render.RGBA(0, 0, 0, 1), manifest, msaa, 0, slug.Outlines, log)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -332,3 +332,33 @@ func (t *gpuTiming) release() {
 		t.querySet = nil
 	}
 }
+
+// cpuFrameTiming separates CPU work, surface acquisition and queue submission.
+type cpuFrameTiming struct {
+	submittedAt time.Time
+	cpuEndAt    time.Time
+	acquireWait time.Duration
+	valid       bool
+}
+
+func (t cpuFrameTiming) renderDurationSince(start time.Time) time.Duration {
+	if !t.valid || start.IsZero() {
+		return 0
+	}
+	duration := t.cpuEndAt.Sub(start) - t.acquireWait
+	if duration < 0 {
+		return 0
+	}
+	return duration
+}
+
+func (t cpuFrameTiming) inputToSubmit(inputAt time.Time) (time.Duration, bool) {
+	if !t.valid || inputAt.IsZero() {
+		return 0, false
+	}
+	duration := t.submittedAt.Sub(inputAt)
+	if duration < 0 {
+		return 0, false
+	}
+	return duration, true
+}

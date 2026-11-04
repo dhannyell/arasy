@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -60,16 +61,18 @@ func TestUnknownFontReportsNoFont(t *testing.T) {
 // GlyphOutlines exists to keep the text shaper out of a game that does not set it.
 func TestHostsDoNotLinkTextShaper(t *testing.T) {
 	cases := []struct{ goos, goarch, pkg string }{
-		{"windows", "amd64", "github.com/dhannyell/arasy/platform/native"},
-		{"windows", "amd64", "github.com/dhannyell/arasy/platform/raster"},
+		{runtime.GOOS, runtime.GOARCH, "github.com/dhannyell/arasy/platform/native"},
+		{runtime.GOOS, runtime.GOARCH, "github.com/dhannyell/arasy/platform/raster"},
 		{"js", "wasm", "github.com/dhannyell/arasy/platform/wasm"},
 	}
 	for _, c := range cases {
 		cmd := exec.Command("go", "list", "-deps", c.pkg)
 		cmd.Env = append(os.Environ(), "GOOS="+c.goos, "GOARCH="+c.goarch)
+		var stderr strings.Builder
+		cmd.Stderr = &stderr
 		out, err := cmd.Output()
 		if err != nil {
-			t.Fatalf("go list %s: %v", c.pkg, err)
+			t.Fatalf("go list %s: %v\n%s", c.pkg, err, stderr.String())
 		}
 		if strings.Contains(string(out), "go-slug/text") {
 			t.Errorf("%s links go-slug/text", c.pkg)

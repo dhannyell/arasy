@@ -22,7 +22,6 @@ import (
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
-	"github.com/go-gl/glfw/v3.4/glfw"
 )
 
 // msaaSampleCount falls back when the mode is invalid or the selected surface
@@ -60,7 +59,7 @@ func msaaSampleCount(
 	return uint32(samples)
 }
 
-// Renderer is the provisional streaming renderer for a native GLFW window.
+// Renderer is the provisional streaming renderer for a wgpu surface.
 // A later host API may wrap this constructor with lifecycle and input options.
 type Renderer struct {
 	device   *device
@@ -195,32 +194,9 @@ type Renderer struct {
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
 
-// NewRenderer creates a native streaming renderer for window using vsync to
-// select its surface presentation mode.
-func NewRenderer(
-	window *glfw.Window,
-	clear render.Color,
-	manifest asset.Manifest,
-	vsync VSyncMode,
-	msaa render.MSAAMode,
-	particleScale float64,
-	wantGPUTiming bool,
-	outlines slugcore.Factory,
-	log *slog.Logger,
-) (renderer *Renderer, err error) {
-	if log == nil {
-		log = slog.Default()
-	}
-	d, err := newDevice(window, vsync, wantGPUTiming, log)
-	if err != nil {
-		return nil, err
-	}
-	return newRendererOn(d, clear, manifest, msaa, particleScale, outlines, log)
-}
-
-// newRendererOn creates a renderer on a device that has a surface configuration.
-// The renderer owns d and releases it in Close, also if the creation fails.
-func newRendererOn(
+// newRenderer creates a renderer on d, a device with a configured surface. The
+// renderer owns d from this call, including on error.
+func newRenderer(
 	d *device,
 	clear render.Color,
 	manifest asset.Manifest,
@@ -229,6 +205,9 @@ func newRendererOn(
 	outlines slugcore.Factory,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
+	if log == nil {
+		log = slog.Default()
+	}
 	provider, err := fontatlas.New(manifest)
 	if err != nil {
 		d.destroy()
