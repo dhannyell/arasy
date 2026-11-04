@@ -12,7 +12,7 @@ import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 type gpuEmitter struct {

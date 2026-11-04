@@ -11,7 +11,7 @@ import (
 	internalrender "github.com/dhannyell/arasy/internal/render"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/runtime"
-	"github.com/oliverbestmann/webgpu/wgpu"
+	"github.com/dhannyell/webgpu/wgpu"
 )
 
 // gpuTexture is one declared texture uploaded to the GPU with its complete

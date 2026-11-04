@@ -1413,10 +1413,9 @@ func (r *webgpuRenderer) createTextGlyphBindGroup(view, sampler, metrics, glyphB
 }
 
 // rebuildTextGlyphBindGroups rebuilds every atlas's streaming bind group
-// after the shared glyph/label buffers grow. Retained text batches keep
-// their own persistent buffers and are unaffected; their bind groups are
-// rebuilt by repackTextBatch whenever content, projection, or atlas
-// identity actually changes.
+// after the shared glyph/label buffers or the uniform arena grow. Retained
+// text batches keep their own glyph/label buffers. They rebuild in
+// repackTextBatch and rebuildRetainedTextBindGroups.
 func (r *webgpuRenderer) rebuildTextGlyphBindGroups() {
 	for key, atlas := range r.textAtlases {
 		atlas.glyphBindGroup = r.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer, r.textGlyphBuffer, r.textLabelBuffer)
@@ -1455,6 +1454,7 @@ func (r *webgpuRenderer) ensureSpriteUniformArena(required int) {
 	r.rebuildSpriteBindGroups()
 	r.rebuildTextGlyphBindGroups()
 	r.rebuildRetainedSpriteBindGroups()
+	r.rebuildRetainedTextBindGroups()
 	if !old.IsUndefined() && !old.IsNull() {
 		old.Call("destroy")
 	}

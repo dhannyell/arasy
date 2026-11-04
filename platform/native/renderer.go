@@ -20,8 +20,8 @@ import (
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
+	"github.com/dhannyell/webgpu/wgpu"
 	"github.com/go-gl/glfw/v3.4/glfw"
-	"github.com/oliverbestmann/webgpu/wgpu"
 )
 
 // msaaSampleCount falls back when the mode is invalid or the selected surface
