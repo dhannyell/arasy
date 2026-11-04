@@ -25,6 +25,10 @@ type device struct {
 	queue    *wgpu.Queue
 	config   *wgpu.SurfaceConfiguration
 
+	// offscreenView replaces the surface when it is set. The renderer then
+	// draws here and presents nothing. The owner of the view releases it.
+	offscreenView *wgpu.TextureView
+
 	// vendorID/deviceID identify the adapter to the OS probes, so the dev
 	// panel's VRAM reading lands on the same GPU the game renders to.
 	vendorID uint32

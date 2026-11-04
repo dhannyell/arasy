@@ -592,43 +592,46 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		return
 	}
 	var phaseStart time.Time
-	var acquireStart time.Time
-	if r.timeCPU {
-		acquireStart = time.Now()
-	}
-	surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
-	if r.timeCPU {
-		r.cpuFrame.acquireWait = time.Since(acquireStart)
-		r.presentWait = r.cpuFrame.acquireWait
-	}
-	if err != nil {
-		r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
-		return
-	}
-	if surfaceTexture.Texture != nil {
-		defer surfaceTexture.Texture.Release()
-	}
-	switch decideSurfaceStatus(surfaceTexture.Status) {
-	case actionSkip:
-		return
-	case actionReconfigure:
-		r.device.configure(width, height)
-		return
-	case actionFatal:
-		r.recordErr(fmt.Errorf("acquire surface texture: %s", surfaceTexture.Status))
-		return
-	case actionRender:
-		if surfaceTexture.Texture == nil {
-			r.recordErr(errors.New("acquire surface texture: success status without texture"))
+	surfaceView := r.device.offscreenView
+	if surfaceView == nil {
+		var acquireStart time.Time
+		if r.timeCPU {
+			acquireStart = time.Now()
+		}
+		surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
+		if r.timeCPU {
+			r.cpuFrame.acquireWait = time.Since(acquireStart)
+			r.presentWait = r.cpuFrame.acquireWait
+		}
+		if err != nil {
+			r.recordErr(fmt.Errorf("acquire surface texture: %w", err))
 			return
 		}
+		if surfaceTexture.Texture != nil {
+			defer surfaceTexture.Texture.Release()
+		}
+		switch decideSurfaceStatus(surfaceTexture.Status) {
+		case actionSkip:
+			return
+		case actionReconfigure:
+			r.device.configure(width, height)
+			return
+		case actionFatal:
+			r.recordErr(fmt.Errorf("acquire surface texture: %s", surfaceTexture.Status))
+			return
+		case actionRender:
+			if surfaceTexture.Texture == nil {
+				r.recordErr(errors.New("acquire surface texture: success status without texture"))
+				return
+			}
+		}
+		surfaceView, err = surfaceTexture.Texture.TryCreateView(nil)
+		if err != nil {
+			r.recordErr(fmt.Errorf("create surface texture view: %w", err))
+			return
+		}
+		defer surfaceView.Release()
 	}
-	surfaceView, err := surfaceTexture.Texture.TryCreateView(nil)
-	if err != nil {
-		r.recordErr(fmt.Errorf("create surface texture view: %w", err))
-		return
-	}
-	defer surfaceView.Release()
 	if r.timeCPU {
 		phaseStart = time.Now()
 	}
@@ -643,7 +646,9 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		r.cpuFrame.valid = !r.cpuFrame.submittedAt.IsZero()
 		phaseStart = r.cpuFrame.cpuEndAt
 	}
-	r.device.surface.Present()
+	if r.device.offscreenView == nil {
+		r.device.surface.Present()
+	}
 	if r.timeCPU {
 		r.presentWait += time.Since(phaseStart)
 	}

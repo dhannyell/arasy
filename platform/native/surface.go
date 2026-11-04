@@ -119,12 +119,56 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 		return d, fmt.Errorf("create WebGPU surface")
 	}
 
+	if err = d.open(wantGPUTiming, log); err != nil {
+		return d, err
+	}
+
+	caps := d.surface.GetCapabilities(d.adapter)
+	format, err := chooseSurfaceFormat(caps.Formats)
+	if err != nil {
+		return d, err
+	}
+
+	alpha, err := chooseAlphaMode(caps.AlphaModes, log)
+	if err != nil {
+		return d, err
+	}
+
+	present, err := choosePresentMode(caps.PresentModes, vsync, log)
+	if err != nil {
+		return d, err
+	}
+
+	d.config = &wgpu.SurfaceConfiguration{
+		Usage:       wgpu.TextureUsageRenderAttachment,
+		Format:      format,
+		PresentMode: present,
+		AlphaMode:   alpha,
+	}
+	log.Info("native surface present mode selected",
+		"requested_vsync_off", vsync == VSyncOff,
+		"present_mode", present,
+		"available_present_modes", caps.PresentModes,
+	)
+	fbW, fbH := window.GetFramebufferSize()
+	d.configure(fbW, fbH)
+
+	d.adapter.Release()
+	d.adapter = nil
+
+	return d, nil
+}
+
+// open requests the adapter and the device on d.instance. A nil d.surface asks
+// for any adapter, which is what an offscreen device needs.
+func (d *device) open(wantGPUTiming bool, log *slog.Logger) error {
+	var err error
 	d.adapter, err = d.instance.RequestAdapter(&wgpu.RequestAdapterOptions{
 		CompatibleSurface: d.surface,
 		PowerPreference:   wgpu.PowerPreferenceHighPerformance,
 	})
 	if err != nil {
-		return d, fmt.Errorf("request WebGPU adapter: %w", err)
+		return fmt.Errorf("request WebGPU adapter: %w", err)
 	}
 	info := d.adapter.GetInfo()
 	d.vendorID = info.VendorId
@@ -172,7 +216,7 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 		d.device, err = d.adapter.RequestDevice(nil)
 	}
 	if err != nil {
-		return d, fmt.Errorf("request WebGPU device: %w", err)
+		return fmt.Errorf("request WebGPU device: %w", err)
 	}
 	d.timestampQuery = wantTimestamps
 	d.formatFeatures = wantFormatFeatures
@@ -185,39 +229,5 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 	}
 
 	d.queue = d.device.GetQueue()
-
-	caps := d.surface.GetCapabilities(d.adapter)
-	format, err := chooseSurfaceFormat(caps.Formats)
-	if err != nil {
-		return d, err
-	}
-
-	alpha, err := chooseAlphaMode(caps.AlphaModes, log)
-	if err != nil {
-		return d, err
-	}
-
-	present, err := choosePresentMode(caps.PresentModes, vsync, log)
-	if err != nil {
-		return d, err
-	}
-
-	d.config = &wgpu.SurfaceConfiguration{
-		Usage:       wgpu.TextureUsageRenderAttachment,
-		Format:      format,
-		PresentMode: present,
-		AlphaMode:   alpha,
-	}
-	log.Info("native surface present mode selected",
-		"requested_vsync_off", vsync == VSyncOff,
-		"present_mode", present,
-		"available_present_modes", caps.PresentModes,
-	)
-	fbW, fbH := window.GetFramebufferSize()
-	d.configure(fbW, fbH)
-
-	d.adapter.Release()
-	d.adapter = nil
-
-	return d, nil
+	return nil
 }
