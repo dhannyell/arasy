@@ -100,6 +100,11 @@ test('renders two camera passes without WebGPU MSAA', async ({ page }, testInfo)
   await expectFixtureScreenshot(page, testInfo, 'passes', 'passes-msaa-off.png', '&msaa=off');
 });
 
+test('renders a retained text batch after the uniform arena grows', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'webgpu', 'The uniform arena applies only to WebGPU.');
+  await expectFixtureScreenshot(page, testInfo, 'arena-growth', 'arena-growth.png');
+});
+
 test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
   skipCanvas2DOnLinux(testInfo);
   await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');

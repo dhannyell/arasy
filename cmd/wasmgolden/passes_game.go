@@ -114,6 +114,62 @@ func cameraPassZoomCommands() []render.Command {
 	}
 }
 
+const (
+	arenaGrowthTextBatch render.TextBatchID = 1
+	// arenaGrowthPasses needs more uniform slots than the 64 of the first
+	// WebGPU arena. A pass with only DrawRect uses no slot.
+	arenaGrowthPasses = 100
+)
+
+// arenaGrowthGame draws a retained text batch while extra text passes grow
+// the WebGPU sprite uniform arena.
+type arenaGrowthGame struct{}
+
+// NewArenaGrowthGolden returns the uniform arena growth browser fixture.
+func NewArenaGrowthGolden() (runtime.Game, error) {
+	return &arenaGrowthGame{}, nil
+}
+
+func (*arenaGrowthGame) Setup() runtime.Config {
+	return runtime.Config{
+		SimulationHz:         60,
+		Camera:               cameraPassBaseCamera(),
+		DisableDefaultSplash: true,
+		Clear:                render.RGBA8(12, 16, 24, 255),
+	}
+}
+
+func (*arenaGrowthGame) Init(ctx *runtime.UpdateContext) {
+	ctx.Batches.UpdateText(arenaGrowthTextBatch, []render.TextLabel{{
+		Position: math2d.Vec2{X: 4, Y: 54},
+		Text:     "RETAINED",
+		Color:    render.RGBA8(255, 214, 120, 255),
+		Size:     8,
+		Baseline: render.BaselineTop,
+	}})
+}
+
+func (*arenaGrowthGame) Update(ctx *runtime.UpdateContext, _ float64) {
+	ctx.HoldSimulation()
+}
+
+func (*arenaGrowthGame) Render(ctx *runtime.RenderContext) []render.Command {
+	for i := range arenaGrowthPasses {
+		ctx.AddPass(cameraPassBaseCamera(), []render.Command{render.DrawText{
+			Position: math2d.Vec2{X: 4 + float64(i%10)*9, Y: 4 + float64(i/10)*5},
+			Text:     "x",
+			Color:    render.RGBA8(235, 244, 255, 255),
+			Size:     4,
+			Baseline: render.BaselineTop,
+		}})
+	}
+	// A second camera gives the batch its own per-pass GPU copy.
+	shifted := cameraPassBaseCamera()
+	shifted.World = math2d.NewRect(math2d.Vec2{Y: -11}, math2d.Vec2{X: 100, Y: 75})
+	ctx.AddPass(shifted, []render.Command{render.DrawTextBatch{Batch: arenaGrowthTextBatch}})
+	return []render.Command{render.DrawTextBatch{Batch: arenaGrowthTextBatch}}
+}
+
 func cameraPassesManifest() (asset.Manifest, error) {
 	tile, err := encodeGoldenTexture([4]color.RGBA{
 		{R: 242, G: 84, B: 105, A: 255},

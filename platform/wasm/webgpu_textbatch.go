@@ -248,16 +248,38 @@ func (r *webgpuRenderer) repackTextBatch(batch *gpuTextBatch, cam render.Camera,
 
 	ranges := make([]textBatchRange, len(plan.Ranges))
 	for i, rg := range plan.Ranges {
-		var bindGroup js.Value
-		if gpuAtlas, ok := r.textAtlasFor(rg.Key); ok {
-			bindGroup = r.createTextGlyphBindGroup(gpuAtlas.view, gpuAtlas.sampler, gpuAtlas.metricBuffer, batch.glyphBuffer, batch.labelBuffer)
-		}
-		ranges[i] = textBatchRange{key: rg.Key, start: rg.Start, count: rg.Count, bindGroup: bindGroup}
+		ranges[i] = textBatchRange{key: rg.Key, start: rg.Start, count: rg.Count, bindGroup: r.createTextBatchBindGroup(batch, rg.Key)}
 	}
 	batch.ranges = ranges
 	batch.atlases = plan.Atlases
 	batch.count = len(plan.Glyphs) / tess.TextGlyphStride
 	batch.bounds, batch.hasBounds = plan.Bounds, plan.HasBounds
+}
+
+// createTextBatchBindGroup returns an undefined value when the atlas is not
+// available. The draw loop skips such a range.
+func (r *webgpuRenderer) createTextBatchBindGroup(batch *gpuTextBatch, key tess.AtlasKey) js.Value {
+	gpuAtlas, ok := r.textAtlasFor(key)
+	if !ok {
+		return js.Value{}
+	}
+	return r.createTextGlyphBindGroup(gpuAtlas.view, gpuAtlas.sampler, gpuAtlas.metricBuffer, batch.glyphBuffer, batch.labelBuffer)
+}
+
+// rebuildRetainedTextBindGroups moves retained text ranges to the current
+// uniform arena. The packed records do not change, so no repack occurs.
+func (r *webgpuRenderer) rebuildRetainedTextBindGroups() {
+	rebuild := func(batch *gpuTextBatch) {
+		for i := range batch.ranges {
+			batch.ranges[i].bindGroup = r.createTextBatchBindGroup(batch, batch.ranges[i].key)
+		}
+	}
+	for _, batch := range r.textBatches {
+		rebuild(batch)
+	}
+	for _, batch := range r.passTextBatches {
+		rebuild(batch)
+	}
 }
 
 // ensureTextBatchBuffers (re)allocates a batch's glyph/label storage buffers

@@ -25,6 +25,8 @@ func NewFixture(name string) (runtime.Game, error) {
 		return NewFlipConformanceGolden()
 	case "passes":
 		return NewCameraPassesGolden()
+	case "arena-growth":
+		return NewArenaGrowthGolden()
 	case "post":
 		return NewPostGolden()
 	case "post-stylize":
