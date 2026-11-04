@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/dhannyell/fixed v0.2.0-alpha
-	github.com/dhannyell/webgpu v1.37.0
+	github.com/dhannyell/webgpu v1.37.1
 	github.com/ebitengine/oto/v3 v3.4.0
 	github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf
 	github.com/hajimehoshi/go-mp3 v0.3.4
