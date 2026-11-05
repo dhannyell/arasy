@@ -84,12 +84,13 @@ $env:GOOS="js"; $env:GOARCH="wasm"; go build ./...; Remove-Item Env:GOOS,Env:GOA
 | `no-default-font` | tests and JS/WASM build with `arr_no_default_font` |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` on Windows |
-| `wasm` | JS/WASM build, vet, simulation tests, replay tests, and Canvas2D golden |
+| `wasm` | JS/WASM build, vet, simulation tests, replay tests, and Canvas2D and WebGPU goldens |
 | `arm64` | `go test ./...` on native arm64 |
 
 The WASM and arm64 jobs provide the cross-architecture determinism check. The
-checksum golden must match x86-64, arm64, and WASM. WebGPU visual goldens remain
-a local browser gate until a GPU-backed runner exists.
+checksum golden must match x86-64, arm64, and WASM. The runner has no GPU, so
+the WebGPU goldens run on SwiftShader, the software adapter in Chromium. The
+tolerance catches visible regressions; the native GPU goldens stay a local gate.
 
 ## Default font
 

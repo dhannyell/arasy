@@ -85,12 +85,14 @@ $env:GOOS="js"; $env:GOARCH="wasm"; go build ./...; Remove-Item Env:GOOS,Env:GOA
 | `no-default-font` | testes e build JS/WASM com `arr_no_default_font` |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` em Windows |
-| `wasm` | build JS/WASM, vet, testes de simulação, replay e golden Canvas2D |
+| `wasm` | build JS/WASM, vet, testes de simulação, replay e goldens Canvas2D e WebGPU |
 | `arm64` | `go test ./...` em arm64 native |
 
 Os jobs WASM e arm64 formam a verificação de determinismo entre arquiteturas.
-O golden de checksum deve coincidir em x86-64, arm64 e WASM. Goldens visuais
-WebGPU continuam sendo um gate local de browser até existir um runner com GPU.
+O golden de checksum deve coincidir em x86-64, arm64 e WASM. O runner não tem
+GPU, por isso os goldens WebGPU correm no SwiftShader, o adaptador de software do
+Chromium. A tolerância apanha regressões visíveis; os goldens nativos com GPU
+continuam um gate local.
 
 ## Fonte padrão
 
