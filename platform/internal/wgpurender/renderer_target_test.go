@@ -41,15 +41,15 @@ func TestResolveFramePassesSkipsUnavailableTargetOnce(t *testing.T) {
 	}
 }
 
-func TestNativeTextureSampleViewUsesMipZeroAfterRTT(t *testing.T) {
+func TestTextureSampleViewUsesMipZeroAfterRTT(t *testing.T) {
 	full := &wgpu.TextureView{}
 	target := &wgpu.TextureView{}
 	texture := gpuTexture{view: full, targetView: target, arrayLayer: -1}
-	if got := nativeTextureSampleView(texture); got != full {
+	if got := textureSampleView(texture); got != full {
 		t.Fatalf("static sample view = %p, want full view %p", got, full)
 	}
 	texture.rtt = true
-	if got := nativeTextureSampleView(texture); got != target {
+	if got := textureSampleView(texture); got != target {
 		t.Fatalf("RTT sample view = %p, want mip-zero view %p", got, target)
 	}
 }

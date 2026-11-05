@@ -303,7 +303,7 @@ func (r *Renderer) ensureTextBatchBuffers(batch *gpuTextBatch, glyphSize, labelS
 
 // resolveTextBatchRuns fills textBatchRuns with the batch each run draws. A nil
 // entry skips the run: its batch is missing, empty or out of view.
-func (r *Renderer) resolveTextBatchRuns(runs []tess.StreamRun, plans []nativePassPlan) {
+func (r *Renderer) resolveTextBatchRuns(runs []tess.StreamRun, plans []passPlan) {
 	if cap(r.textBatchRuns) < len(runs) {
 		r.textBatchRuns = make([]*gpuTextBatch, len(runs))
 	} else {
