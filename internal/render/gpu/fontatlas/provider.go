@@ -40,6 +40,9 @@ func New(manifest asset.Manifest) (*Provider, error) {
 	}, nil
 }
 
+// Face returns the manifest font of id, or nil. ID 0 is not a manifest font.
+func (p *Provider) Face(id render.FontID) *typeface.Face { return p.fonts.Lookup(id) }
+
 // AtlasFor returns the requested atlas, growing it to cover text when needed.
 func (p *Provider) AtlasFor(fontID render.FontID, px int, text string) (*tess.Atlas, error) {
 	if fontID == 0 {

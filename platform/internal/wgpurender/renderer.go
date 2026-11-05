@@ -17,6 +17,7 @@ import (
 	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/shaders"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
@@ -79,6 +80,7 @@ type Renderer struct {
 	textAtlases          map[tess.AtlasKey]gpuTextAtlas
 	spriteBatches        map[render.SpriteBatchID]*spriteBatch
 	tess                 tess.Builder
+	slug                 nativeSlug
 
 	// Retained text batches. Pass maps are scratch of one frame, except
 	// passTextBatches, which keeps the private copies between frames.
@@ -232,6 +234,7 @@ func New(
 	manifest asset.Manifest,
 	msaa render.MSAAMode,
 	particleScale float64,
+	outlines slugcore.Factory,
 	log *slog.Logger,
 ) (renderer *Renderer, err error) {
 	if log == nil {
@@ -259,6 +262,10 @@ func New(
 
 		msaaSamples:   msaaSampleCount(msaa, d.FormatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
+	}
+	if outlines != nil {
+		renderer.slug.engine = outlines(provider.Face)
+		renderer.tess.SetSlugText(renderer.slug.engine)
 	}
 	defer func() {
 		if err != nil {
@@ -554,7 +561,16 @@ type passPlan struct {
 	height       int
 }
 
-func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
+// preparedFrame is a frame with its streams uploaded, ready to encode to a view.
+type preparedFrame struct {
+	runs           []tess.StreamRun
+	uniformOffsets []uint32
+	plans          []passPlan
+	base           frameplan.Pass
+}
+
+// prepareFrame builds and uploads the frame. It records a failure and returns false.
+func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (preparedFrame, bool) {
 	var phaseStart time.Time
 	if r.timeCPU {
 		phaseStart = time.Now()
@@ -589,7 +605,7 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
 	if err := r.preparePassTextBatches(passes, built); err != nil {
 		r.recordErr(err)
-		return
+		return preparedFrame{}, false
 	}
 	oldPlans := r.passPlans
 	if cap(r.passPlans) < len(built) {
@@ -621,11 +637,11 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	uniformOffsets, err := r.prepareSpriteUniformsForPasses(runs, plans)
 	if err != nil {
 		r.recordErr(err)
-		return
+		return preparedFrame{}, false
 	}
 	if err := r.prepareSpriteBatchAnimUniforms(runs, plans); err != nil {
 		r.recordErr(err)
-		return
+		return preparedFrame{}, false
 	}
 	solid, textured := r.tess.Streams()
 	sprites := r.tess.SpriteStream()
@@ -633,15 +649,38 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	textLabels := r.tess.TextLabelStream()
 	if err := r.uploadStreams(solid, textured, sprites, textGlyphs, textLabels); err != nil {
 		r.recordErr(err)
-		return
+		return preparedFrame{}, false
 	}
+	r.uploadSlug()
 	if r.timeCPU {
 		r.cpuUpload = time.Since(phaseStart)
 	}
 	if err := r.ensureMSAATarget(width, height); err != nil {
 		r.recordErr(err)
+		return preparedFrame{}, false
+	}
+	return preparedFrame{runs: runs, uniformOffsets: uniformOffsets, plans: plans, base: base}, true
+}
+
+// encodeFrame encodes and submits the frame to view.
+func (r *Renderer) encodeFrame(f preparedFrame, view *wgpu.TextureView, width, height int) error {
+	if f.base.HasPost && !r.postDisabled {
+		err := r.encodePostFramePasses(f.runs, f.uniformOffsets, f.plans, view, f.base.Camera, f.base.Post, width, height)
+		if err == nil {
+			return nil
+		}
+		r.disablePost(err)
+	}
+	return r.encodeFramePasses(f.runs, f.uniformOffsets, f.plans, view, width, height)
+}
+
+func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
+	defer r.slug.endFrame()
+	prepared, ok := r.prepareFrame(frame, width, height)
+	if !ok {
 		return
 	}
+	var phaseStart time.Time
 	surfaceView := r.device.OffscreenView
 	if surfaceView == nil {
 		var acquireStart time.Time
@@ -685,21 +724,8 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	if r.timeCPU {
 		phaseStart = time.Now()
 	}
-	var encodeErr error
-	postEncoded := false
-	if base.HasPost && !r.postDisabled {
-		encodeErr = r.encodePostFramePasses(runs, uniformOffsets, plans, surfaceView, base.Camera, base.Post, width, height)
-		if encodeErr != nil {
-			r.disablePost(encodeErr)
-		} else {
-			postEncoded = true
-		}
-	}
-	if !postEncoded {
-		encodeErr = r.encodeFramePasses(runs, uniformOffsets, plans, surfaceView, width, height)
-	}
-	if encodeErr != nil {
-		r.recordErr(encodeErr)
+	if err := r.encodeFrame(prepared, surfaceView, width, height); err != nil {
+		r.recordErr(err)
 		return
 	}
 	if r.timeCPU {
@@ -925,6 +951,7 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.targetSolidAddPipeline)
 	releasePipeline(&r.targetTexturedAddPipeline)
 	releasePipeline(&r.targetSpriteAddPipeline)
+	r.slug.release()
 	releasePipeline(&r.targetTextGlyphAddPipeline)
 	releasePipeline(&r.spriteBatchAnimPipeline)
 	releasePipeline(&r.targetSpriteBatchAnimPipeline)
@@ -1423,6 +1450,9 @@ func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
 		return err
 	}
 	if err := r.rebuildRetainedTextBindGroups(); err != nil {
+		return err
+	}
+	if err := r.rebuildSlugBindGroup(); err != nil {
 		return err
 	}
 	for _, batch := range r.spriteBatches {
@@ -2258,6 +2288,17 @@ func (r *Renderer) drawRun(
 		}
 		pass.SetBindGroup(0, atlas.glyphBindGroup, []uint32{uniformOffset})
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.TextGlyphStride*6), 0)
+	case tess.DrawRunSlugText:
+		if r.slug.bindGroup == nil {
+			return nil
+		}
+		if renderTarget {
+			pass.SetPipeline(pick(additive, r.slug.targetAdd, r.slug.target))
+		} else {
+			pass.SetPipeline(pick(additive, r.slug.mainAdd, r.slug.main))
+		}
+		pass.SetBindGroup(0, r.slug.bindGroup, []uint32{uniformOffset})
+		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.SlugInstanceStride*6), 0)
 	case tess.DrawRunParticles:
 		if r.particles == nil {
 			return nil
@@ -2308,16 +2349,22 @@ func (r *Renderer) drawRun(
 			return nil
 		}
 		if applyClipScissor(pass, scissor, run.TextBatch.Clip, camera, viewport, width, height) {
+			glyphPipeline := pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline)
+			slugPipeline := pick(additive, r.slug.mainAdd, r.slug.main)
 			if renderTarget {
-				pass.SetPipeline(pick(additive, r.targetTextGlyphAddPipeline, r.targetTextGlyphPipeline))
-			} else {
-				pass.SetPipeline(pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline))
+				glyphPipeline = pick(additive, r.targetTextGlyphAddPipeline, r.targetTextGlyphPipeline)
+				slugPipeline = pick(additive, r.slug.targetAdd, r.slug.target)
 			}
 			for _, rg := range batch.ranges {
-				if rg.bindGroup == nil {
+				bindGroup, pipeline := rg.bindGroup, glyphPipeline
+				if rg.slug {
+					bindGroup, pipeline = batch.slugBindGroup, slugPipeline
+				}
+				if bindGroup == nil {
 					continue
 				}
-				pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
+				pass.SetPipeline(pipeline)
+				pass.SetBindGroup(0, bindGroup, []uint32{uniformOffset})
 				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
 			}
 		}

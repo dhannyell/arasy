@@ -41,7 +41,7 @@ func BenchmarkPlanTextBatchReplace(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = PlanTextBatch(cam, 1920, 1080, labels, resolve)
+				_ = PlanTextBatch(nil, cam, 1920, 1080, labels, resolve)
 			}
 		})
 	}
@@ -73,7 +73,7 @@ func BenchmarkPlanTextBatchExternalFont(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = PlanTextBatch(cam, 1920, 1080, labels, resolve)
+				_ = PlanTextBatch(nil, cam, 1920, 1080, labels, resolve)
 			}
 		})
 	}
@@ -90,7 +90,7 @@ func BenchmarkTextBatchCoverage(b *testing.B) {
 		b.Run(strconv.Itoa(n), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = TextBatchCoverage(cam, 1920, 1080, labels)
+				_ = TextBatchCoverage(nil, cam, 1920, 1080, labels)
 			}
 		})
 	}
@@ -109,6 +109,6 @@ func BenchmarkPlanTextBatchSteadyStateSkip(b *testing.B) {
 
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = PlanTextBatch(cam, 1920, 1080, labels, resolve)
+		_ = PlanTextBatch(nil, cam, 1920, 1080, labels, resolve)
 	}
 }

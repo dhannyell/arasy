@@ -106,7 +106,7 @@ func renderOffscreen(t *testing.T, game runtime.Game, frames int, msaa render.MS
 	defer view.Release()
 	d.OffscreenView = view
 
-	renderer, err := wgpurender.New(d, cfg.Clear, cfg.Assets, msaa, cfg.ParticleOffscreenScale, log)
+	renderer, err := wgpurender.New(d, cfg.Clear, cfg.Assets, msaa, cfg.ParticleOffscreenScale, nil, log)
 	if err != nil {
 		t.Fatal(err)
 	}

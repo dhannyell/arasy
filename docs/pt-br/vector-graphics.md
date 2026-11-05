@@ -200,7 +200,7 @@ Notas atuais por backend (veja a tabela de responsabilidades de pacotes no
 |---|---|
 | `platform/raster` | Renderizador por software para `image.RGBA`; a referência semântica com a qual todo outro backend é comparado. |
 | `platform/wasm` | Backend web WebGPU; paridade completa com a referência. |
-| `platform/native` | Host wgpu-native + GLFW; batches retained de sprite e de texto usam registros persistentes na GPU. |
+| `platform/native` | Host wgpu-native + GLFW; batches retained de sprite e de texto usam registros persistentes na GPU. Labels `GlyphSlug` precisam de `Options.GlyphOutlines`; sem isso, usam o atlas de glifos. |
 
 ## Extensões futuras
 

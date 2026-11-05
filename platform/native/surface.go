@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/platform/internal/wgpurender"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/webgpu/wgpu"
@@ -89,13 +90,14 @@ func NewRenderer(
 	msaa render.MSAAMode,
 	particleScale float64,
 	wantGPUTiming bool,
+	outlines slugcore.Factory,
 	log *slog.Logger,
 ) (*Renderer, error) {
 	d, err := newDevice(window, vsync, wantGPUTiming, log)
 	if err != nil {
 		return nil, err
 	}
-	return wgpurender.New(d, clear, manifest, msaa, particleScale, log)
+	return wgpurender.New(d, clear, manifest, msaa, particleScale, outlines, log)
 }
 
 func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *wgpurender.Device, err error) {

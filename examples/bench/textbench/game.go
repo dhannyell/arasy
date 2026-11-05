@@ -40,6 +40,9 @@ var fontSizes = [4]float64{12, 18, 26, 36}
 
 const retainedTextBatchID = render.TextBatchID(1)
 
+// actionGlyphStrategy has no name in the input package: all named actions have a key here.
+const actionGlyphStrategy input.Action = 100
+
 // mutationPercents cycles the fraction of retained labels that actually
 // change text each tick. v1 retained batches always replace whole-batch, so
 // every step above 0% pays the same full repack cost — the control exists to
@@ -86,6 +89,7 @@ type Game struct {
 	multiSize  bool
 	uniqueText bool
 
+	strategy      render.GlyphStrategy
 	retained      bool
 	mutationIndex int
 	mutationTick  int
@@ -124,6 +128,7 @@ func (g *Game) restart() {
 	g.labelCount = defaultLabelCount
 	g.multiSize = false
 	g.uniqueText = false
+	g.strategy = render.GlyphAuto
 	g.retained = false
 	g.mutationIndex = 0
 	g.unicodeWave = 0
@@ -144,6 +149,10 @@ func (g *Game) Update(ctx *runtime.UpdateContext, _ float64) {
 	}
 	if ctx.Input.JustPressed(input.ActionFocusNext) {
 		g.uniqueText = !g.uniqueText
+		g.retainedDirty = true
+	}
+	if ctx.Input.JustPressed(actionGlyphStrategy) {
+		g.strategy = render.GlyphSlug - g.strategy
 		g.retainedDirty = true
 	}
 	if ctx.Input.JustPressed(input.ActionPause) {
@@ -243,6 +252,7 @@ func (g *Game) labelAt(i int, mutated bool) render.TextLabel {
 		Font:     g.font,
 		Align:    render.AlignCenter,
 		Baseline: render.BaselineMiddle,
+		Strategy: g.strategy,
 	}
 }
 
@@ -281,6 +291,7 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 				Font:     g.font,
 				Align:    render.AlignCenter,
 				Baseline: render.BaselineMiddle,
+				Strategy: g.strategy,
 			})
 		}
 	}
@@ -289,13 +300,13 @@ func (g *Game) Render(ctx *runtime.RenderContext) []render.Command {
 	d := ctx.UI.In(ui.SpaceScreen)
 	d.Panel(hud.panel)
 	d.Label("TEXT RENDER BENCHMARK", hud.title)
-	d.Label(fmt.Sprintf("labels  %s     sizes  %s     text  %s     mode  %s", formatCount(g.labelCount), g.sizeModeLabel(), g.textModeLabel(), g.modeLabel()), hud.load)
+	d.Label(fmt.Sprintf("labels  %s     sizes  %s     text  %s     glyphs  %s     mode  %s", formatCount(g.labelCount), g.sizeModeLabel(), g.textModeLabel(), g.strategyLabel(), g.modeLabel()), hud.load)
 	d.Label(fmt.Sprintf("FPS  %5.1f     frame  %6.2f ms     P99  %6.2f ms", g.stats.fps, milliseconds(g.stats.frameTime), milliseconds(g.stats.p99)), hud.frame)
 	d.Label(g.gpuLabel(), hud.gpu)
 	d.Label(g.cpuLabel(), hud.cpu)
 	d.Label(g.cpuBreakdownLabel(), hud.breakdown)
 	d.Label(g.retainedLabel(), hud.retained)
-	d.Label("UP/DOWN count, T sizes, E repeated/unique, P streaming/retained, M mutation %, U Unicode wave", hud.help)
+	d.Label("UP/DOWN count, T sizes, E repeated/unique, G atlas/Slug, P streaming/retained, M mutation %, U Unicode wave", hud.help)
 	return commands
 }
 
@@ -366,6 +377,13 @@ func (g *Game) sizeModeLabel() string {
 	return "1"
 }
 
+func (g *Game) strategyLabel() string {
+	if g.strategy == render.GlyphSlug {
+		return "Slug"
+	}
+	return "atlas"
+}
+
 func (g *Game) textModeLabel() string {
 	if g.uniqueText {
 		return "unique"
@@ -419,6 +437,7 @@ func textbenchBindings() []input.Binding {
 		{Source: input.Keyboard(input.KeyArrowDown), Action: input.ActionCancel, Scale: 1},
 		{Source: input.Keyboard(input.KeyT), Action: input.ActionConfirm, Scale: 1},
 		{Source: input.Keyboard(input.KeyE), Action: input.ActionFocusNext, Scale: 1},
+		{Source: input.Keyboard(input.KeyG), Action: actionGlyphStrategy, Scale: 1},
 		{Source: input.Keyboard(input.KeyP), Action: input.ActionPause, Scale: 1},
 		{Source: input.Keyboard(input.KeyM), Action: input.ActionMoveX, Scale: 1},
 		{Source: input.Keyboard(input.KeyU), Action: input.ActionMoveY, Scale: 1},

@@ -19,6 +19,7 @@ import (
 // textBatchRange is one consecutive span of glyph records bound to the atlas
 // that the records index. A nil bind group skips the range.
 type textBatchRange struct {
+	slug      bool // the range reads the Slug records of the batch
 	key       tess.AtlasKey
 	start     int
 	count     int
@@ -45,6 +46,12 @@ type gpuTextBatch struct {
 	bounds    math2d.Rect
 	hasBounds bool
 	projKey   tess.TextBatchProjKey
+
+	// The Slug records. uploadSlug creates the bind group, because it also reads the
+	// buffers of the Pack.
+	slugInstances  slugStorage
+	slugBindGroup  *wgpu.BindGroup
+	slugGeneration uint32 // of the Pack that the records refer to
 }
 
 // passTextBatchKey selects the private copy of a batch that a second pass
@@ -58,6 +65,16 @@ func (b *gpuTextBatch) release() {
 	b.releaseRanges()
 	releaseBuffer(&b.glyphBuffer)
 	releaseBuffer(&b.labelBuffer)
+	b.releaseSlug()
+}
+
+func (b *gpuTextBatch) releaseSlug() {
+	releaseBuffer(&b.slugInstances.buffer)
+	b.slugInstances.capacity = 0
+	if b.slugBindGroup != nil {
+		b.slugBindGroup.Release()
+		b.slugBindGroup = nil
+	}
 }
 
 func (b *gpuTextBatch) releaseRanges() {
@@ -112,10 +129,10 @@ func (r *Renderer) prepTextBatches(ids []render.TextBatchID, camera render.Camer
 	proj := tess.CurrentTextBatchProjKey(camera, width, height)
 	for _, id := range ids {
 		batch, ok := r.textBatches[id]
-		if !ok || len(batch.labels) == 0 || (!batch.dirty && batch.projKey == proj) {
+		if !ok || len(batch.labels) == 0 || (!batch.dirty && batch.projKey == proj && batch.slugGeneration == r.slug.generation()) {
 			continue
 		}
-		for key, set := range tess.TextBatchCoverage(camera, width, height, batch.labels) {
+		for key, set := range tess.TextBatchCoverage(r.slug.engine, camera, width, height, batch.labels) {
 			runes := make([]rune, 0, len(set))
 			for ch := range set {
 				runes = append(runes, ch)
@@ -190,7 +207,8 @@ func (r *Renderer) preparePassTextBatches(passes []frameplan.Pass, built []tess.
 }
 
 func (r *Renderer) textBatchNeedsRepack(batch *gpuTextBatch, proj tess.TextBatchProjKey) bool {
-	if batch.dirty || batch.projKey != proj {
+	// A Pack reset moves the glyphs, so the old records would draw wrong glyphs.
+	if batch.dirty || batch.projKey != proj || batch.slugGeneration != r.slug.generation() {
 		return true
 	}
 	for key, atlas := range batch.atlases {
@@ -204,7 +222,9 @@ func (r *Renderer) textBatchNeedsRepack(batch *gpuTextBatch, proj tess.TextBatch
 // repackTextBatch packs and uploads the records once. A steady frame does not
 // reach this function.
 func (r *Renderer) repackTextBatch(batch *gpuTextBatch, camera render.Camera, width, height int, proj tess.TextBatchProjKey) error {
-	plan := tess.PlanTextBatch(camera, width, height, batch.labels, r.resolveFinalTextAtlas)
+	r.warnSlugBatchOff(batch.labels)
+	plan := tess.PlanTextBatch(r.slug.engine, camera, width, height, batch.labels, r.resolveFinalTextAtlas)
+	batch.slugGeneration = r.slug.generation()
 	batch.projKey = proj
 	batch.dirty = false
 	batch.releaseRanges()
@@ -218,23 +238,28 @@ func (r *Renderer) repackTextBatch(batch *gpuTextBatch, camera render.Camera, wi
 	if err := r.ensureTextBatchBuffers(batch, len(plan.Glyphs), len(plan.Labels)); err != nil {
 		return err
 	}
-	if err := r.device.Queue.TryWriteBuffer(batch.glyphBuffer, 0, plan.Glyphs); err != nil {
-		return fmt.Errorf("upload retained text glyphs: %w", err)
+	if len(plan.Glyphs) > 0 {
+		if err := r.device.Queue.TryWriteBuffer(batch.glyphBuffer, 0, plan.Glyphs); err != nil {
+			return fmt.Errorf("upload retained text glyphs: %w", err)
+		}
+		if err := r.device.Queue.TryWriteBuffer(batch.labelBuffer, 0, plan.Labels); err != nil {
+			return fmt.Errorf("upload retained text labels: %w", err)
+		}
 	}
-	if err := r.device.Queue.TryWriteBuffer(batch.labelBuffer, 0, plan.Labels); err != nil {
-		return fmt.Errorf("upload retained text labels: %w", err)
+	if err := r.writeSlugBatch(batch, plan.SlugInstances); err != nil {
+		return err
 	}
-	r.frameRetainedContentBytes += uint64(len(plan.Glyphs) + len(plan.Labels))
+	r.frameRetainedContentBytes += uint64(len(plan.Glyphs) + len(plan.Labels) + len(plan.SlugInstances))
 
 	batch.ranges = make([]textBatchRange, len(plan.Ranges))
 	for i, rg := range plan.Ranges {
-		batch.ranges[i] = textBatchRange{key: rg.Key, start: rg.Start, count: rg.Count}
+		batch.ranges[i] = textBatchRange{slug: rg.Slug, key: rg.Key, start: rg.Start, count: rg.Count}
 	}
 	if err := r.rebuildTextBatchBindGroups(batch); err != nil {
 		return err
 	}
 	batch.atlases = plan.Atlases
-	batch.count = len(plan.Glyphs) / tess.TextGlyphStride
+	batch.count = len(plan.Glyphs)/tess.TextGlyphStride + len(plan.SlugInstances)/tess.SlugInstanceStride
 	batch.bounds, batch.hasBounds = plan.Bounds, plan.HasBounds
 	return nil
 }
@@ -244,6 +269,9 @@ func (r *Renderer) repackTextBatch(batch *gpuTextBatch, camera render.Camera, wi
 func (r *Renderer) rebuildTextBatchBindGroups(batch *gpuTextBatch) error {
 	resources := r.textAtlasResources()
 	for i := range batch.ranges {
+		if batch.ranges[i].slug {
+			continue
+		}
 		atlas, ok, err := resources.textAtlasFor(r.textAtlases, r.fontProvider, batch.ranges[i].key)
 		if err != nil {
 			return err

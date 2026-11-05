@@ -134,6 +134,9 @@ type TextLabel struct {
 	// Rotation is applied around Position, in radians. Zero keeps text
 	// unrotated.
 	Rotation float64
+
+	// Strategy selects how the backend draws the glyphs of this label.
+	Strategy GlyphStrategy
 }
 
 // DrawTextBatch draws one retained text batch for this frame. Batch content

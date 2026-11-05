@@ -5,6 +5,10 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dhannyell/fixed v0.2.0-alpha h1:D8anZkKRMJQSd1hTdhHDKV4p8pMX7wgkF7HzdiX4OZk=
 github.com/dhannyell/fixed v0.2.0-alpha/go.mod h1:Z9rHDf6OmyqFf3EZLp3+VvXzn8a1hyCfAdiAi7zXQ+Y=
+github.com/dhannyell/go-slug v1.0.0 h1:RBJ1+tWC5ZMkeIi+i0ghh/OS/qx9/dtJcxwFpxksnks=
+github.com/dhannyell/go-slug v1.0.0/go.mod h1:Jqp0SsU93ASAFS0RN3dmo1Plkb3SsUiw+CwGCx+Ub5w=
+github.com/dhannyell/go-slug/text v1.0.0 h1:KGz7D2DoGgcoAxb96ZDKAKSNQbENQmSGjiO6gWGTlbo=
+github.com/dhannyell/go-slug/text v1.0.0/go.mod h1:X3wshgy8VzZBgrIQ7Y5PVIlGuvSKtjThcLjxakSqFSY=
 github.com/dhannyell/webgpu v1.37.1 h1:UqbCQmVRn7kXEDiZs61S5uGUpJ6lgBZ/mqD+dqwUpx0=
 github.com/dhannyell/webgpu v1.37.1/go.mod h1:zYTVxa7F/vfuZeay/YhLyBJt5qjHQzPhu6WlQ8xpmH8=
 github.com/dhannyell/webgpu/libs-android v0.0.0-20260905020343-c4069cac051c h1:yhPBR+j0CIh74k9UsN+xkmCbI+sKysZLfPGPoDSIwwo=
@@ -23,6 +27,10 @@ github.com/ebitengine/purego v0.9.0 h1:mh0zpKBIXDceC63hpvPuGLiJ8ZAa3DfrFTudmfi8A
 github.com/ebitengine/purego v0.9.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf h1:F3qluraUahVF1QyZcPaeqavaUMr65eQnR4AH4VmDojc=
 github.com/go-gl/glfw/v3.4/glfw v0.1.0-pre.1.0.20260628091122-0bd588dc30cf/go.mod h1:T5Dn0JwIJOX1euPZ/iT4tq6nFYtmukjcYa7937HuYK8=
+github.com/go-text/typesetting v0.3.5 h1:XZPUooClHY0Vf/rFyUyuPRNEkawARaFzLMQcXLSEyPk=
+github.com/go-text/typesetting v0.3.5/go.mod h1:XZO1hD+nQVyvVa5IicQk7FsCa4PFQaJ2soWAP1f//68=
+github.com/go-text/typesetting-utils v0.0.0-20260419141703-4ffe8874dabc h1:8FGo2It5K75XkavhTiCKExUfVaVDS1feBnLCru5qeoY=
+github.com/go-text/typesetting-utils v0.0.0-20260419141703-4ffe8874dabc/go.mod h1:3/62I4La/HBRX9TcTpBj4eipLiwzf+vhI+7whTc9V7o=
 github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/hajimehoshi/go-mp3 v0.3.4 h1:NUP7pBYH8OguP4diaTZ9wJbUbk3tC0KlfzsEpWmYj68=
