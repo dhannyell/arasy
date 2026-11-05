@@ -51,8 +51,7 @@ zero value. It is decorative and does not affect hit testing. `DrawParticles`,
 `DrawSpriteBatch`, and `DrawTextBatch` have backend-specific retained or emitter
 state and do not support every camera transform.
 
-`MSAAMode` is the shared antialiasing option for GPU hosts. Raster and Canvas2D
-ignore it. Raster is the reference for geometry and color behavior.
+`MSAAMode` is the shared antialiasing option for GPU hosts. Raster ignores it. Raster is the reference for geometry and color behavior.
 
 The 2.5D vocabulary lives here too: `Camera.DepthScale` and `Camera.View`
 declare the projection, `GroundProjection` derives the height presentation
@@ -143,7 +142,7 @@ or a widget is active, and keeps the keyboard while a widget has focus.
 
 `internal/renderbatch` owns defensive copies, world bounds, animation
 evaluation, culling inflation, and view intersection for retained batches.
-Raster, Canvas2D, and WGSL use the same rules.
+Raster and WGSL use the same rules.
 
 ### `anim`, `render/vector`, and `internal/svggen`
 
@@ -163,12 +162,11 @@ hosts only activate resources and encode the resulting passes.
 
 - `platform/raster` renders to `image.RGBA` and is the offline semantic
   reference.
-- `platform/wasm` drives `requestAnimationFrame`, uses WebGPU by default, and
-  falls back to Canvas2D. WebGPU uploads manifest textures and glyph atlases
-  for each `(FontID, pixelSize)`, builds mip chains, uses anisotropic sampling,
-  and runs particles with compute and indirect draws. Canvas2D approximates
-  quads and particles on the CPU, uses browser `FontFace` for external fonts,
-  and caps retained batches at 2,000 sprites and 500 labels.
+- `platform/wasm` drives `requestAnimationFrame` and draws with WebGPU. It
+  uploads manifest textures and glyph atlases for each `(FontID, pixelSize)`,
+  builds mip chains, uses anisotropic sampling, and runs particles with compute
+  and indirect draws. Without a WebGPU adapter, the page shell shows a message
+  and does not download the game.
 - `platform/wasm` uses `Options.MSAA`, `Options.DevTools`, and
   `Options.RecordReplay`. Dev tools require `arr_dev`; browser recording uses
   a Blob and a file picker.

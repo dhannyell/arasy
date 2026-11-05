@@ -52,8 +52,8 @@ valor zero. Ela é decorativa e não afeta hit testing. `DrawParticles`,
 `DrawSpriteBatch` e `DrawTextBatch` possuem estado retido ou de emissor no
 backend e não suportam todas as transformações de câmera.
 
-`MSAAMode` é a opção compartilhada de antialiasing dos hosts GPU. Raster e
-Canvas2D a ignoram. Raster é a referência para geometria e cores.
+`MSAAMode` é a opção compartilhada de antialiasing dos hosts GPU. Raster a
+ignora. Raster é a referência para geometria e cores.
 
 O vocabulário 2.5D também vive aqui: `Camera.DepthScale` e `Camera.View`
 declaram a projeção, `GroundProjection` deriva delas a apresentação de
@@ -149,7 +149,7 @@ enquanto um widget possui foco.
 
 `internal/renderbatch` possui cópias defensivas, bounds de mundo, avaliação de
 animação, inflação de culling e interseção com a view para batches retidos.
-Raster, Canvas2D e WGSL usam as mesmas regras.
+Raster e WGSL usam as mesmas regras.
 
 ### `anim`, `render/vector` e `internal/svggen`
 
@@ -171,12 +171,11 @@ backends; os hosts apenas ativam recursos e codificam os passes resultantes.
 
 - `platform/raster` renderiza para `image.RGBA` e é a referência semântica
   offline.
-- `platform/wasm` dirige `requestAnimationFrame`, usa WebGPU por padrão e cai
-  para Canvas2D. WebGPU envia texturas e atlas de glyphs para cada
-  `(FontID, pixelSize)`, gera mip chains, usa amostragem anisotrópica e executa
-  partículas com compute e draws indiretos. Canvas2D aproxima quads e partículas
-  em CPU, usa `FontFace` do browser para fontes externas e limita batches
-  retidos a 2.000 sprites e 500 labels.
+- `platform/wasm` dirige `requestAnimationFrame` e desenha com WebGPU. Envia
+  texturas e atlas de glyphs para cada `(FontID, pixelSize)`, gera mip chains,
+  usa amostragem anisotrópica e executa partículas com compute e draws
+  indiretos. Sem adaptador WebGPU, o shell da página mostra uma mensagem e não
+  descarrega o jogo.
 - `platform/wasm` usa `Options.MSAA`, `Options.DevTools` e
   `Options.RecordReplay`. Dev tools exigem `arr_dev`; gravação no browser usa
   Blob e file picker.

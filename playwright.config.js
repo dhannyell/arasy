@@ -1,6 +1,10 @@
 const { defineConfig, devices } = require('@playwright/test');
 
-const webGPUArgs = ['--enable-unsafe-webgpu'];
+// CI runners have no GPU, so Chromium uses its SwiftShader adapter. Linux also
+// needs ANGLE on Vulkan, or the WebGPU canvas is blank in screenshots.
+const webGPUArgs = process.env.CI
+  ? ['--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-features=Vulkan', '--use-angle=vulkan']
+  : ['--enable-unsafe-webgpu'];
 const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
 
 module.exports = defineConfig({
@@ -23,16 +27,6 @@ module.exports = defineConfig({
     timeout: 120_000,
   },
   projects: [
-    {
-      name: 'canvas2d',
-      use: {
-        ...devices['Desktop Chrome'],
-        browserName: 'chromium',
-        channel: 'chromium',
-        deviceScaleFactor: 1,
-        viewport: { width: 320, height: 240 },
-      },
-    },
     {
       name: 'webgpu',
       use: {

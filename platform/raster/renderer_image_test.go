@@ -224,7 +224,7 @@ func assertFlipPixels(t *testing.T, img *image.RGBA, want [2][2]color.RGBA) {
 
 // TestDrawImageTransformRotatesTexturedQuad proves a DrawImage carrying a
 // non-identity Transform is inverse-sampled onto the transformed quad (like the
-// Canvas2D/WebGPU backends) instead of the old axis-aligned magenta
+// WebGPU renderer) instead of the old axis-aligned magenta
 // placeholder. A 45°-rotated 8×8 white sprite reaches above its axis-aligned
 // destination top edge, and its former axis-aligned corner becomes clear.
 func TestDrawImageTransformRotatesTexturedQuad(t *testing.T) {

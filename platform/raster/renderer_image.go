@@ -60,8 +60,7 @@ func (r *Renderer) drawImage(img *image.RGBA, command render.DrawImage) {
 // transform by reusing the DrawImageQuad inverse-sampling path: the
 // destination rect's world-space corners (rotated first, if Rotation is set)
 // become a quad, and drawImageQuad maps the texture onto the transformed quad.
-// This matches the Canvas2D and WebGPU backends instead of drawing a
-// placeholder. A missing texture falls out as a transformed diagnostic quad.
+// This matches the WebGPU renderer instead of drawing a placeholder. A missing texture falls out as a transformed diagnostic quad.
 func (r *Renderer) drawTransformedImage(img *image.RGBA, command render.DrawImage) {
 	dest := command.Dest
 	corners := [4]math2d.Vec2{

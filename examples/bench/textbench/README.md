@@ -57,9 +57,8 @@ WebGPU render pass GPU time, the CPU tick/render and tessellation/upload/
 encode breakdown shared with the sprite and shape benchmarks, and — once a
 retained batch has been published — a `retained` line with GPU-resident
 bytes, content bytes uploaded this frame (0 at steady state), visible/total
-label count and retained draw calls. The retained line reads
-`unavailable (Canvas2D)` on the Canvas2D fallback, which has no equivalent
-counters.
+label count and retained draw calls. The retained line reads `unavailable`
+until the renderer reports its counters.
 
 ## Retained-path results (RTX 4080 Super / 5800X3D, Chromium, manual HUD reads)
 

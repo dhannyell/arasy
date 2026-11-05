@@ -199,8 +199,7 @@ Notas atuais por backend (veja a tabela de responsabilidades de pacotes no
 | Backend | Papel |
 |---|---|
 | `platform/raster` | Renderizador por software para `image.RGBA`; a referência semântica com a qual todo outro backend é comparado. |
-| `platform/wasm` (WebGPU) | Backend web padrão; paridade completa com a referência. |
-| `platform/wasm` (Canvas2D) | Backend web de fallback; aproxima quads com uma grade afim e limita tamanhos de batch retained de sprite/label (limites só de dev). |
+| `platform/wasm` | Backend web WebGPU; paridade completa com a referência. |
 | `platform/native` | Host wgpu-native + GLFW; batches retained de sprite e de texto usam registros persistentes na GPU. Labels `GlyphSlug` precisam de `Options.GlyphOutlines`; sem isso, usam o atlas de glifos. |
 
 ## Extensões futuras

@@ -1,2 +1,2 @@
-// Package wasm package convert render.Command in canvas command
+// Package wasm runs a game in the browser and draws it with WebGPU.
 package wasm

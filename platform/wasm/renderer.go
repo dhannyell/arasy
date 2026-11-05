@@ -19,15 +19,15 @@ import (
 
 var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
-// sharedRenderer connects the shared renderer to the browser host.
-type sharedRenderer struct {
+// browserRenderer connects wgpurender to the browser canvas.
+type browserRenderer struct {
 	*wgpurender.Renderer
 	canvas        js.Value
 	width, height int
 	readySignaled bool
 }
 
-func newSharedRenderer(
+func newBrowserRenderer(
 	canvas js.Value,
 	clear render.Color,
 	manifest asset.Manifest,
@@ -36,8 +36,8 @@ func newSharedRenderer(
 	msaa render.MSAAMode,
 	outlines slugcore.Factory,
 	log *slog.Logger,
-) (*sharedRenderer, error) {
-	d, err := openSharedDevice(canvas, wantGPUTiming)
+) (*browserRenderer, error) {
+	d, err := openBrowserDevice(canvas, wantGPUTiming)
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func newSharedRenderer(
 	observeCanvasDeviceErrors(canvas, log)
 	renderer.SetGPUTiming(wantGPUTiming)
 	renderer.SetCPUTiming(true)
-	return &sharedRenderer{
+	return &browserRenderer{
 		Renderer: renderer,
 		canvas:   canvas,
 		width:    int(d.Config.Width),
@@ -56,7 +56,7 @@ func newSharedRenderer(
 	}, nil
 }
 
-func openSharedDevice(canvas js.Value, wantGPUTiming bool) (*wgpurender.Device, error) {
+func openBrowserDevice(canvas js.Value, wantGPUTiming bool) (*wgpurender.Device, error) {
 	instance := wgpu.CreateInstance(nil)
 	if instance == nil {
 		return nil, errWebGPUUnavailable
@@ -134,7 +134,7 @@ func observeCanvasDeviceErrors(canvas js.Value, log *slog.Logger) {
 
 // Render follows the canvas size, because the browser host resizes the canvas
 // and does not tell the renderer.
-func (r *sharedRenderer) Render(frame runtime.Frame) {
+func (r *browserRenderer) Render(frame runtime.Frame) {
 	width, height := r.canvas.Get("width").Int(), r.canvas.Get("height").Int()
 	if width != r.width || height != r.height {
 		r.Resize(width, height)
@@ -166,19 +166,19 @@ func signalCanvasReady(canvas js.Value) {
 	js.Global().Call("requestAnimationFrame", firstFrame)
 }
 
-func (r *sharedRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
+func (r *browserRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
 	return RetainedBatchMetrics(r.RetainedBatchMetrics()), true
 }
 
-func (r *sharedRenderer) renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool) {
+func (r *browserRenderer) renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool) {
 	return r.RenderCPUTimings()
 }
 
-func (r *sharedRenderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
+func (r *browserRenderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
 	return r.ParticleGPUTimings()
 }
 
-func (r *sharedRenderer) particleGPUBufferBytes() uint64 {
+func (r *browserRenderer) particleGPUBufferBytes() uint64 {
 	bytes, _ := r.ParticleGPUBufferBytes()
 	return bytes
 }

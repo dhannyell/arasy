@@ -1,5 +1,5 @@
-// Package wasmgolden defines the deterministic visual fixture used by the
-// Canvas2D and WebGPU browser golden tests.
+// Package wasmgolden defines the deterministic visual fixtures used by the
+// WebGPU browser and native golden tests.
 package wasmgolden
 
 import (

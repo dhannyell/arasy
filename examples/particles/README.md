@@ -13,8 +13,7 @@ This example showcases Arasy's particle system in four seasonal scenes:
 
 Each scene uses its own background, particle layers declared in
 `assets/manifest.json`, and a density control that can reach 65,536 particles.
-The example runs on the WASM host, using WebGPU when available and Canvas2D as
-a fallback.
+The example runs on the WASM host with WebGPU.
 
 ## Run
 

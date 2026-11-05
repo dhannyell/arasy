@@ -78,7 +78,7 @@ type Renderer struct {
 	spriteArrayEnabled   bool
 	texSizes             tess.TexSizes
 	textAtlases          map[tess.AtlasKey]gpuTextAtlas
-	spriteBatches        map[render.SpriteBatchID]*nativeSpriteBatch
+	spriteBatches        map[render.SpriteBatchID]*spriteBatch
 	tess                 tess.Builder
 	slug                 nativeSlug
 
@@ -122,19 +122,19 @@ type Renderer struct {
 	postSampler                        *wgpu.Sampler
 	postPipelines                      map[string]*wgpu.RenderPipeline
 	postUniforms                       []*wgpu.Buffer
-	postSceneA                         nativePostTarget
-	postSceneB                         nativePostTarget
-	postBloom                          []nativePostTarget
+	postSceneA                         postTarget
+	postSceneB                         postTarget
+	postBloom                          []postTarget
 	postWidth                          int
 	postHeight                         int
 	postDisabled                       bool
 	// postBindGroups caches one bind group per {pipeline, sampled targets,
 	// uniform slot}; a steady chain creates none per frame. Released whenever
 	// a post target is recreated.
-	postBindGroups map[nativePostBindKey]*wgpu.BindGroup
+	postBindGroups map[postBindKey]*wgpu.BindGroup
 	// postUniformScratch stages one uniform write per effect without
 	// allocating.
-	postUniformScratch [nativePostUniformSize]byte
+	postUniformScratch [postUniformSize]byte
 
 	// Additive variants of the command pipelines, selected per draw run when
 	// a command sets BlendAdditive. Same shaders, different blend state.
@@ -163,7 +163,7 @@ type Renderer struct {
 	spriteUniformCap      int
 	spriteUniformSlotSize int
 	spriteUniformOffsets  []uint32
-	spriteUniformEntries  []nativeUniformEntry
+	spriteUniformEntries  []uniformEntry
 	// One dynamic-offset slot per animated DrawSpriteBatch command per frame;
 	// each slot packs the effective camera plus the command's render clock.
 	batchAnimUniform         *wgpu.Buffer
@@ -172,14 +172,14 @@ type Renderer struct {
 	batchAnimOffsets         []uint32
 	batchAnimScratch         [tess.SpriteBatchAnimUniformSize]byte
 	// spriteBatchRuns is parallel to the frame's runs.
-	spriteBatchRuns []*nativeSpriteBatch
+	spriteBatchRuns []*spriteBatch
 	// Retained batch accounting of the last frame.
 	frameRetainedContentBytes uint64
 	frameVisibleSprites       int
 	frameVisibleLabels        int
 	frameRetainedDraws        int
 	tessPassFrames            []tess.Frame
-	passPlans                 []nativePassPlan
+	passPlans                 []passPlan
 	particleGroupOf           []int
 
 	msaaTexture *wgpu.Texture
@@ -252,7 +252,7 @@ func New(
 		manifest:      manifest,
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
-		spriteBatches: make(map[render.SpriteBatchID]*nativeSpriteBatch),
+		spriteBatches: make(map[render.SpriteBatchID]*spriteBatch),
 
 		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
 		passTextBatches: make(map[passTextBatchKey]*gpuTextBatch),
@@ -552,7 +552,7 @@ func (r *Renderer) Render(frame runtime.Frame) {
 	r.renderPasses(frame, width, height)
 }
 
-type nativePassPlan struct {
+type passPlan struct {
 	camera       render.Camera
 	layerCameras []tess.LayerCamera
 	extra        bool
@@ -565,7 +565,7 @@ type nativePassPlan struct {
 type preparedFrame struct {
 	runs           []tess.StreamRun
 	uniformOffsets []uint32
-	plans          []nativePassPlan
+	plans          []passPlan
 	base           frameplan.Pass
 }
 
@@ -609,7 +609,7 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 	}
 	oldPlans := r.passPlans
 	if cap(r.passPlans) < len(built) {
-		r.passPlans = make([]nativePassPlan, len(built))
+		r.passPlans = make([]passPlan, len(built))
 	} else {
 		r.passPlans = r.passPlans[:len(built)]
 	}
@@ -618,7 +618,7 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 		clear(oldPlans[len(plans):])
 	}
 	for i, builtPass := range built {
-		plans[i] = nativePassPlan{
+		plans[i] = passPlan{
 			camera:       builtPass.Camera,
 			layerCameras: tess.LayerCameras(builtPass.Camera, builtPass.Runs),
 			extra:        !passes[i].Base,
@@ -863,7 +863,7 @@ func (r *Renderer) ParticleGPUBufferBytes() (uint64, bool) {
 	return r.particles.bufferBytes(), true
 }
 
-// Resize updates the native surface from physical framebuffer dimensions.
+// Resize updates the surface from physical framebuffer dimensions.
 func (r *Renderer) Resize(fbW, fbH int) {
 	if r == nil || r.err != nil {
 		return
@@ -871,7 +871,7 @@ func (r *Renderer) Resize(fbW, fbH int) {
 	r.device.Configure(fbW, fbH)
 }
 
-// Err returns the first render failure observed by the native host.
+// Err returns the first render failure observed by the renderer.
 func (r *Renderer) Err() error {
 	if r == nil {
 		return nil
@@ -1537,12 +1537,12 @@ const noSpriteUniformEntry = ^uint32(0)
 
 // Uniform entries are keyed by the camera data they pack, not by draw run.
 // The key logic lives in tess.
-type nativeUniformEntry struct {
+type uniformEntry struct {
 	key    tess.UniformKey
 	offset uint32
 }
 
-func nativeUniformEntryIndex(entries []nativeUniformEntry, key tess.UniformKey) int {
+func uniformEntryIndex(entries []uniformEntry, key tess.UniformKey) int {
 	for index, entry := range entries {
 		if entry.key == key {
 			return index
@@ -1551,7 +1551,7 @@ func nativeUniformEntryIndex(entries []nativeUniformEntry, key tess.UniformKey) 
 	return -1
 }
 
-func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans []nativePassPlan) ([]uint32, error) {
+func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans []passPlan) ([]uint32, error) {
 	if cap(r.spriteUniformOffsets) < len(runs) {
 		r.spriteUniformOffsets = make([]uint32, len(runs))
 	} else {
@@ -1567,9 +1567,9 @@ func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans [
 			continue
 		}
 		key.Pass = run.Pass
-		entryIndex := nativeUniformEntryIndex(r.spriteUniformEntries, key)
+		entryIndex := uniformEntryIndex(r.spriteUniformEntries, key)
 		if entryIndex < 0 {
-			r.spriteUniformEntries = append(r.spriteUniformEntries, nativeUniformEntry{key: key})
+			r.spriteUniformEntries = append(r.spriteUniformEntries, uniformEntry{key: key})
 			entryIndex = len(r.spriteUniformEntries) - 1
 		}
 		offsets[index] = uint32(entryIndex)
@@ -1605,7 +1605,7 @@ func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans [
 // prepareSpriteBatchAnimUniforms packs one arena slot per animated
 // DrawSpriteBatch run: the effective layer camera plus the command's
 // animation block. Runs without an animated batch keep offset 0.
-func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans []nativePassPlan) error {
+func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans []passPlan) error {
 	if cap(r.batchAnimOffsets) < len(runs) {
 		r.batchAnimOffsets = make([]uint32, len(runs))
 	} else {
@@ -1735,7 +1735,7 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 	defer layout.Release()
 	for i := range r.textures {
 		texture := &r.textures[i]
-		view := nativeTextureSampleView(*texture)
+		view := textureSampleView(*texture)
 		if view == nil {
 			continue
 		}
@@ -1914,7 +1914,7 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 func (r *Renderer) encodeFramePasses(
 	runs []tess.StreamRun,
 	uniformOffsets []uint32,
-	plans []nativePassPlan,
+	plans []passPlan,
 	surfaceView *wgpu.TextureView,
 	width, height int,
 ) error {
@@ -1976,7 +1976,7 @@ func (r *Renderer) encodeFramePasses(
 			}
 		}
 	}
-	firstScreen, lastScreen := firstAndLastNativeScreenPass(plans)
+	firstScreen, lastScreen := firstAndLastScreenPass(plans)
 	for passIndex, plan := range plans {
 		if plan.target != 0 {
 			if err := r.encodeTargetPass(encoder, passIndex, plan, runs, uniformOffsets); err != nil {
@@ -2047,7 +2047,7 @@ func (r *Renderer) encodeFramePasses(
 	return nil
 }
 
-func firstAndLastNativeScreenPass(plans []nativePassPlan) (int, int) {
+func firstAndLastScreenPass(plans []passPlan) (int, int) {
 	first, last := -1, -1
 	for index, plan := range plans {
 		if plan.target == 0 {
@@ -2060,7 +2060,7 @@ func firstAndLastNativeScreenPass(plans []nativePassPlan) (int, int) {
 	return first, last
 }
 
-func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int, plan nativePassPlan, runs []tess.StreamRun, uniformOffsets []uint32) error {
+func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int, plan passPlan, runs []tess.StreamRun, uniformOffsets []uint32) error {
 	target, ok := textureFor(r.textures, plan.target)
 	if !ok || target.targetView == nil {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
@@ -2076,14 +2076,14 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 		return fmt.Errorf("begin render-to-texture pass: %w", err)
 	}
 	defer pass.Release()
-	scissor := nativeScissorState{}
+	scissor := scissorState{}
 	last := -1
 	for index, run := range runs {
 		if run.Pass != passIndex {
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, passViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
 			return err
 		}
 	}
@@ -2103,23 +2103,23 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 	return r.textureResources().encodeMipmaps(encoder, target.texture, target.mipLevels, target.arrayLayer)
 }
 
-func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex int, plan nativePassPlan, runs []tess.StreamRun, uniformOffsets []uint32, groupOf []int, offscreenParticles bool) error {
-	scissor := nativeScissorState{}
+func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex int, plan passPlan, runs []tess.StreamRun, uniformOffsets []uint32, groupOf []int, offscreenParticles bool) error {
+	scissor := scissorState{}
 	last := -1
 	for index, run := range runs {
 		if run.Pass != passIndex {
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, passViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func groupParticleRunsForPasses(runs []tess.StreamRun, plans []nativePassPlan, groupOf *[]int) [][]nativeParticleRun {
-	groups := make([][]nativeParticleRun, 0)
+func groupParticleRunsForPasses(runs []tess.StreamRun, plans []passPlan, groupOf *[]int) [][]particleRun {
+	groups := make([][]particleRun, 0)
 	inGroup := false
 	basePass := len(plans) - 1
 	for index, run := range runs {
@@ -2134,7 +2134,7 @@ func groupParticleRunsForPasses(runs []tess.StreamRun, plans []nativePassPlan, g
 		group := len(groups) - 1
 		(*groupOf)[index] = group
 		plan := plans[run.Pass]
-		groups[group] = append(groups[group], nativeParticleRun{
+		groups[group] = append(groups[group], particleRun{
 			command: run.Particles,
 			camera:  tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer),
 		})
@@ -2142,26 +2142,26 @@ func groupParticleRunsForPasses(runs []tess.StreamRun, plans []nativePassPlan, g
 	return groups
 }
 
-func nativePassViewport(camera render.Camera, extra bool, width, height int) math2d.Rect {
+func passViewport(camera render.Camera, extra bool, width, height int) math2d.Rect {
 	if extra {
 		return camera.Viewport
 	}
 	return math2d.NewRect(math2d.Vec2{}, math2d.Vec2{X: float64(width), Y: float64(height)})
 }
 
-type nativeScissorState struct {
+type scissorState struct {
 	x, y, width, height uint32
 	set                 bool
 }
 
 // applyClipScissor sets the scissor for clip and reports if any area remains.
-func applyClipScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, clip math2d.Rect, camera render.Camera, viewport math2d.Rect, width, height int) bool {
+func applyClipScissor(pass *wgpu.RenderPassEncoder, state *scissorState, clip math2d.Rect, camera render.Camera, viewport math2d.Rect, width, height int) bool {
 	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(clip, camera, viewport, 1, width, height)
-	setNativeScissor(pass, state, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	setScissor(pass, state, uint32(x), uint32(y), uint32(sw), uint32(sh))
 	return visible
 }
 
-func setNativeScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, x, y, width, height uint32) {
+func setScissor(pass *wgpu.RenderPassEncoder, state *scissorState, x, y, width, height uint32) {
 	if state.set && state.x == x && state.y == y && state.width == width && state.height == height {
 		return
 	}
@@ -2169,7 +2169,7 @@ func setNativeScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, x
 	state.x, state.y, state.width, state.height, state.set = x, y, width, height, true
 }
 
-type nativeParticleRun struct {
+type particleRun struct {
 	command render.DrawParticles
 	camera  render.Camera
 }
@@ -2184,7 +2184,7 @@ type nativeParticleRun struct {
 // passes, not just the main pass.
 func (r *Renderer) encodeParticleOffscreen(
 	encoder *wgpu.CommandEncoder,
-	groups [][]nativeParticleRun,
+	groups [][]particleRun,
 	width, height int,
 	ow, oh int,
 	beginWrites *wgpu.PassTimestampWrites,
@@ -2207,9 +2207,9 @@ func (r *Renderer) encodeParticleOffscreen(
 		if err != nil {
 			return fmt.Errorf("begin particle offscreen pass: %w", err)
 		}
-		scissor := nativeScissorState{}
+		scissor := scissorState{}
 		for _, run := range cmds {
-			r.particles.drawTo(pass, run.command, run.camera, nativePassViewport(render.Camera{}, false, width, height), &scissor, width, height, r.particleScale, ow, oh, true, false)
+			r.particles.drawTo(pass, run.command, run.camera, passViewport(render.Camera{}, false, width, height), &scissor, width, height, r.particleScale, ow, oh, true, false)
 		}
 		if err := pass.TryEnd(); err != nil {
 			pass.Release()
@@ -2227,7 +2227,7 @@ func (r *Renderer) drawRun(
 	uniformOffset uint32,
 	camera render.Camera,
 	viewport math2d.Rect,
-	scissor *nativeScissorState,
+	scissor *scissorState,
 	width, height int,
 	group int,
 	renderTarget bool,

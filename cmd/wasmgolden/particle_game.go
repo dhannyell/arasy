@@ -13,7 +13,7 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 )
 
-// particleGame is the focused Canvas2D/WebGPU particle regression fixture.
+// particleGame is the focused particle regression fixture.
 // It stays isolated from the canonical scene so particle backend semantics
 // can evolve without rewriting unrelated golden coverage.
 type particleGame struct {

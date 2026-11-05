@@ -128,9 +128,8 @@ to it. `examples/outpost` consumes the channel with dusk ambient light and a
 plaza lantern; the lighting section of `2-5d.md` documents the design. Out by
 decision:
 
-- **Normal maps: not supported.** Per-pixel lighting needs a new shader in
-  every backend — Canvas2D has none to program — plus a second authored
-  texture per sprite. Color modulation is the declared substitute at this
+- **Normal maps: not supported.** Per-pixel lighting needs a new shader and
+  a raster mirror, plus a second authored texture per sprite. Color modulation is the declared substitute at this
   tier.
 - Lighting for retained batches and `DrawParticles` (the likely shape is a
   per-batch uniform; the trigger is the first lit tilemap scene), and

@@ -32,7 +32,7 @@ The supported visual animation is deterministic and presentation-only:
 - `SpritePulse` supports pulse behavior.
 - `SpriteBatchAnimation` controls batch-level animation.
 
-Raster, Canvas2D, and WGSL evaluate these animations through
+Raster and WGSL evaluate these animations through
 `internal/renderbatch`. The system does not accept arbitrary shaders, does not
 reorder instances, and does not run per-instance culling or compute work.
 
@@ -44,8 +44,7 @@ characters, props, and other upright sprites that should remain billboards.
 ### Host behavior
 
 WebGPU reuses the streaming storage-buffer pipelines. Stable content uploads
-zero bytes per frame. Raster is the reference. The development Canvas2D host
-caps retained content at 2,000 sprites and 500 labels.
+zero bytes per frame. Raster is the reference.
 
 Retained sprites use screen-space billboard corners by default. Projected
 sprites use the complete `Camera.View`; text and particles remain billboards.

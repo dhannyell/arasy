@@ -590,7 +590,7 @@ func (g *Game) pathModeLabel() string {
 // published at least one batch.
 func (g *Game) retainedLabel() string {
 	if !g.stats.hasRetained {
-		return "retained batches unavailable (Canvas2D)"
+		return "retained batches unavailable"
 	}
 	if g.path != pathRetained && g.path != pathCulling {
 		return "retained  n/a in this path"
@@ -635,7 +635,7 @@ func (g *Game) cpuLabel() string {
 // (or scene.World extracting render poses in ECS mode) plus dispatch/sort.
 func (g *Game) cpuBreakdownLabel() string {
 	if !g.stats.hasCPUBreakdown {
-		return "render breakdown unavailable (canvas2d or no sample yet)"
+		return "render breakdown unavailable (no sample yet)"
 	}
 	cmds := max(g.stats.cpuRender-g.stats.cpuTess-g.stats.cpuUpload-g.stats.cpuEncode, 0)
 	return fmt.Sprintf(

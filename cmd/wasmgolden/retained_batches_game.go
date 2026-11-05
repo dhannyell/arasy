@@ -124,12 +124,8 @@ func (g *retainedBatchesGame) Init(ctx *runtime.UpdateContext) {
 		Dest:    math2d.NewRect(math2d.Vec2{X: 5000, Y: 5000}, math2d.Vec2{X: 10, Y: 10}),
 	}})
 
-	// Both labels sit well clear of the world's bottom edge (75): Canvas2D
-	// paints external TTF glyphs through the browser FontFace API while
-	// WebGPU rasterizes them into its own atlas via asset/typeface, and
-	// their line-height/descent do not match exactly (see AGENTS.md). A
-	// label placed close to the edge can clip on one backend and not the
-	// other; the margin here must hold on both.
+	// Both labels sit well clear of the world's bottom edge (75), so a small
+	// line-height difference between fonts cannot clip them.
 	ctx.Batches.UpdateText(retainedBuiltinText, []render.TextLabel{{
 		Position: math2d.Vec2{X: 4, Y: 54},
 		Text:     "BUILTIN",

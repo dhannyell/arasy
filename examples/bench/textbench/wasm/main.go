@@ -14,7 +14,6 @@ func main() {
 	game := &textbench.Game{}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		ForceCanvas2D: false,
 		Log:           log,
 		GlyphOutlines: slug.Outlines,
 		FrameMetrics: func(metrics wasm.FrameMetrics) {

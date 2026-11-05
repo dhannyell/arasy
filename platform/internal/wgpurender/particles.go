@@ -542,11 +542,11 @@ func (g *gpuParticles) encode(
 
 // draw submits one emitter at its exact painter-order position in the main
 // MSAA pass.
-func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, viewport math2d.Rect, scissor *nativeScissorState, w, h int) {
+func (g *gpuParticles) draw(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, viewport math2d.Rect, scissor *scissorState, w, h int) {
 	g.drawTo(p, cmd, c, viewport, scissor, w, h, 1, w, h, false, false)
 }
 
-func (g *gpuParticles) drawTarget(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, viewport math2d.Rect, scissor *nativeScissorState, w, h int) {
+func (g *gpuParticles) drawTarget(p *wgpu.RenderPassEncoder, cmd render.DrawParticles, c render.Camera, viewport math2d.Rect, scissor *scissorState, w, h int) {
 	g.drawTo(p, cmd, c, viewport, scissor, w, h, 1, w, h, false, true)
 }
 
@@ -560,7 +560,7 @@ func (g *gpuParticles) drawTo(
 	cmd render.DrawParticles,
 	c render.Camera,
 	viewport math2d.Rect,
-	scissor *nativeScissorState,
+	scissor *scissorState,
 	projectionW, projectionH int,
 	clipScale float64,
 	targetW, targetH int,
@@ -599,13 +599,13 @@ func (g *gpuParticles) drawTo(
 	p.SetBindGroup(0, view.bind, nil)
 	p.SetBindGroup(1, e.textureBind, nil)
 	x, y, sw, sh, ok := particlegpu.ScissorRectWithin(cmd.Clip, c, viewport, clipScale, targetW, targetH)
-	setNativeScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	setScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 	if ok {
 		p.DrawIndirect(e.drawIndirect, 0)
 	}
 	if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
 		x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, c, viewport, clipScale, targetW, targetH)
-		setNativeScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+		setScissor(p, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
 	}
 }
 

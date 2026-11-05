@@ -32,8 +32,7 @@ referenced documents when you need subsystem detail.
 - The render reference is tiered. Raster is the exact oracle for the 2D
   command vocabulary. For screen effects the shared WGSL shaders define the
   behavior; raster mirrors them as a reference inside a measured conformance
-  budget. Canvas2D approximates or skips effects per its documented
-  capability table. Do not build software mirrors of GPU shading.
+  budget. Do not build software mirrors of GPU shading.
 - Put game code in `cmd/` or `examples/`, not in engine packages.
 - See [architecture](docs/en/architecture.md) for package responsibilities.
 

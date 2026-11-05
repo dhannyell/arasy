@@ -18,11 +18,7 @@ for (const scenario of [
     excludedPoster: 'arasy-poster.svg',
   },
 ]) {
-  test(`keeps the ${scenario.name} poster until the default splash is opaque`, async (
-    { page },
-    testInfo,
-  ) => {
-    const expectedRenderer = testInfo.project.name;
+  test(`keeps the ${scenario.name} poster until the default splash is opaque`, async ({ page }) => {
     const messages = [];
     const posterRequests = [];
     page.on('console', message => messages.push(message.text()));
@@ -35,7 +31,7 @@ for (const scenario of [
     });
 
     await page.setViewportSize(scenario.viewport);
-    await page.addInitScript(renderer => {
+    await page.addInitScript(() => {
       const probe = {
         rendererReadyAt: 0,
         splashStartFrameTime: 0,
@@ -48,7 +44,7 @@ for (const scenario of [
       const originalInfo = console.info.bind(console);
       console.info = (...args) => {
         const message = args.map(String).join(' ');
-        if (message.includes(`using ${renderer} renderer`)) {
+        if (message.includes('using webgpu renderer')) {
           probe.rendererReadyAt = performance.now();
         }
         originalInfo(...args);
@@ -81,7 +77,7 @@ for (const scenario of [
           firstFrame = value;
         },
       });
-    }, expectedRenderer);
+    });
 
     let releaseWASM;
     const wasmGate = new Promise(resolve => {
@@ -93,7 +89,7 @@ for (const scenario of [
     });
 
     await page.goto(
-      `http://127.0.0.1:${goldenPort}/?renderer=${expectedRenderer}&fixture=boot`,
+      `http://127.0.0.1:${goldenPort}/?fixture=boot`,
     );
 
     const boot = page.locator('#ar-boot');
@@ -113,8 +109,8 @@ for (const scenario of [
 
     await expect.poll(
       () => messages.join('\n'),
-      { message: `expected ${expectedRenderer} renderer; browser log:\n${messages.join('\n')}` },
-    ).toContain(`using ${expectedRenderer} renderer`);
+      { message: `expected webgpu renderer; browser log:\n${messages.join('\n')}` },
+    ).toContain('using webgpu renderer');
     await page.waitForFunction(() => window.arasyBootFadeDone === true);
 
     const probe = await page.evaluate(() => window.arasyBootProbe);
@@ -127,6 +123,25 @@ for (const scenario of [
     expect(probe.canvasVisibilityAtFirstFrame).toBe('hidden');
     await expect(boot).toHaveCount(0);
     await expect(canvas).toHaveCSS('visibility', 'visible');
-    await expect(canvas).toHaveAttribute('data-arasy-ready', expectedRenderer);
+    await expect(canvas).toHaveAttribute('data-arasy-ready', 'webgpu');
   });
 }
+
+// Without WebGPU the game cannot run, so the shell must say so and must not
+// download the wasm.
+test('explains a missing WebGPU before it downloads the game', async ({ page }) => {
+  let wasmRequested = false;
+  page.on('request', request => {
+    if (request.url().endsWith('/app.wasm')) wasmRequested = true;
+  });
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, 'gpu', { get: () => undefined });
+  });
+
+  await page.goto(`http://127.0.0.1:${goldenPort}/`);
+
+  const boot = page.locator('#ar-boot');
+  await expect(boot).toHaveText('This game needs a browser with WebGPU.');
+  await expect(boot).toHaveCSS('visibility', 'visible');
+  expect(wasmRequested).toBe(false);
+});
