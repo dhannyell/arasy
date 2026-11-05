@@ -12,28 +12,29 @@ import (
 	"github.com/dhannyell/arasy/input"
 	"github.com/dhannyell/arasy/internal/platforminput"
 	"github.com/dhannyell/arasy/math2d"
+	"github.com/dhannyell/arasy/platform/internal/wgpurender"
 	"github.com/dhannyell/arasy/platform/native/internal/sysprobe"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
 )
 
 type cpuPhaseReporter interface {
-	renderCPUTimings() (tess, upload, encode time.Duration, ok bool)
+	RenderCPUTimings() (tess, upload, encode time.Duration, ok bool)
 }
 
 type gpuBufferReporter interface {
-	particleGPUBufferBytes() (bytes uint64, ok bool)
+	ParticleGPUBufferBytes() (bytes uint64, ok bool)
 }
 
 type gpuTimingReporter interface {
-	particleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
+	ParticleGPUTimings() (prepare, simulate, render time.Duration, ok bool)
 }
 
 // presentWaitReporter exposes the presentation-queue block time of the last
 // frame (acquire + present), which with vsync is the vblank wait and must
 // not be read as CPU render work.
 type presentWaitReporter interface {
-	presentWaitDuration() (time.Duration, bool)
+	PresentWaitDuration() (time.Duration, bool)
 }
 
 const noGamepadJoystick glfw.Joystick = -1
@@ -111,7 +112,7 @@ func newHost(driver *runtime.Driver, renderer *Renderer, window *glfw.Window, op
 	if opts.SmoothPacing {
 		h.spinMargin = time.Millisecond
 	}
-	vendor, device := renderer.adapterIDs()
+	vendor, device := renderer.AdapterIDs()
 	h.sysprobe = sysprobe.NewProber(vendor, device)
 	return h
 }
@@ -256,7 +257,7 @@ func (h *host) run() error {
 	}
 	windowShown := false
 	showWindowAfterPresent := func() {
-		if windowShown || !h.renderer.hasPresentedFrame() {
+		if windowShown || !h.renderer.HasPresentedFrame() {
 			return
 		}
 		h.window.Show()
@@ -324,7 +325,7 @@ func (h *host) run() error {
 			h.samplePanelGC()
 		}
 		h.renderFrame(elapsed)
-		cpuFrame := h.renderer.frameCPUTiming()
+		cpuFrame := h.renderer.FrameCPUTiming()
 		if h.panelWantsStats() {
 			h.samplePanelStats(tickStart, tickEnd, inputAt, cpuFrame)
 		}
@@ -338,24 +339,24 @@ func (h *host) run() error {
 					FPS: stats.FPS, FrameTime: stats.FrameTime,
 					MeanFrameTime: stats.MeanFrameTime, P99FrameTime: stats.P99FrameTime,
 				}
-				if cpuFrame.valid {
+				if cpuFrame.Valid {
 					m.CPUTickTime = tickEnd.Sub(tickStart)
-					m.CPURenderTime = cpuFrame.renderDurationSince(tickEnd)
+					m.CPURenderTime = cpuFrame.RenderDurationSince(tickEnd)
 					m.CPUTimingSet = true
 				}
-				if latency, ok := cpuFrame.inputToSubmit(inputAt); ok {
+				if latency, ok := cpuFrame.InputToSubmit(inputAt); ok {
 					m.InputToSubmit = latency
 					m.InputToSubmitSet = true
 				}
 				m.HeapInUse, m.HeapSys, m.HeapSet = h.readHeap()
 				if reporter, ok := any(h.renderer).(cpuPhaseReporter); ok {
-					m.CPUTessTime, m.CPUUploadTime, m.CPUEncodeTime, m.CPUBreakdownSet = reporter.renderCPUTimings()
+					m.CPUTessTime, m.CPUUploadTime, m.CPUEncodeTime, m.CPUBreakdownSet = reporter.RenderCPUTimings()
 				}
 				if reporter, ok := any(h.renderer).(gpuBufferReporter); ok {
-					m.GPUBufferBytes, m.GPUBufferSet = reporter.particleGPUBufferBytes()
+					m.GPUBufferBytes, m.GPUBufferSet = reporter.ParticleGPUBufferBytes()
 				}
 				if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
-					m.GPUPrepareTime, m.GPUSimulateTime, m.GPURenderTime, m.GPUTimingSet = reporter.particleGPUTimings()
+					m.GPUPrepareTime, m.GPUSimulateTime, m.GPURenderTime, m.GPUTimingSet = reporter.ParticleGPUTimings()
 				}
 				if h.logMetrics {
 					attrs := []any{"fps", m.FPS, "frame_ms", m.FrameTime.Seconds() * 1000, "mean_ms", m.MeanFrameTime.Seconds() * 1000, "p99_ms", m.P99FrameTime.Seconds() * 1000}
@@ -399,25 +400,25 @@ func (h *host) panelWantsStats() bool {
 // They describe the frame just submitted, so the panel shows them one frame
 // late: the render time of the frame the panel is being drawn into is not
 // known until after it has been drawn.
-func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame cpuFrameTiming) {
-	h.panelStats.CPUSet = cpuFrame.valid
+func (h *host) samplePanelStats(tickStart, tickEnd, inputAt time.Time, cpuFrame wgpurender.CPUFrameTiming) {
+	h.panelStats.CPUSet = cpuFrame.Valid
 	if h.panelStats.CPUSet {
 		h.panelStats.CPUTick = tickEnd.Sub(tickStart)
-		h.panelStats.CPURender = cpuFrame.renderDurationSince(tickEnd)
+		h.panelStats.CPURender = cpuFrame.RenderDurationSince(tickEnd)
 	}
 
-	h.panelStats.InputLatency, h.panelStats.InputLatencySet = cpuFrame.inputToSubmit(inputAt)
+	h.panelStats.InputLatency, h.panelStats.InputLatencySet = cpuFrame.InputToSubmit(inputAt)
 	if !h.panelStats.InputLatencySet {
 		h.panelStats.InputLatency = 0
 	}
 
 	if reporter, ok := any(h.renderer).(gpuTimingReporter); ok {
 		h.panelStats.GPUEmitTime, h.panelStats.GPUSimulateTime,
-			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.particleGPUTimings()
+			h.panelStats.GPURenderTime, h.panelStats.GPUTimeSet = reporter.ParticleGPUTimings()
 	}
 
 	if reporter, ok := any(h.renderer).(presentWaitReporter); ok {
-		h.panelStats.PresentWait, h.panelStats.PresentSet = reporter.presentWaitDuration()
+		h.panelStats.PresentWait, h.panelStats.PresentSet = reporter.PresentWaitDuration()
 	}
 
 	probe := h.sysprobe.Sample(time.Now())
