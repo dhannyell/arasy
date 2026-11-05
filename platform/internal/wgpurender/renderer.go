@@ -80,6 +80,17 @@ type Renderer struct {
 	spriteBatches        map[render.SpriteBatchID]*nativeSpriteBatch
 	tess                 tess.Builder
 
+	// Retained text batches. Pass maps are scratch of one frame, except
+	// passTextBatches, which keeps the private copies between frames.
+	textBatches     map[render.TextBatchID]*gpuTextBatch
+	passTextBatches map[passTextBatchKey]*gpuTextBatch
+	passTextIDs     [][]render.TextBatchID
+	passTextResult  map[passTextBatchKey]*gpuTextBatch
+	passTextUsed    map[passTextBatchKey]struct{}
+	passTextPrimary map[render.TextBatchID]int
+	// textBatchRuns is parallel to the frame's runs.
+	textBatchRuns []*gpuTextBatch
+
 	solidPipeline           *wgpu.RenderPipeline
 	texturedPipeline        *wgpu.RenderPipeline
 	spritePipeline          *wgpu.RenderPipeline
@@ -163,6 +174,7 @@ type Renderer struct {
 	// Retained batch accounting of the last frame.
 	frameRetainedContentBytes uint64
 	frameVisibleSprites       int
+	frameVisibleLabels        int
 	frameRetainedDraws        int
 	tessPassFrames            []tess.Frame
 	passPlans                 []nativePassPlan
@@ -238,6 +250,13 @@ func New(
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
 		spriteBatches: make(map[render.SpriteBatchID]*nativeSpriteBatch),
+
+		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
+		passTextBatches: make(map[passTextBatchKey]*gpuTextBatch),
+		passTextResult:  make(map[passTextBatchKey]*gpuTextBatch),
+		passTextUsed:    make(map[passTextBatchKey]struct{}),
+		passTextPrimary: make(map[render.TextBatchID]int),
+
 		msaaSamples:   msaaSampleCount(msaa, d.FormatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
 	}
@@ -471,11 +490,7 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 			return
 		}
 	}
-	if len(updates.TextBatches) > 0 {
-		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "native-text-batches-unsupported"},
-			"native renderer skips retained text batches")
-	}
+	r.applyTextBatchUpdates(updates.TextBatches)
 }
 
 // RetainedBatchMetrics is the retained batch accounting of the last frame.
@@ -496,8 +511,16 @@ func (r *Renderer) RetainedBatchMetrics() RetainedBatchMetrics {
 		m.GPUBytes += uint64(batch.cap + batch.animCap)
 		m.SpritesTotal += batch.count
 	}
+	for _, batch := range r.textBatches {
+		m.GPUBytes += uint64(batch.glyphCap + batch.labelCap)
+		m.LabelsTotal += len(batch.labels)
+	}
+	for _, batch := range r.passTextBatches {
+		m.GPUBytes += uint64(batch.glyphCap + batch.labelCap)
+	}
 	m.ContentBytes = r.frameRetainedContentBytes
 	m.SpritesVisible = r.frameVisibleSprites
+	m.LabelsVisible = r.frameVisibleLabels
 	m.Draws = r.frameRetainedDraws
 	return m
 }
@@ -550,6 +573,10 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 	if len(frames) < len(oldFrames) {
 		clear(oldFrames[len(frames):])
 	}
+	if cap(r.passTextIDs) < len(passes) {
+		r.passTextIDs = append(r.passTextIDs[:cap(r.passTextIDs)], make([][]render.TextBatchID, len(passes)-cap(r.passTextIDs))...)
+	}
+	r.passTextIDs = r.passTextIDs[:len(passes)]
 	var base frameplan.Pass
 	for i, pass := range passes {
 		if pass.Base {
@@ -557,8 +584,14 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		}
 		passWidth, passHeight := pass.Width, pass.Height
 		frames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
+		r.passTextIDs[i] = tess.CollectTextBatchIDs(r.passTextIDs[i], pass.Commands)
+		r.prepTextBatches(r.passTextIDs[i], pass.Camera, passWidth, passHeight)
 	}
 	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
+	if err := r.preparePassTextBatches(passes, built); err != nil {
+		r.recordErr(err)
+		return
+	}
 	oldPlans := r.passPlans
 	if cap(r.passPlans) < len(built) {
 		r.passPlans = make([]nativePassPlan, len(built))
@@ -585,6 +618,7 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		phaseStart = time.Now()
 	}
 	r.resolveSpriteBatchRuns(runs, plans)
+	r.resolveTextBatchRuns(runs, plans)
 	uniformOffsets, err := r.prepareSpriteUniformsForPasses(runs, plans)
 	if err != nil {
 		r.recordErr(err)
@@ -838,6 +872,14 @@ func (r *Renderer) Close() {
 		delete(r.spriteBatches, id)
 	}
 	r.spriteBatches = nil
+	for _, batch := range r.textBatches {
+		batch.release()
+	}
+	r.textBatches = nil
+	for _, batch := range r.passTextBatches {
+		batch.release()
+	}
+	r.passTextBatches = nil
 	for _, texture := range r.textures {
 		texture.release()
 	}
@@ -1381,6 +1423,9 @@ func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
 	if err := r.rebuildTextGlyphBindGroups(); err != nil {
 		return err
 	}
+	if err := r.rebuildRetainedTextBindGroups(); err != nil {
+		return err
+	}
 	for _, batch := range r.spriteBatches {
 		if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
 			return err
@@ -1789,7 +1834,7 @@ func (r *Renderer) activateLayerTarget(id render.TextureID, texture *gpuTexture)
 func (r *Renderer) rebuildTextGlyphBindGroups() error {
 	resources := r.textAtlasResources()
 	for key, atlas := range r.textAtlases {
-		bindGroup, err := resources.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer)
+		bindGroup, err := resources.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer, r.textGlyphBuffer, r.textLabelBuffer)
 		if err != nil {
 			return err
 		}
@@ -2080,6 +2125,13 @@ type nativeScissorState struct {
 	set                 bool
 }
 
+// applyClipScissor sets the scissor for clip and reports if any area remains.
+func applyClipScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, clip math2d.Rect, camera render.Camera, viewport math2d.Rect, width, height int) bool {
+	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(clip, camera, viewport, 1, width, height)
+	setNativeScissor(pass, state, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	return visible
+}
+
 func setNativeScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, x, y, width, height uint32) {
 	if state.set && state.x == x && state.y == y && state.width == width && state.height == height {
 		return
@@ -2153,9 +2205,7 @@ func (r *Renderer) drawRun(
 	offscreenParticles bool,
 	lastComposited *int,
 ) error {
-	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
-	setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
-	if !visible {
+	if !applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height) {
 		return nil
 	}
 	additive := run.Blend == render.BlendAdditive
@@ -2233,9 +2283,7 @@ func (r *Renderer) drawRun(
 		if batch == nil {
 			return nil
 		}
-		x, y, sw, sh, visible := particlegpu.ScissorRectWithin(run.SpriteBatch.Clip, camera, viewport, 1, width, height)
-		setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
-		if visible {
+		if applyClipScissor(pass, scissor, run.SpriteBatch.Clip, camera, viewport, width, height) {
 			for i, rg := range batch.ranges {
 				if batch.bindGroups[i] == nil || rg.Count == 0 {
 					continue
@@ -2254,11 +2302,30 @@ func (r *Renderer) drawRun(
 			}
 		}
 		if run.SpriteBatch.Clip.Width() > 0 && run.SpriteBatch.Clip.Height() > 0 {
-			x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
-			setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+			applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height)
 		}
 	case tess.DrawRunTextBatch:
-		r.warnSkipped("text batches")
+		batch := r.textBatchRuns[runIndex]
+		if batch == nil {
+			return nil
+		}
+		if applyClipScissor(pass, scissor, run.TextBatch.Clip, camera, viewport, width, height) {
+			if renderTarget {
+				pass.SetPipeline(pick(additive, r.targetTextGlyphAddPipeline, r.targetTextGlyphPipeline))
+			} else {
+				pass.SetPipeline(pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline))
+			}
+			for _, rg := range batch.ranges {
+				if rg.bindGroup == nil {
+					continue
+				}
+				pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
+				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
+			}
+		}
+		if run.TextBatch.Clip.Width() > 0 && run.TextBatch.Clip.Height() > 0 {
+			applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height)
+		}
 	}
 	return nil
 }
@@ -2292,14 +2359,6 @@ func (r *Renderer) recordErr(err error) {
 	}
 }
 
-func (r *Renderer) warnSkipped(kind string) {
-	r.diagnostics.Log(
-		r.log, slog.LevelWarn,
-		diagnostic.Key{Code: "native-" + kind + "-unsupported"},
-		"native renderer skips unsupported streaming run",
-		"kind", kind,
-	)
-}
 func textureFor(textures []gpuTexture, id render.TextureID) (gpuTexture, bool) {
 	if id == 0 || int(id) >= len(textures) || textures[id].bindGroup == nil {
 		return gpuTexture{}, false
