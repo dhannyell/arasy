@@ -59,7 +59,7 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 	}
 
 	maxLayers := r.device.Get("limits").Get("maxTextureArrayLayers").Int()
-	plan := planSpriteTextureArray(sizes, maxLayers)
+	plan := tess.PlanSpriteTextureArray(sizes, maxLayers)
 	if plan.Enabled {
 		textures := r.createGPUTextureArray(reg, manifest, plan)
 		slog.Default().Info("sprite texture array enabled",
@@ -87,7 +87,7 @@ func (r *webgpuRenderer) buildTextures(manifest asset.Manifest) ([]gpuTexture, t
 // sprites share the full array view. A dynamic layer lazily creates a
 // single-mip attachment when first targeted so a target pass never binds an
 // overlapping array view.
-func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, manifest asset.Manifest, plan spriteTextureArrayPlan) []gpuTexture {
+func (r *webgpuRenderer) createGPUTextureArray(reg pixel.Registry, manifest asset.Manifest, plan tess.SpriteTextureArrayPlan) []gpuTexture {
 	levels := gpu.MipLevelCount(plan.Width, plan.Height)
 	texture := jsHandle(r.dev.CreateTexture(gpu.TextureArrayDesc(plan.Width, plan.Height, plan.Layers, levels)))
 	textures := make([]gpuTexture, len(reg))

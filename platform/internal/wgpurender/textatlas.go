@@ -113,7 +113,7 @@ func (r textAtlasResources) createTextAtlas(atlas *tess.Atlas) (gpuTextAtlas, er
 		result.release()
 		return gpuTextAtlas{}, fmt.Errorf("write text metric buffer: %w", err)
 	}
-	bindGroup, err := r.createTextGlyphBindGroup(view, sampler, metricBuffer)
+	bindGroup, err := r.createTextGlyphBindGroup(view, sampler, metricBuffer, r.glyphBuffer, r.labelBuffer)
 	if err != nil {
 		result.release()
 		return gpuTextAtlas{}, err
@@ -122,7 +122,9 @@ func (r textAtlasResources) createTextAtlas(atlas *tess.Atlas) (gpuTextAtlas, er
 	return result, nil
 }
 
-func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sampler *wgpu.Sampler, metrics *wgpu.Buffer) (*wgpu.BindGroup, error) {
+// createTextGlyphBindGroup binds an atlas to glyph and label buffers: the shared
+// streaming buffers for DrawText, or the own buffers of a retained batch.
+func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sampler *wgpu.Sampler, metrics, glyphs, labels *wgpu.Buffer) (*wgpu.BindGroup, error) {
 	layout := r.textGlyphPipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	bindGroup, err := r.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
@@ -131,8 +133,8 @@ func (r textAtlasResources) createTextGlyphBindGroup(view *wgpu.TextureView, sam
 		Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: view},
 			{Binding: 1, Sampler: sampler},
-			{Binding: 2, Buffer: r.glyphBuffer, Size: wgpu.WholeSize},
-			{Binding: 3, Buffer: r.labelBuffer, Size: wgpu.WholeSize},
+			{Binding: 2, Buffer: glyphs, Size: wgpu.WholeSize},
+			{Binding: 3, Buffer: labels, Size: wgpu.WholeSize},
 			{Binding: 4, Buffer: metrics, Size: wgpu.WholeSize},
 			{Binding: 5, Buffer: r.uniformBuffer, Size: tess.SpriteUniformSize},
 		},

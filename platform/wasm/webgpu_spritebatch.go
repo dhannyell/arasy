@@ -29,7 +29,7 @@ type gpuSpriteBatch struct {
 	animCap    int
 	count      int
 	animated   bool
-	ranges     []spriteBatchRange
+	ranges     []tess.SpriteBatchRange
 	bindGroups []js.Value
 
 	bounds      math2d.Rect
@@ -72,15 +72,15 @@ func (r *webgpuRenderer) applySpriteBatchUpdates(updates []runtime.SpriteBatchUp
 // previously submitted work, the same ordering the text atlas replacement
 // already relies on, so no new asynchronous wait is introduced.
 func (r *webgpuRenderer) replaceSpriteBatch(id render.SpriteBatchID, instances []render.SpriteInstance) {
-	plan := planSpriteBatch(instances, r.texSizes, r.spriteArrayEnabled)
-	if plan.nonFinite > 0 {
+	plan := tess.PlanSpriteBatch(instances, r.texSizes, r.spriteArrayEnabled)
+	if plan.NonFinite > 0 {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
 			diagnostic.Key{Code: "webgpu-sprite-batch-non-finite", ID: uint64(id)},
-			"webgpu: sprite batch replace dropped non-finite instances", "dropped", plan.nonFinite)
+			"webgpu: sprite batch replace dropped non-finite instances", "dropped", plan.NonFinite)
 	}
 
 	old := r.spriteBatches[id]
-	if plan.count == 0 {
+	if plan.Count == 0 {
 		// An empty replace keeps an empty batch; draws of it are silent
 		// no-ops and only a delete removes the resource.
 		if old != nil {
@@ -91,16 +91,16 @@ func (r *webgpuRenderer) replaceSpriteBatch(id render.SpriteBatchID, instances [
 	}
 
 	batch := &gpuSpriteBatch{
-		count:       plan.count,
-		animated:    plan.animated,
-		ranges:      plan.ranges,
-		bounds:      plan.bounds,
-		hasBounds:   plan.hasBounds,
-		maxBounce:   plan.maxBounce,
-		hasRotation: plan.hasRotation,
+		count:       plan.Count,
+		animated:    plan.Animated,
+		ranges:      plan.Ranges,
+		bounds:      plan.Bounds,
+		hasBounds:   plan.HasBounds,
+		maxBounce:   plan.MaxBounce,
+		hasRotation: plan.HasRotation,
 	}
-	reuse := old != nil && old.animated == plan.animated &&
-		old.cap >= len(plan.records) && old.animCap >= len(plan.anims)
+	reuse := old != nil && old.animated == plan.Animated &&
+		old.cap >= len(plan.Records) && old.animCap >= len(plan.Anims)
 	if reuse {
 		batch.buffer, batch.cap = old.buffer, old.cap
 		batch.animBuffer, batch.animCap = old.animBuffer, old.animCap
@@ -109,19 +109,19 @@ func (r *webgpuRenderer) replaceSpriteBatch(id render.SpriteBatchID, instances [
 	}
 
 	if batch.buffer.IsUndefined() || batch.buffer.IsNull() {
-		batch.cap = len(plan.records)
+		batch.cap = len(plan.Records)
 		batch.buffer = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(batch.cap, gpu.BufferUsageStorage|gpu.BufferUsageCopyDst)))
 	}
-	r.queue.Call("writeBuffer", batch.buffer, 0, bytesToJS(plan.records))
-	r.frameRetainedContentBytes += uint64(len(plan.records))
+	r.queue.Call("writeBuffer", batch.buffer, 0, bytesToJS(plan.Records))
+	r.frameRetainedContentBytes += uint64(len(plan.Records))
 
-	if plan.animated {
+	if plan.Animated {
 		if batch.animBuffer.IsUndefined() || batch.animBuffer.IsNull() {
-			batch.animCap = len(plan.anims)
+			batch.animCap = len(plan.Anims)
 			batch.animBuffer = jsHandle(r.dev.CreateBuffer(gpu.BufferDesc(batch.animCap, gpu.BufferUsageStorage|gpu.BufferUsageCopyDst)))
 		}
-		r.queue.Call("writeBuffer", batch.animBuffer, 0, bytesToJS(plan.anims))
-		r.frameRetainedContentBytes += uint64(len(plan.anims))
+		r.queue.Call("writeBuffer", batch.animBuffer, 0, bytesToJS(plan.Anims))
+		r.frameRetainedContentBytes += uint64(len(plan.Anims))
 	} else if !batch.animBuffer.IsUndefined() && !batch.animBuffer.IsNull() {
 		batch.animBuffer.Call("destroy")
 		batch.animBuffer = js.Undefined()
@@ -146,7 +146,7 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 			// always plain 2d), so the layout choice must follow the same
 			// condition the draw-time pipeline selection uses below.
 			layout := r.spriteBatchAnimLayout
-			if r.spriteArrayEnabled && !rg.missing {
+			if r.spriteArrayEnabled && !rg.Missing {
 				layout = r.spriteBatchAnimArrayLayout
 			}
 			tex := r.spriteRangeTexture(rg)
@@ -163,7 +163,7 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 			})
 			continue
 		}
-		if r.spriteArrayEnabled && !rg.missing {
+		if r.spriteArrayEnabled && !rg.Missing {
 			groups[i] = r.device.Call("createBindGroup", map[string]any{
 				"layout": r.spriteArrayLayout,
 				"entries": []any{
@@ -191,14 +191,14 @@ func (r *webgpuRenderer) createSpriteBatchBindGroups(batch *gpuSpriteBatch) []js
 // spriteRangeTexture resolves the texture view one range binds: the shared
 // 2d-array view on the homogeneous array path, the declared texture on the
 // fallback path, or the shared diagnostic placeholder for missing textures.
-func (r *webgpuRenderer) spriteRangeTexture(rg spriteBatchRange) js.Value {
-	if rg.missing {
+func (r *webgpuRenderer) spriteRangeTexture(rg tess.SpriteBatchRange) js.Value {
+	if rg.Missing {
 		return r.spritePlaceholderView()
 	}
 	if r.spriteArrayEnabled {
 		return r.spriteArrayTexture.Call("createView", map[string]any{"dimension": "2d-array"})
 	}
-	if gt, ok := r.textureFor(rg.texture); ok {
+	if gt, ok := r.textureFor(rg.Texture); ok {
 		if gt.rtt {
 			return gt.targetView
 		}

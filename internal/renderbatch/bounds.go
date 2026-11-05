@@ -234,3 +234,22 @@ func BoundsForView(bounds math2d.Rect, view math2d.Affine) math2d.Rect {
 func IntersectsView(bounds, view math2d.Rect) bool {
 	return bounds.Overlaps(view)
 }
+
+// BatchView returns the world area that can show a retained batch. A false
+// result tells the caller to keep drawing without batch culling.
+func BatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool) {
+	view := camera.Resolve().World
+	if view.Width() <= 0 || view.Height() <= 0 {
+		return math2d.Rect{}, false
+	}
+	if clip != (math2d.Rect{}) {
+		clip = BoundsForView(clip, camera.View)
+		view.Min.X = max(view.Min.X, clip.Min.X)
+		view.Min.Y = max(view.Min.Y, clip.Min.Y)
+		view.Max.X = min(view.Max.X, clip.Max.X)
+		view.Max.Y = min(view.Max.Y, clip.Max.Y)
+		// An empty intersection still culls: IntersectsView requires a
+		// positive-area overlap, and a degenerate rect overlaps nothing.
+	}
+	return view, true
+}

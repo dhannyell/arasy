@@ -103,6 +103,10 @@ func (r *sharedRenderer) Render(frame runtime.Frame) {
 	}
 }
 
+func (r *sharedRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
+	return RetainedBatchMetrics(r.RetainedBatchMetrics()), true
+}
+
 func (r *sharedRenderer) renderCPUTimings() (tessTime, upload, encode time.Duration, ok bool) {
 	return r.RenderCPUTimings()
 }
