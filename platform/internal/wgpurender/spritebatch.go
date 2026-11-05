@@ -8,6 +8,8 @@ import (
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
+	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
@@ -28,6 +30,11 @@ type nativeSpriteBatch struct {
 	// bindGroups runs parallel to ranges. A nil entry skips its range.
 	bindGroups []*wgpu.BindGroup
 	count      int
+	// bounds, maxBounce and hasRotation let a frame cull the whole batch.
+	bounds      math2d.Rect
+	hasBounds   bool
+	maxBounce   float64
+	hasRotation bool
 }
 
 func (b *nativeSpriteBatch) release() {
@@ -78,7 +85,15 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 		r.spriteBatches[id] = &nativeSpriteBatch{}
 		return nil
 	}
-	batch := &nativeSpriteBatch{count: plan.Count, ranges: plan.Ranges, animated: plan.Animated}
+	batch := &nativeSpriteBatch{
+		count:       plan.Count,
+		ranges:      plan.Ranges,
+		animated:    plan.Animated,
+		bounds:      plan.Bounds,
+		hasBounds:   plan.HasBounds,
+		maxBounce:   plan.MaxBounce,
+		hasRotation: plan.HasRotation,
+	}
 	if old != nil && old.animated == plan.Animated && old.cap >= len(plan.Records) && old.animCap >= len(plan.Anims) {
 		batch.buffer, batch.cap, batch.animBuffer, batch.animCap = old.buffer, old.cap, old.animBuffer, old.animCap
 		old.buffer, old.animBuffer = nil, nil
@@ -95,6 +110,7 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 		batch.release()
 		return fmt.Errorf("upload retained sprite batch: %w", err)
 	}
+	r.frameRetainedContentBytes += uint64(len(plan.Records))
 	if plan.Animated {
 		if batch.animBuffer == nil {
 			batch.animCap = len(plan.Anims)
@@ -108,6 +124,7 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 			batch.release()
 			return fmt.Errorf("upload retained sprite batch animations: %w", err)
 		}
+		r.frameRetainedContentBytes += uint64(len(plan.Anims))
 	}
 	if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
 		batch.release()
@@ -122,6 +139,48 @@ func (r *Renderer) deleteSpriteBatch(id render.SpriteBatchID) {
 	batch := r.spriteBatches[id]
 	delete(r.spriteBatches, id)
 	batch.release()
+}
+
+// resolveSpriteBatchRuns fills spriteBatchRuns with the batch each run draws.
+// A nil entry skips the run: its batch is missing, empty or out of view. Each
+// run uses the camera of its own pass.
+func (r *Renderer) resolveSpriteBatchRuns(runs []tess.StreamRun, plans []nativePassPlan) {
+	if cap(r.spriteBatchRuns) < len(runs) {
+		r.spriteBatchRuns = make([]*nativeSpriteBatch, len(runs))
+	} else {
+		r.spriteBatchRuns = r.spriteBatchRuns[:len(runs)]
+		clear(r.spriteBatchRuns)
+	}
+	r.frameVisibleSprites, r.frameRetainedDraws = 0, 0
+	for index, run := range runs {
+		if run.Kind != tess.DrawRunSpriteBatch {
+			continue
+		}
+		cmd := run.SpriteBatch
+		batch, ok := r.spriteBatches[cmd.Batch]
+		if !ok {
+			r.diagnostics.Log(r.log, slog.LevelWarn,
+				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(cmd.Batch)},
+				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
+			continue
+		}
+		if batch.count == 0 {
+			continue
+		}
+		plan := plans[run.Pass]
+		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(camera)
+		if view, ok := renderbatch.BatchView(camera, cmd.Clip); ok && canCull {
+			bounds, boundsOK := tess.SpriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
+			bounds = renderbatch.BoundsForView(bounds, camera.View)
+			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
+				continue
+			}
+		}
+		r.spriteBatchRuns[index] = batch
+		r.frameVisibleSprites += batch.count
+		r.frameRetainedDraws += len(batch.ranges)
+	}
 }
 
 // createSpriteBatchBindGroup binds one draw range. Animated batches bind the

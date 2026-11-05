@@ -158,9 +158,15 @@ type Renderer struct {
 	batchAnimUniformSlotSize int
 	batchAnimOffsets         []uint32
 	batchAnimScratch         [tess.SpriteBatchAnimUniformSize]byte
-	tessPassFrames           []tess.Frame
-	passPlans                []nativePassPlan
-	particleGroupOf          []int
+	// spriteBatchRuns is parallel to the frame's runs.
+	spriteBatchRuns []*nativeSpriteBatch
+	// Retained batch accounting of the last frame.
+	frameRetainedContentBytes uint64
+	frameVisibleSprites       int
+	frameRetainedDraws        int
+	tessPassFrames            []tess.Frame
+	passPlans                 []nativePassPlan
+	particleGroupOf           []int
 
 	msaaTexture *wgpu.Texture
 	msaaView    *wgpu.TextureView
@@ -454,6 +460,7 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 	if r == nil || r.err != nil {
 		return
 	}
+	r.frameRetainedContentBytes = 0
 	if err := r.textureResources().updateTextures(updates.Textures, r.textures); err != nil {
 		r.recordErr(err)
 		return
@@ -469,6 +476,30 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 			diagnostic.Key{Code: "native-text-batches-unsupported"},
 			"native renderer skips retained text batches")
 	}
+}
+
+// RetainedBatchMetrics is the retained batch accounting of the last frame.
+type RetainedBatchMetrics struct {
+	GPUBytes       uint64 // bytes of every registered batch, drawn or not
+	ContentBytes   uint64 // bytes uploaded this frame
+	SpritesTotal   int
+	SpritesVisible int // sprites that survive culling
+	LabelsTotal    int
+	LabelsVisible  int
+	Draws          int
+}
+
+// RetainedBatchMetrics returns the accounting of the last rendered frame.
+func (r *Renderer) RetainedBatchMetrics() RetainedBatchMetrics {
+	var m RetainedBatchMetrics
+	for _, batch := range r.spriteBatches {
+		m.GPUBytes += uint64(batch.cap + batch.animCap)
+		m.SpritesTotal += batch.count
+	}
+	m.ContentBytes = r.frameRetainedContentBytes
+	m.SpritesVisible = r.frameVisibleSprites
+	m.Draws = r.frameRetainedDraws
+	return m
 }
 
 // Render draws one frame. Errors are retained for Err because FrameRenderer
@@ -553,6 +584,7 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
 	}
+	r.resolveSpriteBatchRuns(runs, plans)
 	uniformOffsets, err := r.prepareSpriteUniformsForPasses(runs, plans)
 	if err != nil {
 		r.recordErr(err)
@@ -1507,11 +1539,8 @@ func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans [
 	}
 	clear(r.batchAnimOffsets)
 	required := 0
-	for _, run := range runs {
-		if run.Kind != tess.DrawRunSpriteBatch {
-			continue
-		}
-		if batch := r.spriteBatches[run.SpriteBatch.Batch]; batch != nil && batch.animated {
+	for _, batch := range r.spriteBatchRuns {
+		if batch != nil && batch.animated {
 			required++
 		}
 	}
@@ -1523,10 +1552,7 @@ func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans [
 	}
 	slot := 0
 	for index, run := range runs {
-		if run.Kind != tess.DrawRunSpriteBatch {
-			continue
-		}
-		batch := r.spriteBatches[run.SpriteBatch.Batch]
+		batch := r.spriteBatchRuns[index]
 		if batch == nil || !batch.animated {
 			continue
 		}
@@ -1983,7 +2009,7 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
 			return err
 		}
 	}
@@ -2011,7 +2037,7 @@ func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex in
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
 			return err
 		}
 	}
@@ -2116,8 +2142,8 @@ func (r *Renderer) encodeParticleOffscreen(
 func (r *Renderer) drawRun(
 	pass *wgpu.RenderPassEncoder,
 	run tess.StreamRun,
+	runIndex int,
 	uniformOffset uint32,
-	batchAnimOffset uint32,
 	camera render.Camera,
 	viewport math2d.Rect,
 	scissor *nativeScissorState,
@@ -2203,14 +2229,8 @@ func (r *Renderer) drawRun(
 		pass.SetBindGroup(0, r.particleTargets[group].bindGroup, nil)
 		pass.Draw(3, 1, 0, 0)
 	case tess.DrawRunSpriteBatch:
-		batch, ok := r.spriteBatches[run.SpriteBatch.Batch]
-		if !ok {
-			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(run.SpriteBatch.Batch)},
-				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
-			return nil
-		}
-		if batch.count == 0 {
+		batch := r.spriteBatchRuns[runIndex]
+		if batch == nil {
 			return nil
 		}
 		x, y, sw, sh, visible := particlegpu.ScissorRectWithin(run.SpriteBatch.Clip, camera, viewport, 1, width, height)
@@ -2225,7 +2245,7 @@ func (r *Renderer) drawRun(
 					// The animated pipeline has no additive variant, matching
 					// the wasm backend.
 					pass.SetPipeline(r.spriteBatchAnimPipelineFor(array, renderTarget))
-					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{batchAnimOffset})
+					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{r.batchAnimOffsets[runIndex]})
 				} else {
 					pass.SetPipeline(r.spritePipelineFor(array, additive, renderTarget))
 					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{uniformOffset})
