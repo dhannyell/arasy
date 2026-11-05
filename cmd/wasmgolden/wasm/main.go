@@ -31,10 +31,9 @@ func main() {
 	}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		ForceCanvas2D:     renderer == "canvas2d",
-		LegacyGPURenderer: renderer == "webgpu-legacy",
-		Log:               log,
-		MSAA:              msaa,
+		ForceCanvas2D: renderer == "canvas2d",
+		Log:           log,
+		MSAA:          msaa,
 	}); err != nil {
 		log.Error("wasm golden host failed", "err", err)
 	}

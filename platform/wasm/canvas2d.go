@@ -1074,3 +1074,9 @@ func canvasTextBaseline(baseline render.TextBaseline) string {
 		return "alphabetic"
 	}
 }
+
+func bytesToJS(data []byte) js.Value {
+	array := js.Global().Get("Uint8Array").New(len(data))
+	js.CopyBytesToJS(array, data)
+	return array
+}

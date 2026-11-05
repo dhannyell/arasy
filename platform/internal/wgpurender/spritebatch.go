@@ -75,8 +75,8 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 	plan := tess.PlanSpriteBatch(instances, r.texSizes, r.spriteArrayEnabled)
 	if plan.NonFinite > 0 {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
-			diagnostic.Key{Code: "native-sprite-batch-non-finite", ID: uint64(id)},
-			"native: sprite batch replace dropped non-finite instances", "dropped", plan.NonFinite)
+			diagnostic.Key{Code: "sprite-batch-non-finite", ID: uint64(id)},
+			"renderer: sprite batch replace dropped non-finite instances", "dropped", plan.NonFinite)
 	}
 	old := r.spriteBatches[id]
 	if plan.Count == 0 {
@@ -160,8 +160,8 @@ func (r *Renderer) resolveSpriteBatchRuns(runs []tess.StreamRun, plans []nativeP
 		batch, ok := r.spriteBatches[cmd.Batch]
 		if !ok {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(cmd.Batch)},
-				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
+				diagnostic.Key{Code: "sprite-batch-missing", ID: uint64(cmd.Batch)},
+				"renderer: DrawSpriteBatch references a missing or deleted batch; command skipped")
 			continue
 		}
 		if batch.count == 0 {

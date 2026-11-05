@@ -99,9 +99,9 @@ func BenchmarkTextBatchCoverage(b *testing.B) {
 // BenchmarkPlanTextBatchSteadyStateSkip is a control: labels resolved
 // against a nil-returning font (as if the caller already knows nothing
 // changed) still walk every label to recompute px and skip it. This bounds
-// the floor cost finalizeTextBatches' non-repack path would pay if it ever
-// called PlanTextBatch speculatively — which it does not; see
-// finalizeTextBatches in platform/wasm/webgpu_textbatch.go.
+// the floor cost a steady frame would pay if it called PlanTextBatch
+// speculatively. It does not; see preparePassTextBatches in
+// platform/internal/wgpurender/textbatch.go.
 func BenchmarkPlanTextBatchSteadyStateSkip(b *testing.B) {
 	cam := benchCamera()
 	labels := makeTextBatchLabels(4000, 1)

@@ -3,6 +3,7 @@
 package wasm
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"syscall/js"
@@ -14,6 +15,8 @@ import (
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
 )
+
+var errWebGPUUnavailable = errors.New("webgpu unavailable")
 
 // sharedRenderer connects the shared renderer to the browser host.
 type sharedRenderer struct {
@@ -95,18 +98,15 @@ func openSharedDevice(canvas js.Value, wantGPUTiming bool) (*wgpurender.Device, 
 
 // observeCanvasDeviceErrors logs device errors of the configured canvas. The
 // binding does not expose the browser device, so this reads it from the context.
-// A browser without getConfiguration still prints uncaptured errors itself.
+// A browser without getConfiguration still prints uncaptured errors itself. The
+// callbacks stay for the life of the page, because the device can report an
+// error until the page closes.
 func observeCanvasDeviceErrors(canvas js.Value, log *slog.Logger) {
 	context := canvas.Call("getContext", "webgpu")
 	if context.Get("getConfiguration").IsUndefined() {
 		return
 	}
-	observeDeviceErrors(context.Call("getConfiguration").Get("device"), log)
-}
-
-// observeDeviceErrors keeps its callbacks for the life of the page, because the
-// device can report an error until the page closes.
-func observeDeviceErrors(device js.Value, log *slog.Logger) {
+	device := context.Call("getConfiguration").Get("device")
 	device.Call("addEventListener", "uncapturederror", js.FuncOf(func(this js.Value, args []js.Value) any {
 		message := "unknown WebGPU error"
 		if len(args) > 0 {
@@ -141,8 +141,27 @@ func (r *sharedRenderer) Render(frame runtime.Frame) {
 	r.Renderer.Render(frame)
 	if !r.readySignaled && r.HasPresentedFrame() {
 		r.readySignaled = true
-		signalCanvasReady(r.canvas, "webgpu", func() {})
+		signalCanvasReady(r.canvas)
 	}
+}
+
+// signalCanvasReady marks the canvas after two animation frames, so the shell
+// removes its boot overlay only when the browser has shown the frame.
+func signalCanvasReady(canvas js.Value) {
+	var firstFrame js.Func
+	firstFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+		firstFrame.Release()
+
+		var secondFrame js.Func
+		secondFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
+			secondFrame.Release()
+			canvas.Call("setAttribute", "data-arasy-ready", "webgpu")
+			return nil
+		})
+		js.Global().Call("requestAnimationFrame", secondFrame)
+		return nil
+	})
+	js.Global().Call("requestAnimationFrame", firstFrame)
 }
 
 func (r *sharedRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
