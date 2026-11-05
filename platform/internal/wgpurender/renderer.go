@@ -1342,9 +1342,7 @@ func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
 	}
 	old := r.spriteUniform
 	r.spriteUniform, r.spriteUniformCap = buffer, next
-	if old != nil {
-		old.Release()
-	}
+	releaseBuffer(&old)
 	if err := r.rebuildSpriteBindGroups(); err != nil {
 		return err
 	}
@@ -1377,9 +1375,7 @@ func (r *Renderer) ensureBatchAnimUniformCapacity(required int) error {
 	}
 	old := r.batchAnimUniform
 	r.batchAnimUniform, r.batchAnimUniformCap = buffer, next
-	if old != nil {
-		old.Release()
-	}
+	releaseBuffer(&old)
 	for _, batch := range r.spriteBatches {
 		if !batch.animated {
 			continue
@@ -1627,9 +1623,7 @@ func (r *Renderer) growBuffer(
 	if err != nil {
 		return nil, 0, err
 	}
-	if buffer != nil {
-		buffer.Release()
-	}
+	releaseBuffer(&buffer)
 	return replacement, next, nil
 }
 

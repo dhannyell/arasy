@@ -19,8 +19,12 @@ import (
 type nativeSpriteBatch struct {
 	buffer     *wgpu.Buffer
 	animBuffer *wgpu.Buffer
-	animated   bool
-	ranges     []tess.SpriteBatchRange
+	// cap and animCap are the buffer sizes in bytes. A replace that fits reuses
+	// the buffers, so a batch of steady size allocates no GPU memory.
+	cap      int
+	animCap  int
+	animated bool
+	ranges   []tess.SpriteBatchRange
 	// bindGroups runs parallel to ranges. A nil entry skips its range.
 	bindGroups []*wgpu.BindGroup
 	count      int
@@ -67,43 +71,48 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 			diagnostic.Key{Code: "native-sprite-batch-non-finite", ID: uint64(id)},
 			"native: sprite batch replace dropped non-finite instances", "dropped", plan.NonFinite)
 	}
+	old := r.spriteBatches[id]
+	if plan.Count == 0 {
+		// An empty replace keeps an empty batch; only a delete removes it.
+		old.release()
+		r.spriteBatches[id] = &nativeSpriteBatch{}
+		return nil
+	}
 	batch := &nativeSpriteBatch{count: plan.Count, ranges: plan.Ranges, animated: plan.Animated}
-	if len(plan.Records) > 0 {
-		var err error
-		batch.buffer, err = r.newBuffer(
-			"retained sprite batch",
-			len(plan.Records),
-			wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
-		)
+	if old != nil && old.animated == plan.Animated && old.cap >= len(plan.Records) && old.animCap >= len(plan.Anims) {
+		batch.buffer, batch.cap, batch.animBuffer, batch.animCap = old.buffer, old.cap, old.animBuffer, old.animCap
+		old.buffer, old.animBuffer = nil, nil
+	}
+	var err error
+	if batch.buffer == nil {
+		batch.cap = len(plan.Records)
+		batch.buffer, err = r.newBuffer("retained sprite batch", batch.cap, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 		if err != nil {
 			return err
 		}
-		if err := r.device.Queue.TryWriteBuffer(batch.buffer, 0, plan.Records); err != nil {
-			batch.release()
-			return fmt.Errorf("upload retained sprite batch: %w", err)
-		}
-		if batch.animated {
-			batch.animBuffer, err = r.newBuffer(
-				"retained sprite batch animations",
-				len(plan.Anims),
-				wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
-			)
+	}
+	if err := r.device.Queue.TryWriteBuffer(batch.buffer, 0, plan.Records); err != nil {
+		batch.release()
+		return fmt.Errorf("upload retained sprite batch: %w", err)
+	}
+	if plan.Animated {
+		if batch.animBuffer == nil {
+			batch.animCap = len(plan.Anims)
+			batch.animBuffer, err = r.newBuffer("retained sprite batch animations", batch.animCap, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 			if err != nil {
 				batch.release()
 				return err
 			}
-			if err := r.device.Queue.TryWriteBuffer(batch.animBuffer, 0, plan.Anims); err != nil {
-				batch.release()
-				return fmt.Errorf("upload retained sprite batch animations: %w", err)
-			}
 		}
-		if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(batch.animBuffer, 0, plan.Anims); err != nil {
 			batch.release()
-			return err
+			return fmt.Errorf("upload retained sprite batch animations: %w", err)
 		}
 	}
-
-	old := r.spriteBatches[id]
+	if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
+		batch.release()
+		return err
+	}
 	r.spriteBatches[id] = batch
 	old.release()
 	return nil
