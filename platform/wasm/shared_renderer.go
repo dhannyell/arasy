@@ -42,6 +42,7 @@ func newSharedRenderer(
 	if err != nil {
 		return nil, err
 	}
+	observeCanvasDeviceErrors(canvas, log)
 	renderer.SetGPUTiming(wantGPUTiming)
 	renderer.SetCPUTiming(true)
 	return &sharedRenderer{
@@ -70,6 +71,10 @@ func openSharedDevice(canvas js.Value, wantGPUTiming bool) (*wgpurender.Device, 
 	if err != nil {
 		return nil, fmt.Errorf("request webgpu device: %w", err)
 	}
+	// A canvas that already has another context type returns null here.
+	if !canvas.Call("getContext", "webgpu").Truthy() {
+		return nil, errWebGPUUnavailable
+	}
 	format := wgpu.TextureFormatBGRA8Unorm
 	if js.Global().Get("navigator").Get("gpu").Call("getPreferredCanvasFormat").String() == "rgba8unorm" {
 		format = wgpu.TextureFormatRGBA8Unorm
@@ -90,6 +95,43 @@ func openSharedDevice(canvas js.Value, wantGPUTiming bool) (*wgpurender.Device, 
 	return d, nil
 }
 
+// observeCanvasDeviceErrors logs device errors of the configured canvas. The
+// binding does not expose the browser device, so this reads it from the context.
+// A browser without getConfiguration still prints uncaptured errors itself.
+func observeCanvasDeviceErrors(canvas js.Value, log *slog.Logger) {
+	context := canvas.Call("getContext", "webgpu")
+	if context.Get("getConfiguration").IsUndefined() {
+		return
+	}
+	observeDeviceErrors(context.Call("getConfiguration").Get("device"), log)
+}
+
+// observeDeviceErrors keeps its callbacks for the life of the page, because the
+// device can report an error until the page closes.
+func observeDeviceErrors(device js.Value, log *slog.Logger) {
+	device.Call("addEventListener", "uncapturederror", js.FuncOf(func(this js.Value, args []js.Value) any {
+		message := "unknown WebGPU error"
+		if len(args) > 0 {
+			err := args[0].Get("error")
+			if !err.IsUndefined() && !err.IsNull() {
+				message = err.Get("message").String()
+			}
+		}
+		log.Error("webgpu uncaptured error", "error", message)
+		return nil
+	}))
+	device.Get("lost").Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+		reason := "unknown"
+		message := ""
+		if len(args) > 0 {
+			reason = args[0].Get("reason").String()
+			message = args[0].Get("message").String()
+		}
+		log.Error("webgpu device lost", "reason", reason, "message", message)
+		return nil
+	}))
+}
+
 // Render follows the canvas size, because the browser host resizes the canvas
 // and does not tell the renderer.
 func (r *sharedRenderer) Render(frame runtime.Frame) {
@@ -101,7 +143,7 @@ func (r *sharedRenderer) Render(frame runtime.Frame) {
 	r.Renderer.Render(frame)
 	if !r.readySignaled && r.HasPresentedFrame() {
 		r.readySignaled = true
-		signalCanvasReady(r.canvas, "wgpu", func() {})
+		signalCanvasReady(r.canvas, "webgpu", func() {})
 	}
 }
 

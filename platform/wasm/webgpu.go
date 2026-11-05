@@ -234,8 +234,6 @@ type webgpuRenderer struct {
 
 	ready        bool
 	readyPending bool
-	errorCb      js.Func
-	lostCb       js.Func
 }
 
 func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, outlines slugcore.Factory, log *slog.Logger) (*webgpuRenderer, error) {
@@ -303,7 +301,7 @@ func newWebGPU(canvas js.Value, clear render.Color, manifest asset.Manifest, wan
 		log:             log,
 	}
 	r.dev = newJSDevice(r.device, r.queue)
-	r.observeDeviceErrors(log)
+	observeDeviceErrors(r.device, log)
 	r.initPostResources()
 	hasTargets := manifestHasDynamicTextures(manifest)
 
@@ -390,34 +388,6 @@ func (r *webgpuRenderer) retainedBatchMetrics() (RetainedBatchMetrics, bool) {
 	m.LabelsVisible = r.frameVisibleLabels
 	m.Draws = r.frameRetainedDraws
 	return m, true
-}
-
-func (r *webgpuRenderer) observeDeviceErrors(log *slog.Logger) {
-	r.errorCb = js.FuncOf(func(this js.Value, args []js.Value) any {
-		message := "unknown WebGPU error"
-		if len(args) > 0 {
-			err := args[0].Get("error")
-			if !err.IsUndefined() && !err.IsNull() {
-				message = err.Get("message").String()
-			}
-		}
-		log.Error("webgpu uncaptured error", "error", message)
-		return nil
-	})
-	r.device.Call("addEventListener", "uncapturederror", r.errorCb)
-
-	r.lostCb = js.FuncOf(func(this js.Value, args []js.Value) any {
-		reason := "unknown"
-		message := ""
-		if len(args) > 0 {
-			info := args[0]
-			reason = info.Get("reason").String()
-			message = info.Get("message").String()
-		}
-		log.Error("webgpu device lost", "reason", reason, "message", message)
-		return nil
-	})
-	r.device.Get("lost").Call("then", r.lostCb)
 }
 
 func (r *webgpuRenderer) Render(frame runtime.Frame) {

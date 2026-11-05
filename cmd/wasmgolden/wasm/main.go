@@ -32,7 +32,7 @@ func main() {
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
 		ForceCanvas2D:     renderer == "canvas2d",
-		SharedGPURenderer: renderer == "wgpu",
+		LegacyGPURenderer: renderer == "webgpu-legacy",
 		Log:               log,
 		MSAA:              msaa,
 	}); err != nil {
