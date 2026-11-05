@@ -174,8 +174,8 @@ hosts only activate resources and encode the resulting passes.
   a Blob and a file picker.
 - `platform/internal/wgpurender` is the GPU renderer on the `wgpu` binding. A
   host opens the device and the surface and keeps the loop and the input. The
-  native host uses it. The browser host uses it only with
-  `Options.SharedGPURenderer`, a development option.
+  native and browser hosts use it. `Options.LegacyGPURenderer` selects the
+  previous browser-only renderer for comparison until its removal.
 - `platform/native` uses GLFW and wgpu-native. It locks the OS thread, queues
   callbacks, applies input through `Driver.RunTick`, and supports native audio.
   `Options.GPUTiming` requests timestamp queries at device creation. Readback is
