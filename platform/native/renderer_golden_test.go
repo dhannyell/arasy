@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/dhannyell/arasy/cmd/wasmgolden"
+	"github.com/dhannyell/arasy/platform/internal/wgpurender"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
@@ -44,7 +45,7 @@ func TestRendererMatchesGoldens(t *testing.T) {
 		{name: "frame", frames: 1},
 		{name: "particles", fixture: "particles", frames: 3},
 		{name: "sprite-array", fixture: "sprite-array", frames: 1},
-		{name: "retained-batches", fixture: "retained-batches", frames: 1},
+		{name: "retained-batches", fixture: "retained-batches", frames: 2},
 		{name: "view", fixture: "view", frames: 3},
 		{name: "parallax", fixture: "parallax", frames: 1},
 		{name: "flip", fixture: "flip", frames: 1},
@@ -73,39 +74,39 @@ func renderOffscreen(t *testing.T, game runtime.Game, frames int, msaa render.MS
 	driver := runtime.NewDriver(game, log)
 	cfg := driver.Config()
 
-	d := &device{instance: wgpu.CreateInstance(nil)}
-	if err := d.open(false, log); err != nil {
-		d.destroy()
+	d := &wgpurender.Device{Instance: wgpu.CreateInstance(nil)}
+	if err := openDevice(d, false, log); err != nil {
+		d.Destroy()
 		t.Skipf("no GPU adapter: %v", err)
 	}
-	d.config = &wgpu.SurfaceConfiguration{
+	d.Config = &wgpu.SurfaceConfiguration{
 		Format: wgpu.TextureFormatBGRA8Unorm,
 		Width:  goldenWidth,
 		Height: goldenHeight,
 	}
-	texture, err := d.device.TryCreateTexture(&wgpu.TextureDescriptor{
+	texture, err := d.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 		Label:         "Arasy golden target",
 		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: goldenWidth, Height: goldenHeight, DepthOrArrayLayers: 1},
-		Format:        d.config.Format,
+		Format:        d.Config.Format,
 		MipLevelCount: 1,
 		SampleCount:   1,
 	})
 	if err != nil {
-		d.destroy()
+		d.Destroy()
 		t.Fatal(err)
 	}
 	defer texture.Release()
 	view, err := texture.TryCreateView(nil)
 	if err != nil {
-		d.destroy()
+		d.Destroy()
 		t.Fatal(err)
 	}
 	defer view.Release()
-	d.offscreenView = view
+	d.OffscreenView = view
 
-	renderer, err := newRenderer(d, cfg.Clear, cfg.Assets, msaa, cfg.ParticleOffscreenScale, log)
+	renderer, err := wgpurender.New(d, cfg.Clear, cfg.Assets, msaa, cfg.ParticleOffscreenScale, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +122,11 @@ func renderOffscreen(t *testing.T, game runtime.Game, frames int, msaa render.MS
 }
 
 // readTexture copies a BGRA8 texture to an image and blocks until the GPU ends.
-func readTexture(t *testing.T, d *device, texture *wgpu.Texture) *image.RGBA {
+func readTexture(t *testing.T, d *wgpurender.Device, texture *wgpu.Texture) *image.RGBA {
 	t.Helper()
 	const bytesPerRow = goldenWidth * 4 // 1280 is a multiple of the required 256.
 	size := uint64(bytesPerRow * goldenHeight)
-	buffer, err := d.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	buffer, err := d.Device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "Arasy golden readback",
 		Usage: wgpu.BufferUsageCopyDst | wgpu.BufferUsageMapRead,
 		Size:  size,
@@ -135,7 +136,7 @@ func readTexture(t *testing.T, d *device, texture *wgpu.Texture) *image.RGBA {
 	}
 	defer buffer.Release()
 
-	encoder := d.device.CreateCommandEncoder(nil)
+	encoder := d.Device.CreateCommandEncoder(nil)
 	defer encoder.Release()
 	encoder.CopyTextureToBuffer(
 		&wgpu.TexelCopyTextureInfo{Texture: texture, Aspect: wgpu.TextureAspectAll},
@@ -147,13 +148,13 @@ func readTexture(t *testing.T, d *device, texture *wgpu.Texture) *image.RGBA {
 	)
 	commands := encoder.Finish(nil)
 	defer commands.Release()
-	d.queue.Submit(commands)
+	d.Queue.Submit(commands)
 
 	status := wgpu.MapAsyncStatus(0)
 	if err := buffer.TryMapAsync(wgpu.MapModeRead, 0, size, func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
 		t.Fatal(err)
 	}
-	d.device.Poll(true, nil)
+	d.Device.Poll(true, nil)
 	if status != wgpu.MapAsyncStatusSuccess {
 		t.Fatalf("map readback buffer: %v", status)
 	}

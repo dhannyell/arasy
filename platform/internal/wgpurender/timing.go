@@ -1,6 +1,6 @@
-//go:build (windows || linux || darwin) && (amd64 || arm64)
+//go:build ((windows || linux || darwin) && (amd64 || arm64)) || js
 
-package native
+package wgpurender
 
 import (
 	"encoding/binary"
@@ -80,20 +80,20 @@ type timingSlot struct {
 // newGPUTiming returns nil when the device lacks the timestamp-query feature,
 // and an error only when the feature is present but its resources cannot be
 // created — a case the caller reports rather than silently downgrades.
-func newGPUTiming(d *device) (*gpuTiming, error) {
-	if d == nil || !d.timestampQuery {
+func newGPUTiming(d *Device) (*gpuTiming, error) {
+	if d == nil || !d.TimestampQuery {
 		return nil, nil
 	}
-	t := &gpuTiming{device: d.device, queue: d.queue}
+	t := &gpuTiming{device: d.Device, queue: d.Queue}
 	var err error
-	if t.querySet, err = d.device.TryCreateQuerySet(&wgpu.QuerySetDescriptor{
+	if t.querySet, err = d.Device.TryCreateQuerySet(&wgpu.QuerySetDescriptor{
 		Label: "Arasy timestamps",
 		Type:  wgpu.QueryTypeTimestamp,
 		Count: timingQueryCount,
 	}); err != nil {
 		return nil, err
 	}
-	if t.resolve, err = d.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	if t.resolve, err = d.Device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "Arasy timestamp resolve",
 		Size:  timingSampleSize,
 		Usage: wgpu.BufferUsageQueryResolve | wgpu.BufferUsageCopySrc,
@@ -102,7 +102,7 @@ func newGPUTiming(d *device) (*gpuTiming, error) {
 		return nil, err
 	}
 	for i := range t.slots {
-		if t.slots[i].buffer, err = d.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+		if t.slots[i].buffer, err = d.Device.TryCreateBuffer(&wgpu.BufferDescriptor{
 			Label: "Arasy timestamp readback",
 			Size:  timingSampleSize,
 			Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
@@ -333,16 +333,19 @@ func (t *gpuTiming) release() {
 	}
 }
 
-// cpuFrameTiming separates CPU work, surface acquisition and queue submission.
-type cpuFrameTiming struct {
+// CPUFrameTiming separates CPU work, surface acquisition and queue submission.
+type CPUFrameTiming struct {
 	submittedAt time.Time
 	cpuEndAt    time.Time
 	acquireWait time.Duration
-	valid       bool
+	// Valid is false for a skipped frame, so callers do not reuse old times.
+	Valid bool
 }
 
-func (t cpuFrameTiming) renderDurationSince(start time.Time) time.Duration {
-	if !t.valid || start.IsZero() {
+// RenderDurationSince returns the CPU render time from start, without the
+// surface acquisition wait.
+func (t CPUFrameTiming) RenderDurationSince(start time.Time) time.Duration {
+	if !t.Valid || start.IsZero() {
 		return 0
 	}
 	duration := t.cpuEndAt.Sub(start) - t.acquireWait
@@ -352,8 +355,9 @@ func (t cpuFrameTiming) renderDurationSince(start time.Time) time.Duration {
 	return duration
 }
 
-func (t cpuFrameTiming) inputToSubmit(inputAt time.Time) (time.Duration, bool) {
-	if !t.valid || inputAt.IsZero() {
+// InputToSubmit returns the time from input to queue submission.
+func (t CPUFrameTiming) InputToSubmit(inputAt time.Time) (time.Duration, bool) {
+	if !t.Valid || inputAt.IsZero() {
 		return 0, false
 	}
 	duration := t.submittedAt.Sub(inputAt)

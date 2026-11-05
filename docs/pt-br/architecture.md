@@ -180,6 +180,10 @@ backends; os hosts apenas ativam recursos e codificam os passes resultantes.
 - `platform/wasm` usa `Options.MSAA`, `Options.DevTools` e
   `Options.RecordReplay`. Dev tools exigem `arr_dev`; gravação no browser usa
   Blob e file picker.
+- `platform/internal/wgpurender` é o renderer GPU sobre o binding `wgpu`. Um
+  host abre o device e a surface e mantém o loop e o input. O host native o usa.
+  O host do browser o usa só com `Options.SharedGPURenderer`, uma opção de
+  desenvolvimento.
 - `platform/native` usa GLFW e wgpu-native. Ele trava a thread do SO, enfileira
   callbacks, aplica input por `Driver.RunTick` e suporta áudio native.
   `Options.GPUTiming` pede timestamp queries na criação do device. O readback é

@@ -1,6 +1,6 @@
-//go:build (windows || linux || darwin) && (amd64 || arm64)
+//go:build ((windows || linux || darwin) && (amd64 || arm64)) || js
 
-package native
+package wgpurender
 
 import (
 	"encoding/binary"
@@ -74,7 +74,7 @@ func (r *Renderer) releasePostBindGroups() {
 }
 
 func (r *Renderer) createPostResources() error {
-	sampler, err := r.device.device.TryCreateSampler(&wgpu.SamplerDescriptor{
+	sampler, err := r.device.Device.TryCreateSampler(&wgpu.SamplerDescriptor{
 		Label:         "Arasy post sampler",
 		MagFilter:     wgpu.FilterModeLinear,
 		MinFilter:     wgpu.FilterModeLinear,
@@ -122,7 +122,7 @@ func (r *Renderer) createPostResources() error {
 		if key == nativePostFinalBlit {
 			samples = r.msaaSamples
 		}
-		pipeline, createErr := r.createPipelineEntry(spec.label, spec.source, spec.entry, r.device.config.Format, samples, nil, nil, nil)
+		pipeline, createErr := r.createPipelineEntry(spec.label, spec.source, spec.entry, r.device.Config.Format, samples, nil, nil, nil)
 		if createErr != nil {
 			r.releasePostPipelines()
 			releaseSampler(&r.postSampler)
@@ -191,12 +191,12 @@ func (r *Renderer) ensurePostTargets(width, height int) error {
 	r.postBloom = nil
 	r.releasePostBindGroups()
 	create := func(w, h int) (nativePostTarget, error) {
-		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+		texture, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 			Label:         "Arasy post target",
 			Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageTextureBinding,
 			Dimension:     wgpu.TextureDimension2D,
 			Size:          wgpu.Extent3D{Width: uint32(w), Height: uint32(h), DepthOrArrayLayers: 1},
-			Format:        r.device.config.Format,
+			Format:        r.device.Config.Format,
 			MipLevelCount: 1,
 			SampleCount:   1,
 		})
@@ -235,12 +235,12 @@ func (r *Renderer) ensurePostBloom(passes int) error {
 		width, height = max(1, (width+1)/2), max(1, (height+1)/2)
 	}
 	for level := len(r.postBloom); level <= passes; level++ {
-		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+		texture, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 			Label:         "Arasy bloom level",
 			Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageTextureBinding,
 			Dimension:     wgpu.TextureDimension2D,
 			Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
-			Format:        r.device.config.Format,
+			Format:        r.device.Config.Format,
 			MipLevelCount: 1,
 			SampleCount:   1,
 		})
@@ -301,7 +301,7 @@ func (r *Renderer) writePostUniformSized(index, size int, write func([]byte)) er
 	data := r.postUniformScratch[:size]
 	clear(data)
 	write(data)
-	if err := r.device.queue.TryWriteBuffer(r.postUniforms[index], 0, data); err != nil {
+	if err := r.device.Queue.TryWriteBuffer(r.postUniforms[index], 0, data); err != nil {
 		return fmt.Errorf("write post uniform: %w", err)
 	}
 	return nil
@@ -588,7 +588,7 @@ func (r *Renderer) encodeNativePostCombine2(encoder *wgpu.CommandEncoder, pipeli
 	bindGroup, err := r.cachedPostBindGroup(key, func() (*wgpu.BindGroup, error) {
 		layout := pipeline.GetBindGroupLayout(0)
 		defer layout.Release()
-		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+		return r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: source}, {Binding: 1, TextureView: second}, {Binding: 2, Sampler: r.postSampler},
 			{Binding: 3, Buffer: r.postUniforms[uniformIndex], Size: wgpu.WholeSize},
 		}})
@@ -649,7 +649,7 @@ func (r *Renderer) postBindGroup(key nativePostBindKey, source *wgpu.TextureView
 		if key.uniform >= 0 {
 			entries = append(entries, wgpu.BindGroupEntry{Binding: 2, Buffer: r.postUniforms[key.uniform], Size: wgpu.WholeSize})
 		}
-		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
+		return r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: entries})
 	})
 }
 
@@ -680,7 +680,7 @@ func (r *Renderer) encodePostCombine(encoder *wgpu.CommandEncoder, sourceID int,
 	bindGroup, err := r.cachedPostBindGroup(key, func() (*wgpu.BindGroup, error) {
 		layout := pipeline.GetBindGroupLayout(0)
 		defer layout.Release()
-		return r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
+		return r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{Layout: layout, Entries: []wgpu.BindGroupEntry{
 			{Binding: 0, TextureView: source}, {Binding: 1, TextureView: bloom}, {Binding: 2, Sampler: r.postSampler},
 			{Binding: 3, Buffer: r.postUniforms[uniformIndex], Size: wgpu.WholeSize},
 		}})
@@ -759,7 +759,7 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 	if err := r.ensurePostTargets(width, height); err != nil {
 		return err
 	}
-	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
+	encoder, err := r.device.Device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return fmt.Errorf("create post command encoder: %w", err)
 	}
@@ -948,7 +948,7 @@ func (r *Renderer) encodePostFramePasses(runs []tess.StreamRun, uniformOffsets [
 		return fmt.Errorf("finish post command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
-	r.device.queue.Submit(commandBuffer)
+	r.device.Queue.Submit(commandBuffer)
 	if r.timeCPU {
 		r.cpuFrame.submittedAt = time.Now()
 	}

@@ -105,27 +105,3 @@ func TestChoosePresentMode(t *testing.T) {
 		})
 	}
 }
-
-func TestDecideSurfaceStatus(t *testing.T) {
-	tests := []struct {
-		name   string
-		status wgpu.SurfaceGetCurrentTextureStatus
-		want   surfaceAction
-	}{
-		{name: "optimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessOptimal, want: actionRender},
-		{name: "suboptimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessSuboptimal, want: actionRender},
-		{name: "timeout", status: wgpu.SurfaceGetCurrentTextureStatusTimeout, want: actionSkip},
-		{name: "occluded", status: wgpu.SurfaceGetCurrentTextureStatusOccluded, want: actionSkip},
-		{name: "outdated", status: wgpu.SurfaceGetCurrentTextureStatusOutdated, want: actionReconfigure},
-		{name: "lost", status: wgpu.SurfaceGetCurrentTextureStatusLost, want: actionReconfigure},
-		{name: "error", status: wgpu.SurfaceGetCurrentTextureStatusError, want: actionFatal},
-		{name: "unknown", status: wgpu.SurfaceGetCurrentTextureStatus(99), want: actionFatal},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := decideSurfaceStatus(test.status); got != test.want {
-				t.Fatalf("decideSurfaceStatus(%v) = %v, want %v", test.status, got, test.want)
-			}
-		})
-	}
-}

@@ -928,7 +928,12 @@ func (r *webgpuRenderer) signalReadyAfterPresent() {
 		return
 	}
 	r.readyPending = true
+	signalCanvasReady(r.canvas, "webgpu", func() { r.ready = true })
+}
 
+// signalCanvasReady marks the canvas after two animation frames, so the shell
+// removes its boot overlay only when the browser has shown the frame.
+func signalCanvasReady(canvas js.Value, renderer string, done func()) {
 	var firstFrame js.Func
 	firstFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
 		firstFrame.Release()
@@ -936,8 +941,8 @@ func (r *webgpuRenderer) signalReadyAfterPresent() {
 		var secondFrame js.Func
 		secondFrame = js.FuncOf(func(this js.Value, args []js.Value) any {
 			secondFrame.Release()
-			r.canvas.Call("setAttribute", "data-arasy-ready", "webgpu")
-			r.ready = true
+			canvas.Call("setAttribute", "data-arasy-ready", renderer)
+			done()
 			return nil
 		})
 		js.Global().Call("requestAnimationFrame", secondFrame)

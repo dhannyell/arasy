@@ -1,6 +1,6 @@
 //go:build (windows || linux || darwin) && (amd64 || arm64)
 
-package native
+package wgpurender
 
 import (
 	"testing"

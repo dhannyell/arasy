@@ -24,13 +24,18 @@ func main() {
 		panic(err)
 	}
 
-	forceCanvas2D := params.Call("get", "renderer").String() == "canvas2d"
+	renderer := params.Call("get", "renderer").String()
 	msaa := render.MSAADefault
 	if params.Call("get", "msaa").String() == "off" {
 		msaa = render.MSAAOff
 	}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
-	if err := wasm.Run(game, wasm.Options{ForceCanvas2D: forceCanvas2D, Log: log, MSAA: msaa}); err != nil {
+	if err := wasm.Run(game, wasm.Options{
+		ForceCanvas2D:     renderer == "canvas2d",
+		SharedGPURenderer: renderer == "wgpu",
+		Log:               log,
+		MSAA:              msaa,
+	}); err != nil {
 		log.Error("wasm golden host failed", "err", err)
 	}
 }
