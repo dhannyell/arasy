@@ -126,9 +126,8 @@ continuam sendo estado de simulação, e a iluminação nunca escreve neles.
 `examples/outpost` consome o canal com ambiente de anoitecer e uma lanterna da
 praça; a seção de luz do `2-5d.md` documenta o design. Fora por decisão:
 
-- **Normal maps: não-suportados.** Luz por pixel exige shader novo em todo
-  backend — o Canvas2D não tem nenhum para programar — mais uma segunda
-  textura autorada por sprite. A modulação de cor é a substituta declarada
+- **Normal maps: não-suportados.** Luz por pixel exige um shader novo e um
+  espelho no raster, mais uma segunda textura autorada por sprite. A modulação de cor é a substituta declarada
   neste degrau.
 - Iluminação de batches retidos e `DrawParticles` (a forma provável é um
   uniform por batch; o gatilho é a primeira cena de tilemap iluminado), e

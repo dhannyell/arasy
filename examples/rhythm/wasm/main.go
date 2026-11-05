@@ -18,10 +18,9 @@ func main() {
 
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		DevTools:      true,
-		Log:           log,
-		RecordReplay:  true,
-		ForceCanvas2D: false,
+		DevTools:     true,
+		Log:          log,
+		RecordReplay: true,
 		GameFactory: func() runtime.Game {
 			replayGame, err := rhythm.NewGame()
 			if err != nil {

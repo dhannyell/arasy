@@ -16,8 +16,7 @@ func main() {
 	}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		ForceCanvas2D: false,
-		Log:           log,
+		Log: log,
 		FrameMetrics: func(metrics wasm.FrameMetrics) {
 			game.ObserveFrame(
 				metrics.FPS,

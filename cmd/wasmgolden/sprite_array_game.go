@@ -19,7 +19,7 @@ type spriteArrayGame struct {
 
 // NewSpriteArrayGolden builds a fixture with two equal-sized textures. WebGPU
 // must place them in one array resource while retaining single-layer 2D views
-// for DrawImageQuad; Canvas2D remains the visual reference.
+// for DrawImageQuad.
 func NewSpriteArrayGolden() (runtime.Game, error) {
 	manifest, err := spriteArrayManifest()
 	if err != nil {

@@ -27,22 +27,16 @@ import (
 // goldens. A difference above the budget reports the fixture and backend.
 const (
 	frameChannelTol           = 32
-	frameCanvas2DBudget       = 0.2454
 	frameWebGPUBudget         = 0.2002
 	particlesChannelTol       = 32
-	particlesCanvas2DBudget   = 0.1520
 	particlesWebGPUBudget     = 0.0754
 	viewChannelTol            = 32
-	viewCanvas2DBudget        = 0.0186
 	viewWebGPUBudget          = 0.0509
 	parallaxChannelTol        = 32
-	parallaxCanvas2DBudget    = 0.0200
 	parallaxWebGPUBudget      = 0.0150
 	flipChannelTol            = 32
-	flipCanvas2DBudget        = 0.0200
 	flipWebGPUBudget          = 0.0150
 	passesChannelTol          = 32
-	passesCanvas2DBudget      = 0.0200
 	passesWebGPUBudget        = 0.0150
 	passesWebGPUMSAAOffBudget = 0.0150
 	postWebGPUBudget          = 0.075
@@ -50,16 +44,8 @@ const (
 	rttWebGPUBudget           = 0.050
 )
 
-func TestConformanceFrameCanvas2D(t *testing.T) {
-	assertConformance(t, "frame", "canvas2d", 1, frameChannelTol, frameCanvas2DBudget)
-}
-
 func TestConformanceFrameWebGPU(t *testing.T) {
 	assertConformance(t, "frame", "webgpu", 1, frameChannelTol, frameWebGPUBudget)
-}
-
-func TestConformanceParticlesCanvas2D(t *testing.T) {
-	assertConformance(t, "particles", "canvas2d", 3, particlesChannelTol, particlesCanvas2DBudget)
 }
 
 func TestConformanceParticlesWebGPU(t *testing.T) {
@@ -67,42 +53,23 @@ func TestConformanceParticlesWebGPU(t *testing.T) {
 }
 
 func TestConformancePostWebGPU(t *testing.T) {
-	// Canvas2D intentionally uses documented approximations for this fixture;
-	// the tight conformance comparison is reserved for the GPU mirror.
 	assertConformance(t, "post", "webgpu", 2, frameChannelTol, postWebGPUBudget)
 }
 
 func TestConformancePostStylizeWebGPU(t *testing.T) {
-	// Canvas2D skips Halftone, so only the GPU mirror is compared.
 	assertConformance(t, "post-stylize", "webgpu", 1, frameChannelTol, postStylizeWebGPUBudget)
-}
-
-func TestConformanceViewCanvas2D(t *testing.T) {
-	assertConformance(t, "view", "canvas2d", 3, viewChannelTol, viewCanvas2DBudget)
 }
 
 func TestConformanceViewWebGPU(t *testing.T) {
 	assertConformance(t, "view", "webgpu", 3, viewChannelTol, viewWebGPUBudget)
 }
 
-func TestConformanceParallaxCanvas2D(t *testing.T) {
-	assertConformance(t, "parallax", "canvas2d", 1, parallaxChannelTol, parallaxCanvas2DBudget)
-}
-
 func TestConformanceParallaxWebGPU(t *testing.T) {
 	assertConformance(t, "parallax", "webgpu", 1, parallaxChannelTol, parallaxWebGPUBudget)
 }
 
-func TestConformanceFlipCanvas2D(t *testing.T) {
-	assertConformance(t, "flip", "canvas2d", 1, flipChannelTol, flipCanvas2DBudget)
-}
-
 func TestConformanceFlipWebGPU(t *testing.T) {
 	assertConformance(t, "flip", "webgpu", 1, flipChannelTol, flipWebGPUBudget)
-}
-
-func TestConformancePassesCanvas2D(t *testing.T) {
-	assertConformance(t, "passes", "canvas2d", 1, passesChannelTol, passesCanvas2DBudget)
 }
 
 func TestConformancePassesWebGPU(t *testing.T) {

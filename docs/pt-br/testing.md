@@ -151,8 +151,8 @@ visível no teste. Isso torna falhas visuais mais fáceis de entender.
 ### `platform/wasm`
 
 O pipeline WebGPU separa a tessellate pura em `internal/render/gpu/tess`; mantenha
-ali testes semânticos de vertices, clipping, atlas e painter order. Canvas2D e
-WebGPU também possuem goldens visuais executados no Chromium por Playwright:
+ali testes semânticos de vertices, clipping, atlas e painter order. Os goldens
+visuais WebGPU correm no Chromium por Playwright:
 
 ```powershell
 npm ci
@@ -161,9 +161,10 @@ npm run test:wasm-golden
 npm run update:wasm-golden # somente apos mudanca visual intencional
 ```
 
-Os projetos `canvas2d` e `webgpu` usam baselines separados. O teste WebGPU deve
-falhar se o host cair silenciosamente para Canvas2D. Artefatos de diferença
-ficam em `test-results/` e nao devem ser commitados.
+O teste falha se o host não usar WebGPU. O runner do CI não tem GPU, por isso o
+Chromium usa ali o SwiftShader (ver [development](development.md)). Localmente,
+o teste usa a GPU real. Artefatos de diferença ficam em `test-results/` e nao
+devem ser commitados.
 
 ### `platform/native`
 
@@ -259,7 +260,7 @@ go test -tags=integration ./caminho/do/pacote
 Não use build tag cedo demais. Enquanto a suíte completa continuar rápida e
 estável, manter tudo em `go test ./...` e melhor para feedback.
 
-Testes que precisam de DOM, Canvas2D ou WebGPU não usam `go_js_wasm_exec`, que
+Testes que precisam de DOM ou WebGPU não usam `go_js_wasm_exec`, que
 não fornece um browser. Mantenha-os no harness Playwright e execute-os pelo
 comando `npm run test:wasm-golden`.
 
@@ -267,7 +268,7 @@ comando `npm run test:wasm-golden`.
 
 `cmd/wasmgolden/conformance_test.go` renderiza a cena canónica do
 `wasmgolden` no raster (in-process, sem browser) e diffa contra os goldens
-Playwright commitados de canvas2d e webgpu, com orçamento de pixels
+Playwright commitados de webgpu, com orçamento de pixels
 divergentes calibrado por fixture. Roda em `go test ./cmd/wasmgolden` em
 toda a perna nativa do CI. Regenerou golden do browser
 (`npm run update:wasm-golden`)? Rode a conformidade em seguida.

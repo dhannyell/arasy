@@ -39,7 +39,7 @@ type overlayStats struct {
 	HeapSet   bool
 
 	// GPU execution time per pass, from timestamp queries. Unset on adapters
-	// that do not grant "timestamp-query", and on the Canvas2D fallback.
+	// that do not grant "timestamp-query".
 	GPUEmitTime     time.Duration
 	GPUSimulateTime time.Duration
 	GPURenderTime   time.Duration

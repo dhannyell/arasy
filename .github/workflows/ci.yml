@@ -142,7 +142,12 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
       - name: wasm visual golden tests
-        run: npm run test:wasm-golden -- --project=canvas2d
+        run: |
+          # Keep Vulkan on the SwiftShader driver bundled with Chromium.
+          VK_ICD_FILENAMES="$(find ~/.cache/ms-playwright -path '*/chrome-linux64/vk_swiftshader_icd.json' | head -n 1)"
+          test -n "$VK_ICD_FILENAMES"
+          export VK_ICD_FILENAMES
+          npm run test:wasm-golden
       - name: upload wasm golden failures
         if: failure()
         uses: actions/upload-artifact@v4
