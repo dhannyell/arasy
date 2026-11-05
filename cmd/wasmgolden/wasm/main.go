@@ -24,16 +24,14 @@ func main() {
 		panic(err)
 	}
 
-	renderer := params.Call("get", "renderer").String()
 	msaa := render.MSAADefault
 	if params.Call("get", "msaa").String() == "off" {
 		msaa = render.MSAAOff
 	}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		ForceCanvas2D: renderer == "canvas2d",
-		Log:           log,
-		MSAA:          msaa,
+		Log:  log,
+		MSAA: msaa,
 	}); err != nil {
 		log.Error("wasm golden host failed", "err", err)
 	}

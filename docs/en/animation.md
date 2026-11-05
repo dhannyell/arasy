@@ -129,12 +129,10 @@ the same contract.
 tessellation (from `render/vector`, or from generated SVG fills/strokes)
 ultimately emits: indexed solid-color triangles, validated so index count is
 a multiple of three and every index is in range. Because tessellation
-happens once, upstream of any backend, raster, Canvas2D, WebGPU, and native
-all rasterize the exact same vertex/index/color data with the same
-transform — parity comes from sharing the geometry, not from four separate
-implementations agreeing by convention. See `AGENTS.md`'s package
-responsibility table for the current per-backend caveats (e.g. Canvas2D's
-sprite/label caps).
+happens once, upstream of any backend, raster and the WebGPU renderer (native
+and browser) rasterize the exact same vertex/index/color data with the same
+transform — parity comes from sharing the geometry, not from separate
+implementations agreeing by convention.
 
 ## Related documents
 

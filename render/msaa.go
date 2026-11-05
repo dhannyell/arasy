@@ -2,8 +2,8 @@ package render
 
 // MSAAMode selects the multisample antialiasing level a GPU host renders
 // with. It is backend-agnostic vocabulary, not a command: hosts that
-// multi-sample (the native and WebGPU renderers) honor it, and hosts that
-// cannot (the software raster renderer, the Canvas2D fallback) ignore it.
+// multi-sample (the WebGPU renderer, native and in the browser) honor it, and
+// the software raster renderer ignores it.
 type MSAAMode uint8
 
 const (

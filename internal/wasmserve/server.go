@@ -587,6 +587,16 @@ const wasmShellHTML = `<!doctype html>
         window.arasyBootFadeDone = true;
     }
 
+    function fail(message) {
+        if (loadingTimer) clearTimeout(loadingTimer);
+        if (!boot) {
+            document.body.textContent = message;
+            return;
+        }
+        boot.textContent = message;
+        boot.style.visibility = 'visible';
+    }
+
     function waitForFirstFrame() {
         if (window.arasyFirstFrame) {
             reveal();
@@ -596,6 +606,13 @@ const wasmShellHTML = `<!doctype html>
     }
 
     try {
+        // Check before the download: the game cannot run without WebGPU.
+        const adapter = navigator.gpu ? await navigator.gpu.requestAdapter() : null;
+        if (!adapter) {
+            fail('This game needs a browser with WebGPU.');
+            return;
+        }
+
         const resp = await fetch(%s);
         const total = Number(resp.headers.get('X-Arasy-Uncompressed-Length')) ||
             Number(resp.headers.get('Content-Length')) || 0;
@@ -628,13 +645,11 @@ const wasmShellHTML = `<!doctype html>
         // The WebGPU binding reads this global to copy queue writes from wasm memory.
         window.wasm = instantiated;
         waitForFirstFrame();
-        go.run(instantiated.instance);
+        await go.run(instantiated.instance);
+        // A game that exits before its first frame failed to start.
+        if (!window.arasyFirstFrame) fail('Failed to start. See the browser console.');
     } catch (e) {
-        if (boot) {
-            boot.textContent = 'Failed to load: ' + e;
-        } else {
-            document.body.textContent = 'Failed to load: ' + e;
-        }
+        fail('Failed to load: ' + e);
     }
 })();
 </script>

@@ -291,7 +291,7 @@ func (g *Game) cpuLabel() string {
 // (RenderCommands id-sort/command building) plus dispatch.
 func (g *Game) cpuBreakdownLabel() string {
 	if !g.stats.hasCPUBreakdown {
-		return "render breakdown unavailable (canvas2d or no sample yet)"
+		return "render breakdown unavailable (no sample yet)"
 	}
 	cmds := max(g.stats.cpuRender-g.stats.cpuTess-g.stats.cpuUpload-g.stats.cpuEncode, 0)
 	return fmt.Sprintf(

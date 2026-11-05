@@ -147,6 +147,24 @@ renderer_benchmark_test.go
 Keep pixel assertions in small helpers, but leave the render command visible in
 the test. That makes visual failures easier to understand.
 
+### `platform/wasm`
+
+The WebGPU pipeline keeps pure tessellation in `internal/render/gpu/tess`; keep
+the semantic tests for vertices, clipping, atlas, and painter order there. The
+WebGPU visual goldens run in Chromium through Playwright:
+
+```powershell
+npm ci
+npx playwright install chromium # once per environment
+npm run test:wasm-golden
+npm run update:wasm-golden # only after an intentional visual change
+```
+
+The test fails if the host does not use WebGPU. The CI runner has no GPU, so
+Chromium uses SwiftShader there (see [development](development.md)). Locally,
+the test uses the real GPU. Diff artifacts go to `test-results/` and must not
+be committed.
+
 ### `platform/native`
 
 `TestRendererMatchesGoldens` draws the `cmd/wasmgolden` fixtures to an offscreen
@@ -240,6 +258,18 @@ go test -tags=integration ./platform/web/canvas
 
 Do not add build tags too early. While the full suite stays fast and stable,
 keeping everything under `go test ./...` gives better feedback.
+
+Tests that need the DOM or WebGPU do not use `go_js_wasm_exec`, which has no
+browser. Keep them in the Playwright harness and run them with
+`npm run test:wasm-golden`.
+
+## Cross-Backend Conformance
+
+`cmd/wasmgolden/conformance_test.go` renders the canonical `wasmgolden` scene
+with raster (in process, no browser) and compares it with the committed
+Playwright WebGPU goldens, with a per-fixture budget of differing pixels. It
+runs in `go test ./cmd/wasmgolden` on every native CI job. After a browser
+golden update (`npm run update:wasm-golden`), run the conformance tests.
 
 ## Benchmarks
 

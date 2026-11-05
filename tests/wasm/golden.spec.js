@@ -1,31 +1,21 @@
 const { test, expect } = require('@playwright/test');
 const goldenPort = process.env.WASM_GOLDEN_PORT || '8090';
 
-// Canvas2D draws text with the system font and approximates LensRain, so
-// these goldens match only the platform that recorded them.
-function skipCanvas2DOnLinux(testInfo) {
-  test.skip(
-    testInfo.project.name === 'canvas2d' && process.platform === 'linux',
-    'Canvas2D golden recorded on Windows.',
-  );
-}
-
-async function expectFixtureScreenshot(page, testInfo, fixture, screenshot, options = '') {
-  const expectedRenderer = testInfo.project.name;
+async function expectFixtureScreenshot(page, fixture, screenshot, options = '') {
   const messages = [];
   page.on('console', message => messages.push(message.text()));
   page.on('pageerror', error => messages.push(`page error: ${error.message}`));
 
   const fixtureParam = fixture ? `&fixture=${fixture}` : '';
-  await page.goto(`http://127.0.0.1:${goldenPort}/?renderer=${expectedRenderer}${fixtureParam}${options}`);
+  await page.goto(`http://127.0.0.1:${goldenPort}/?${fixtureParam}${options}`);
 
   await expect.poll(
     () => messages.join('\n'),
-    { message: `expected ${expectedRenderer} renderer; browser log:\n${messages.join('\n')}` },
-  ).toContain(`using ${expectedRenderer} renderer`);
+    { message: `expected webgpu renderer; browser log:\n${messages.join('\n')}` },
+  ).toContain('using webgpu renderer');
 
   const canvas = page.locator('#ar-canvas');
-  await expect(canvas).toHaveAttribute('data-Arasy-ready', expectedRenderer);
+  await expect(canvas).toHaveAttribute('data-arasy-ready', 'webgpu');
   // The shell removes its boot overlay only after the canvas has presented a
   // handoff-ready frame. Waiting for the completion flag keeps the overlay out
   // of the screenshot.
@@ -38,88 +28,68 @@ async function expectFixtureScreenshot(page, testInfo, fixture, screenshot, opti
   }
 }
 
-test('renders the canonical WASM frame', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(page, testInfo, '', 'frame.png');
+test('renders the canonical WASM frame', async ({ page }) => {
+  await expectFixtureScreenshot(page, '', 'frame.png');
 });
 
-test('renders particle backend semantics', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(
-    page,
-    testInfo,
-    'particles',
+test('renders particle backend semantics', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'particles',
     'particles.png',
   );
 });
 
-test('renders sprite texture arrays and 2d layer views', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(
-    page,
-    testInfo,
-    'sprite-array',
+test('renders sprite texture arrays and 2d layer views', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'sprite-array',
     'sprite-array.png',
   );
 });
 
-test('renders retained sprite and text batches', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(
-    page,
-    testInfo,
-    'retained-batches',
+test('renders retained sprite and text batches', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'retained-batches',
     'retained-batches.png',
   );
 });
 
-test('renders isometric batch and particle conformance', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(
-    page,
-    testInfo,
-    'view',
+test('renders isometric batch and particle conformance', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'view',
     'view.png',
   );
 });
 
-test('renders layer parallax across retained and streaming content', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(
-    page,
-    testInfo,
-    'parallax',
+test('renders layer parallax across retained and streaming content', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'parallax',
     'parallax.png',
   );
 });
 
-test('renders source flips before rotation in streaming and retained sprites', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(page, testInfo, 'flip', 'flip.png');
+test('renders source flips before rotation in streaming and retained sprites', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'flip', 'flip.png');
 });
 
-test('renders two camera passes with independent viewports', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(page, testInfo, 'passes', 'passes.png');
+test('renders two camera passes with independent viewports', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'passes', 'passes.png');
 });
 
-test('renders two camera passes without WebGPU MSAA', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'webgpu', 'MSAA applies only to WebGPU.');
-  await expectFixtureScreenshot(page, testInfo, 'passes', 'passes-msaa-off.png', '&msaa=off');
+test('renders two camera passes without WebGPU MSAA', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'passes', 'passes-msaa-off.png', '&msaa=off');
 });
 
-test('renders a retained text batch after the uniform arena grows', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'webgpu', 'The uniform arena applies only to WebGPU.');
-  await expectFixtureScreenshot(page, testInfo, 'arena-growth', 'arena-growth.png');
+test('renders a retained text batch after the uniform arena grows', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'arena-growth', 'arena-growth.png');
 });
 
-test('renders the fixed post-effect chain', async ({ page }, testInfo) => {
-  skipCanvas2DOnLinux(testInfo);
-  await expectFixtureScreenshot(page, testInfo, 'post', 'post.png');
+test('renders the fixed post-effect chain', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'post', 'post.png');
 });
 
-test('renders Halftone and FocusBlur', async ({ page }, testInfo) => {
-  await expectFixtureScreenshot(page, testInfo, 'post-stylize', 'post-stylize.png');
+test('renders Halftone and FocusBlur', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'post-stylize', 'post-stylize.png');
 });
 
-test('renders RTT through sprite, textured, retained, and post paths', async ({ page }, testInfo) => {
-  skipCanvas2DOnLinux(testInfo);
-  await expectFixtureScreenshot(page, testInfo, 'rtt', 'rtt.png');
+test('renders RTT through sprite, textured, retained, and post paths', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'rtt', 'rtt.png');
 });
 
-test('renders RTT while preserving the sprite texture array', async ({ page }, testInfo) => {
-  skipCanvas2DOnLinux(testInfo);
-  await expectFixtureScreenshot(page, testInfo, 'rtt-array', 'rtt-array.png');
+test('renders RTT while preserving the sprite texture array', async ({ page }) => {
+  await expectFixtureScreenshot(page, 'rtt-array', 'rtt-array.png');
 });

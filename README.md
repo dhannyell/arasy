@@ -64,7 +64,7 @@ with bit-identical simulation, rewind, and replay on every platform.
 | Host | Package | Backend |
 | --- | --- | --- |
 | Native desktop | `platform/native` | WebGPU (wgpu-native) on Vulkan or DirectX 12, GLFW windowing |
-| Browser | `platform/wasm` | WebGPU, with automatic Canvas2D fallback |
+| Browser | `platform/wasm` | WebGPU |
 | Offline | `platform/raster` | Pure Go software rasterizer for PNG, animated GIF, and frame sequences |
 
 Native support follows three tiers. See [Distribution](docs/en/distribution.md#platform-support)
@@ -87,8 +87,8 @@ CI compares golden images and replay fixtures against it.
 - For the native host: a C toolchain (cgo). On Debian or Ubuntu, also install
   the GLFW, ALSA, and Vulkan development headers listed in
   [Distribution](docs/en/distribution.md#no-cross-compilation).
-- For the browser host: a browser with WebGPU. Other browsers use the
-  Canvas2D fallback.
+- For the browser host: a browser with WebGPU. In other browsers the page shows
+  a message instead of the game.
 
 Run `arasy doctor` at any time to check the environment.
 

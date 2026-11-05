@@ -11,7 +11,6 @@ A gallery of the data-driven texture, sprite, and font pipeline.
 - Textures, sprites, and fonts declared in `assets/manifest.json` and loaded by name.
 - The built-in bitmap font, a manifest font, and the fallback to font zero for an unknown name.
 - The missing-texture placeholder for an entry that does not decode.
-- The browser build forces Canvas2D on purpose, so the page also shows the fallback renderer.
 
 ## Run locally
 

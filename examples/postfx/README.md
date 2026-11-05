@@ -37,7 +37,3 @@ Browser development build:
 ```bash
 go run ./cmd/arasy dev ./examples/postfx/wasm
 ```
-
-The browser host uses WebGPU when available and can fall back to Canvas2D;
-Canvas2D intentionally skips effects without an equivalent fullscreen sampling
-primitive.

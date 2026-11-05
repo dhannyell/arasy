@@ -85,7 +85,7 @@ $env:GOOS="js"; $env:GOARCH="wasm"; go build ./...; Remove-Item Env:GOOS,Env:GOA
 | `no-default-font` | testes e build JS/WASM com `arr_no_default_font` |
 | `race` | `go test -race ./...` |
 | `windows` | `go test ./...` em Windows |
-| `wasm` | build JS/WASM, vet, testes de simulação, replay e goldens Canvas2D e WebGPU |
+| `wasm` | build JS/WASM, vet, testes de simulação, replay e goldens WebGPU |
 | `arm64` | `go test ./...` em arm64 native |
 
 Os jobs WASM e arm64 formam a verificação de determinismo entre arquiteturas.

@@ -28,16 +28,6 @@ module.exports = defineConfig({
   },
   projects: [
     {
-      name: 'canvas2d',
-      use: {
-        ...devices['Desktop Chrome'],
-        browserName: 'chromium',
-        channel: 'chromium',
-        deviceScaleFactor: 1,
-        viewport: { width: 320, height: 240 },
-      },
-    },
-    {
       name: 'webgpu',
       use: {
         ...devices['Desktop Chrome'],

@@ -138,12 +138,10 @@ tesselação de curvas (de `render/vector`, ou de fills/strokes de SVG
 gerado) acaba emitindo: triângulos indexados de cor sólida, validados para
 que a contagem de índices seja múltipla de três e todo índice esteja dentro
 do intervalo. Como a tesselação acontece uma vez, antes de qualquer
-backend, raster, Canvas2D, WebGPU e native rasterizam exatamente os mesmos
-dados de vértice/índice/cor com o mesmo transform — a paridade vem de
-compartilhar a geometria, não de quatro implementações separadas
-concordarem por convenção. Veja a tabela de responsabilidades de pacotes no
-`AGENTS.md` para as ressalvas atuais por backend (por exemplo, os limites
-de sprite/label do Canvas2D).
+backend, o raster e o renderer WebGPU (native e browser) rasterizam
+exatamente os mesmos dados de vértice/índice/cor com o mesmo transform — a
+paridade vem de compartilhar a geometria, não de implementações separadas
+concordarem por convenção.
 
 ## Documentos relacionados
 

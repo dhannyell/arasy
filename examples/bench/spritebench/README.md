@@ -64,8 +64,8 @@ animation state in retained mode), rolling FPS, frame time, P99 frame time,
 the WebGPU render pass GPU time, and — once a retained or culling batch has
 been published — a `retained` line with GPU-resident bytes, content bytes
 uploaded this frame (0 at steady state), visible/total instance count and
-retained draw calls. The retained line reads `unavailable (Canvas2D)` on the
-Canvas2D fallback, which has no equivalent counters.
+retained draw calls. The retained line reads `unavailable` until the renderer
+reports its counters.
 
 The `cpu ~= frame - gpu draw` line is an estimate of the CPU-side cost of the
 render loop: frame time minus the measured GPU draw pass leaves command

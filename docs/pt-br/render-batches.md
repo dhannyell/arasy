@@ -33,15 +33,14 @@ A animação visual suportada é determinística e apenas de apresentação:
 - `SpritePulse` suporta pulse.
 - `SpriteBatchAnimation` controla a animação do batch.
 
-Raster, Canvas2D e WGSL avaliam essas animações por `internal/renderbatch`. O
+Raster e WGSL avaliam essas animações por `internal/renderbatch`. O
 sistema não aceita shaders arbitrários, não reordena instâncias e não executa
 culling ou compute por instância.
 
 ### Comportamento dos hosts
 
 WebGPU reutiliza os pipelines de storage-buffer do caminho de streaming. Conteúdo
-estável envia zero bytes por frame. Raster é a referência. O Canvas2D de
-desenvolvimento limita conteúdo retido a 2.000 sprites e 500 labels.
+estável envia zero bytes por frame. Raster é a referência.
 
 Batches retidos e partículas não suportam `Camera.View` com skew. O caminho GPU
 de tessellation recebe escala e offset, não um shear geral.
