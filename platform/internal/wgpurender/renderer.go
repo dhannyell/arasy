@@ -278,7 +278,7 @@ func New(
 		return nil, err
 	}
 	if err = renderer.createPostResources(); err != nil {
-		log.Warn("native post-processing disabled", "err", err)
+		log.Warn("post-processing disabled", "err", err)
 		renderer.postDisabled = true
 	}
 	if err = renderer.createSamplers(); err != nil {
@@ -307,17 +307,16 @@ func New(
 		d.Device, d.Queue, manifest, renderer.textures, d.Config.Format, renderer.msaaSamples, particleScale > 0, hasTargets,
 	)
 	if err != nil && renderer.particleScale > 0 {
-		log.Warn("native particle offscreen pipelines unavailable, using direct rendering", "err", err)
+		log.Warn("particle offscreen pipelines unavailable, using direct rendering", "err", err)
 		renderer.particleScale = 0
 		renderer.particles, err = newGpuParticles(
 			d.Device, d.Queue, manifest, renderer.textures, d.Config.Format, renderer.msaaSamples, false, hasTargets,
 		)
 	}
 	if err != nil {
-		// Particle effects are optional presentation. Keep the native host usable
-		// when a driver rejects the compute/indirect pipeline, matching the WASM
-		// backend's best-effort particle path.
-		log.Warn("native particle renderer disabled", "err", err)
+		// Particle effects are optional presentation. Keep the host usable when a
+		// driver rejects the compute/indirect pipeline.
+		log.Warn("particle renderer disabled", "err", err)
 		renderer.particles = nil
 	}
 	if renderer.particles != nil && renderer.particleScale > 0 {
@@ -329,7 +328,7 @@ func New(
 	if renderer.timing, err = newGPUTiming(d); err != nil {
 		// The adapter granted the feature but its query resources would not
 		// build. Telemetry is not worth failing a window over.
-		log.Warn("native GPU timing disabled", "err", err)
+		log.Warn("GPU timing disabled", "err", err)
 		renderer.timing = nil
 		err = nil
 	}
@@ -402,7 +401,7 @@ func (r *Renderer) createCompositePipeline() error {
 }
 
 func (r *Renderer) disableParticleOffscreen(err error) {
-	r.log.Warn("native particle offscreen compositing disabled", "err", err)
+	r.log.Warn("particle offscreen compositing disabled", "err", err)
 	r.particleScale = 0
 	r.releaseParticleTargets()
 	releasePipeline(&r.compositePipeline)
@@ -767,7 +766,7 @@ func (r *Renderer) resolveFramePasses(frame runtime.Frame, width, height int) []
 			if err := r.activateRenderTarget(pass.Target); err != nil {
 				r.diagnostics.Log(r.log, slog.LevelWarn,
 					diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(pass.Target)},
-					"native: pass target activation failed; pass skipped", "target", pass.Target, "error", err)
+					"renderer: pass target activation failed; pass skipped", "target", pass.Target, "error", err)
 				continue
 			}
 		}
@@ -779,7 +778,7 @@ func (r *Renderer) resolveFramePasses(frame runtime.Frame, width, height int) []
 func (r *Renderer) logPassDiagnostic(diag frameplan.Diagnostic) {
 	r.diagnostics.Log(r.log, slog.LevelWarn,
 		diagnostic.Key{Code: diag.Code, ID: uint64(diag.Target)},
-		"native: "+diag.Message(), "target", diag.Target)
+		"renderer: "+diag.Message(), "target", diag.Target)
 }
 
 // HasPresentedFrame reports if a frame reached the surface.
@@ -1537,7 +1536,7 @@ func (r *Renderer) uploadStreams(
 const noSpriteUniformEntry = ^uint32(0)
 
 // Uniform entries are keyed by the camera data they pack, not by draw run.
-// The key logic is shared with the wasm backend and lives in tess.
+// The key logic lives in tess.
 type nativeUniformEntry struct {
 	key    tess.UniformKey
 	offset uint32
@@ -2066,7 +2065,7 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 	if !ok || target.targetView == nil {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
 			diagnostic.Key{Code: frameplan.CodeTargetUnavailable, ID: uint64(plan.target)},
-			"native: pass target has no GPU attachment; pass skipped", "target", plan.target)
+			"renderer: pass target has no GPU attachment; pass skipped", "target", plan.target)
 		return nil
 	}
 	pass, err := encoder.TryBeginRenderPass(&wgpu.RenderPassDescriptor{
@@ -2331,8 +2330,7 @@ func (r *Renderer) drawRun(
 				}
 				array := r.spriteArrayEnabled && !rg.Missing
 				if batch.animated {
-					// The animated pipeline has no additive variant, matching
-					// the wasm backend.
+					// The animated pipeline has no additive variant.
 					pass.SetPipeline(r.spriteBatchAnimPipelineFor(array, renderTarget))
 					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{r.batchAnimOffsets[runIndex]})
 				} else {

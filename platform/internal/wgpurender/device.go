@@ -49,7 +49,7 @@ type Device struct {
 // multisample target descriptor.
 func (d *Device) validateMSAASampleCount(samples uint32) error {
 	if d == nil || d.Device == nil || d.Config == nil {
-		return fmt.Errorf("native WebGPU device is not configured")
+		return fmt.Errorf("WebGPU device is not configured")
 	}
 	texture, err := d.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 		Label:         "Arasy MSAA capability probe",

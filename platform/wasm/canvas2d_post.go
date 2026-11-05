@@ -732,3 +732,36 @@ func postEffectDiagnosticID(effect render.PostEffect) uint64 {
 		return 0
 	}
 }
+
+func postBlurPasses(effect render.Blur) int {
+	passes := effect.Passes
+	if passes == 0 {
+		passes = 3
+	}
+	return max(1, min(5, passes))
+}
+
+// focusRegion mirrors platform/raster/postfx.go focusRegion.
+func focusRegion(effect render.FocusBlur, camera render.Camera) (half [2]float64, rounding float64) {
+	half = [2]float64{
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.X)),
+		math.Abs(camera.WorldScalarToScreen(effect.Extent.Y)),
+	}
+	rounding = math.Abs(camera.WorldScalarToScreen(effect.Rounding))
+	if half[0] == 0 && half[1] == 0 {
+		half = [2]float64{rounding, rounding}
+	}
+	rounding = math.Min(rounding, math.Min(half[0], half[1]))
+	return half, rounding
+}
+
+// clampPostStrength mirrors platform/raster/postfx.go clamp01.
+func clampPostStrength(value float64) float64 {
+	if value <= 0 {
+		return 0
+	}
+	if value >= 1 {
+		return 1
+	}
+	return value
+}

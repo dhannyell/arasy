@@ -139,8 +139,8 @@ func (r *Renderer) prepTextBatches(ids []render.TextBatchID, camera render.Camer
 			}
 			if _, err := r.fontProvider.AtlasFor(key.Font, key.PX, string(runes)); err != nil {
 				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "native-text-batch-coverage", ID: uint64(id)},
-					"native: text batch atlas coverage failed", "err", err)
+					diagnostic.Key{Code: "text-batch-coverage", ID: uint64(id)},
+					"renderer: text batch atlas coverage failed", "err", err)
 			}
 		}
 	}
@@ -347,8 +347,8 @@ func (r *Renderer) resolveTextBatchRuns(runs []tess.StreamRun, plans []nativePas
 		batch, ok := r.passTextResult[passTextBatchKey{pass: run.Pass, id: cmd.Batch}]
 		if !ok {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-text-batch-missing", ID: uint64(cmd.Batch)},
-				"native: DrawTextBatch references a missing or deleted batch; command skipped")
+				diagnostic.Key{Code: "text-batch-missing", ID: uint64(cmd.Batch)},
+				"renderer: DrawTextBatch references a missing or deleted batch; command skipped")
 			continue
 		}
 		if batch.count == 0 {

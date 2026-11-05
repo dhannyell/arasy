@@ -160,8 +160,8 @@ de render.
 
 ### Pacotes GPU
 
-`internal/render/gpu/tess` constrói streams ordenados de pipelines GPU. O host
-WASM WebGPU o usa, e o renderer native compartilha o mesmo núcleo. `fontatlas`
+`internal/render/gpu/tess` constrói streams ordenados de pipelines GPU para
+`platform/internal/wgpurender`. `fontatlas`
 fornece atlas de glyphs baseado em manifest. `shaders` contém fontes WGSL
 embutidas.
 `internal/render/frameplan` normaliza a política de passes e alvos para todos os
@@ -182,8 +182,7 @@ backends; os hosts apenas ativam recursos e codificam os passes resultantes.
   Blob e file picker.
 - `platform/internal/wgpurender` é o renderer GPU sobre o binding `wgpu`. Um
   host abre o device e a surface e mantém o loop e o input. Os hosts native e
-  browser o usam. `Options.LegacyGPURenderer` seleciona o renderer anterior,
-  exclusivo do browser, para comparação até a remoção dele.
+  browser o usam.
 - `platform/native` usa GLFW e wgpu-native. Ele trava a thread do SO, enfileira
   callbacks, aplica input por `Driver.RunTick` e suporta áudio native.
   `Options.GPUTiming` pede timestamp queries na criação do device. O readback é

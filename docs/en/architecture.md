@@ -153,8 +153,8 @@ supported animated SVG/CSS subset into deterministic Go render code.
 
 ### GPU packages
 
-`internal/render/gpu/tess` builds ordered GPU pipeline streams. The WASM WebGPU
-host uses it, and the native renderer shares the same core. `fontatlas` provides
+`internal/render/gpu/tess` builds ordered GPU pipeline streams for
+`platform/internal/wgpurender`. `fontatlas` provides
 manifest-backed glyph atlases. `shaders` contains embedded WGSL sources.
 `internal/render/frameplan` normalizes pass and target policy for every backend;
 hosts only activate resources and encode the resulting passes.
@@ -174,8 +174,7 @@ hosts only activate resources and encode the resulting passes.
   a Blob and a file picker.
 - `platform/internal/wgpurender` is the GPU renderer on the `wgpu` binding. A
   host opens the device and the surface and keeps the loop and the input. The
-  native and browser hosts use it. `Options.LegacyGPURenderer` selects the
-  previous browser-only renderer for comparison until its removal.
+  native and browser hosts use it.
 - `platform/native` uses GLFW and wgpu-native. It locks the OS thread, queues
   callbacks, applies input through `Driver.RunTick`, and supports native audio.
   `Options.GPUTiming` requests timestamp queries at device creation. Readback is
