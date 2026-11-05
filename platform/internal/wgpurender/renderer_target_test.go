@@ -100,3 +100,11 @@ func TestDecideSurfaceStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestMipLevelCount(t *testing.T) {
+	for _, tc := range []struct{ w, h, want int }{{1, 1, 1}, {8, 8, 4}, {3, 7, 3}} {
+		if got := mipLevelCount(tc.w, tc.h); got != tc.want {
+			t.Errorf("mipLevelCount(%d, %d) = %d, want %d", tc.w, tc.h, got, tc.want)
+		}
+	}
+}

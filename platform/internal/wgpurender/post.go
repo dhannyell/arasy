@@ -147,7 +147,7 @@ func (r *Renderer) disablePost(err error) {
 		return
 	}
 	r.postDisabled = true
-	r.log.Warn("native post-processing disabled; drawing without chain", "err", err)
+	r.log.Warn("post-processing disabled; drawing without chain", "err", err)
 	r.releasePostBindGroups()
 	r.releasePostTarget(&r.postSceneA)
 	r.releasePostTarget(&r.postSceneB)

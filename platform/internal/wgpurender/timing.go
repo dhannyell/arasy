@@ -13,8 +13,7 @@ const (
 	// Five timestamps per frame: [0,1] particle emit pass begin/end, [2]
 	// simulate pass end, [3,4] render begin/end. The simulate duration is
 	// [1,2], which includes the emit→simulate pass boundary — a real GPU cost
-	// that belongs to the simulation. Mirrors the WASM host's layout so the two
-	// backends' HUD rows mean the same thing.
+	// that belongs to the simulation.
 	timingQueryCount = 5
 	// timingRenderBegin is where the render pair starts in the set. A frame
 	// without particle work resolves from here instead of from zero.

@@ -23,9 +23,6 @@ type Options struct {
 	Log *slog.Logger
 	// ForceCanvas2D skips WebGPU initialization and uses the Canvas2D fallback.
 	ForceCanvas2D bool
-	// LegacyGPURenderer draws with the previous browser-only WebGPU renderer.
-	// It is for comparison only, and it goes away with that renderer.
-	LegacyGPURenderer bool
 	// DevTools enables the in-browser debug control panel. Default false; the
 	// panel starts hidden and is toggled with the Backquote/~ key. The panel
 	// only exists in builds tagged arr_dev (arasy dev adds it); in any other
@@ -136,7 +133,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	// asking for them: the adapter feature has to be requested when the device
 	// is created, well before the panel is ever opened.
 	wantGPUTiming := opts.FrameMetrics != nil || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
-	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, opts.LegacyGPURenderer, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, log)
+	h.renderer = selectRenderer(canvas, cfg.Clear, cfg.Assets, opts.ForceCanvas2D, wantGPUTiming, cfg.ParticleOffscreenScale, opts.MSAA, log)
 	var replayFactory func() runtime.Game
 	if opts.RecordReplay {
 		if opts.GameFactory == nil {
@@ -174,19 +171,9 @@ func applyBrowserSplashPolicy(driver *runtime.Driver) {
 	}
 }
 
-func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, legacyGPU, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) runtime.FrameRenderer {
+func selectRenderer(canvas js.Value, clear render.Color, manifest asset.Manifest, forceCanvas2D, wantGPUTiming bool, particleScale float64, msaa render.MSAAMode, log *slog.Logger) runtime.FrameRenderer {
 	if forceCanvas2D {
 		log.Info("using canvas2d renderer")
-		return newCanvas2D(canvas, clear, manifest, log)
-	}
-
-	if legacyGPU {
-		r, err := newWebGPU(canvas, clear, manifest, wantGPUTiming, particleScale, msaa, log)
-		if err == nil {
-			log.Info("using legacy webgpu renderer")
-			return r
-		}
-		log.Warn("webgpu unavailable, falling back to canvas2d", "error", err)
 		return newCanvas2D(canvas, clear, manifest, log)
 	}
 

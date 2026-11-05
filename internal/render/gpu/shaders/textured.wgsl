@@ -1,4 +1,4 @@
-// Image/texture pipeline. Blend is premultiplied (see webgpu.go's
+// Image/texture pipeline. Blend is premultiplied (see the renderer's
 // premultipliedBlend): asset/pixel decodes textures into premultiplied-alpha
 // pixels and tess premultiplies the tint, unlike the solid pipeline which
 // stays straight-alpha.
