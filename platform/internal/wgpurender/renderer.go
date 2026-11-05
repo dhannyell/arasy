@@ -1,6 +1,6 @@
-//go:build (windows || linux || darwin) && (amd64 || arm64)
+//go:build ((windows || linux || darwin) && (amd64 || arm64)) || js
 
-package native
+package wgpurender
 
 import (
 	"errors"
@@ -59,10 +59,10 @@ func msaaSampleCount(
 	return uint32(samples)
 }
 
-// Renderer is the provisional streaming renderer for a wgpu surface.
-// A later host API may wrap this constructor with lifecycle and input options.
+// Renderer is the streaming renderer for a wgpu surface. The native and the
+// browser hosts use it.
 type Renderer struct {
-	device   *device
+	device   *Device
 	clear    render.Color
 	log      *slog.Logger
 	manifest asset.Manifest
@@ -184,7 +184,7 @@ type Renderer struct {
 	cpuEncode          time.Duration
 	cpuPhasesSet       bool
 	// cpuFrame separates queue submission, CPU work and surface acquisition.
-	cpuFrame cpuFrameTiming
+	cpuFrame CPUFrameTiming
 	// presentWait is how long the last frame blocked on presentation
 	// (surface acquire plus present). With vsync this is the vblank wait —
 	// idle time, not work — so it must be reported apart from the CPU
@@ -194,10 +194,10 @@ type Renderer struct {
 
 var _ runtime.FrameRenderer = (*Renderer)(nil)
 
-// newRenderer creates a renderer on d, a device with a configured surface. The
+// New creates a renderer on d, a device with a configured surface. The
 // renderer owns d from this call, including on error.
-func newRenderer(
-	d *device,
+func New(
+	d *Device,
 	clear render.Color,
 	manifest asset.Manifest,
 	msaa render.MSAAMode,
@@ -210,7 +210,7 @@ func newRenderer(
 	}
 	provider, err := fontatlas.New(manifest)
 	if err != nil {
-		d.destroy()
+		d.Destroy()
 		return nil, fmt.Errorf("create font atlas provider: %w", err)
 	}
 	renderer = &Renderer{
@@ -221,7 +221,7 @@ func newRenderer(
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
 		spriteBatches: make(map[render.SpriteBatchID]*nativeSpriteBatch),
-		msaaSamples:   msaaSampleCount(msaa, d.formatFeatures, d.validateMSAASampleCount, log),
+		msaaSamples:   msaaSampleCount(msaa, d.FormatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
 	}
 	if outlines != nil {
@@ -259,13 +259,13 @@ func newRenderer(
 	}
 	hasTargets := manifestHasDynamicTextures(manifest)
 	renderer.particles, err = newGpuParticles(
-		d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, particleScale > 0, hasTargets,
+		d.Device, d.Queue, manifest, renderer.textures, d.Config.Format, renderer.msaaSamples, particleScale > 0, hasTargets,
 	)
 	if err != nil && renderer.particleScale > 0 {
 		log.Warn("native particle offscreen pipelines unavailable, using direct rendering", "err", err)
 		renderer.particleScale = 0
 		renderer.particles, err = newGpuParticles(
-			d.device, d.queue, manifest, renderer.textures, d.config.Format, renderer.msaaSamples, false, hasTargets,
+			d.Device, d.Queue, manifest, renderer.textures, d.Config.Format, renderer.msaaSamples, false, hasTargets,
 		)
 	}
 	if err != nil {
@@ -296,7 +296,7 @@ func newRenderer(
 // source-over, plus the bind group layout and sampler its pooled targets use.
 func (r *Renderer) createCompositePipeline() error {
 	var err error
-	if r.compositeLayout, err = r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	if r.compositeLayout, err = r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{
 				Binding:    0,
@@ -315,14 +315,14 @@ func (r *Renderer) createCompositePipeline() error {
 	}); err != nil {
 		return fmt.Errorf("create bind group layout: %w", err)
 	}
-	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(
+	pipelineLayout, err := r.device.Device.TryCreatePipelineLayout(
 		&wgpu.PipelineLayoutDescriptor{BindGroupLayouts: []*wgpu.BindGroupLayout{r.compositeLayout}},
 	)
 	if err != nil {
 		return fmt.Errorf("create pipeline layout: %w", err)
 	}
 	defer pipelineLayout.Release()
-	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+	module, err := r.device.Device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "Arasy particle composite shader",
 		WGSLSource: &wgpu.ShaderSourceWGSL{Code: shaders.ParticlesCompositeWGSL},
 	})
@@ -330,7 +330,7 @@ func (r *Renderer) createCompositePipeline() error {
 		return fmt.Errorf("create shader: %w", err)
 	}
 	defer module.Release()
-	r.compositePipeline, err = r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+	r.compositePipeline, err = r.device.Device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:       "Arasy particle composite pipeline",
 		Layout:      pipelineLayout,
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main"},
@@ -340,14 +340,14 @@ func (r *Renderer) createCompositePipeline() error {
 			Module:     module,
 			EntryPoint: "fs_main",
 			Targets: []wgpu.ColorTargetState{{
-				Format: r.device.config.Format, Blend: premultipliedBlend(), WriteMask: wgpu.ColorWriteMaskAll,
+				Format: r.device.Config.Format, Blend: premultipliedBlend(), WriteMask: wgpu.ColorWriteMaskAll,
 			}},
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("create pipeline: %w", err)
 	}
-	r.compositeSampler, err = r.device.device.TryCreateSampler(
+	r.compositeSampler, err = r.device.Device.TryCreateSampler(
 		&wgpu.SamplerDescriptor{MagFilter: wgpu.FilterModeLinear, MinFilter: wgpu.FilterModeLinear, MaxAnisotropy: 1},
 	)
 	if err != nil {
@@ -391,12 +391,12 @@ func (r *Renderer) ensureParticleTargets(n, ow, oh int) error {
 		r.particleTargetW, r.particleTargetH = ow, oh
 	}
 	for len(r.particleTargets) < n {
-		texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+		texture, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 			Label:         "Arasy particle offscreen target",
 			Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageTextureBinding,
 			Dimension:     wgpu.TextureDimension2D,
 			Size:          wgpu.Extent3D{Width: uint32(ow), Height: uint32(oh), DepthOrArrayLayers: 1},
-			Format:        r.device.config.Format,
+			Format:        r.device.Config.Format,
 			MipLevelCount: 1,
 			SampleCount:   1,
 		})
@@ -408,7 +408,7 @@ func (r *Renderer) ensureParticleTargets(n, ow, oh int) error {
 			texture.Release()
 			return fmt.Errorf("create particle offscreen view: %w", err)
 		}
-		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		bindGroup, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 			Layout: r.compositeLayout,
 			Entries: []wgpu.BindGroupEntry{
 				{Binding: 0, TextureView: view},
@@ -461,14 +461,14 @@ func (r *Renderer) Render(frame runtime.Frame) {
 		return
 	}
 	if r.timeCPU {
-		r.cpuFrame = cpuFrameTiming{}
+		r.cpuFrame = CPUFrameTiming{}
 		r.cpuPhasesSet = false
 		r.presentWait = 0
 	}
-	if r.err != nil || r.device == nil || r.device.config == nil {
+	if r.err != nil || r.device == nil || r.device.Config == nil {
 		return
 	}
-	width, height := int(r.device.config.Width), int(r.device.config.Height)
+	width, height := int(r.device.Config.Width), int(r.device.Config.Height)
 	if width <= 0 || height <= 0 {
 		return
 	}
@@ -592,13 +592,13 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		return
 	}
 	var phaseStart time.Time
-	surfaceView := r.device.offscreenView
+	surfaceView := r.device.OffscreenView
 	if surfaceView == nil {
 		var acquireStart time.Time
 		if r.timeCPU {
 			acquireStart = time.Now()
 		}
-		surfaceTexture, err := r.device.surface.TryGetCurrentTexture()
+		surfaceTexture, err := r.device.Surface.TryGetCurrentTexture()
 		if r.timeCPU {
 			r.cpuFrame.acquireWait = time.Since(acquireStart)
 			r.presentWait = r.cpuFrame.acquireWait
@@ -614,7 +614,7 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		case actionSkip:
 			return
 		case actionReconfigure:
-			r.device.configure(width, height)
+			r.device.Configure(width, height)
 			return
 		case actionFatal:
 			r.recordErr(fmt.Errorf("acquire surface texture: %s", surfaceTexture.Status))
@@ -643,11 +643,11 @@ func (r *Renderer) renderPasses(frame runtime.Frame, width, height int) {
 		r.cpuFrame.cpuEndAt = time.Now()
 		r.cpuEncode = r.cpuFrame.cpuEndAt.Sub(phaseStart)
 		r.cpuPhasesSet = true
-		r.cpuFrame.valid = !r.cpuFrame.submittedAt.IsZero()
+		r.cpuFrame.Valid = !r.cpuFrame.submittedAt.IsZero()
 		phaseStart = r.cpuFrame.cpuEndAt
 	}
-	if r.device.offscreenView == nil {
-		r.device.surface.Present()
+	if r.device.OffscreenView == nil {
+		r.device.Surface.Present()
 	}
 	if r.timeCPU {
 		r.presentWait += time.Since(phaseStart)
@@ -692,7 +692,8 @@ func (r *Renderer) logPassDiagnostic(diag frameplan.Diagnostic) {
 		"native: "+diag.Message(), "target", diag.Target)
 }
 
-func (r *Renderer) hasPresentedFrame() bool {
+// HasPresentedFrame reports if a frame reached the surface.
+func (r *Renderer) HasPresentedFrame() bool {
 	return r != nil && r.presentedFrame
 }
 
@@ -713,60 +714,60 @@ func (r *Renderer) SetGPUTiming(enabled bool) {
 	}
 }
 
-// particleGPUTimings reports the most recent timestamp-query sample: the
+// ParticleGPUTimings reports the most recent timestamp-query sample: the
 // particle emit pass, the simulate pass (including the pass boundary before
 // it) and the render interval. Frames without particle commands still sample
 // the render pass and report zero for the compute stages. ok is false until
 // the first sample resolves, and always on devices without timestamp-query.
-func (r *Renderer) particleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
+func (r *Renderer) ParticleGPUTimings() (prepare, simulate, render time.Duration, ok bool) {
 	if r == nil || !r.timeGPU {
 		return 0, 0, 0, false
 	}
 	return r.timing.timings()
 }
 
-// presentWaitDuration reports how long the last frame blocked on the
+// PresentWaitDuration reports how long the last frame blocked on the
 // presentation queue: surface acquire plus present. With vsync that is the
 // vblank wait — idle time, not CPU work. ok is false while CPU timing is
 // disabled, meaning no measurement was taken.
-func (r *Renderer) presentWaitDuration() (time.Duration, bool) {
+func (r *Renderer) PresentWaitDuration() (time.Duration, bool) {
 	if r == nil {
 		return 0, false
 	}
-	return r.presentWait, r.timeCPU && r.cpuFrame.valid
+	return r.presentWait, r.timeCPU && r.cpuFrame.Valid
 }
 
-// frameCPUTiming reports the boundaries of the most recently submitted frame.
+// FrameCPUTiming reports the boundaries of the most recently submitted frame.
 // It stays invalid for a skipped/reconfigured surface so callers never reuse a
 // previous frame's submission timestamp.
-func (r *Renderer) frameCPUTiming() cpuFrameTiming {
+func (r *Renderer) FrameCPUTiming() CPUFrameTiming {
 	if r == nil || !r.timeCPU {
-		return cpuFrameTiming{}
+		return CPUFrameTiming{}
 	}
 	return r.cpuFrame
 }
 
-// adapterIDs returns the PCI vendor and device IDs of the adapter the
+// AdapterIDs returns the PCI vendor and device IDs of the adapter the
 // renderer selected, for the OS probes that need to find the same GPU.
-func (r *Renderer) adapterIDs() (vendor, device uint32) {
+func (r *Renderer) AdapterIDs() (vendor, device uint32) {
 	if r == nil || r.device == nil {
 		return 0, 0
 	}
-	return r.device.vendorID, r.device.deviceID
+	return r.device.VendorID, r.device.DeviceID
 }
 
-// renderCPUTimings reports CPU-side wall times for tessellation, upload and
+// RenderCPUTimings reports CPU-side wall times for tessellation, upload and
 // command encoding. These values exclude GPU execution time.
-func (r *Renderer) renderCPUTimings() (time.Duration, time.Duration, time.Duration, bool) {
+func (r *Renderer) RenderCPUTimings() (time.Duration, time.Duration, time.Duration, bool) {
 	if r == nil {
 		return 0, 0, 0, false
 	}
 	return r.cpuTess, r.cpuUpload, r.cpuEncode, r.cpuPhasesSet
 }
 
-// particleGPUBufferBytes reports resident particle buffer allocations. A nil
+// ParticleGPUBufferBytes reports resident particle buffer allocations. A nil
 // particle renderer means this metric is unavailable.
-func (r *Renderer) particleGPUBufferBytes() (uint64, bool) {
+func (r *Renderer) ParticleGPUBufferBytes() (uint64, bool) {
 	if r == nil || r.particles == nil {
 		return 0, false
 	}
@@ -778,7 +779,7 @@ func (r *Renderer) Resize(fbW, fbH int) {
 	if r == nil || r.err != nil {
 		return
 	}
-	r.device.configure(fbW, fbH)
+	r.device.Configure(fbW, fbH)
 }
 
 // Err returns the first render failure observed by the native host.
@@ -885,7 +886,7 @@ func (r *Renderer) Close() {
 	releaseSampler(&r.textureSampler)
 	releaseSampler(&r.mipSampler)
 	if r.device != nil {
-		r.device.destroy()
+		r.device.Destroy()
 		r.device = nil
 	}
 }
@@ -904,7 +905,7 @@ func (r *Renderer) createPipelines() error {
 	if r.solidPipeline, err = r.createPipeline(
 		"solid",
 		shaders.SolidWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		solidVertexLayout(),
 		alphaBlend(),
@@ -916,7 +917,7 @@ func (r *Renderer) createPipelines() error {
 	if r.texturedPipeline, err = r.createPipeline(
 		"textured",
 		shaders.TexturedWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		texturedVertexLayout(),
 		premultipliedBlend(),
@@ -928,7 +929,7 @@ func (r *Renderer) createPipelines() error {
 	if r.spritePipeline, err = r.createPipeline(
 		"sprite",
 		shaders.SpriteWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		nil,
 		premultipliedBlend(),
@@ -940,7 +941,7 @@ func (r *Renderer) createPipelines() error {
 	if r.spriteBatchAnimPipeline, err = r.createPipeline(
 		"sprite batch animated",
 		shaders.SpriteBatchAnimWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		nil,
 		premultipliedBlend(),
@@ -952,7 +953,7 @@ func (r *Renderer) createPipelines() error {
 	if r.textGlyphPipeline, err = r.createPipeline(
 		"text glyph",
 		shaders.TextGlyphWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		nil,
 		alphaBlend(),
@@ -964,7 +965,7 @@ func (r *Renderer) createPipelines() error {
 	if r.solidAddPipeline, err = r.createPipeline(
 		"solid additive",
 		shaders.SolidWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		solidVertexLayout(),
 		additiveStraightBlend(),
@@ -976,7 +977,7 @@ func (r *Renderer) createPipelines() error {
 	if r.texturedAddPipeline, err = r.createPipeline(
 		"textured additive",
 		shaders.TexturedWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		texturedVertexLayout(),
 		additiveBlend(),
@@ -988,7 +989,7 @@ func (r *Renderer) createPipelines() error {
 	if r.spriteAddPipeline, err = r.createPipeline(
 		"sprite additive",
 		shaders.SpriteWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		nil,
 		additiveBlend(),
@@ -1000,7 +1001,7 @@ func (r *Renderer) createPipelines() error {
 	if r.textGlyphAddPipeline, err = r.createPipeline(
 		"text glyph additive",
 		shaders.TextGlyphWGSL,
-		r.device.config.Format,
+		r.device.Config.Format,
 		r.msaaSamples,
 		nil,
 		additiveStraightBlend(),
@@ -1060,7 +1061,7 @@ func manifestHasDynamicTextures(manifest asset.Manifest) bool {
 }
 
 func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
-	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	layout, err := r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
 				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
@@ -1079,7 +1080,7 @@ func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create sprite bind group layout: %w", err)
 	}
-	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	pipelineLayout, err := r.device.Device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
 	})
 	layout.Release()
@@ -1090,7 +1091,7 @@ func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
 }
 
 func (r *Renderer) createSpriteBatchAnimPipelineLayout() (*wgpu.PipelineLayout, error) {
-	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	layout, err := r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
 				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
@@ -1112,7 +1113,7 @@ func (r *Renderer) createSpriteBatchAnimPipelineLayout() (*wgpu.PipelineLayout, 
 	if err != nil {
 		return nil, fmt.Errorf("create sprite batch anim bind group layout: %w", err)
 	}
-	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	pipelineLayout, err := r.device.Device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
 	})
 	layout.Release()
@@ -1123,7 +1124,7 @@ func (r *Renderer) createSpriteBatchAnimPipelineLayout() (*wgpu.PipelineLayout, 
 }
 
 func (r *Renderer) createTextGlyphPipelineLayout() (*wgpu.PipelineLayout, error) {
-	layout, err := r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	layout, err := r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
 				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
@@ -1148,7 +1149,7 @@ func (r *Renderer) createTextGlyphPipelineLayout() (*wgpu.PipelineLayout, error)
 	if err != nil {
 		return nil, fmt.Errorf("create text bind group layout: %w", err)
 	}
-	pipelineLayout, err := r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	pipelineLayout, err := r.device.Device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 		BindGroupLayouts: []*wgpu.BindGroupLayout{layout},
 	})
 	layout.Release()
@@ -1177,7 +1178,7 @@ func (r *Renderer) createPipelineEntry(
 	blend *wgpu.BlendState,
 	layout *wgpu.PipelineLayout,
 ) (*wgpu.RenderPipeline, error) {
-	module, err := r.device.device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
+	module, err := r.device.Device.TryCreateShaderModule(&wgpu.ShaderModuleDescriptor{
 		Label:      "Arasy " + label + " shader",
 		WGSLSource: &wgpu.ShaderSourceWGSL{Code: source},
 	})
@@ -1185,7 +1186,7 @@ func (r *Renderer) createPipelineEntry(
 		return nil, fmt.Errorf("create %s shader: %w", label, err)
 	}
 	defer module.Release()
-	pipeline, err := r.device.device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+	pipeline, err := r.device.Device.TryCreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
 		Label:       "Arasy " + label + " pipeline",
 		Layout:      layout,
 		Vertex:      wgpu.VertexState{Module: module, EntryPoint: "vs_main", Buffers: buffers},
@@ -1205,13 +1206,13 @@ func (r *Renderer) createSamplers() error {
 	textureDesc := textureSamplerDescriptor()
 
 	var err error
-	r.textureSampler, err = r.device.device.TryCreateSampler(&textureDesc)
+	r.textureSampler, err = r.device.Device.TryCreateSampler(&textureDesc)
 	if err != nil {
 		return fmt.Errorf("create texture sampler: %w", err)
 	}
 	mipDesc := mipSamplerDescriptor()
 
-	r.mipSampler, err = r.device.device.TryCreateSampler(&mipDesc)
+	r.mipSampler, err = r.device.Device.TryCreateSampler(&mipDesc)
 	if err != nil {
 		return fmt.Errorf("create mip sampler: %w", err)
 	}
@@ -1264,7 +1265,7 @@ func (r *Renderer) createBuffers() error {
 		return err
 	}
 	r.textLabelCap = gpubuffer.InitialCapacity
-	r.spriteUniformSlotSize = uniformSlotSize(tess.SpriteUniformSize, r.device.device.GetLimits().MinUniformBufferOffsetAlignment)
+	r.spriteUniformSlotSize = uniformSlotSize(tess.SpriteUniformSize, r.device.Device.GetLimits().MinUniformBufferOffsetAlignment)
 	r.spriteUniformCap = 64
 	if r.spriteUniform, err = r.newBuffer(
 		"sprite uniforms",
@@ -1273,7 +1274,7 @@ func (r *Renderer) createBuffers() error {
 	); err != nil {
 		return err
 	}
-	r.batchAnimUniformSlotSize = uniformSlotSize(tess.SpriteBatchAnimUniformSize, r.device.device.GetLimits().MinUniformBufferOffsetAlignment)
+	r.batchAnimUniformSlotSize = uniformSlotSize(tess.SpriteBatchAnimUniformSize, r.device.Device.GetLimits().MinUniformBufferOffsetAlignment)
 	r.batchAnimUniformCap = 8
 	r.batchAnimUniform, err = r.newBuffer(
 		"sprite batch anim uniforms",
@@ -1359,7 +1360,7 @@ func (r *Renderer) ensureBatchAnimUniformCapacity(required int) error {
 }
 
 func (r *Renderer) newBuffer(label string, size int, usage wgpu.BufferUsage) (*wgpu.Buffer, error) {
-	buffer, err := r.device.device.TryCreateBuffer(&wgpu.BufferDescriptor{
+	buffer, err := r.device.Device.TryCreateBuffer(&wgpu.BufferDescriptor{
 		Label: "Arasy " + label,
 		Size:  uint64(size),
 		Usage: usage,
@@ -1387,7 +1388,7 @@ func (r *Renderer) uploadStreams(
 		{r.textLabelBuffer, labels},
 	} {
 		if len(upload.data) > 0 {
-			if err := r.device.queue.TryWriteBuffer(upload.buffer, 0, upload.data); err != nil {
+			if err := r.device.Queue.TryWriteBuffer(upload.buffer, 0, upload.data); err != nil {
 				return fmt.Errorf("upload stream: %w", err)
 			}
 		}
@@ -1453,7 +1454,7 @@ func (r *Renderer) prepareSpriteUniformsForPasses(runs []tess.StreamRun, plans [
 		tess.PackUniform(packed[:], entry.key, plan.camera, plan.layerCameras, plan.width, plan.height)
 		offset := uint32(entryIndex * r.spriteUniformSlotSize)
 		entry.offset = offset
-		if err := r.device.queue.TryWriteBuffer(r.spriteUniform, uint64(offset), packed[:]); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(r.spriteUniform, uint64(offset), packed[:]); err != nil {
 			return nil, fmt.Errorf("upload sprite uniform: %w", err)
 		}
 	}
@@ -1505,7 +1506,7 @@ func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans [
 		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
 		tess.PackSpriteBatchAnimUniforms(r.batchAnimScratch[:], camera, plan.width, plan.height, run.SpriteBatch.Animation)
 		offset := uint32(slot * r.batchAnimUniformSlotSize)
-		if err := r.device.queue.TryWriteBuffer(r.batchAnimUniform, uint64(offset), r.batchAnimScratch[:]); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(r.batchAnimUniform, uint64(offset), r.batchAnimScratch[:]); err != nil {
 			return fmt.Errorf("upload sprite batch anim uniform: %w", err)
 		}
 		r.batchAnimOffsets[index] = offset
@@ -1615,7 +1616,7 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 		if texture.spriteBindGroup != nil {
 			texture.spriteBindGroup.Release()
 		}
-		bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		bindGroup, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 			Label:  "Arasy sprite bind group",
 			Layout: layout,
 			Entries: []wgpu.BindGroupEntry{
@@ -1648,14 +1649,14 @@ func (r *Renderer) activateRenderTarget(id render.TextureID) error {
 	defer baseLayout.Release()
 	targetLayout := r.targetTexturedPipeline.GetBindGroupLayout(0)
 	defer targetLayout.Release()
-	base, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	base, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label: "Arasy RTT texture bind group", Layout: baseLayout,
 		Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: texture.targetView}, {Binding: 1, Sampler: r.textureSampler}},
 	})
 	if err != nil {
 		return err
 	}
-	target, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	target, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label: "Arasy RTT target bind group", Layout: targetLayout,
 		Entries: []wgpu.BindGroupEntry{{Binding: 0, TextureView: texture.targetView}, {Binding: 1, Sampler: r.textureSampler}},
 	})
@@ -1707,12 +1708,12 @@ func (r *Renderer) ensureMSAATarget(width, height int) error {
 	}
 	releaseTextureView(&r.msaaView)
 	releaseTexture(&r.msaaTexture)
-	texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+	texture, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 		Label:         "Arasy MSAA target",
 		Usage:         wgpu.TextureUsageRenderAttachment,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
-		Format:        r.device.config.Format,
+		Format:        r.device.Config.Format,
 		MipLevelCount: 1,
 		SampleCount:   r.msaaSamples,
 	})
@@ -1735,7 +1736,7 @@ func (r *Renderer) encodeFramePasses(
 	surfaceView *wgpu.TextureView,
 	width, height int,
 ) error {
-	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
+	encoder, err := r.device.Device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		return fmt.Errorf("create render command encoder: %w", err)
 	}
@@ -1852,7 +1853,7 @@ func (r *Renderer) encodeFramePasses(
 		return fmt.Errorf("finish render command encoder: %w", err)
 	}
 	defer commandBuffer.Release()
-	r.device.queue.Submit(commandBuffer)
+	r.device.Queue.Submit(commandBuffer)
 	if r.timeCPU {
 		r.cpuFrame.submittedAt = time.Now()
 	}
@@ -2163,8 +2164,8 @@ func (r *Renderer) drawRun(
 
 func (r *Renderer) textureResources() textureResources {
 	return textureResources{
-		device:                 r.device.device,
-		queue:                  r.device.queue,
+		device:                 r.device.Device,
+		queue:                  r.device.Queue,
 		texturedPipeline:       r.texturedPipeline,
 		targetTexturedPipeline: r.targetTexturedPipeline,
 		mipPipeline:            r.mipPipeline,
@@ -2175,8 +2176,8 @@ func (r *Renderer) textureResources() textureResources {
 
 func (r *Renderer) textAtlasResources() textAtlasResources {
 	return textAtlasResources{
-		device:            r.device.device,
-		queue:             r.device.queue,
+		device:            r.device.Device,
+		queue:             r.device.Queue,
 		textGlyphPipeline: r.textGlyphPipeline,
 		glyphBuffer:       r.textGlyphBuffer,
 		labelBuffer:       r.textLabelBuffer,
@@ -2292,6 +2293,8 @@ func texturedVertexLayout() []wgpu.VertexBufferLayout {
 
 func releaseBuffer(buffer **wgpu.Buffer) {
 	if *buffer != nil {
+		// Release is a no-op on js, so only Destroy frees the GPU memory there.
+		(*buffer).Destroy()
 		(*buffer).Release()
 		*buffer = nil
 	}

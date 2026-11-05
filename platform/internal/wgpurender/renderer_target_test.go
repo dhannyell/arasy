@@ -1,6 +1,6 @@
 //go:build (windows || linux || darwin) && (amd64 || arm64)
 
-package native
+package wgpurender
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/asset/pixel"
@@ -151,27 +152,27 @@ func compareSlugFrames(t *testing.T, renderer *Renderer, got, want *image.RGBA) 
 // hold on a software adapter, and the CI runners have only that kind.
 func newHeadlessRenderer(t *testing.T, manifest asset.Manifest, msaa render.MSAAMode, width, height int) *Renderer {
 	t.Helper()
-	d := &device{instance: wgpu.CreateInstance(nil)}
+	d := &Device{Instance: wgpu.CreateInstance(nil)}
 	var err error
-	d.adapter, err = d.instance.RequestAdapter(&wgpu.RequestAdapterOptions{PowerPreference: wgpu.PowerPreferenceHighPerformance})
+	d.Adapter, err = d.Instance.RequestAdapter(&wgpu.RequestAdapterOptions{PowerPreference: wgpu.PowerPreferenceHighPerformance})
 	if err != nil {
-		d.destroy()
+		d.Destroy()
 		t.Skipf("no WebGPU adapter: %v", err)
 	}
-	if info := d.adapter.GetInfo(); info.AdapterType == wgpu.AdapterTypeCPU {
-		d.destroy()
+	if info := d.Adapter.GetInfo(); info.AdapterType == wgpu.AdapterTypeCPU {
+		d.Destroy()
 		t.Skipf("software WebGPU adapter: %s", info.Description)
 	}
-	if d.device, err = d.adapter.RequestDevice(nil); err != nil {
-		d.destroy()
+	if d.Device, err = d.Adapter.RequestDevice(nil); err != nil {
+		d.Destroy()
 		t.Skipf("no WebGPU device: %v", err)
 	}
-	d.queue = d.device.GetQueue()
-	d.config = &wgpu.SurfaceConfiguration{
+	d.Queue = d.Device.GetQueue()
+	d.Config = &wgpu.SurfaceConfiguration{
 		Format: wgpu.TextureFormatRGBA8Unorm, Width: uint32(width), Height: uint32(height),
 	}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	renderer, err := newRenderer(d, render.RGBA(0, 0, 0, 1), manifest, msaa, 0, slug.Outlines, log)
+	renderer, err := New(d, render.RGBA(0, 0, 0, 1), manifest, msaa, 0, slug.Outlines, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +184,7 @@ func newHeadlessRenderer(t *testing.T, manifest asset.Manifest, msaa render.MSAA
 func (r *Renderer) renderOffscreen(t *testing.T, frame runtime.Frame, width, height int) *image.RGBA {
 	t.Helper()
 	size := wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1}
-	texture, err := r.device.device.TryCreateTexture(&wgpu.TextureDescriptor{
+	texture, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
 		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          size,
@@ -219,7 +220,7 @@ func (r *Renderer) renderOffscreen(t *testing.T, frame runtime.Frame, width, hei
 		t.Fatal(err)
 	}
 	defer readback.Release()
-	encoder, err := r.device.device.TryCreateCommandEncoder(nil)
+	encoder, err := r.device.Device.TryCreateCommandEncoder(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,13 +239,13 @@ func (r *Renderer) renderOffscreen(t *testing.T, frame runtime.Frame, width, hei
 		t.Fatal(err)
 	}
 	defer commands.Release()
-	r.device.queue.Submit(commands)
+	r.device.Queue.Submit(commands)
 
 	status := wgpu.MapAsyncStatus(0)
 	if err := readback.TryMapAsync(wgpu.MapModeRead, 0, uint64(len(img.Pix)), func(s wgpu.MapAsyncStatus) { status = s }); err != nil {
 		t.Fatal(err)
 	}
-	r.device.device.Poll(true, nil)
+	r.device.Device.Poll(true, nil)
 	if status != wgpu.MapAsyncStatusSuccess {
 		t.Fatalf("map readback: status %v", status)
 	}
@@ -288,6 +289,53 @@ func TestNativeTextureSampleViewUsesMipZeroAfterRTT(t *testing.T) {
 	texture.rtt = true
 	if got := nativeTextureSampleView(texture); got != target {
 		t.Fatalf("RTT sample view = %p, want mip-zero view %p", got, target)
+	}
+}
+
+func TestCPUFrameTimingUsesSubmitBoundaryAndExcludesAcquireWait(t *testing.T) {
+	base := time.Unix(100, 0)
+	tickEnd := base.Add(2 * time.Millisecond)
+	inputAt := base.Add(-3 * time.Millisecond)
+	timing := CPUFrameTiming{
+		submittedAt: base.Add(8 * time.Millisecond),
+		cpuEndAt:    base.Add(10 * time.Millisecond),
+		acquireWait: 4 * time.Millisecond,
+		Valid:       true,
+	}
+
+	if got, want := timing.RenderDurationSince(tickEnd), 4*time.Millisecond; got != want {
+		t.Fatalf("CPU render duration = %v, want %v", got, want)
+	}
+	latency, ok := timing.InputToSubmit(inputAt)
+	if !ok {
+		t.Fatal("input-to-submit timing unavailable")
+	}
+	if want := 11 * time.Millisecond; latency != want {
+		t.Fatalf("input-to-submit = %v, want %v", latency, want)
+	}
+}
+
+func TestDecideSurfaceStatus(t *testing.T) {
+	tests := []struct {
+		name   string
+		status wgpu.SurfaceGetCurrentTextureStatus
+		want   surfaceAction
+	}{
+		{name: "optimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessOptimal, want: actionRender},
+		{name: "suboptimal", status: wgpu.SurfaceGetCurrentTextureStatusSuccessSuboptimal, want: actionRender},
+		{name: "timeout", status: wgpu.SurfaceGetCurrentTextureStatusTimeout, want: actionSkip},
+		{name: "occluded", status: wgpu.SurfaceGetCurrentTextureStatusOccluded, want: actionSkip},
+		{name: "outdated", status: wgpu.SurfaceGetCurrentTextureStatusOutdated, want: actionReconfigure},
+		{name: "lost", status: wgpu.SurfaceGetCurrentTextureStatusLost, want: actionReconfigure},
+		{name: "error", status: wgpu.SurfaceGetCurrentTextureStatusError, want: actionFatal},
+		{name: "unknown", status: wgpu.SurfaceGetCurrentTextureStatus(99), want: actionFatal},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := decideSurfaceStatus(test.status); got != test.want {
+				t.Fatalf("decideSurfaceStatus(%v) = %v, want %v", test.status, got, test.want)
+			}
+		})
 	}
 }
 

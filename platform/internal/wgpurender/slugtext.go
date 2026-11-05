@@ -1,6 +1,6 @@
-//go:build (windows || linux || darwin) && (amd64 || arm64)
+//go:build ((windows || linux || darwin) && (amd64 || arm64)) || js
 
-package native
+package wgpurender
 
 import (
 	"fmt"
@@ -190,7 +190,7 @@ func (r *Renderer) prepareSlugBatches(runs []tess.StreamRun, plans []nativePassP
 			batch.bindGroup.Release()
 			batch.bindGroup = nil
 		}
-		if err := r.device.queue.TryWriteBuffer(batch.instances.buffer, 0, packed.SlugInstances); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(batch.instances.buffer, 0, packed.SlugInstances); err != nil {
 			return fmt.Errorf("upload slug batch instances: %w", err)
 		}
 	}
@@ -277,7 +277,7 @@ func (r *Renderer) createSlugPipelines() error {
 		}}
 	}
 	var err error
-	r.slug.layout, err = r.device.device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
+	r.slug.layout, err = r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageVertex, Buffer: wgpu.BufferBindingLayout{
 				Type: wgpu.BufferBindingTypeUniform, HasDynamicOffset: true, MinBindingSize: tess.SpriteUniformSize,
@@ -291,14 +291,14 @@ func (r *Renderer) createSlugPipelines() error {
 	if err != nil {
 		return fmt.Errorf("create Slug bind group layout: %w", err)
 	}
-	r.slug.pipelineLayout, err = r.device.device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
+	r.slug.pipelineLayout, err = r.device.Device.TryCreatePipelineLayout(&wgpu.PipelineLayoutDescriptor{
 		BindGroupLayouts: []*wgpu.BindGroupLayout{r.slug.layout},
 	})
 	if err != nil {
 		return fmt.Errorf("create Slug pipeline layout: %w", err)
 	}
 	source := slugcore.WGSL()
-	surface, targetFormat := r.device.config.Format, wgpu.TextureFormatRGBA8Unorm
+	surface, targetFormat := r.device.Config.Format, wgpu.TextureFormatRGBA8Unorm
 	for _, p := range []struct {
 		out     **wgpu.RenderPipeline
 		label   string
@@ -338,7 +338,7 @@ func (r *Renderer) writeSlugBuffers() error {
 		if start >= len(data) {
 			return nil
 		}
-		if err := r.device.queue.TryWriteBuffer(s.buffer, uint64(start), data[start:]); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(s.buffer, uint64(start), data[start:]); err != nil {
 			return fmt.Errorf("upload %s: %w", label, err)
 		}
 		return nil
@@ -417,7 +417,7 @@ func (r *Renderer) createSlugBatchBindGroups() error {
 
 func (r *Renderer) createSlugBindGroup(instances *wgpu.Buffer) (*wgpu.BindGroup, error) {
 	s := &r.slug
-	bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:  "Arasy slug text bind group",
 		Layout: s.layout,
 		Entries: []wgpu.BindGroupEntry{

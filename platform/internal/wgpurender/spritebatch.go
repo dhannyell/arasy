@@ -1,6 +1,6 @@
-//go:build (windows || linux || darwin) && (amd64 || arm64)
+//go:build ((windows || linux || darwin) && (amd64 || arm64)) || js
 
-package native
+package wgpurender
 
 import (
 	"fmt"
@@ -134,7 +134,7 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 		if err != nil {
 			return err
 		}
-		if err := r.device.queue.TryWriteBuffer(batch.buffer, 0, plan.records); err != nil {
+		if err := r.device.Queue.TryWriteBuffer(batch.buffer, 0, plan.records); err != nil {
 			batch.release()
 			return fmt.Errorf("upload retained sprite batch: %w", err)
 		}
@@ -148,7 +148,7 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 				batch.release()
 				return err
 			}
-			if err := r.device.queue.TryWriteBuffer(batch.animBuffer, 0, plan.anims); err != nil {
+			if err := r.device.Queue.TryWriteBuffer(batch.animBuffer, 0, plan.anims); err != nil {
 				batch.release()
 				return fmt.Errorf("upload retained sprite batch animations: %w", err)
 			}
@@ -199,7 +199,7 @@ func (r *Renderer) createSpriteBatchBindGroup(view *wgpu.TextureView, batch *nat
 		entries[3] = wgpu.BindGroupEntry{Binding: 3, Buffer: r.batchAnimUniform, Size: tess.SpriteBatchAnimUniformSize}
 		entries = append(entries, wgpu.BindGroupEntry{Binding: 4, Buffer: batch.animBuffer, Size: wgpu.WholeSize})
 	}
-	bindGroup, err := r.device.device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+	bindGroup, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
 		Label:   "Arasy retained sprite batch bind group",
 		Layout:  layout,
 		Entries: entries,

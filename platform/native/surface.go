@@ -9,6 +9,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset"
 	"github.com/dhannyell/arasy/internal/render/slugcore"
+	"github.com/dhannyell/arasy/platform/internal/wgpurender"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/webgpu/wgpu"
 	"github.com/dhannyell/webgpu/wgpuglfw"
@@ -76,6 +77,9 @@ func choosePresentMode(modes []wgpu.PresentMode, vsync VSyncMode, log *slog.Logg
 	}
 }
 
+// Renderer is the renderer that the native host uses.
+type Renderer = wgpurender.Renderer
+
 // NewRenderer creates a native streaming renderer for window using vsync to
 // select its surface presentation mode.
 func NewRenderer(
@@ -93,37 +97,37 @@ func NewRenderer(
 	if err != nil {
 		return nil, err
 	}
-	return newRenderer(d, clear, manifest, msaa, particleScale, outlines, log)
+	return wgpurender.New(d, clear, manifest, msaa, particleScale, outlines, log)
 }
 
-func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *device, err error) {
+func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *slog.Logger) (d *wgpurender.Device, err error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	d = &device{}
+	d = &wgpurender.Device{}
 	defer func() {
 		if err != nil {
-			d.destroy()
+			d.Destroy()
 			d = nil
 		}
 	}()
 
-	d.instance = wgpu.CreateInstance(nil)
-	if !d.instance.IsValid() {
+	d.Instance = wgpu.CreateInstance(nil)
+	if !d.Instance.IsValid() {
 		return d, fmt.Errorf("create WebGPU instance")
 	}
 
 	// CreateSurface bridges the GLFW window to wgpu-native.
-	d.surface = d.instance.CreateSurface(wgpuglfw.GetSurfaceDescriptor(window))
-	if !d.surface.IsValid() {
+	d.Surface = d.Instance.CreateSurface(wgpuglfw.GetSurfaceDescriptor(window))
+	if !d.Surface.IsValid() {
 		return d, fmt.Errorf("create WebGPU surface")
 	}
 
-	if err = d.open(wantGPUTiming, log); err != nil {
+	if err = openDevice(d, wantGPUTiming, log); err != nil {
 		return d, err
 	}
 
-	caps := d.surface.GetCapabilities(d.adapter)
+	caps := d.Surface.GetCapabilities(d.Adapter)
 	format, err := chooseSurfaceFormat(caps.Formats)
 	if err != nil {
 		return d, err
@@ -139,7 +143,7 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 		return d, err
 	}
 
-	d.config = &wgpu.SurfaceConfiguration{
+	d.Config = &wgpu.SurfaceConfiguration{
 		Usage:       wgpu.TextureUsageRenderAttachment,
 		Format:      format,
 		PresentMode: present,
@@ -151,28 +155,28 @@ func newDevice(window *glfw.Window, vsync VSyncMode, wantGPUTiming bool, log *sl
 		"available_present_modes", caps.PresentModes,
 	)
 	fbW, fbH := window.GetFramebufferSize()
-	d.configure(fbW, fbH)
+	d.Configure(fbW, fbH)
 
-	d.adapter.Release()
-	d.adapter = nil
+	d.Adapter.Release()
+	d.Adapter = nil
 
 	return d, nil
 }
 
-// open requests the adapter and the device on d.instance. A nil d.surface asks
+// open requests the adapter and the device on d.Instance. A nil d.Surface asks
 // for any adapter, which is what an offscreen device needs.
-func (d *device) open(wantGPUTiming bool, log *slog.Logger) error {
+func openDevice(d *wgpurender.Device, wantGPUTiming bool, log *slog.Logger) error {
 	var err error
-	d.adapter, err = d.instance.RequestAdapter(&wgpu.RequestAdapterOptions{
-		CompatibleSurface: d.surface,
+	d.Adapter, err = d.Instance.RequestAdapter(&wgpu.RequestAdapterOptions{
+		CompatibleSurface: d.Surface,
 		PowerPreference:   wgpu.PowerPreferenceHighPerformance,
 	})
 	if err != nil {
 		return fmt.Errorf("request WebGPU adapter: %w", err)
 	}
-	info := d.adapter.GetInfo()
-	d.vendorID = info.VendorId
-	d.deviceID = info.DeviceId
+	info := d.Adapter.GetInfo()
+	d.VendorID = info.VendorId
+	d.DeviceID = info.DeviceId
 	log.Info("native WebGPU adapter selected",
 		"backend", info.BackendType,
 		"vendor", info.Vendor,
@@ -197,29 +201,29 @@ func (d *device) open(wantGPUTiming bool, log *slog.Logger) error {
 	// nothing to hold and they are what makes 2x and 8x MSAA reachable at all.
 	// WebGPU guarantees only 1 and 4 samples per format, so without the feature
 	// a game asking for 8x has its pipelines rejected by the driver.
-	limits := d.adapter.GetLimits()
+	limits := d.Adapter.GetLimits()
 	desc := &wgpu.DeviceDescriptor{RequiredLimits: &limits}
-	wantTimestamps := wantGPUTiming && d.adapter.HasFeature(wgpu.FeatureNameTimestampQuery)
+	wantTimestamps := wantGPUTiming && d.Adapter.HasFeature(wgpu.FeatureNameTimestampQuery)
 	if wantTimestamps {
 		desc.RequiredFeatures = append(desc.RequiredFeatures, wgpu.FeatureNameTimestampQuery)
 	}
-	wantFormatFeatures := d.adapter.HasFeature(wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
+	wantFormatFeatures := d.Adapter.HasFeature(wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
 	if wantFormatFeatures {
 		desc.RequiredFeatures = append(desc.RequiredFeatures, wgpu.NativeFeatureTextureAdapterSpecificFormatFeatures)
 	}
-	d.device, err = d.adapter.RequestDevice(desc)
+	d.Device, err = d.Adapter.RequestDevice(desc)
 	requestedAdapterLimits := err == nil
 	if err != nil {
 		log.Warn("request WebGPU device with adapter limits failed, falling back to defaults", "err", err)
 		wantTimestamps = false
 		wantFormatFeatures = false
-		d.device, err = d.adapter.RequestDevice(nil)
+		d.Device, err = d.Adapter.RequestDevice(nil)
 	}
 	if err != nil {
 		return fmt.Errorf("request WebGPU device: %w", err)
 	}
-	d.timestampQuery = wantTimestamps
-	d.formatFeatures = wantFormatFeatures
+	d.TimestampQuery = wantTimestamps
+	d.FormatFeatures = wantFormatFeatures
 	if requestedAdapterLimits {
 		log.Info("native WebGPU device limits requested",
 			"max_storage_buffer_binding_size", limits.MaxStorageBufferBindingSize,
@@ -228,6 +232,6 @@ func (d *device) open(wantGPUTiming bool, log *slog.Logger) error {
 		)
 	}
 
-	d.queue = d.device.GetQueue()
+	d.Queue = d.Device.GetQueue()
 	return nil
 }
