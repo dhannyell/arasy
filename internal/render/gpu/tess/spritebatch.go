@@ -122,3 +122,152 @@ func AppendSpriteAnimRecord(dst []byte, inst render.SpriteInstance, texW, texH i
 	binary.LittleEndian.PutUint32(buf[24:], math.Float32bits(float32(anim.Bounce)))
 	return append(dst, buf[:]...)
 }
+
+// SpriteBatchRange is one consecutive span of batch records sharing a bind
+// target. The array path binds one 2d-array group for every non-missing
+// texture (Texture is zero); the fallback binds per consecutive texture.
+// Missing selects the shared diagnostic placeholder texture (Texture is zero).
+type SpriteBatchRange struct {
+	Texture render.TextureID
+	Missing bool
+	Start   int
+	Count   int
+}
+
+// SpriteBatchPlan is the CPU-side result of packing one retained sprite
+// batch: the 64-byte records to upload once, the optional animation records,
+// consecutive draw ranges, and the metadata needed for culling and
+// accounting. Content is render-only.
+type SpriteBatchPlan struct {
+	Records     []byte
+	Anims       []byte
+	Animated    bool
+	Ranges      []SpriteBatchRange
+	Bounds      math2d.Rect
+	HasBounds   bool
+	MaxBounce   float64
+	HasRotation bool
+	Count       int
+	NonFinite   int
+}
+
+// PlanSpriteBatch packs instances into retained records without reordering:
+// Src is normalized (zero = whole texture), tint and texture layer are
+// packed, and the clip sentinel stays always open (the retained clip is the
+// command's draw-time scissor). Non-finite instances are dropped (counted in
+// NonFinite so the adapter can warn once). Instances whose texture is
+// missing join a diagnostic range with a forced white tint, preserving the
+// streaming placeholder without solid-geometry fallbacks.
+func PlanSpriteBatch(instances []render.SpriteInstance, sizes TexSizes, arrayEnabled bool) SpriteBatchPlan {
+	plan := SpriteBatchPlan{}
+	for i := range instances {
+		if instances[i].Animation != (render.SpriteAnimation{}) {
+			plan.Animated = true
+			break
+		}
+	}
+
+	for i := range instances {
+		inst := instances[i]
+		if !renderbatch.IsFiniteSpriteGeometry(inst) {
+			plan.NonFinite++
+			continue
+		}
+		plan.HasRotation = plan.HasRotation || inst.Rotation != 0
+
+		texW, texH, found := sizes.Lookup(inst.Texture)
+		missing := !found
+		layer := uint32(0)
+		if arrayEnabled && !missing {
+			layer = uint32(inst.Texture - 1)
+		}
+		plan.Records = AppendRetainedSpriteRecord(plan.Records, inst, texW, texH, layer, missing)
+
+		if plan.Animated {
+			plan.Anims = AppendSpriteAnimRecord(plan.Anims, inst, texW, texH)
+		}
+
+		if b := float64(inst.Animation.Bounce); math.Abs(b) > plan.MaxBounce {
+			plan.MaxBounce = math.Abs(b)
+		}
+		if bounds, ok := renderbatch.SpriteBounds(inst); ok {
+			if !plan.HasBounds {
+				plan.Bounds, plan.HasBounds = bounds, true
+			} else {
+				plan.Bounds.Min.X = min(plan.Bounds.Min.X, bounds.Min.X)
+				plan.Bounds.Min.Y = min(plan.Bounds.Min.Y, bounds.Min.Y)
+				plan.Bounds.Max.X = max(plan.Bounds.Max.X, bounds.Max.X)
+				plan.Bounds.Max.Y = max(plan.Bounds.Max.Y, bounds.Max.Y)
+			}
+		}
+
+		texture := inst.Texture
+		if arrayEnabled || missing {
+			texture = 0
+		}
+		if last := len(plan.Ranges) - 1; last >= 0 && plan.Ranges[last].Texture == texture && plan.Ranges[last].Missing == missing {
+			plan.Ranges[last].Count++
+		} else {
+			plan.Ranges = append(plan.Ranges, SpriteBatchRange{Texture: texture, Missing: missing, Start: plan.Count, Count: 1})
+		}
+		plan.Count++
+	}
+	return plan
+}
+
+// SpriteBatchInflatedBounds returns the batch bounds inflated by the
+// command's animation, for whole-batch culling. ok is false when the batch
+// has no finite geometry at all.
+func SpriteBatchInflatedBounds(bounds math2d.Rect, hasBounds bool, maxBounce float64, anim render.SpriteBatchAnimation) (math2d.Rect, bool) {
+	if !hasBounds {
+		return math2d.Rect{}, false
+	}
+	inflation := renderbatch.MaxVerticalInflation(maxBounce, anim)
+	bounds.Min.Y -= inflation
+	bounds.Max.Y += inflation
+	return bounds, true
+}
+
+// SpriteTextureArrayPlan selects the sprite texture resource layout. Reason
+// says why the plan left the array disabled.
+type SpriteTextureArrayPlan struct {
+	Enabled bool
+	Width   int
+	Height  int
+	Layers  int
+	Reason  string
+}
+
+// PlanSpriteTextureArray selects the shared-array resource layout only when
+// at least two decoded textures have identical dimensions and the complete
+// TextureID range fits the device's layer limit. Zero-size entries represent
+// failed decodes and do not prevent valid textures from sharing the array.
+func PlanSpriteTextureArray(sizes TexSizes, maxLayers int) SpriteTextureArrayPlan {
+	layers := len(sizes) - 1
+	if layers <= 1 {
+		return SpriteTextureArrayPlan{Reason: "fewer than two declared textures"}
+	}
+	if maxLayers <= 0 || layers > maxLayers {
+		return SpriteTextureArrayPlan{Reason: "texture count exceeds device layer limit"}
+	}
+
+	width, height, available := 0, 0, 0
+	for _, size := range sizes[1:] {
+		if size[0] <= 0 || size[1] <= 0 {
+			continue
+		}
+		available++
+		if width == 0 {
+			width, height = size[0], size[1]
+			continue
+		}
+		if size[0] != width || size[1] != height {
+			return SpriteTextureArrayPlan{Reason: "texture dimensions differ"}
+		}
+	}
+	if available < 2 {
+		return SpriteTextureArrayPlan{Reason: "fewer than two decoded textures"}
+	}
+
+	return SpriteTextureArrayPlan{Enabled: true, Width: width, Height: height, Layers: layers}
+}

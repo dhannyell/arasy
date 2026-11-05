@@ -71,11 +71,27 @@ type Renderer struct {
 	particles      *gpuParticles
 	textures       []gpuTexture
 	missingTexture gpuTexture
-	texSizes       tess.TexSizes
-	textAtlases    map[tess.AtlasKey]gpuTextAtlas
-	spriteBatches  map[render.SpriteBatchID]*nativeSpriteBatch
-	tess           tess.Builder
-	slug           nativeSlug
+	// spriteArray holds every declared texture when their sizes match, so
+	// sprites of different textures draw in one run.
+	spriteArray          spriteTextureArray
+	spriteArrayBindGroup *wgpu.BindGroup
+	spriteArrayEnabled   bool
+	texSizes             tess.TexSizes
+	textAtlases          map[tess.AtlasKey]gpuTextAtlas
+	spriteBatches        map[render.SpriteBatchID]*nativeSpriteBatch
+	tess                 tess.Builder
+	slug                 nativeSlug
+
+	// Retained text batches. Pass maps are scratch of one frame, except
+	// passTextBatches, which keeps the private copies between frames.
+	textBatches     map[render.TextBatchID]*gpuTextBatch
+	passTextBatches map[passTextBatchKey]*gpuTextBatch
+	passTextIDs     [][]render.TextBatchID
+	passTextResult  map[passTextBatchKey]*gpuTextBatch
+	passTextUsed    map[passTextBatchKey]struct{}
+	passTextPrimary map[render.TextBatchID]int
+	// textBatchRuns is parallel to the frame's runs.
+	textBatchRuns []*gpuTextBatch
 
 	solidPipeline           *wgpu.RenderPipeline
 	texturedPipeline        *wgpu.RenderPipeline
@@ -93,16 +109,25 @@ type Renderer struct {
 	spriteBatchAnimPipelineLayout *wgpu.PipelineLayout
 	spriteBatchAnimPipeline       *wgpu.RenderPipeline
 	targetSpriteBatchAnimPipeline *wgpu.RenderPipeline
-	mipPipeline                   *wgpu.RenderPipeline
-	postSampler                   *wgpu.Sampler
-	postPipelines                 map[string]*wgpu.RenderPipeline
-	postUniforms                  []*wgpu.Buffer
-	postSceneA                    nativePostTarget
-	postSceneB                    nativePostTarget
-	postBloom                     []nativePostTarget
-	postWidth                     int
-	postHeight                    int
-	postDisabled                  bool
+	// Sprite array variants exist only when spriteArrayEnabled.
+	spriteArrayPipelineLayout          *wgpu.PipelineLayout
+	spriteBatchAnimArrayPipelineLayout *wgpu.PipelineLayout
+	spriteArrayPipeline                *wgpu.RenderPipeline
+	spriteArrayAddPipeline             *wgpu.RenderPipeline
+	spriteBatchAnimArrayPipeline       *wgpu.RenderPipeline
+	targetSpriteArrayPipeline          *wgpu.RenderPipeline
+	targetSpriteArrayAddPipeline       *wgpu.RenderPipeline
+	targetSpriteBatchAnimArrayPipeline *wgpu.RenderPipeline
+	mipPipeline                        *wgpu.RenderPipeline
+	postSampler                        *wgpu.Sampler
+	postPipelines                      map[string]*wgpu.RenderPipeline
+	postUniforms                       []*wgpu.Buffer
+	postSceneA                         nativePostTarget
+	postSceneB                         nativePostTarget
+	postBloom                          []nativePostTarget
+	postWidth                          int
+	postHeight                         int
+	postDisabled                       bool
 	// postBindGroups caches one bind group per {pipeline, sampled targets,
 	// uniform slot}; a steady chain creates none per frame. Released whenever
 	// a post target is recreated.
@@ -146,9 +171,16 @@ type Renderer struct {
 	batchAnimUniformSlotSize int
 	batchAnimOffsets         []uint32
 	batchAnimScratch         [tess.SpriteBatchAnimUniformSize]byte
-	tessPassFrames           []tess.Frame
-	passPlans                []nativePassPlan
-	particleGroupOf          []int
+	// spriteBatchRuns is parallel to the frame's runs.
+	spriteBatchRuns []*nativeSpriteBatch
+	// Retained batch accounting of the last frame.
+	frameRetainedContentBytes uint64
+	frameVisibleSprites       int
+	frameVisibleLabels        int
+	frameRetainedDraws        int
+	tessPassFrames            []tess.Frame
+	passPlans                 []nativePassPlan
+	particleGroupOf           []int
 
 	msaaTexture *wgpu.Texture
 	msaaView    *wgpu.TextureView
@@ -221,6 +253,13 @@ func New(
 		fontProvider:  provider,
 		textAtlases:   make(map[tess.AtlasKey]gpuTextAtlas),
 		spriteBatches: make(map[render.SpriteBatchID]*nativeSpriteBatch),
+
+		textBatches:     make(map[render.TextBatchID]*gpuTextBatch),
+		passTextBatches: make(map[passTextBatchKey]*gpuTextBatch),
+		passTextResult:  make(map[passTextBatchKey]*gpuTextBatch),
+		passTextUsed:    make(map[passTextBatchKey]struct{}),
+		passTextPrimary: make(map[render.TextBatchID]int),
+
 		msaaSamples:   msaaSampleCount(msaa, d.FormatFeatures, d.validateMSAASampleCount, log),
 		particleScale: particleScale,
 	}
@@ -249,7 +288,13 @@ func New(
 		return nil, err
 	}
 	resources := renderer.textureResources()
-	renderer.textures, renderer.texSizes = buildTextures(manifest, resources, log)
+	renderer.textures, renderer.texSizes, renderer.spriteArray = buildTextures(manifest, resources, log)
+	if renderer.spriteArray.texture != nil {
+		renderer.spriteArrayEnabled = true
+		if err = renderer.createSpriteArrayPipelines(); err != nil {
+			return nil, err
+		}
+	}
 	renderer.missingTexture, err = buildMissingTexture(resources)
 	if err != nil {
 		return nil, fmt.Errorf("create missing texture placeholder: %w", err)
@@ -441,6 +486,7 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 	if r == nil || r.err != nil {
 		return
 	}
+	r.frameRetainedContentBytes = 0
 	if err := r.textureResources().updateTextures(updates.Textures, r.textures); err != nil {
 		r.recordErr(err)
 		return
@@ -451,7 +497,39 @@ func (r *Renderer) UpdateResources(updates runtime.FrameUpdates) {
 			return
 		}
 	}
-	r.applySlugBatchUpdates(updates.TextBatches)
+	r.applyTextBatchUpdates(updates.TextBatches)
+}
+
+// RetainedBatchMetrics is the retained batch accounting of the last frame.
+type RetainedBatchMetrics struct {
+	GPUBytes       uint64 // bytes of every registered batch, drawn or not
+	ContentBytes   uint64 // bytes uploaded this frame
+	SpritesTotal   int
+	SpritesVisible int // sprites that survive culling
+	LabelsTotal    int
+	LabelsVisible  int
+	Draws          int
+}
+
+// RetainedBatchMetrics returns the accounting of the last rendered frame.
+func (r *Renderer) RetainedBatchMetrics() RetainedBatchMetrics {
+	var m RetainedBatchMetrics
+	for _, batch := range r.spriteBatches {
+		m.GPUBytes += uint64(batch.cap + batch.animCap)
+		m.SpritesTotal += batch.count
+	}
+	for _, batch := range r.textBatches {
+		m.GPUBytes += uint64(batch.glyphCap + batch.labelCap)
+		m.LabelsTotal += len(batch.labels)
+	}
+	for _, batch := range r.passTextBatches {
+		m.GPUBytes += uint64(batch.glyphCap + batch.labelCap)
+	}
+	m.ContentBytes = r.frameRetainedContentBytes
+	m.SpritesVisible = r.frameVisibleSprites
+	m.LabelsVisible = r.frameVisibleLabels
+	m.Draws = r.frameRetainedDraws
+	return m
 }
 
 // Render draws one frame. Errors are retained for Err because FrameRenderer
@@ -500,7 +578,7 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 	}
 	passes := r.resolveFramePasses(frame, width, height)
 
-	r.tess.SetSpriteArray(false)
+	r.tess.SetSpriteArray(r.spriteArrayEnabled)
 	oldFrames := r.tessPassFrames
 	if cap(r.tessPassFrames) < len(passes) {
 		r.tessPassFrames = make([]tess.Frame, len(passes))
@@ -511,6 +589,10 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 	if len(frames) < len(oldFrames) {
 		clear(oldFrames[len(frames):])
 	}
+	if cap(r.passTextIDs) < len(passes) {
+		r.passTextIDs = append(r.passTextIDs[:cap(r.passTextIDs)], make([][]render.TextBatchID, len(passes)-cap(r.passTextIDs))...)
+	}
+	r.passTextIDs = r.passTextIDs[:len(passes)]
 	var base frameplan.Pass
 	for i, pass := range passes {
 		if pass.Base {
@@ -518,8 +600,14 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 		}
 		passWidth, passHeight := pass.Width, pass.Height
 		frames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
+		r.passTextIDs[i] = tess.CollectTextBatchIDs(r.passTextIDs[i], pass.Commands)
+		r.prepTextBatches(r.passTextIDs[i], pass.Camera, passWidth, passHeight)
 	}
 	built := r.tess.BuildPasses(frames, width, height, r.fontProvider, r.texSizes)
+	if err := r.preparePassTextBatches(passes, built); err != nil {
+		r.recordErr(err)
+		return preparedFrame{}, false
+	}
 	oldPlans := r.passPlans
 	if cap(r.passPlans) < len(built) {
 		r.passPlans = make([]nativePassPlan, len(built))
@@ -545,6 +633,8 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 		r.cpuTess = time.Since(phaseStart)
 		phaseStart = time.Now()
 	}
+	r.resolveSpriteBatchRuns(runs, plans)
+	r.resolveTextBatchRuns(runs, plans)
 	uniformOffsets, err := r.prepareSpriteUniformsForPasses(runs, plans)
 	if err != nil {
 		r.recordErr(err)
@@ -562,7 +652,7 @@ func (r *Renderer) prepareFrame(frame runtime.Frame, width, height int) (prepare
 		r.recordErr(err)
 		return preparedFrame{}, false
 	}
-	r.uploadSlug(runs, plans)
+	r.uploadSlug()
 	if r.timeCPU {
 		r.cpuUpload = time.Since(phaseStart)
 	}
@@ -808,12 +898,25 @@ func (r *Renderer) Close() {
 		delete(r.spriteBatches, id)
 	}
 	r.spriteBatches = nil
+	for _, batch := range r.textBatches {
+		batch.release()
+	}
+	r.textBatches = nil
+	for _, batch := range r.passTextBatches {
+		batch.release()
+	}
+	r.passTextBatches = nil
 	for _, texture := range r.textures {
 		texture.release()
 	}
 	r.textures = nil
 	r.missingTexture.release()
 	r.missingTexture = gpuTexture{}
+	if r.spriteArrayBindGroup != nil {
+		r.spriteArrayBindGroup.Release()
+		r.spriteArrayBindGroup = nil
+	}
+	r.spriteArray.release()
 	if r.timing != nil {
 		r.timing.release()
 		r.timing = nil
@@ -853,19 +956,18 @@ func (r *Renderer) Close() {
 	releasePipeline(&r.targetTextGlyphAddPipeline)
 	releasePipeline(&r.spriteBatchAnimPipeline)
 	releasePipeline(&r.targetSpriteBatchAnimPipeline)
+	releasePipeline(&r.spriteArrayPipeline)
+	releasePipeline(&r.spriteArrayAddPipeline)
+	releasePipeline(&r.spriteBatchAnimArrayPipeline)
+	releasePipeline(&r.targetSpriteArrayPipeline)
+	releasePipeline(&r.targetSpriteArrayAddPipeline)
+	releasePipeline(&r.targetSpriteBatchAnimArrayPipeline)
 	releasePipeline(&r.mipPipeline)
-	if r.spriteBatchAnimPipelineLayout != nil {
-		r.spriteBatchAnimPipelineLayout.Release()
-		r.spriteBatchAnimPipelineLayout = nil
-	}
-	if r.spritePipelineLayout != nil {
-		r.spritePipelineLayout.Release()
-		r.spritePipelineLayout = nil
-	}
-	if r.textGlyphPipelineLayout != nil {
-		r.textGlyphPipelineLayout.Release()
-		r.textGlyphPipelineLayout = nil
-	}
+	releasePipelineLayout(&r.spriteBatchAnimPipelineLayout)
+	releasePipelineLayout(&r.spritePipelineLayout)
+	releasePipelineLayout(&r.textGlyphPipelineLayout)
+	releasePipelineLayout(&r.spriteBatchAnimArrayPipelineLayout)
+	releasePipelineLayout(&r.spriteArrayPipelineLayout)
 	for _, pipeline := range r.postPipelines {
 		releasePipeline(&pipeline)
 	}
@@ -893,10 +995,10 @@ func (r *Renderer) Close() {
 
 func (r *Renderer) createPipelines() error {
 	var err error
-	if r.spritePipelineLayout, err = r.createSpritePipelineLayout(); err != nil {
+	if r.spritePipelineLayout, err = r.createSpritePipelineLayout(wgpu.TextureViewDimension2D); err != nil {
 		return err
 	}
-	if r.spriteBatchAnimPipelineLayout, err = r.createSpriteBatchAnimPipelineLayout(); err != nil {
+	if r.spriteBatchAnimPipelineLayout, err = r.createSpriteBatchAnimPipelineLayout(wgpu.TextureViewDimension2D); err != nil {
 		return err
 	}
 	if r.textGlyphPipelineLayout, err = r.createTextGlyphPipelineLayout(); err != nil {
@@ -1051,6 +1153,40 @@ func (r *Renderer) createTargetPipelines() error {
 	return err
 }
 
+// createSpriteArrayPipelines builds the 2d-array variants. It runs after the
+// texture upload because only the texture plan knows that they are necessary.
+func (r *Renderer) createSpriteArrayPipelines() error {
+	var err error
+	if r.spriteArrayPipelineLayout, err = r.createSpritePipelineLayout(wgpu.TextureViewDimension2DArray); err != nil {
+		return err
+	}
+	if r.spriteBatchAnimArrayPipelineLayout, err = r.createSpriteBatchAnimPipelineLayout(wgpu.TextureViewDimension2DArray); err != nil {
+		return err
+	}
+	format := r.device.Config.Format
+	if r.spriteArrayPipeline, err = r.createPipeline("sprite array", shaders.SpriteArrayWGSL, format, r.msaaSamples, nil, premultipliedBlend(), r.spriteArrayPipelineLayout); err != nil {
+		return err
+	}
+	if r.spriteArrayAddPipeline, err = r.createPipeline("sprite array additive", shaders.SpriteArrayWGSL, format, r.msaaSamples, nil, additiveBlend(), r.spriteArrayPipelineLayout); err != nil {
+		return err
+	}
+	if r.spriteBatchAnimArrayPipeline, err = r.createPipeline("sprite batch animated array", shaders.SpriteBatchAnimArrayWGSL, format, r.msaaSamples, nil, premultipliedBlend(), r.spriteBatchAnimArrayPipelineLayout); err != nil {
+		return err
+	}
+	if !manifestHasDynamicTextures(r.manifest) {
+		return nil
+	}
+	format = wgpu.TextureFormatRGBA8Unorm
+	if r.targetSpriteArrayPipeline, err = r.createPipeline("target sprite array", shaders.SpriteArrayWGSL, format, 1, nil, premultipliedBlend(), r.spriteArrayPipelineLayout); err != nil {
+		return err
+	}
+	if r.targetSpriteArrayAddPipeline, err = r.createPipeline("target sprite array additive", shaders.SpriteArrayWGSL, format, 1, nil, additiveBlend(), r.spriteArrayPipelineLayout); err != nil {
+		return err
+	}
+	r.targetSpriteBatchAnimArrayPipeline, err = r.createPipeline("target sprite batch animated array", shaders.SpriteBatchAnimArrayWGSL, format, 1, nil, premultipliedBlend(), r.spriteBatchAnimArrayPipelineLayout)
+	return err
+}
+
 func manifestHasDynamicTextures(manifest asset.Manifest) bool {
 	for _, texture := range manifest.Textures() {
 		if texture.Dynamic {
@@ -1060,11 +1196,11 @@ func manifestHasDynamicTextures(manifest asset.Manifest) bool {
 	return false
 }
 
-func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
+func (r *Renderer) createSpritePipelineLayout(dimension wgpu.TextureViewDimension) (*wgpu.PipelineLayout, error) {
 	layout, err := r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
-				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
+				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: dimension,
 			}},
 			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: wgpu.SamplerBindingLayout{
 				Type: wgpu.SamplerBindingTypeFiltering,
@@ -1090,11 +1226,11 @@ func (r *Renderer) createSpritePipelineLayout() (*wgpu.PipelineLayout, error) {
 	return pipelineLayout, nil
 }
 
-func (r *Renderer) createSpriteBatchAnimPipelineLayout() (*wgpu.PipelineLayout, error) {
+func (r *Renderer) createSpriteBatchAnimPipelineLayout(dimension wgpu.TextureViewDimension) (*wgpu.PipelineLayout, error) {
 	layout, err := r.device.Device.TryCreateBindGroupLayout(&wgpu.BindGroupLayoutDescriptor{
 		Entries: []wgpu.BindGroupLayoutEntry{
 			{Binding: 0, Visibility: wgpu.ShaderStageFragment, Texture: wgpu.TextureBindingLayout{
-				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: wgpu.TextureViewDimension2D,
+				SampleType: wgpu.TextureSampleTypeFloat, ViewDimension: dimension,
 			}},
 			{Binding: 1, Visibility: wgpu.ShaderStageFragment, Sampler: wgpu.SamplerBindingLayout{
 				Type: wgpu.SamplerBindingTypeFiltering,
@@ -1307,13 +1443,14 @@ func (r *Renderer) ensureSpriteUniformCapacity(required int) error {
 	}
 	old := r.spriteUniform
 	r.spriteUniform, r.spriteUniformCap = buffer, next
-	if old != nil {
-		old.Release()
-	}
+	releaseBuffer(&old)
 	if err := r.rebuildSpriteBindGroups(); err != nil {
 		return err
 	}
 	if err := r.rebuildTextGlyphBindGroups(); err != nil {
+		return err
+	}
+	if err := r.rebuildRetainedTextBindGroups(); err != nil {
 		return err
 	}
 	if err := r.rebuildSlugBindGroup(); err != nil {
@@ -1345,9 +1482,7 @@ func (r *Renderer) ensureBatchAnimUniformCapacity(required int) error {
 	}
 	old := r.batchAnimUniform
 	r.batchAnimUniform, r.batchAnimUniformCap = buffer, next
-	if old != nil {
-		old.Release()
-	}
+	releaseBuffer(&old)
 	for _, batch := range r.spriteBatches {
 		if !batch.animated {
 			continue
@@ -1479,11 +1614,8 @@ func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans [
 	}
 	clear(r.batchAnimOffsets)
 	required := 0
-	for _, run := range runs {
-		if run.Kind != tess.DrawRunSpriteBatch {
-			continue
-		}
-		if batch := r.spriteBatches[run.SpriteBatch.Batch]; batch != nil && batch.animated {
+	for _, batch := range r.spriteBatchRuns {
+		if batch != nil && batch.animated {
 			required++
 		}
 	}
@@ -1495,10 +1627,7 @@ func (r *Renderer) prepareSpriteBatchAnimUniforms(runs []tess.StreamRun, plans [
 	}
 	slot := 0
 	for index, run := range runs {
-		if run.Kind != tess.DrawRunSpriteBatch {
-			continue
-		}
-		batch := r.spriteBatches[run.SpriteBatch.Batch]
+		batch := r.spriteBatchRuns[index]
 		if batch == nil || !batch.animated {
 			continue
 		}
@@ -1595,21 +1724,19 @@ func (r *Renderer) growBuffer(
 	if err != nil {
 		return nil, 0, err
 	}
-	if buffer != nil {
-		buffer.Release()
-	}
+	releaseBuffer(&buffer)
 	return replacement, next, nil
 }
 
 func (r *Renderer) rebuildSpriteBindGroups() error {
+	if r.spriteArrayEnabled {
+		return r.rebuildSpriteArrayBindGroup()
+	}
 	layout := r.spritePipeline.GetBindGroupLayout(0)
 	defer layout.Release()
 	for i := range r.textures {
 		texture := &r.textures[i]
-		view := texture.view
-		if texture.rtt {
-			view = texture.targetView
-		}
+		view := nativeTextureSampleView(*texture)
 		if view == nil {
 			continue
 		}
@@ -1634,6 +1761,29 @@ func (r *Renderer) rebuildSpriteBindGroups() error {
 	return nil
 }
 
+func (r *Renderer) rebuildSpriteArrayBindGroup() error {
+	layout := r.spriteArrayPipeline.GetBindGroupLayout(0)
+	defer layout.Release()
+	bindGroup, err := r.device.Device.TryCreateBindGroup(&wgpu.BindGroupDescriptor{
+		Label:  "Arasy sprite array bind group",
+		Layout: layout,
+		Entries: []wgpu.BindGroupEntry{
+			{Binding: 0, TextureView: r.spriteArray.view},
+			{Binding: 1, Sampler: r.textureSampler},
+			{Binding: 2, Buffer: r.spriteBuffer, Size: wgpu.WholeSize},
+			{Binding: 3, Buffer: r.spriteUniform, Size: tess.SpriteUniformSize},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("create sprite array bind group: %w", err)
+	}
+	if r.spriteArrayBindGroup != nil {
+		r.spriteArrayBindGroup.Release()
+	}
+	r.spriteArrayBindGroup = bindGroup
+	return nil
+}
+
 func (r *Renderer) activateRenderTarget(id render.TextureID) error {
 	if id == 0 || int(id) >= len(r.textures) {
 		return fmt.Errorf("texture %d is unavailable", id)
@@ -1641,6 +1791,9 @@ func (r *Renderer) activateRenderTarget(id render.TextureID) error {
 	texture := &r.textures[id]
 	if texture.rtt {
 		return nil
+	}
+	if texture.dynamic && texture.arrayLayer >= 0 {
+		return r.activateLayerTarget(id, texture)
 	}
 	if !texture.dynamic || texture.targetView == nil {
 		return fmt.Errorf("texture %d has no dynamic target view", id)
@@ -1678,10 +1831,40 @@ func (r *Renderer) activateRenderTarget(id render.TextureID) error {
 	return nil
 }
 
+// activateLayerTarget gives an array layer its own single-mip attachment, so a
+// target pass never writes a resource that its bind groups sample. The layer
+// keeps its views; encodeTargetPass copies the result into it.
+func (r *Renderer) activateLayerTarget(id render.TextureID, texture *gpuTexture) error {
+	width, height, ok := r.texSizes.Lookup(id)
+	if !ok {
+		return fmt.Errorf("texture %d has no size", id)
+	}
+	target, err := r.device.Device.TryCreateTexture(&wgpu.TextureDescriptor{
+		Label:         "Arasy sprite array layer target",
+		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopySrc | wgpu.TextureUsageCopyDst | wgpu.TextureUsageRenderAttachment,
+		Dimension:     wgpu.TextureDimension2D,
+		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		return fmt.Errorf("create layer target: %w", err)
+	}
+	view, err := target.TryCreateView(nil)
+	if err != nil {
+		target.Destroy()
+		target.Release()
+		return fmt.Errorf("create layer target view: %w", err)
+	}
+	texture.targetTexture, texture.targetView, texture.rtt = target, view, true
+	return nil
+}
+
 func (r *Renderer) rebuildTextGlyphBindGroups() error {
 	resources := r.textAtlasResources()
 	for key, atlas := range r.textAtlases {
-		bindGroup, err := resources.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer)
+		bindGroup, err := resources.createTextGlyphBindGroup(atlas.view, atlas.sampler, atlas.metricBuffer, r.textGlyphBuffer, r.textLabelBuffer)
 		if err != nil {
 			return err
 		}
@@ -1901,11 +2084,24 @@ func (r *Renderer) encodeTargetPass(encoder *wgpu.CommandEncoder, passIndex int,
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, true, plan.width, plan.height), &scissor, plan.width, plan.height, -1, true, false, &last); err != nil {
 			return err
 		}
 	}
-	return pass.TryEnd()
+	if err := pass.TryEnd(); err != nil {
+		return err
+	}
+	if target.arrayLayer < 0 {
+		return nil
+	}
+	if err := encoder.TryCopyTextureToTexture(
+		&wgpu.TexelCopyTextureInfo{Texture: target.targetTexture, Aspect: wgpu.TextureAspectAll},
+		&wgpu.TexelCopyTextureInfo{Texture: target.texture, Origin: wgpu.Origin3D{Z: uint32(target.arrayLayer)}, Aspect: wgpu.TextureAspectAll},
+		&wgpu.Extent3D{Width: uint32(plan.width), Height: uint32(plan.height), DepthOrArrayLayers: 1},
+	); err != nil {
+		return fmt.Errorf("copy render target to array layer: %w", err)
+	}
+	return r.textureResources().encodeMipmaps(encoder, target.texture, target.mipLevels, target.arrayLayer)
 }
 
 func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex int, plan nativePassPlan, runs []tess.StreamRun, uniformOffsets []uint32, groupOf []int, offscreenParticles bool) error {
@@ -1916,7 +2112,7 @@ func (r *Renderer) drawScreenPassRuns(pass *wgpu.RenderPassEncoder, passIndex in
 			continue
 		}
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
-		if err := r.drawRun(pass, run, uniformOffsets[index], r.batchAnimOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
+		if err := r.drawRun(pass, run, index, uniformOffsets[index], effective, nativePassViewport(plan.camera, plan.extra, plan.width, plan.height), &scissor, plan.width, plan.height, groupOf[index], false, offscreenParticles, &last); err != nil {
 			return err
 		}
 	}
@@ -1957,6 +2153,13 @@ func nativePassViewport(camera render.Camera, extra bool, width, height int) mat
 type nativeScissorState struct {
 	x, y, width, height uint32
 	set                 bool
+}
+
+// applyClipScissor sets the scissor for clip and reports if any area remains.
+func applyClipScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, clip math2d.Rect, camera render.Camera, viewport math2d.Rect, width, height int) bool {
+	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(clip, camera, viewport, 1, width, height)
+	setNativeScissor(pass, state, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	return visible
 }
 
 func setNativeScissor(pass *wgpu.RenderPassEncoder, state *nativeScissorState, x, y, width, height uint32) {
@@ -2021,8 +2224,8 @@ func (r *Renderer) encodeParticleOffscreen(
 func (r *Renderer) drawRun(
 	pass *wgpu.RenderPassEncoder,
 	run tess.StreamRun,
+	runIndex int,
 	uniformOffset uint32,
-	batchAnimOffset uint32,
 	camera render.Camera,
 	viewport math2d.Rect,
 	scissor *nativeScissorState,
@@ -2032,9 +2235,7 @@ func (r *Renderer) drawRun(
 	offscreenParticles bool,
 	lastComposited *int,
 ) error {
-	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
-	setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
-	if !visible {
+	if !applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height) {
 		return nil
 	}
 	additive := run.Blend == render.BlendAdditive
@@ -2062,16 +2263,16 @@ func (r *Renderer) drawRun(
 		pass.SetVertexBuffer(0, r.texBuffer, 0, uint64(r.texCap))
 		pass.Draw(uint32(run.VertexCount), 1, uint32(run.ByteOffset/tess.TexVertexStride), 0)
 	case tess.DrawRunSprites:
-		texture, ok := textureFor(r.textures, run.Texture)
-		if !ok || texture.spriteBindGroup == nil {
-			return nil
+		bindGroup := r.spriteArrayBindGroup
+		if !r.spriteArrayEnabled {
+			texture, ok := textureFor(r.textures, run.Texture)
+			if !ok || texture.spriteBindGroup == nil {
+				return nil
+			}
+			bindGroup = texture.spriteBindGroup
 		}
-		if renderTarget {
-			pass.SetPipeline(pick(additive, r.targetSpriteAddPipeline, r.targetSpritePipeline))
-		} else {
-			pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
-		}
-		pass.SetBindGroup(0, texture.spriteBindGroup, []uint32{uniformOffset})
+		pass.SetPipeline(r.spritePipelineFor(r.spriteArrayEnabled, additive, renderTarget))
+		pass.SetBindGroup(0, bindGroup, []uint32{uniformOffset})
 		pass.Draw(uint32(run.VertexCount*6), 1, uint32(run.ByteOffset/tess.SpriteStride*6), 0)
 	case tess.DrawRunText:
 		atlas, ok, err := r.textAtlasResources().textAtlasFor(r.textAtlases, r.fontProvider, run.AtlasKey)
@@ -2119,45 +2320,59 @@ func (r *Renderer) drawRun(
 		pass.SetBindGroup(0, r.particleTargets[group].bindGroup, nil)
 		pass.Draw(3, 1, 0, 0)
 	case tess.DrawRunSpriteBatch:
-		batch, ok := r.spriteBatches[run.SpriteBatch.Batch]
-		if !ok {
-			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(run.SpriteBatch.Batch)},
-				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
+		batch := r.spriteBatchRuns[runIndex]
+		if batch == nil {
 			return nil
 		}
-		if batch.count == 0 {
-			return nil
-		}
-		x, y, sw, sh, visible := particlegpu.ScissorRectWithin(run.SpriteBatch.Clip, camera, viewport, 1, width, height)
-		setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
-		if visible {
-			for _, rg := range batch.ranges {
-				if rg.bindGroup == nil || rg.count == 0 {
+		if applyClipScissor(pass, scissor, run.SpriteBatch.Clip, camera, viewport, width, height) {
+			for i, rg := range batch.ranges {
+				if batch.bindGroups[i] == nil || rg.Count == 0 {
 					continue
 				}
+				array := r.spriteArrayEnabled && !rg.Missing
 				if batch.animated {
 					// The animated pipeline has no additive variant, matching
 					// the wasm backend.
-					pass.SetPipeline(pick(renderTarget, r.targetSpriteBatchAnimPipeline, r.spriteBatchAnimPipeline))
-					pass.SetBindGroup(0, rg.bindGroup, []uint32{batchAnimOffset})
+					pass.SetPipeline(r.spriteBatchAnimPipelineFor(array, renderTarget))
+					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{r.batchAnimOffsets[runIndex]})
 				} else {
-					if renderTarget {
-						pass.SetPipeline(pick(additive, r.targetSpriteAddPipeline, r.targetSpritePipeline))
-					} else {
-						pass.SetPipeline(pick(additive, r.spriteAddPipeline, r.spritePipeline))
-					}
-					pass.SetBindGroup(0, rg.bindGroup, []uint32{uniformOffset})
+					pass.SetPipeline(r.spritePipelineFor(array, additive, renderTarget))
+					pass.SetBindGroup(0, batch.bindGroups[i], []uint32{uniformOffset})
 				}
-				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
+				pass.Draw(uint32(rg.Count*6), 1, uint32(rg.Start*6), 0)
 			}
 		}
 		if run.SpriteBatch.Clip.Width() > 0 && run.SpriteBatch.Clip.Height() > 0 {
-			x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
-			setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+			applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height)
 		}
 	case tess.DrawRunTextBatch:
-		r.drawSlugBatch(pass, run, uniformOffset, camera, viewport, scissor, width, height, renderTarget)
+		batch := r.textBatchRuns[runIndex]
+		if batch == nil {
+			return nil
+		}
+		if applyClipScissor(pass, scissor, run.TextBatch.Clip, camera, viewport, width, height) {
+			glyphPipeline := pick(additive, r.textGlyphAddPipeline, r.textGlyphPipeline)
+			slugPipeline := pick(additive, r.slug.mainAdd, r.slug.main)
+			if renderTarget {
+				glyphPipeline = pick(additive, r.targetTextGlyphAddPipeline, r.targetTextGlyphPipeline)
+				slugPipeline = pick(additive, r.slug.targetAdd, r.slug.target)
+			}
+			for _, rg := range batch.ranges {
+				bindGroup, pipeline := rg.bindGroup, glyphPipeline
+				if rg.slug {
+					bindGroup, pipeline = batch.slugBindGroup, slugPipeline
+				}
+				if bindGroup == nil {
+					continue
+				}
+				pass.SetPipeline(pipeline)
+				pass.SetBindGroup(0, bindGroup, []uint32{uniformOffset})
+				pass.Draw(uint32(rg.count*6), 1, uint32(rg.start*6), 0)
+			}
+		}
+		if run.TextBatch.Clip.Width() > 0 && run.TextBatch.Clip.Height() > 0 {
+			applyClipScissor(pass, scissor, math2d.Rect{}, camera, viewport, width, height)
+		}
 	}
 	return nil
 }
@@ -2318,6 +2533,13 @@ func releaseTextureView(view **wgpu.TextureView) {
 	if *view != nil {
 		(*view).Release()
 		*view = nil
+	}
+}
+
+func releasePipelineLayout(layout **wgpu.PipelineLayout) {
+	if *layout != nil {
+		(*layout).Release()
+		*layout = nil
 	}
 }
 

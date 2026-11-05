@@ -189,7 +189,7 @@ authoritative, evolving version):
 | `platform/raster` | Software renderer to `image.RGBA`; the semantic reference every other backend is compared against. |
 | `platform/wasm` (WebGPU) | Default web backend; full parity with the reference. |
 | `platform/wasm` (Canvas2D) | Fallback web backend; approximates quads with an affine grid and caps retained sprite/label batch sizes (dev-only limits). |
-| `platform/native` | wgpu-native + GLFW host; static retained sprite batches use persistent GPU records. Retained text batches draw only `GlyphSlug` labels and need `Options.GlyphOutlines`. Animated sprite batches remain unsupported. |
+| `platform/native` | wgpu-native + GLFW host; retained sprite and text batches use persistent GPU records. `GlyphSlug` labels need `Options.GlyphOutlines`; without it they use the glyph atlas. |
 
 ## Future extensions
 

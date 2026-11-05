@@ -9,21 +9,11 @@ import (
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/internal/renderbatch"
+	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
 )
-
-// nativeSpriteBatchRange keeps a consecutive span of records that shares one
-// texture. The ranges preserve painter order when a batch uses more than one
-// texture.
-type nativeSpriteBatchRange struct {
-	texture   render.TextureID
-	missing   bool
-	start     int
-	count     int
-	bindGroup *wgpu.BindGroup
-}
 
 // nativeSpriteBatch stores the GPU records published by one retained batch.
 // animated batches carry a parallel animation-record buffer and bind the
@@ -31,73 +21,38 @@ type nativeSpriteBatchRange struct {
 type nativeSpriteBatch struct {
 	buffer     *wgpu.Buffer
 	animBuffer *wgpu.Buffer
-	animated   bool
-	ranges     []nativeSpriteBatchRange
+	// cap and animCap are the buffer sizes in bytes. A replace that fits reuses
+	// the buffers, so a batch of steady size allocates no GPU memory.
+	cap      int
+	animCap  int
+	animated bool
+	ranges   []tess.SpriteBatchRange
+	// bindGroups runs parallel to ranges. A nil entry skips its range.
+	bindGroups []*wgpu.BindGroup
 	count      int
+	// bounds, maxBounce and hasRotation let a frame cull the whole batch.
+	bounds      math2d.Rect
+	hasBounds   bool
+	maxBounce   float64
+	hasRotation bool
 }
 
 func (b *nativeSpriteBatch) release() {
 	if b == nil {
 		return
 	}
-	for i := range b.ranges {
-		if b.ranges[i].bindGroup != nil {
-			b.ranges[i].bindGroup.Release()
-			b.ranges[i].bindGroup = nil
-		}
-	}
+	b.releaseBindGroups()
 	releaseBuffer(&b.animBuffer)
 	releaseBuffer(&b.buffer)
 }
 
-type nativeSpriteBatchPlan struct {
-	records   []byte
-	anims     []byte
-	animated  bool
-	ranges    []nativeSpriteBatchRange
-	count     int
-	nonFinite int
-}
-
-// planNativeSpriteBatch serializes static retained records without reordering
-// them. Each texture change starts a new draw range because native WebGPU
-// binds one texture view per draw. One animated instance switches the whole
-// batch to the animated pipeline, so every record gets an animation record.
-func planNativeSpriteBatch(instances []render.SpriteInstance, sizes tess.TexSizes) nativeSpriteBatchPlan {
-	var plan nativeSpriteBatchPlan
-	for _, inst := range instances {
-		if inst.Animation != (render.SpriteAnimation{}) {
-			plan.animated = true
-			break
+func (b *nativeSpriteBatch) releaseBindGroups() {
+	for i, bindGroup := range b.bindGroups {
+		if bindGroup != nil {
+			bindGroup.Release()
+			b.bindGroups[i] = nil
 		}
 	}
-	for _, inst := range instances {
-		if !renderbatch.IsFiniteSpriteGeometry(inst) {
-			plan.nonFinite++
-			continue
-		}
-		texW, texH, found := sizes.Lookup(inst.Texture)
-		plan.records = tess.AppendRetainedSpriteRecord(plan.records, inst, texW, texH, 0, !found)
-		if plan.animated {
-			plan.anims = tess.AppendSpriteAnimRecord(plan.anims, inst, texW, texH)
-		}
-		texture := inst.Texture
-		if !found {
-			texture = 0
-		}
-		if len(plan.ranges) == 0 || plan.ranges[len(plan.ranges)-1].texture != texture || plan.ranges[len(plan.ranges)-1].missing != !found {
-			plan.ranges = append(plan.ranges, nativeSpriteBatchRange{
-				texture: texture,
-				missing: !found,
-				start:   plan.count,
-				count:   1,
-			})
-		} else {
-			plan.ranges[len(plan.ranges)-1].count++
-		}
-		plan.count++
-	}
-	return plan
 }
 
 func (r *Renderer) applySpriteBatchUpdates(updates []runtime.SpriteBatchUpdate) error {
@@ -117,57 +72,64 @@ func (r *Renderer) replaceSpriteBatch(id render.SpriteBatchID, instances []rende
 	if r.spriteBatches == nil {
 		r.spriteBatches = make(map[render.SpriteBatchID]*nativeSpriteBatch)
 	}
-	plan := planNativeSpriteBatch(instances, r.texSizes)
-	if plan.nonFinite > 0 {
+	plan := tess.PlanSpriteBatch(instances, r.texSizes, r.spriteArrayEnabled)
+	if plan.NonFinite > 0 {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
 			diagnostic.Key{Code: "native-sprite-batch-non-finite", ID: uint64(id)},
-			"native: sprite batch replace dropped non-finite instances", "dropped", plan.nonFinite)
+			"native: sprite batch replace dropped non-finite instances", "dropped", plan.NonFinite)
 	}
-	batch := &nativeSpriteBatch{count: plan.count, ranges: plan.ranges, animated: plan.animated}
-	if len(plan.records) > 0 {
-		var err error
-		batch.buffer, err = r.newBuffer(
-			"retained sprite batch",
-			len(plan.records),
-			wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
-		)
+	old := r.spriteBatches[id]
+	if plan.Count == 0 {
+		// An empty replace keeps an empty batch; only a delete removes it.
+		old.release()
+		r.spriteBatches[id] = &nativeSpriteBatch{}
+		return nil
+	}
+	batch := &nativeSpriteBatch{
+		count:       plan.Count,
+		ranges:      plan.Ranges,
+		animated:    plan.Animated,
+		bounds:      plan.Bounds,
+		hasBounds:   plan.HasBounds,
+		maxBounce:   plan.MaxBounce,
+		hasRotation: plan.HasRotation,
+	}
+	if old != nil && old.animated == plan.Animated && old.cap >= len(plan.Records) && old.animCap >= len(plan.Anims) {
+		batch.buffer, batch.cap, batch.animBuffer, batch.animCap = old.buffer, old.cap, old.animBuffer, old.animCap
+		old.buffer, old.animBuffer = nil, nil
+	}
+	var err error
+	if batch.buffer == nil {
+		batch.cap = len(plan.Records)
+		batch.buffer, err = r.newBuffer("retained sprite batch", batch.cap, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
 		if err != nil {
 			return err
 		}
-		if err := r.device.Queue.TryWriteBuffer(batch.buffer, 0, plan.records); err != nil {
-			batch.release()
-			return fmt.Errorf("upload retained sprite batch: %w", err)
-		}
-		if batch.animated {
-			batch.animBuffer, err = r.newBuffer(
-				"retained sprite batch animations",
-				len(plan.anims),
-				wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst,
-			)
-			if err != nil {
-				batch.release()
-				return err
-			}
-			if err := r.device.Queue.TryWriteBuffer(batch.animBuffer, 0, plan.anims); err != nil {
-				batch.release()
-				return fmt.Errorf("upload retained sprite batch animations: %w", err)
-			}
-		}
-		for i := range batch.ranges {
-			texture, ok := r.spriteBatchTexture(batch.ranges[i])
-			if !ok || nativeTextureSampleView(texture) == nil {
-				continue
-			}
-			bindGroup, err := r.createSpriteBatchBindGroup(nativeTextureSampleView(texture), batch)
-			if err != nil {
-				batch.release()
-				return err
-			}
-			batch.ranges[i].bindGroup = bindGroup
-		}
 	}
-
-	old := r.spriteBatches[id]
+	if err := r.device.Queue.TryWriteBuffer(batch.buffer, 0, plan.Records); err != nil {
+		batch.release()
+		return fmt.Errorf("upload retained sprite batch: %w", err)
+	}
+	r.frameRetainedContentBytes += uint64(len(plan.Records))
+	if plan.Animated {
+		if batch.animBuffer == nil {
+			batch.animCap = len(plan.Anims)
+			batch.animBuffer, err = r.newBuffer("retained sprite batch animations", batch.animCap, wgpu.BufferUsageStorage|wgpu.BufferUsageCopyDst)
+			if err != nil {
+				batch.release()
+				return err
+			}
+		}
+		if err := r.device.Queue.TryWriteBuffer(batch.animBuffer, 0, plan.Anims); err != nil {
+			batch.release()
+			return fmt.Errorf("upload retained sprite batch animations: %w", err)
+		}
+		r.frameRetainedContentBytes += uint64(len(plan.Anims))
+	}
+	if err := r.rebuildSpriteBatchBindGroups(batch); err != nil {
+		batch.release()
+		return err
+	}
 	r.spriteBatches[id] = batch
 	old.release()
 	return nil
@@ -179,13 +141,55 @@ func (r *Renderer) deleteSpriteBatch(id render.SpriteBatchID) {
 	batch.release()
 }
 
+// resolveSpriteBatchRuns fills spriteBatchRuns with the batch each run draws.
+// A nil entry skips the run: its batch is missing, empty or out of view. Each
+// run uses the camera of its own pass.
+func (r *Renderer) resolveSpriteBatchRuns(runs []tess.StreamRun, plans []nativePassPlan) {
+	if cap(r.spriteBatchRuns) < len(runs) {
+		r.spriteBatchRuns = make([]*nativeSpriteBatch, len(runs))
+	} else {
+		r.spriteBatchRuns = r.spriteBatchRuns[:len(runs)]
+		clear(r.spriteBatchRuns)
+	}
+	r.frameVisibleSprites, r.frameRetainedDraws = 0, 0
+	for index, run := range runs {
+		if run.Kind != tess.DrawRunSpriteBatch {
+			continue
+		}
+		cmd := run.SpriteBatch
+		batch, ok := r.spriteBatches[cmd.Batch]
+		if !ok {
+			r.diagnostics.Log(r.log, slog.LevelWarn,
+				diagnostic.Key{Code: "native-sprite-batch-missing", ID: uint64(cmd.Batch)},
+				"native: DrawSpriteBatch references a missing or deleted batch; command skipped")
+			continue
+		}
+		if batch.count == 0 {
+			continue
+		}
+		plan := plans[run.Pass]
+		camera := tess.CameraForLayer(plan.camera, plan.layerCameras, run.Layer)
+		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(camera)
+		if view, ok := renderbatch.BatchView(camera, cmd.Clip); ok && canCull {
+			bounds, boundsOK := tess.SpriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
+			bounds = renderbatch.BoundsForView(bounds, camera.View)
+			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
+				continue
+			}
+		}
+		r.spriteBatchRuns[index] = batch
+		r.frameVisibleSprites += batch.count
+		r.frameRetainedDraws += len(batch.ranges)
+	}
+}
+
 // createSpriteBatchBindGroup binds one draw range. Animated batches bind the
 // animated pipeline's layout: the per-draw animation uniform slot plus the
 // batch's animation records at binding 4.
-func (r *Renderer) createSpriteBatchBindGroup(view *wgpu.TextureView, batch *nativeSpriteBatch) (*wgpu.BindGroup, error) {
-	pipeline := r.spritePipeline
+func (r *Renderer) createSpriteBatchBindGroup(view *wgpu.TextureView, batch *nativeSpriteBatch, array bool) (*wgpu.BindGroup, error) {
+	pipeline := r.spritePipelineFor(array, false, false)
 	if batch.animated {
-		pipeline = r.spriteBatchAnimPipeline
+		pipeline = r.spriteBatchAnimPipelineFor(array, false)
 	}
 	layout := pipeline.GetBindGroupLayout(0)
 	defer layout.Release()
@@ -214,33 +218,70 @@ func (r *Renderer) rebuildSpriteBatchBindGroups(batch *nativeSpriteBatch) error 
 	if batch == nil {
 		return nil
 	}
-	for i := range batch.ranges {
-		if batch.ranges[i].bindGroup != nil {
-			batch.ranges[i].bindGroup.Release()
-			batch.ranges[i].bindGroup = nil
-		}
-		texture, ok := r.spriteBatchTexture(batch.ranges[i])
-		if !ok || nativeTextureSampleView(texture) == nil {
+	batch.releaseBindGroups()
+	if len(batch.bindGroups) != len(batch.ranges) {
+		batch.bindGroups = make([]*wgpu.BindGroup, len(batch.ranges))
+	}
+	for i, rg := range batch.ranges {
+		view := r.spriteBatchRangeView(rg)
+		if view == nil {
 			continue
 		}
-		bindGroup, err := r.createSpriteBatchBindGroup(nativeTextureSampleView(texture), batch)
+		bindGroup, err := r.createSpriteBatchBindGroup(view, batch, r.spriteArrayEnabled && !rg.Missing)
 		if err != nil {
 			return err
 		}
-		batch.ranges[i].bindGroup = bindGroup
+		batch.bindGroups[i] = bindGroup
 	}
 	return nil
 }
 
-func (r *Renderer) spriteBatchTexture(rg nativeSpriteBatchRange) (gpuTexture, bool) {
-	if rg.missing {
-		return r.missingTexture, nativeTextureSampleView(r.missingTexture) != nil
+// spriteBatchRangeView returns the view a range samples, or nil when the
+// texture is unavailable. A missing texture never uses the array: its
+// placeholder has its own size.
+func (r *Renderer) spriteBatchRangeView(rg tess.SpriteBatchRange) *wgpu.TextureView {
+	if rg.Missing {
+		return nativeTextureSampleView(r.missingTexture)
 	}
-	return textureFor(r.textures, rg.texture)
+	if r.spriteArrayEnabled {
+		return r.spriteArray.view
+	}
+	texture, ok := textureFor(r.textures, rg.Texture)
+	if !ok {
+		return nil
+	}
+	return nativeTextureSampleView(texture)
+}
+
+// spritePipelineFor selects the sprite pipeline of one draw.
+func (r *Renderer) spritePipelineFor(array, additive, target bool) *wgpu.RenderPipeline {
+	switch {
+	case array && target:
+		return pick(additive, r.targetSpriteArrayAddPipeline, r.targetSpriteArrayPipeline)
+	case array:
+		return pick(additive, r.spriteArrayAddPipeline, r.spriteArrayPipeline)
+	case target:
+		return pick(additive, r.targetSpriteAddPipeline, r.targetSpritePipeline)
+	}
+	return pick(additive, r.spriteAddPipeline, r.spritePipeline)
+}
+
+// spriteBatchAnimPipelineFor selects the animated batch pipeline of one draw.
+// It has no additive variant.
+func (r *Renderer) spriteBatchAnimPipelineFor(array, target bool) *wgpu.RenderPipeline {
+	switch {
+	case array && target:
+		return r.targetSpriteBatchAnimArrayPipeline
+	case array:
+		return r.spriteBatchAnimArrayPipeline
+	case target:
+		return r.targetSpriteBatchAnimPipeline
+	}
+	return r.spriteBatchAnimPipeline
 }
 
 func nativeTextureSampleView(texture gpuTexture) *wgpu.TextureView {
-	if texture.rtt {
+	if texture.rtt && texture.arrayLayer < 0 {
 		return texture.targetView
 	}
 	return texture.view

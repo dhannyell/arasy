@@ -8,12 +8,9 @@ import (
 
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	gpubuffer "github.com/dhannyell/arasy/internal/render/gpu/buffer"
-	"github.com/dhannyell/arasy/internal/render/gpu/particlegpu"
 	"github.com/dhannyell/arasy/internal/render/gpu/tess"
 	"github.com/dhannyell/arasy/internal/render/slugcore"
-	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
-	"github.com/dhannyell/arasy/runtime"
 	"github.com/dhannyell/webgpu/wgpu"
 )
 
@@ -33,45 +30,6 @@ type nativeSlug struct {
 	main, mainAdd, target, targetAdd *wgpu.RenderPipeline
 	curves, bands, layers, instances slugStorage
 	bindGroup                        *wgpu.BindGroup
-
-	batches map[render.TextBatchID]*nativeSlugContent
-	drawn   map[slugBatchKey]*nativeSlugBatch
-}
-
-// nativeSlugContent is the content of a retained text batch. The native host draws
-// only its Slug labels.
-type nativeSlugContent struct {
-	labels   []render.TextLabel
-	revision uint64
-}
-
-// slugBatchKey has the pass, because each pass of a frame has its own camera.
-type slugBatchKey struct {
-	pass int
-	id   render.TextBatchID
-}
-
-// nativeSlugBatch holds the Slug records of a retained text batch in one pass.
-type nativeSlugBatch struct {
-	revision   uint64
-	camera     render.ResolvedCamera
-	width      int
-	height     int
-	generation uint32 // of the Pack that the records refer to
-	used       bool
-
-	instances slugStorage
-	bindGroup *wgpu.BindGroup
-	ranges    []tess.TextBatchRange
-}
-
-func (b *nativeSlugBatch) release() {
-	releaseBuffer(&b.instances.buffer)
-	b.instances.capacity = 0
-	if b.bindGroup != nil {
-		b.bindGroup.Release()
-		b.bindGroup = nil
-	}
 }
 
 func (s *nativeSlug) endFrame() {
@@ -101,140 +59,62 @@ func (s *nativeSlug) release() {
 		releaseBuffer(&storage.buffer)
 		storage.capacity = 0
 	}
-	for key, batch := range s.drawn {
-		batch.release()
-		delete(s.drawn, key)
-	}
 }
 
-// applySlugBatchUpdates stores the labels. The camera of a repack is known only at
-// the frame, so prepareSlugBatches does the repack.
-func (r *Renderer) applySlugBatchUpdates(updates []runtime.TextBatchUpdate) {
-	for _, u := range updates {
-		if u.Op == runtime.BatchDelete {
-			delete(r.slug.batches, u.ID)
-			continue
-		}
-		if r.slug.batches == nil {
-			r.slug.batches = make(map[render.TextBatchID]*nativeSlugContent)
-		}
-		content := r.slug.batches[u.ID]
-		if content == nil {
-			content = &nativeSlugContent{}
-			r.slug.batches[u.ID] = content
-		}
-		content.labels = u.Labels
-		content.revision++
-		if r.slug.engine == nil {
+// generation returns the generation of the Pack, or 0 if Slug text is off.
+func (s *nativeSlug) generation() uint32 {
+	if s.engine == nil {
+		return 0
+	}
+	return s.engine.Pack().Generation()
+}
+
+// warnSlugBatchOff reports GlyphSlug labels that use the atlas, because Slug text is off.
+func (r *Renderer) warnSlugBatchOff(labels []render.TextLabel) {
+	if r.slug.engine != nil {
+		return
+	}
+	for i := range labels {
+		if labels[i].Strategy == render.GlyphSlug {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-slug-batches-off"},
-				"native renderer skips retained text because Slug text is off; set Options.GlyphOutlines to slug.Outlines")
-			continue
-		}
-		for i := range u.Labels {
-			if u.Labels[i].Strategy != render.GlyphSlug {
-				r.diagnostics.Log(r.log, slog.LevelWarn,
-					diagnostic.Key{Code: "native-text-batches-unsupported"},
-					"native renderer skips retained text labels without the GlyphSlug strategy")
-				break
-			}
+				diagnostic.Key{Code: "slug-text-off"},
+				"native: GlyphSlug text uses the glyph atlas because Slug text is off; set Options.GlyphOutlines to slug.Outlines")
+			return
 		}
 	}
 }
 
-// prepareSlugBatches packs the batches of the frame when their content, their
-// camera, or the glyph positions in the Pack changed.
-func (r *Renderer) prepareSlugBatches(runs []tess.StreamRun, plans []nativePassPlan) error {
-	s := &r.slug
-	for _, batch := range s.drawn {
-		batch.used = false
+// writeSlugBatch uploads the Slug records of a retained text batch.
+func (r *Renderer) writeSlugBatch(batch *gpuTextBatch, instances []byte) error {
+	if len(instances) == 0 {
+		return nil
 	}
-	for _, run := range runs {
-		if run.Kind != tess.DrawRunTextBatch {
-			continue
-		}
-		content := s.batches[run.TextBatch.Batch]
-		if content == nil {
-			r.diagnostics.Log(r.log, slog.LevelWarn,
-				diagnostic.Key{Code: "native-text-batch-missing", ID: uint64(run.TextBatch.Batch)},
-				"native: DrawTextBatch references a missing or deleted batch; command skipped")
-			continue
-		}
-		key := slugBatchKey{pass: run.Pass, id: run.TextBatch.Batch}
-		batch := s.drawn[key]
-		if batch == nil {
-			if s.drawn == nil {
-				s.drawn = make(map[slugBatchKey]*nativeSlugBatch)
-			}
-			batch = &nativeSlugBatch{revision: content.revision - 1}
-			s.drawn[key] = batch
-		}
-		batch.used = true
-		plan := plans[run.Pass]
-		resolved, generation := plan.camera.Resolve(), s.engine.Pack().Generation()
-		if batch.revision == content.revision && batch.camera == resolved && batch.width == plan.width &&
-			batch.height == plan.height && batch.generation == generation {
-			continue
-		}
-		packed := tess.PlanTextBatch(s.engine, plan.camera, plan.width, plan.height, content.labels, nil)
-		batch.revision, batch.camera, batch.width, batch.height = content.revision, resolved, plan.width, plan.height
-		batch.generation, batch.ranges = generation, packed.Ranges
-		if len(packed.SlugInstances) == 0 {
-			continue
-		}
-		grew := false
-		if err := r.growSlugStorage(&batch.instances, "slug batch instances", len(packed.SlugInstances), &grew); err != nil {
-			return err
-		}
-		if grew && batch.bindGroup != nil {
-			batch.bindGroup.Release()
-			batch.bindGroup = nil
-		}
-		if err := r.device.Queue.TryWriteBuffer(batch.instances.buffer, 0, packed.SlugInstances); err != nil {
-			return fmt.Errorf("upload slug batch instances: %w", err)
-		}
+	grew := false
+	if err := r.growSlugStorage(&batch.slugInstances, "slug batch instances", len(instances), &grew); err != nil {
+		return err
 	}
-	for key, batch := range s.drawn {
-		if !batch.used {
-			batch.release()
-			delete(s.drawn, key)
-		}
+	if grew && batch.slugBindGroup != nil {
+		batch.slugBindGroup.Release()
+		batch.slugBindGroup = nil
+	}
+	if err := r.device.Queue.TryWriteBuffer(batch.slugInstances.buffer, 0, instances); err != nil {
+		return fmt.Errorf("upload slug batch instances: %w", err)
 	}
 	return nil
 }
 
-func (r *Renderer) drawSlugBatch(
-	pass *wgpu.RenderPassEncoder,
-	run tess.StreamRun,
-	uniformOffset uint32,
-	camera render.Camera,
-	viewport math2d.Rect,
-	scissor *nativeScissorState,
-	width, height int,
-	renderTarget bool,
-) {
-	batch := r.slug.drawn[slugBatchKey{pass: run.Pass, id: run.TextBatch.Batch}]
-	if batch == nil || batch.bindGroup == nil {
-		return
+func (r *Renderer) forEachTextBatch(visit func(*gpuTextBatch)) {
+	for _, batch := range r.textBatches {
+		visit(batch)
 	}
-	x, y, sw, sh, visible := particlegpu.ScissorRectWithin(run.TextBatch.Clip, camera, viewport, 1, width, height)
-	setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
-	if visible {
-		pass.SetPipeline(pick(renderTarget, r.slug.target, r.slug.main))
-		pass.SetBindGroup(0, batch.bindGroup, []uint32{uniformOffset})
-		for _, rg := range batch.ranges {
-			pass.Draw(uint32(rg.Count*6), 1, uint32(rg.Start*6), 0)
-		}
-	}
-	if run.TextBatch.Clip.Width() > 0 && run.TextBatch.Clip.Height() > 0 {
-		x, y, sw, sh, _ = particlegpu.ScissorRectWithin(math2d.Rect{}, camera, viewport, 1, width, height)
-		setNativeScissor(pass, scissor, uint32(x), uint32(y), uint32(sw), uint32(sh))
+	for _, batch := range r.passTextBatches {
+		visit(batch)
 	}
 }
 
 // uploadSlug uploads the Slug data of the frame. A failure disables Slug text, so
 // the next frames draw the commands with the glyph atlas.
-func (r *Renderer) uploadSlug(runs []tess.StreamRun, plans []nativePassPlan) {
+func (r *Renderer) uploadSlug() {
 	if r.slug.engine == nil {
 		if r.tess.SlugMissing() {
 			r.diagnostics.Log(r.log, slog.LevelWarn,
@@ -243,19 +123,15 @@ func (r *Renderer) uploadSlug(runs []tess.StreamRun, plans []nativePassPlan) {
 		}
 		return
 	}
-	batchErr := r.prepareSlugBatches(runs, plans)
 	if err := r.slug.engine.TakeErr(); err != nil {
 		r.diagnostics.Log(r.log, slog.LevelWarn,
 			diagnostic.Key{Code: "slug-text-add"},
 			"native: Slug text is incomplete this frame", "error", err)
 	}
-	if batchErr == nil && r.slug.engine.Pack().Size() == 0 {
+	if r.slug.engine.Pack().Size() == 0 {
 		return
 	}
-	err := batchErr
-	if err == nil {
-		err = r.createSlugPipelines()
-	}
+	err := r.createSlugPipelines()
 	if err == nil {
 		err = r.writeSlugBuffers()
 	}
@@ -264,6 +140,7 @@ func (r *Renderer) uploadSlug(runs []tess.StreamRun, plans []nativePassPlan) {
 		r.tess.SetSlugText(nil)
 		r.slug.release()
 		r.slug.engine = nil
+		r.forEachTextBatch((*gpuTextBatch).releaseSlug)
 	}
 }
 
@@ -391,28 +268,25 @@ func (r *Renderer) rebuildSlugBindGroup() error {
 		s.bindGroup.Release()
 	}
 	s.bindGroup = bindGroup
-	for _, batch := range s.drawn {
-		if batch.bindGroup != nil {
-			batch.bindGroup.Release()
-			batch.bindGroup = nil
+	r.forEachTextBatch(func(batch *gpuTextBatch) {
+		if batch.slugBindGroup != nil {
+			batch.slugBindGroup.Release()
+			batch.slugBindGroup = nil
 		}
-	}
+	})
 	return r.createSlugBatchBindGroups()
 }
 
 // createSlugBatchBindGroups creates the bind groups that a batch does not have.
 func (r *Renderer) createSlugBatchBindGroups() error {
-	for _, batch := range r.slug.drawn {
-		if batch.bindGroup != nil || batch.instances.buffer == nil {
-			continue
+	var err error
+	r.forEachTextBatch(func(batch *gpuTextBatch) {
+		if err != nil || batch.slugBindGroup != nil || batch.slugInstances.buffer == nil {
+			return
 		}
-		bindGroup, err := r.createSlugBindGroup(batch.instances.buffer)
-		if err != nil {
-			return err
-		}
-		batch.bindGroup = bindGroup
-	}
-	return nil
+		batch.slugBindGroup, err = r.createSlugBindGroup(batch.slugInstances.buffer)
+	})
+	return err
 }
 
 func (r *Renderer) createSlugBindGroup(instances *wgpu.Buffer) (*wgpu.BindGroup, error) {

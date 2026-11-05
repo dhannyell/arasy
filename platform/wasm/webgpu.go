@@ -484,7 +484,7 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		}
 		passWidth, passHeight := pass.Width, pass.Height
 		passFrames[i] = tess.Frame{Camera: pass.Camera, Commands: pass.Commands, Width: passWidth, Height: passHeight}
-		ids := collectTextBatchIDsInto(r.passTextIDs[i], pass.Commands)
+		ids := tess.CollectTextBatchIDs(r.passTextIDs[i], pass.Commands)
 		r.passTextIDs[i] = ids
 		r.prepTextBatches(ids, pass.Camera, passWidth, passHeight)
 	}
@@ -543,8 +543,8 @@ func (r *webgpuRenderer) renderPasses(frame runtime.Frame) {
 		plan := plans[drawRuns[i].pass]
 		effective := tess.CameraForLayer(plan.camera, plan.layerCameras, drawRuns[i].layer)
 		canCull := !batch.hasRotation || renderbatch.WorldBoundsPreserveScreenRotation(effective)
-		if view, ok := webgpuBatchView(effective, cmd.Clip); ok && canCull {
-			bounds, boundsOK := spriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
+		if view, ok := renderbatch.BatchView(effective, cmd.Clip); ok && canCull {
+			bounds, boundsOK := tess.SpriteBatchInflatedBounds(batch.bounds, batch.hasBounds, batch.maxBounce, cmd.Animation)
 			bounds = renderbatch.BoundsForView(bounds, effective.View)
 			if !boundsOK || !renderbatch.IntersectsView(bounds, view) {
 				continue
@@ -1079,18 +1079,18 @@ func (r *webgpuRenderer) drawRun(
 		}
 		for i, rg := range batch.ranges {
 			if batch.animated {
-				if renderTarget && r.spriteArrayEnabled && !rg.missing {
+				if renderTarget && r.spriteArrayEnabled && !rg.Missing {
 					pass.Call("setPipeline", r.targetSpriteBatchAnimArrayPipeline)
 				} else if renderTarget {
 					pass.Call("setPipeline", r.targetSpriteBatchAnimPipeline)
-				} else if r.spriteArrayEnabled && !rg.missing {
+				} else if r.spriteArrayEnabled && !rg.Missing {
 					pass.Call("setPipeline", r.spriteBatchAnimArrayPipeline)
 				} else {
 					pass.Call("setPipeline", r.spriteBatchAnimPipeline)
 				}
 				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.batchSlot})
 			} else {
-				if r.spriteArrayEnabled && !rg.missing {
+				if r.spriteArrayEnabled && !rg.Missing {
 					if renderTarget {
 						pass.Call("setPipeline", r.targetSpriteArrayPipeline)
 					} else {
@@ -1105,7 +1105,7 @@ func (r *webgpuRenderer) drawRun(
 				}
 				pass.Call("setBindGroup", 0, batch.bindGroups[i], []any{run.uniformSlot})
 			}
-			pass.Call("draw", rg.count*6, 1, rg.start*6, 0)
+			pass.Call("draw", rg.Count*6, 1, rg.Start*6, 0)
 		}
 		if cmd.Clip.Width() > 0 && cmd.Clip.Height() > 0 {
 			applyClipScissor(pass, math2d.Rect{}, camera, viewport, 1, w, h, scissor)
@@ -1165,25 +1165,6 @@ type gpuDrawRun struct {
 	// registry entry (nil when missing, deleted, empty or culled).
 	textBatch render.DrawTextBatch
 	text      *gpuTextBatch
-}
-
-// webgpuBatchView returns the world area that can show a retained batch.
-// A false result tells the caller to keep drawing without batch culling.
-func webgpuBatchView(camera render.Camera, clip math2d.Rect) (math2d.Rect, bool) {
-	view := camera.Resolve().World
-	if view.Width() <= 0 || view.Height() <= 0 {
-		return math2d.Rect{}, false
-	}
-	if clip != (math2d.Rect{}) {
-		clip = renderbatch.BoundsForView(clip, camera.View)
-		view.Min.X = max(view.Min.X, clip.Min.X)
-		view.Min.Y = max(view.Min.Y, clip.Min.Y)
-		view.Max.X = min(view.Max.X, clip.Max.X)
-		view.Max.Y = min(view.Max.Y, clip.Max.Y)
-		// An empty intersection still culls: IntersectsView requires a
-		// positive-area overlap, and a degenerate rect overlaps nothing.
-	}
-	return view, true
 }
 
 // particleTarget is one pooled offscreen target plus its composite bind group.

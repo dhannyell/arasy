@@ -113,7 +113,13 @@ func TestSlugTextMatchesRaster(t *testing.T) {
 // compareSlugFrames fails if got and want differ by more than sampling noise.
 func compareSlugFrames(t *testing.T, renderer *Renderer, got, want *image.RGBA) {
 	t.Helper()
-	if len(renderer.tess.SlugInstanceStream()) == 0 && len(renderer.slug.drawn) == 0 {
+	slugBatch := false
+	renderer.forEachTextBatch(func(batch *gpuTextBatch) {
+		for _, rg := range batch.ranges {
+			slugBatch = slugBatch || rg.slug
+		}
+	})
+	if len(renderer.tess.SlugInstanceStream()) == 0 && !slugBatch {
 		t.Fatal("the frame has no Slug instance")
 	}
 	if len(renderer.textAtlases) != 0 {
@@ -282,7 +288,7 @@ func TestResolveFramePassesSkipsUnavailableTargetOnce(t *testing.T) {
 func TestNativeTextureSampleViewUsesMipZeroAfterRTT(t *testing.T) {
 	full := &wgpu.TextureView{}
 	target := &wgpu.TextureView{}
-	texture := gpuTexture{view: full, targetView: target}
+	texture := gpuTexture{view: full, targetView: target, arrayLayer: -1}
 	if got := nativeTextureSampleView(texture); got != full {
 		t.Fatalf("static sample view = %p, want full view %p", got, full)
 	}
