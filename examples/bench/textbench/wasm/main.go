@@ -7,13 +7,15 @@ import (
 
 	"github.com/dhannyell/arasy/examples/bench/textbench"
 	"github.com/dhannyell/arasy/platform/wasm"
+	"github.com/dhannyell/arasy/render/slug"
 )
 
 func main() {
 	game := &textbench.Game{}
 	log := wasm.NewConsoleLogger(slog.LevelInfo)
 	if err := wasm.Run(game, wasm.Options{
-		Log: log,
+		Log:           log,
+		GlyphOutlines: slug.Outlines,
 		FrameMetrics: func(metrics wasm.FrameMetrics) {
 			game.ObserveFrame(
 				metrics.FPS,

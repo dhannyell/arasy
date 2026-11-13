@@ -105,7 +105,23 @@ const (
 	// command (batch ID) but no glyph/label payload: content lives in the
 	// backend's retained text registry.
 	DrawRunTextBatch
+	// DrawRunSlugText draws Slug glyph layers. VertexCount counts the records of
+	// Builder.SlugInstanceStream, as ByteOffset does in bytes.
+	DrawRunSlugText
 )
+
+// SlugInstanceStride is the size in bytes of one record of SlugText.
+const SlugInstanceStride = 64
+
+// SlugText writes DrawText commands as Slug records. It is an interface so that
+// only a host that sets it pays for the outline code in its binary.
+type SlugText interface {
+	// Has reports if the implementation can draw text in the font.
+	Has(render.FontID) bool
+	// AppendInstances appends the records of cmd and returns the screen bounds of
+	// the new glyphs. clipMin and clipMax are in screen pixels.
+	AppendInstances(dst []byte, cmd render.DrawText, cam render.Camera, clipMin, clipMax math2d.Vec2) ([]byte, math2d.Rect)
+}
 
 // appendMissingTexture emits the shared diagnostic pattern from screen-space corners
 // (TL, TR, BR, BL), in place of a DrawImage or DrawImageQuad command whose

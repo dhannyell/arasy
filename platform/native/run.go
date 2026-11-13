@@ -9,6 +9,7 @@ import (
 	goruntime "runtime"
 	"time"
 
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
 	"github.com/go-gl/glfw/v3.4/glfw"
@@ -92,6 +93,9 @@ type Options struct {
 	// MSAA selects the antialiasing level. The zero value is
 	// render.MSAADefault (4x); render.MSAAOff turns antialiasing off.
 	MSAA render.MSAAMode
+	// GlyphOutlines enables render.GlyphSlug text. Set it to slug.Outlines. If it is
+	// nil, the host draws DrawText with the glyph atlas and skips retained text.
+	GlyphOutlines slugcore.Factory
 	// Icon is an optional window icon.
 	Icon image.Image
 	// Log receives host diagnostics. The default is slog.Default().
@@ -177,7 +181,7 @@ func RunDriver(driver *runtime.Driver, game runtime.Game, opts Options) error {
 	// asking for them. The feature has to be requested at device creation,
 	// which is why this is decided here rather than when the panel opens.
 	wantGPUTiming := opts.GPUTiming || devToolsWantGPUTiming(opts.DevTools || opts.RecordReplay)
-	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, wantGPUTiming, opts.Log)
+	renderer, err := NewRenderer(window, cfg.Clear, cfg.Assets, opts.VSync, opts.MSAA, cfg.ParticleOffscreenScale, wantGPUTiming, opts.GlyphOutlines, opts.Log)
 	if err != nil {
 		return err
 	}

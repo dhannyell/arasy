@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dhannyell/arasy/asset"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/platform/internal/wgpurender"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
@@ -33,13 +34,14 @@ func newBrowserRenderer(
 	wantGPUTiming bool,
 	particleScale float64,
 	msaa render.MSAAMode,
+	outlines slugcore.Factory,
 	log *slog.Logger,
 ) (*browserRenderer, error) {
 	d, err := openBrowserDevice(canvas, wantGPUTiming)
 	if err != nil {
 		return nil, err
 	}
-	renderer, err := wgpurender.New(d, clear, manifest, msaa, particleScale, log)
+	renderer, err := wgpurender.New(d, clear, manifest, msaa, particleScale, outlines, log)
 	if err != nil {
 		return nil, err
 	}

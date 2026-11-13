@@ -12,6 +12,7 @@ import (
 	"github.com/dhannyell/arasy/asset/typeface"
 	"github.com/dhannyell/arasy/internal/diagnostic"
 	"github.com/dhannyell/arasy/internal/render/frameplan"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/particle"
 	"github.com/dhannyell/arasy/render"
@@ -29,11 +30,18 @@ type Renderer struct {
 	Textures pixel.Registry
 	Fonts    typeface.Registry
 	Assets   asset.Manifest
+	// GlyphOutlines enables render.GlyphSlug text. Set it to slug.Outlines. If it is
+	// nil, the Renderer draws that text with the glyph atlas.
+	GlyphOutlines slugcore.Factory
 
 	// faceCache memoizes opentype faces per font and pixel size. Lazily
 	// initialized; the Renderer is used from a single goroutine (offline
 	// Run and tests), so no locking.
 	faceCache map[faceKey]font.Face
+
+	// slug draws GlyphSlug text. Lazily initialized.
+	slug       slugcore.Engine
+	slugGlyphs []slugcore.Glyph
 
 	particles   *particle.EmitterSet
 	diagnostics diagnostic.Once
@@ -123,6 +131,9 @@ func (r *Renderer) RenderPassesInto(dst *image.RGBA, passes []render.Pass, base 
 		r.Camera = originalCamera
 		r.viewport = originalViewport
 		r.viewportSet = originalViewportSet
+		if r.slug != nil {
+			r.slug.EndFrame()
+		}
 	}()
 
 	planned, diagnostics := r.planner.Plan(frameplan.Input{

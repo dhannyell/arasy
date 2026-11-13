@@ -60,6 +60,10 @@ type Builder struct {
 	runs    []StreamRun
 	passes  []BuiltPass
 
+	slug          SlugText
+	slugInstances []byte
+	slugMissing   bool
+
 	solidMesh Mesh
 	texMesh   TexMesh
 
@@ -67,6 +71,26 @@ type Builder struct {
 	// DrawImage commands with different textures to share one draw run because
 	// the texture layer is carried by each storage record.
 	spriteArray bool
+}
+
+// SetSlugText sets the writer of the DrawText commands with the GlyphSlug strategy.
+// Nil draws them with the glyph atlas.
+func (b *Builder) SetSlugText(slug SlugText) { b.slug = slug }
+
+// SlugInstanceStream returns the records of the DrawRunSlugText runs of the most
+// recent Build. Each record occupies SlugInstanceStride bytes.
+func (b *Builder) SlugInstanceStream() []byte { return b.slugInstances }
+
+// SlugMissing reports if a DrawText asked for GlyphSlug when no writer was set.
+// It stays true after the first such command.
+func (b *Builder) SlugMissing() bool { return b.slugMissing }
+
+// drawsSlug reports if cmd goes to the Slug stream instead of a glyph atlas.
+func (b *Builder) drawsSlug(cmd render.DrawText) bool {
+	if cmd.Strategy == render.GlyphSlug && b.slug == nil {
+		b.slugMissing = true
+	}
+	return drawsSlug(b.slug, cmd.Strategy, cmd.Font, cmd.Size)
 }
 
 // SetSpriteArray selects whether sprite records carry array-texture layers.
@@ -126,6 +150,7 @@ func (b *Builder) reset() {
 	b.sprites = b.sprites[:0]
 	b.glyphs = b.glyphs[:0]
 	b.labels = b.labels[:0]
+	b.slugInstances = b.slugInstances[:0]
 	b.runs = b.runs[:0]
 }
 
@@ -147,7 +172,7 @@ func (b *Builder) buildFrame(frame Frame, w, h int, provider AtlasProvider, size
 			}
 		}
 	} else {
-		atlases, ordered = resolveFrameAtlases(frame.Commands, buildCtx, provider)
+		atlases, ordered = resolveFrameAtlases(frame.Commands, buildCtx, provider, b.drawsSlug)
 	}
 	sink := streamSink{
 		builder:        b,
@@ -254,7 +279,7 @@ func (r *frameAtlasRequest) add(text string) {
 	}
 }
 
-func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider) (map[AtlasKey]*Atlas, bool) {
+func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvider, skip func(render.DrawText) bool) (map[AtlasKey]*Atlas, bool) {
 	ordered := true
 	if provider == nil {
 		return nil, false
@@ -267,7 +292,7 @@ func resolveFrameAtlases(commands []render.Command, c ctx, provider AtlasProvide
 			ordered = false
 		}
 		cmd, ok := command.(render.DrawText)
-		if !ok || cmd.Text == "" || cmd.Color.A <= 0 {
+		if !ok || cmd.Text == "" || cmd.Color.A <= 0 || skip(cmd) {
 			continue
 		}
 		size := cmd.Size
@@ -475,6 +500,15 @@ func (s *streamSink) VisitPostChain(render.PostChain) {}
 
 func (s *streamSink) VisitText(cmd render.DrawText) {
 	s.prepare(cmd)
+	if s.builder.drawsSlug(cmd) {
+		start := len(s.builder.slugInstances)
+		clipMin, clipMax := textClip(s.ctx, cmd)
+		s.builder.slugInstances, _ = s.builder.slug.AppendInstances(s.builder.slugInstances, cmd, s.ctx.cam, clipMin, clipMax)
+		if count := (len(s.builder.slugInstances) - start) / SlugInstanceStride; count > 0 {
+			s.appendRun(DrawRunSlugText, cmd.BlendMode, 0, AtlasKey{}, start, count)
+		}
+		return
+	}
 	size := cmd.Size
 	if size <= 0 {
 		size = glyphHeight

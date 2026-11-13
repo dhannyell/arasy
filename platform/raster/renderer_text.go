@@ -70,6 +70,9 @@ func (r *Renderer) drawText(img *image.RGBA, command render.DrawText) {
 	if command.Text == "" || command.Color.A <= 0 {
 		return
 	}
+	if command.Strategy == render.GlyphSlug && r.drawSlugText(img, command) {
+		return
+	}
 
 	var destWidth, destHeight, offsetX, offsetY, destX, destY float64
 	var sourceSpacing float64

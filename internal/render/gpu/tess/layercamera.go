@@ -85,7 +85,7 @@ func UniformKeyForKind(kind DrawRunKind, layer int, base render.Camera, cameras 
 			layer = 0
 		}
 		return UniformKey{Kind: UniformKindSprites, Layer: layer}, true
-	case DrawRunText:
+	case DrawRunText, DrawRunSlugText:
 		return UniformKey{Kind: UniformKindText}, true
 	case DrawRunTextBatch:
 		effective := CameraForLayer(base, cameras, layer)

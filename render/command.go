@@ -144,7 +144,24 @@ type DrawText struct {
 	// first (around Position), then Transform maps the result. Prefer
 	// Transform in new code.
 	Rotation float64
+
+	// Strategy selects how a backend draws the glyphs. The zero value is GlyphAuto.
+	Strategy GlyphStrategy
 }
+
+// GlyphStrategy selects how a backend draws the glyphs of a DrawText.
+type GlyphStrategy uint8
+
+const (
+	// GlyphAuto lets the backend choose. Today it always uses the glyph atlas.
+	GlyphAuto GlyphStrategy = iota
+	// GlyphAtlas always draws the glyphs from a glyph atlas.
+	GlyphAtlas
+	// GlyphSlug draws each glyph from its outline, so text stays sharp at any
+	// scale and rotation. It uses the font's kerning and ligatures, so its width
+	// can differ from MeasureText. A host without GlyphOutlines uses the glyph atlas.
+	GlyphSlug
+)
 
 // DrawArc describes an arc stroke draw command.
 type DrawArc struct {

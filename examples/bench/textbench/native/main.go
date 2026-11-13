@@ -8,6 +8,7 @@ import (
 
 	"github.com/dhannyell/arasy/examples/bench/textbench"
 	"github.com/dhannyell/arasy/platform/native"
+	"github.com/dhannyell/arasy/render/slug"
 )
 
 func main() {
@@ -18,6 +19,8 @@ func main() {
 		Width:  1980,
 		Height: 1080,
 		Log:    log,
+
+		GlyphOutlines: slug.Outlines,
 		FrameMetrics: func(m native.FrameMetrics) {
 			game.ObserveFrame(
 				m.FPS,

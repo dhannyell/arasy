@@ -20,6 +20,7 @@ import (
 // Face is a parsed font ready for measuring and rasterizing.
 type Face struct {
 	font *sfnt.Font
+	data []byte
 	// buf is reused across measurements; Face methods are NOT safe for
 	// concurrent use (callers keep one Face per goroutine or lock)
 	buf sfnt.Buffer
@@ -67,11 +68,16 @@ func Parse(data []byte) (*Face, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Face{font: f}, nil
+	return &Face{font: f, data: data}, nil
 }
 
 func (f *Face) Font() *sfnt.Font {
 	return f.font
+}
+
+// Data returns the font file that Parse read. The caller must not change it.
+func (f *Face) Data() []byte {
+	return f.data
 }
 
 // Measure returns the advance width and line height of text at the given

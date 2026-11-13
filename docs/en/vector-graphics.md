@@ -188,7 +188,7 @@ authoritative, evolving version):
 |---|---|
 | `platform/raster` | Software renderer to `image.RGBA`; the semantic reference every other backend is compared against. |
 | `platform/wasm` | WebGPU web backend; full parity with the reference. |
-| `platform/native` | wgpu-native + GLFW host; retained sprite and text batches use persistent GPU records. |
+| `platform/native` | wgpu-native + GLFW host; retained sprite and text batches use persistent GPU records. `GlyphSlug` labels need `Options.GlyphOutlines`; without it they use the glyph atlas. |
 
 ## Future extensions
 

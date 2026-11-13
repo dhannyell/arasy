@@ -15,6 +15,7 @@ import (
 
 	"github.com/dhannyell/arasy/asset/pixel"
 	"github.com/dhannyell/arasy/asset/typeface"
+	"github.com/dhannyell/arasy/internal/render/slugcore"
 	"github.com/dhannyell/arasy/math2d"
 	"github.com/dhannyell/arasy/render"
 	"github.com/dhannyell/arasy/runtime"
@@ -38,6 +39,9 @@ type Options struct {
 	FramesDir string  // output directory for frame-0000.png sequence; empty = skip
 	Settle    float64 // seconds of simulation to run before the single PNG
 	Log       *slog.Logger
+	// GlyphOutlines enables render.GlyphSlug text. Set it to slug.Outlines. If it is
+	// nil, the renderer draws that text with the glyph atlas.
+	GlyphOutlines slugcore.Factory
 }
 
 // frameTarget adapts the raster renderer + texture registry to
@@ -84,6 +88,8 @@ func Run(game runtime.Game, opts Options) error {
 		Fonts:    fonts,
 		Assets:   cfg.Assets,
 		log:      log,
+
+		GlyphOutlines: opts.GlyphOutlines,
 	}
 
 	target := frameTarget{r: &r, target: r.NewTarget(), textures: textures}

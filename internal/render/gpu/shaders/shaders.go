@@ -18,6 +18,12 @@ var SolidWGSL string
 //go:embed text_instanced.wgsl
 var TextGlyphWGSL string
 
+// SlugTextWGSL draws Slug glyph layers. It does not compile alone: a host adds it
+// after the coverage functions, through slugtext.WGSL.
+//
+//go:embed slug_text.wgsl
+var SlugTextWGSL string
+
 // TexturedWGSL is the image/texture WebGPU pipeline shader.
 //
 // Vertex inputs match tess.TexVertex serialized by tess.TexBytes:
