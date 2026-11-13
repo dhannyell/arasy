@@ -2,6 +2,8 @@ module github.com/dhannyell/arasy
 
 go 1.26.4
 
+toolchain go1.26.10
+
 require (
 	github.com/dhannyell/fixed v0.2.0-alpha
 	github.com/dhannyell/go-slug v1.5.0
