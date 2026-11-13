@@ -5,10 +5,10 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/dhannyell/fixed v0.2.0-alpha h1:D8anZkKRMJQSd1hTdhHDKV4p8pMX7wgkF7HzdiX4OZk=
 github.com/dhannyell/fixed v0.2.0-alpha/go.mod h1:Z9rHDf6OmyqFf3EZLp3+VvXzn8a1hyCfAdiAi7zXQ+Y=
-github.com/dhannyell/go-slug v1.0.0 h1:RBJ1+tWC5ZMkeIi+i0ghh/OS/qx9/dtJcxwFpxksnks=
-github.com/dhannyell/go-slug v1.0.0/go.mod h1:Jqp0SsU93ASAFS0RN3dmo1Plkb3SsUiw+CwGCx+Ub5w=
-github.com/dhannyell/go-slug/text v1.0.0 h1:KGz7D2DoGgcoAxb96ZDKAKSNQbENQmSGjiO6gWGTlbo=
-github.com/dhannyell/go-slug/text v1.0.0/go.mod h1:X3wshgy8VzZBgrIQ7Y5PVIlGuvSKtjThcLjxakSqFSY=
+github.com/dhannyell/go-slug v1.5.0 h1:iSOHVsrt1ZUQToBpUaNMgsnn/4L3rUgz03mUu/lTueU=
+github.com/dhannyell/go-slug v1.5.0/go.mod h1:Jqp0SsU93ASAFS0RN3dmo1Plkb3SsUiw+CwGCx+Ub5w=
+github.com/dhannyell/go-slug/text v1.5.0 h1:ZoYSMPUm4UVtoKoNnKZYt4k0u3VRb8y3r8bZuv1iy5w=
+github.com/dhannyell/go-slug/text v1.5.0/go.mod h1:Psv9UnSbIXKHGcWQ5xxn/Hat7wUdsJuIXNOZF36RwRs=
 github.com/dhannyell/webgpu v1.37.1 h1:UqbCQmVRn7kXEDiZs61S5uGUpJ6lgBZ/mqD+dqwUpx0=
 github.com/dhannyell/webgpu v1.37.1/go.mod h1:zYTVxa7F/vfuZeay/YhLyBJt5qjHQzPhu6WlQ8xpmH8=
 github.com/dhannyell/webgpu/libs-android v0.0.0-20260905020343-c4069cac051c h1:yhPBR+j0CIh74k9UsN+xkmCbI+sKysZLfPGPoDSIwwo=
